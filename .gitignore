@@ -1,0 +1,14 @@
+.cache/
+/bin/
+/dist/
+web/node_modules/
+web/*.tsbuildinfo
+web/test-results/
+web/playwright-report/
+.terraform/
+*.tfstate
+*.tfstate.*
+!fixtures/backend/terraform.tfstate
+*.tfplan
+.env
+.DS_Store

@@ -1,0 +1,1 @@
+Offline verification bundle. React + Lucide compiled with cached esbuild. Local query and native button adapters substitute unavailable dependencies. Rebuild with npm ci and Vite before release.
