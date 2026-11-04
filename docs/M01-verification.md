@@ -13,9 +13,9 @@ Environment: macOS 13 amd64, Go 1.27.2 (module minimum `go 1.26.0`), Node 24.2.0
 | `npm ci --prefix web` | Clean install from the committed `web/package-lock.json`. |
 | `make test` | Passed. Go race tests for CLI, engine, discovery, parsing/redaction, HTTP security and embedded assets; Vitest 6/6. |
 | `make lint` | Passed: `go vet`, `tsc -b`, ESLint with zero warnings. `gofmt -l` clean. |
-| `make build` | Passed: TypeScript + Vite production bundle (`assets/index-*.js` 289 kB, 90 kB gzip; `index-*.css` 28 kB), third-party notices, embedded Go binary. |
+| `make build` | Passed: TypeScript + Vite production bundle (`assets/index-*.js` 323 kB, 100 kB gzip; `index-*.css` 29 kB, after the dependency updates below), third-party notices, embedded Go binary. |
 | Bundle content | Only `/`-relative asset references (enforced by `internal/ui` test). The only URL strings in the JS are the SVG/XHTML namespaces and React's error-decoder link; none are fetched. |
-| Reproducibility | Two Vite builds produced identical asset hashes; two `make binary` runs produced identical binary bytes with the same toolchain, target and version. |
+| Reproducibility | Two Vite builds produced identical asset hashes, also after a clean `npm ci` with npm 11.3.0; two `make binary` runs produced identical binary bytes with the same toolchain, target and version. |
 | `make cross` | Passed: macOS amd64/arm64, Linux amd64/arm64, Windows amd64. Not executed on foreign operating systems. |
 | Canary in binaries | `DO_NOT_LEAK_HCLARO_TEST_SECRET` absent from the host binary and all five cross binaries. |
 | `--help`, `--version` | All documented flags shown; version `0.1.0-alpha.1`. |
@@ -38,6 +38,21 @@ All direct dependencies moved to the newest release within their current major, 
 
 `npm install` on npm 11.3.0 crashes in peer-set resolution (`Cannot read properties of null (reading 'edgesOut')`); the lockfile was regenerated with npm 11.6.2 via `npx -y npm@11.6.2 install`. `npm ci` with the bundled npm works.
 
+## Major dependency upgrades, 2026-11-04
+
+One commit per step. Each target is the newest release in its major that was at least two weeks old, to limit exposure to freshly published packages.
+
+| Step | Versions | Verification |
+| --- | --- | --- |
+| Build/test toolchain | Vite 8.3.5, @vitejs/plugin-react 6.1.2, Vitest 5.0.5 | All checks and browser test pass; Vite output deterministic. Dev server re-probed live: bad/`localhost` Host, foreign Origin and cross-site fetch 403; POST 405; `/@fs/` outside the root 403; `..` paths fall back to `index.html`; proxied API still requires the session credential. |
+| Lint | ESLint 10.13.0, @eslint/js 10.0.1 | Lint passes; a probe file confirms hooks and TypeScript rules still report violations. |
+| Icons | lucide-react 1.61.0 | All 30 imported icon names exist; pixel diff shows only minor icon-path refinements; screenshots refreshed. |
+| Test DOM | jsdom 29.1.1, @testing-library/jest-dom 7.0.1 | Vitest/typecheck/lint pass; embedded bundle byte-identical. |
+| Held | TypeScript 5.9.3 | TypeScript 7 is not supported by typescript-eslint 8.72 (`typescript <6.1`). |
+| Held | @types/node 24.x | Matches the Node 24 LTS runtime. |
+
+Final pass from a clean `npm ci`: uncached Go race tests, Vitest, lint, build (dist identical to the committed assets), `make cross`, binaries free of the canary, live loopback sweep (316/316 details, canary 0, Host/Origin/session/method checks, SIGINT shutdown) and `make browser-test` all pass.
+
 ## M01 task acceptance mapping
 
 | Task criterion | Evidence |
@@ -57,6 +72,6 @@ All direct dependencies moved to the newest release within their current major, 
 2. **Native browser auto-open** was not exercised; the demo uses `--no-browser`.
 3. **Cross-platform runtime**: Linux and Windows binaries compile but were not run.
 4. **Real compatibility**: no real Terraform/OpenTofu/backend certification. The supported version range is tested through synthetic JSON and fake executables only.
-5. **Dev-dependency advisories**: `npm audit --omit=dev` is clean. The critical Vitest and high Vite dev-server advisories were fixed by the in-major update (vite 7.3.7, vitest 4.1.12). Remaining: one moderate minimatch ReDoS reached through typescript-eslint (lint-time only, project-controlled globs) and one low esbuild serve-mode advisory on Windows (Vite does not use esbuild's server). Neither affects the embedded bundle.
+5. **Dev-dependency advisories**: `npm audit --omit=dev` is clean. The critical Vitest and high Vite advisories were fixed in the in-major update; the esbuild advisory disappeared with Vite 8. Remaining: one moderate minimatch ReDoS (GHSA-g3hv-75wg-m249, fixed in 11.0.1) that `npm audit` reports as 10 entries through ESLint 10 and typescript-eslint, which both require `minimatch@^10`. It is lint-time only with project-controlled globs; revisit when either toolchain moves to minimatch 11.
 6. **Playwright pinned at 1.58.0**: 1.64 dropped macOS 13 browser support, which the development machine runs. CI runners could use a newer version; revisit when the development machine moves to macOS 14+.
 7. **Repository license** remains a product-owner decision.
