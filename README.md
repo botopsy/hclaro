@@ -2,11 +2,11 @@
 
 A local, read-only workspace for Terraform and OpenTofu. Browse recorded resource instances, nested modules, and provider sources; search canonical addresses and inspect redacted attributes. No accounts, telemetry, external runtime assets, or infrastructure mutations.
 
-**Milestone 1 alpha.** Start with the synthetic demo. The production frontend source is implemented, but this checkout's bundled assets are an **offline verification preview** (see [verification status](docs/M01-verification.md)). npm dependency resolution, the full frontend checks, browser QA, and live loopback startup remain blocked in the development sandbox. This is not a verified release.
+**Milestone 1 alpha.** Start with the synthetic demo. The embedded UI is the production React/Vite build, and local tests, lint, build, live loopback demo and browser checks pass (see [verification status](docs/M01-verification.md)). Remote CI, Linux/Windows runtime checks and real Terraform/OpenTofu certification are still open, so treat this as an alpha, not a release.
 
 ## Run the isolated demo
 
-Go 1.24 or newer and Make are sufficient for the included preview:
+Go 1.26 or newer and Make are sufficient; the frontend is already built and embedded:
 
 ```sh
 make demo
@@ -18,7 +18,7 @@ Do not install the fake executable on your normal PATH.
 
 ## Build from source
 
-Build prerequisites: Go 1.24+, Node.js 22.12+ (Node 24 recommended), npm, and Make. Node is a **build tool only**. Go race tests also require a C compiler.
+Build prerequisites: Go 1.26+, Node.js 22.12+ (Node 24 recommended), npm, and Make. Node is a **build tool only**. Go race tests also require a C compiler.
 
 ```sh
 make install     # install frontend dependencies; requires npm registry access
@@ -27,9 +27,9 @@ make test        # Go race tests + Vitest
 make lint        # go vet + TypeScript + ESLint
 ```
 
-The first dependency installation must generate `web/package-lock.json`; review and commit that file, then use `npm ci --prefix web` for subsequent builds. A lockfile could not be generated in this sandbox because npm DNS is unavailable. Until it exists, the frontend dependency graph is not reproducibly locked. Direct dependency versions are pinned.
+`make install` runs `npm ci` against the committed `web/package-lock.json`. Update dependencies deliberately with `npm install --prefix web <pkg>@<version>` and commit the lockfile change.
 
-`make binary` builds from the already bundled assets without Node. It uses `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and a fixed version; rebuilding with the same Go toolchain, target, version, and assets produces the same binary bytes. `make build` replaces the preview assets with the requested React/Vite/Tailwind/shadcn/TanStack production bundle.
+`make binary` builds from the already bundled assets without Node. It uses `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and a fixed version; rebuilding with the same Go toolchain, target, version, and assets produces the same binary bytes. `make build` regenerates the embedded assets; Vite output is deterministic for the same lockfile, so rebuilding unchanged sources produces identical files.
 
 ## Use with an existing project
 
@@ -70,9 +70,9 @@ make dev
 
 This starts the **synthetic** backend at `127.0.0.1:9273` and Vite at `127.0.0.1:5173`; open the printed private URL. Vite proxies only same-machine, validated read-only requests; the backend still requires authorization. Neither server enables wildcard CORS. Production uses only the Go server and embedded assets.
 
-`make browser-test` builds an isolated HTTP fixture helper and runs Playwright against the real Go handler using intercepted requests. Install a browser first (`cd web && npx playwright install chromium`), or set `HCLARO_CHROME` to an installed Chrome executable. It checks rendering, copying, filters, themes, tablet overflow, secret boundaries, and a 1,000-instance search, and writes screenshots into `docs/screenshots/`. It never reaches a real engine or cloud account. This browser check has not passed in the sandbox: Chrome is denied permission to launch.
+`make browser-test` builds an isolated HTTP fixture helper and runs Playwright against the real Go handler using intercepted requests. Install a browser first (`cd web && npx playwright install chromium`; Playwright is held at 1.58 because newer releases do not support macOS 13), or set `HCLARO_CHROME` to an installed Chrome executable. It checks rendering, copying, filters, themes, tablet overflow, secret boundaries, and a 1,000-instance search, and writes screenshots into `docs/screenshots/`. It never reaches a real engine or cloud account.
 
-For a constrained environment with an existing dependency cache, `node scripts/build-offline-preview.mjs /path/to/node_modules` creates a labeled preview using cached React, Lucide, and esbuild. It substitutes local query and button adapters. **This is a verification aid, not the production Vite/TanStack/shadcn build.**
+`scripts/build-offline-preview.mjs` is a legacy fallback for environments without npm access. It produces a labeled preview with substitute adapters, not the production build; do not commit its output.
 
 ## Cross-platform binaries
 
@@ -107,7 +107,7 @@ The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**,
 | No snapshot / empty snapshot | These have separate states. Hclaro does not create or refresh state. |
 | Locked session | Open the latest private URL from the running terminal. |
 | Occupied port | Choose another `--port`, or omit the flag. |
-| Loopback permission denied | Run in an environment permitting listeners on 127.0.0.1. This sandbox denies them. |
+| Loopback permission denied | Run in an environment permitting listeners on 127.0.0.1. |
 | Redacted attributes | Sensitivity markers, credential-like names and values, and all unrecognized scalar attributes are masked on the server. There is no reveal/raw-state endpoint. |
 
 Metadata (addresses, module paths, provider sources, and selected identity attributes) must not be used to store secrets. Redaction is intentionally conservative and may hide useful values. See [security policy](SECURITY.md), [architecture](docs/architecture.md), and [M01 evidence and unresolved gates](docs/M01-verification.md).

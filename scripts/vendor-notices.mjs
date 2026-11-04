@@ -9,8 +9,12 @@ export async function writeNotices(modules,output,packages) {
   const directory=path.join(modules,name)
   const metadata=JSON.parse(await fs.readFile(path.join(directory,'package.json'),'utf8'))
   const filename=(await fs.readdir(directory)).find(file=>/^licen[cs]e(?:\.|$)/i.test(file))
-  if(!filename) throw new Error(`Missing license for ${name}`)
-  text+=`${name} ${metadata.version}\n${'='.repeat(60)}\n${await fs.readFile(path.join(directory,filename),'utf8')}\n\n`
+  // Some packages publish only a package.json license declaration; record it with the source repository.
+  const declared=typeof metadata.license==='string'?metadata.license:''
+  if(!filename && !declared) throw new Error(`Missing license for ${name}`)
+  const repository=typeof metadata.repository==='string'?metadata.repository:metadata.repository?.url||''
+  const body=filename?await fs.readFile(path.join(directory,filename),'utf8'):`License: ${declared} (declared in package.json; the published package ships no license file)\nSource: ${repository}\n`
+  text+=`${name} ${metadata.version}\n${'='.repeat(60)}\n${body}\n\n`
  }
  await fs.writeFile(path.join(output,'THIRD-PARTY-NOTICES.txt'),text)
 }

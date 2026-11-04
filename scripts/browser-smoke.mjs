@@ -43,7 +43,7 @@ try{
  await page.getByLabel('Search resources',{exact:true}).fill('quote')
  await page.getByRole('button',{name:/node.*aws_instance/}).waitFor()
  await page.getByRole('button',{name:/node.*aws_instance/}).click()
- await page.getByLabel('Resource inspector').getByText('node',{exact:true}).waitFor()
+ await page.getByLabel('Resource inspector').getByRole('heading',{name:'node',exact:true}).waitFor()
  await page.keyboard.press('Escape')
  await page.getByRole('button',{name:'Reset',exact:true}).click()
  await page.getByLabel('Filter resource mode').selectOption('data')

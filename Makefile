@@ -3,11 +3,13 @@ VERSION ?= 0.1.0-alpha.1
 EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 export GOCACHE := $(CURDIR)/.cache/go
 export CGO_ENABLED := 0
+# Explicit patterns keep Go tooling out of web/node_modules, which can ship Go sources.
+GO_PACKAGES := ./cmd/... ./internal/... ./scripts/...
 GOFLAGS_BUILD := -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(VERSION)"
 
 .PHONY: build binary frontend install test test-go test-web lint fmt demo dev cross browser-test
 install:
-	npm install --prefix web
+	npm ci --prefix web
 frontend:
 	npm --prefix web run build
 build: frontend binary
@@ -16,11 +18,11 @@ binary:
 
 test: test-go test-web
 test-go:
-	CGO_ENABLED=1 go test -race ./...
+	CGO_ENABLED=1 go test -race $(GO_PACKAGES)
 test-web:
 	npm --prefix web test
 lint:
-	go vet ./...
+	go vet $(GO_PACKAGES)
 	npm --prefix web run typecheck
 	npm --prefix web run lint
 fmt:
