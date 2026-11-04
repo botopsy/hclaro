@@ -32,6 +32,12 @@ Environment: macOS 13 amd64, Go 1.27.2, Node 24.2.0, npm 11.3.0, Playwright Chro
 - Go test/vet use explicit package patterns. `./...` previously descended into `web/node_modules`, which can contain third-party Go sources.
 - CI and `make install` use `npm ci` only.
 
+## Dependency update (in-major), 2026-11-04
+
+All direct dependencies moved to the newest release within their current major, except `@playwright/test` (held at 1.58.0, see open items) and `lucide-react`/`jsdom` (left for the major-upgrade phase). Notable runtime changes: React 19.3.1, TanStack Query 5.105.3, Tailwind CSS 4.3.4, tailwind-merge 3.7.0, Radix Slot 1.5.0. Re-ran `make test`, `make lint`, `make build` and `make browser-test`: all pass; screenshots unchanged apart from the snapshot timestamp. The JS bundle grew from 289 kB (90 kB gzip) to 322 kB (99 kB gzip), almost entirely from upstream react-dom 19.3 and query-core 5.105.
+
+`npm install` on npm 11.3.0 crashes in peer-set resolution (`Cannot read properties of null (reading 'edgesOut')`); the lockfile was regenerated with npm 11.6.2 via `npx -y npm@11.6.2 install`. `npm ci` with the bundled npm works.
+
 ## M01 task acceptance mapping
 
 | Task criterion | Evidence |
@@ -51,5 +57,6 @@ Environment: macOS 13 amd64, Go 1.27.2, Node 24.2.0, npm 11.3.0, Playwright Chro
 2. **Native browser auto-open** was not exercised; the demo uses `--no-browser`.
 3. **Cross-platform runtime**: Linux and Windows binaries compile but were not run.
 4. **Real compatibility**: no real Terraform/OpenTofu/backend certification. The supported version range is tested through synthetic JSON and fake executables only.
-5. **Dev-dependency advisories**: `npm audit --omit=dev` is clean. The full audit reports 15 advisories in build/test tooling only: critical in Vitest ≤4.1.10 (UI server/mocker file read), high in Vite ≤7.3.6 (dev server path traversal / `server.fs.deny` bypass), low in esbuild's Windows dev server, and moderate via minimatch in the ESLint toolchain. They affect `make dev` and test runs, not the embedded bundle. Patch fixes exist within the current majors (vite 7.3.7, vitest 4.1.12) and are the first item of the dependency-upgrade phase.
+5. **Dev-dependency advisories**: `npm audit --omit=dev` is clean. The critical Vitest and high Vite dev-server advisories were fixed by the in-major update (vite 7.3.7, vitest 4.1.12). Remaining: one moderate minimatch ReDoS reached through typescript-eslint (lint-time only, project-controlled globs) and one low esbuild serve-mode advisory on Windows (Vite does not use esbuild's server). Neither affects the embedded bundle.
+7. **Playwright pinned at 1.58.0**: 1.64 dropped macOS 13 browser support, which the development machine runs. CI runners could use a newer version; revisit when the development machine moves to macOS 14+.
 6. **Repository license** remains a product-owner decision.

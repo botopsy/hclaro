@@ -7,7 +7,8 @@
 - Fixed third-party notice generation for packages that declare a license without shipping a license file.
 - Fixed an ambiguous browser-test locator.
 - Scoped Go test/vet to project packages so `web/node_modules` is never compiled; CI and `make install` now use `npm ci` only.
-- Open: remote CI run, Linux/Windows runtime checks, real engine certification, dev-tool security patches (Vite/Vitest).
+- Updated frontend dependencies within their current majors, fixing critical/high Vitest and Vite dev-server advisories. Playwright held at 1.58 for macOS 13.
+- Open: remote CI run, Linux/Windows runtime checks, real engine certification.
 
 ## 0.1.0-alpha.1 — M1 implementation, verification incomplete
 
