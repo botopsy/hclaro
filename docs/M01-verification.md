@@ -68,9 +68,9 @@ Final pass from a clean `npm ci`: uncached Go race tests, Vitest, lint, build (d
 
 ## Open items
 
-1. **Remote CI** has not run. The workflow (Go 1.27.2, Node 24, SHA-pinned v7 actions, embedded-asset drift check on Linux) is unexecuted on Linux/Windows runners.
+1. **Remote CI** passed on ubuntu-24.04, macos-latest and windows-latest (run 41913110694): Go race tests, vet, typecheck, lint, Vitest, production build, embedded-asset drift check (Linux), host binary and Playwright browser checks. `ubuntu-latest` (26.04) is not used because Playwright 1.58 does not support it.
 2. **Native browser auto-open** was not exercised; the demo uses `--no-browser`.
-3. **Cross-platform runtime**: Linux and Windows binaries compile but were not run.
+3. **Cross-platform runtime**: CI runs tests and the browser checks on Linux and Windows, but the packaged binaries were not launched as an end user would on those systems.
 4. **Real compatibility**: no real Terraform/OpenTofu/backend certification. The supported version range is tested through synthetic JSON and fake executables only.
 5. **Dev-dependency advisories**: `npm audit --omit=dev` is clean. The critical Vitest and high Vite advisories were fixed in the in-major update; the esbuild advisory disappeared with Vite 8. Remaining: one moderate minimatch ReDoS (GHSA-g3hv-75wg-m249, fixed in 11.0.1) that `npm audit` reports as 10 entries through ESLint 10 and typescript-eslint, which both require `minimatch@^10`. It is lint-time only with project-controlled globs; revisit when either toolchain moves to minimatch 11.
 6. **Playwright pinned at 1.58.0**: 1.64 dropped macOS 13 browser support, which the development machine runs. CI runners could use a newer version; revisit when the development machine moves to macOS 14+.
