@@ -17,7 +17,7 @@ A local process that can inspect memory, modify executables, or read terminal/br
 
 Sensitive values should not appear in resource addresses/instance keys, module/provider identifiers or allowlisted identity metadata. No heuristic can identify every secret under a misleading key. The default masking policy is deliberately restrictive; it is not a promise that arbitrary identity metadata is safe to share publicly. Do not share the private session URL.
 
-Backend execution modes and unknown initialization metadata are reported conservatively. No real cloud, backend, engine version or operating-system runtime matrix has been certified yet. Browser/live-listener verification and the full production frontend build are blocked in the current development environment; see [M01 evidence](docs/M01-verification.md).
+Backend execution modes and unknown initialization metadata are reported conservatively. No real cloud, backend, engine version or operating-system runtime matrix has been certified yet. Local browser, live-listener and production-build checks pass; remote CI and non-macOS runtime checks are pending. See [M01 evidence](docs/M01-verification.md).
 
 ## Reporting
 

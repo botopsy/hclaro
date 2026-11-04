@@ -17,11 +17,9 @@ jobs:
         with:
           node-version: '24'
       - name: Install frontend dependencies
-        shell: bash
-        run: |
-          if [ -f web/package-lock.json ]; then npm ci --prefix web; else npm install --prefix web; fi
-      - run: go test -race ./...
-      - run: go vet ./...
+        run: npm ci --prefix web
+      - run: go test -race ./cmd/... ./internal/... ./scripts/...
+      - run: go vet ./cmd/... ./internal/... ./scripts/...
       - run: npm --prefix web run typecheck
       - run: npm --prefix web run lint
       - run: npm --prefix web test
@@ -41,6 +39,4 @@ jobs:
         if: always()
         with:
           name: evidence-${{ matrix.os }}
-          path: |
-            web/package-lock.json
-            docs/screenshots/
+          path: docs/screenshots/

@@ -1,77 +1,55 @@
 # M01 implementation and verification
 
-**Status: implementation delivered with an embedded offline preview; M1 release acceptance remains incomplete.** No real infrastructure, cloud accounts, remote state backends, init, plan, refresh, apply, destroy, import, replace, or state mutations were used during development.
+**Status: M1 local acceptance passed on the development machine (2026-11-04).** The embedded UI is the production React/Vite/Tailwind/TanStack build. Remaining gates are listed under [Open items](#open-items); the main ones are a first remote CI run and real engine/backend certification in an approved disposable environment.
 
-The backend, CLI, explorer source, synthetic fixtures, build tooling, and documentation are implemented. The full requested frontend dependency build and interactive runtime acceptance are blocked by the development sandbox. Do not describe this checkout as a verified production Vite/TanStack/shadcn alpha.
+No real infrastructure, cloud accounts, remote state backends, init, plan, refresh, apply, destroy, import, replace, or state mutations were used. Every engine execution used a mock adapter, a Go test executable, or the synthetic CLI in `scripts/fake-engine`.
 
 ## Evidence collected
 
-Environment: macOS amd64, Go 1.27.2, Node 24.2.0, npm 11.3.0. All engine executions in tests use a mock adapter, a Go test executable, or the explicitly synthetic CLI.
+Environment: macOS 13 amd64, Go 1.27.2, Node 24.2.0, npm 11.3.0, Playwright Chrome Headless Shell 145.
 
 | Check | Result |
 | --- | --- |
-| `make test-go` (`CGO_ENABLED=1 go test -race ./...`) | Passed: CLI arguments, deterministic engine selection, fake subprocesses/errors/cancellation, discovery, recursive parsing, indexing, redaction, HTTP security, and embedded assets. |
-| `go vet ./...` with workspace-local GOCACHE | Passed. |
-| `gofmt -l` over Go sources | Clean. |
-| Parser fuzzing, 5 seconds / 1 worker | Passed, approximately 26,500 executions. |
-| 316-instance fixture | Exact 315 managed + 1 data, 8 modules including root; nested module instances, count and quoted for_each addresses preserved. Every detail response checked for the planted secret. |
-| Generated 1,000-instance fixture | Parser count/uniqueness, actual handler search, 50-row page bound, and React server rendering passed. Interactive typing latency remains unverified. |
-| Sensitive data | Nested sensitivity maps/lists/whole values, escaped key names, heuristic masking, unknown scalar masking, safe diagnostics, and all resource detail responses covered. The canary is intentionally present only in synthetic fixture/test/helper source. It is absent from the production binary. |
-| Host/Origin/session | Missing/bad credentials, wrong schemes, forged hosts/origins, cross-site fetch metadata, request bodies/chunking and excessive queries rejected; no wildcard CORS. Unknown operation routes return 404 and POST is refused. |
-| Subprocess policy | Only version/workspace/show methods exist. Inherited output overrides rejected; TF_LOG variables suppressed; secret-bearing stderr discarded. |
-| ESLint + React hooks | Passed using existing cached official ESLint/TypeScript-ESLint/hooks libraries. This is supplemental; the manifest's npm-installed lint toolchain is unavailable. |
-| Offline frontend compiler | Passed using cached React 19.3.0, Lucide 1.56.0 and esbuild 0.28.2. Explicit local query/button adapters substitute missing packages. Bundled third-party license notices are included. |
-| Supplemental real React rendering | Passed with responses from the real Go HTTP handler: resource table, 50-row bound, redacted attribute JSON, empty/error states, HTML escaping and generated 1,000-instance data. Uses the preview query adapter; does not replace Vitest or browser testing. |
-| Native binary, `--help`, `--version` | Build and flag execution passed. Embedded static references are checked without Node by a Go test. |
-| Identical binary rebuild | Identical bytes observed with the same toolchain, assets, version and build flags. This does not establish a reproducible frontend dependency graph. |
-| `make cross` | Passed: macOS amd64/arm64, Linux amd64/arm64, Windows amd64, all with embedded preview assets. These binaries were not run on foreign operating systems. |
-| Fixture parser benchmark | Approximately 8.7 ms and 1.47 MB allocated for parsing, redacting and indexing 316 instances on the development machine. This is not a browser or backend-network benchmark. |
+| `npm ci --prefix web` | Clean install from the committed `web/package-lock.json`. |
+| `make test` | Passed. Go race tests for CLI, engine, discovery, parsing/redaction, HTTP security and embedded assets; Vitest 6/6. |
+| `make lint` | Passed: `go vet`, `tsc -b`, ESLint with zero warnings. `gofmt -l` clean. |
+| `make build` | Passed: TypeScript + Vite production bundle (`assets/index-*.js` 289 kB, 90 kB gzip; `index-*.css` 28 kB), third-party notices, embedded Go binary. |
+| Bundle content | Only `/`-relative asset references (enforced by `internal/ui` test). The only URL strings in the JS are the SVG/XHTML namespaces and React's error-decoder link; none are fetched. |
+| Reproducibility | Two Vite builds produced identical asset hashes; two `make binary` runs produced identical binary bytes with the same toolchain, target and version. |
+| `make cross` | Passed: macOS amd64/arm64, Linux amd64/arm64, Windows amd64. Not executed on foreign operating systems. |
+| Canary in binaries | `DO_NOT_LEAK_HCLARO_TEST_SECRET` absent from the host binary and all five cross binaries. |
+| `--help`, `--version` | All documented flags shown; version `0.1.0-alpha.1`. |
+| Live synthetic demo (`make demo` equivalent) | Server bound to `127.0.0.1` on a dynamic port and printed a fragment-credential URL. Index 200; API 200 with the session credential, 401 without, 403 for a forged `Host` or `Origin`, 405 for `POST`. |
+| Live canary sweep | All 316 resource detail responses, both list pages and the workspace response fetched over loopback: the canary (318 occurrences in the fixture) appeared 0 times; 633 redaction markers. Server log contained no canary. |
+| Ctrl+C | `SIGINT` stopped the server cleanly. |
+| `make browser-test` | Passed: rendering, real Go handler redaction, inspector, copy address / copy redacted JSON, quoted `for_each` keys, filters, overview, light/dark themes, tablet layout, 1,000-resource search, no external requests. Screenshots in `docs/screenshots/`. |
+| Parser fuzzing / benchmark (previous run) | Fuzzing ~26,500 executions; parse+redact+index of 316 instances ~8.7 ms. Not rerun for this update. |
 
-## Explicit blockers
+## Fixes made while closing M01
 
-1. **npm access:** `npm install --prefix web` fails with `ENOTFOUND registry.npmjs.org`. No dependency lockfile could be generated. Direct versions are pinned; transitive resolution and reproducibility are unresolved. `make lint` reaches TypeScript and fails because `tsc` is unavailable; `make test-web` fails because `vitest` is unavailable; `make frontend`/the production build cannot run. The React/Vite/Tailwind/shadcn/TanStack implementation source is present, but that combination has not been built or tested here.
-2. **Loopback permission:** `make demo` reaches startup and fails with “loopback TCP is denied by this environment; Hclaro requires permission to listen on 127.0.0.1”. A valid disposable fixture launch, browser auto-open, and Ctrl+C shutdown through a live TCP server remain unverified. Handler/process cancellation tests pass without a listener.
-3. **Browser permission:** Playwright was attempted with installed Chrome, but the browser aborts under the sandbox (`SIGABRT` / permission errors). Interactive search/filter/copy, focus behavior, theme changes, tablet layout, screenshots, and the browser smoke suite remain unverified. No screenshots are claimed.
-4. **Real compatibility:** No real engine/provider/backend certification was attempted. The version range is an explicit intended read-only subset, tested through synthetic JSON/fake executables. Remote execution is never enabled for mutation.
+- `scripts/vendor-notices.mjs` failed because `@radix-ui/react-compose-refs` publishes no license file. It now records the license declared in `package.json` with the source repository.
+- `scripts/browser-smoke.mjs` used an ambiguous text locator (the inspector heading and a JSON value both read `node`). It now targets the heading role.
+- Go test/vet use explicit package patterns. `./...` previously descended into `web/node_modules`, which can contain third-party Go sources.
+- CI and `make install` use `npm ci` only.
 
 ## M01 task acceptance mapping
 
-| Task criterion | Evidence / remaining gate |
+| Task criterion | Evidence |
 | --- | --- |
-| 1. Exact instance counts and addresses | Parser and API tests pass; 316 instances with root, child, nested, indexed and data resources. |
-| 2. Search/filter about 1,000 instances | Actual handler search and bounded rendering pass; browser responsiveness is blocked. |
-| 3. Missing initialization / CLI versus empty | Workspace regressions and error/empty rendering pass; missing state and unavailable state have separate diagnostics. |
-| 4. Browse without mutation/automatic plan/refresh | API has no engine reference; fixed read-only adapter methods and endpoint/method regressions pass. Live navigation blocked. |
-| 5. Canary absent from API/UI/logs | Every fixture detail response and rendered redacted JSON checked; secret-bearing subprocess stderr withheld. Live browser/server logs blocked. |
-| 6. Reject invalid Host/Origin/session | Security and API tests pass. |
-| 7. Embedded cross-platform output | All five targets compile with preview assets; the production frontend build and OS runtime certification are unresolved. |
-| 8. Documentation, tests and builds complete | Go/race/vet, supplemental frontend checks and preview builds pass. Full npm-based checks/build and runtime gates remain blocked as described above. |
+| 1. Exact instance counts and addresses | Parser/API tests; UI shows 315 managed + 1 data, 7 child modules, indexed and quoted `for_each` addresses. |
+| 2. Search/filter about 1,000 instances | Browser test searches a generated 1,000-instance fixture through the real handler. |
+| 3. Missing initialization / CLI versus empty | Workspace regression tests and distinct empty/error rendering tests. |
+| 4. Browse without mutation, automatic plan or refresh | Fixed read-only adapter methods; live POST returns 405; unknown routes 404. |
+| 5. Canary absent from API/UI/logs | Live loopback sweep, browser body/clipboard checks, server log and binaries all clean. |
+| 6. Reject invalid Host/Origin/session | Unit tests and live loopback probes. |
+| 7. Embedded cross-platform output | Production assets embedded; five targets compile. |
+| 8. Documentation, tests and builds complete | All local checks above pass. |
 
-## Changed and added files
+## Open items
 
-| Area | Files |
-| --- | --- |
-| CLI | `cmd/hclaro/main.go`, `internal/cli/cli.go`, CLI tests, `go.mod` |
-| Engine and discovery | `internal/engine/engine.go`, `internal/workspace/workspace.go`, fake-process/discovery tests |
-| Parsing and security | `internal/state/state.go`, `internal/security/security.go`, parser/fuzz/security tests |
-| API and embedding | `internal/api/api.go`, API tests, `internal/ui/embed.go`, embedded-asset test, `internal/ui/dist/*` |
-| Frontend | `web/package.json`, TypeScript/Vite/ESLint configuration, entry HTML/favicon, `web/src/App.tsx`, `api.ts`, `types.ts`, JSON viewer, shadcn-style Button, stylesheet and component tests |
-| Synthetic fixtures | `fixtures/state.json`, `empty.json`, `embed.go`, isolated project marker and backend metadata |
-| Tooling | `Makefile`, `.gitignore`, fake-engine/fixture-HTTP helpers, development server, browser suite, explicit offline-preview/render checks, license-notice generator, CI configuration |
-| Documentation | Rewritten `README.md`, architecture notes, this evidence ledger, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md` |
-
-The PRD, agent rules and later milestone task files were preserved. The repository's own license decision remains deferred to the product owner. CI is configured but was not executed remotely.
-
-## Safe completion sequence on an unrestricted development machine
-
-```sh
-make install
-# Review and commit the generated web/package-lock.json; use npm ci thereafter.
-make test
-make lint
-make build
-make cross
-make demo
-```
-
-The demo is synthetic and never selects a real engine. Separately install a Playwright browser and run `make browser-test`. Check both themes and tablet sizing, command-search focus, selection/scroll preservation, copying and redaction; then verify native browser auto-open and Ctrl+C in the disposable fixture. The cross-platform binaries need OS runtime validation. Real backend/provider certification requires a separately approved disposable setup, never the user's infrastructure.
+1. **Remote CI** has not run. The workflow is updated but unexecuted on Linux/Windows runners.
+2. **Native browser auto-open** was not exercised; the demo uses `--no-browser`.
+3. **Cross-platform runtime**: Linux and Windows binaries compile but were not run.
+4. **Real compatibility**: no real Terraform/OpenTofu/backend certification. The supported version range is tested through synthetic JSON and fake executables only.
+5. **Dev-dependency advisories**: `npm audit --omit=dev` is clean. The full audit reports 15 advisories in build/test tooling only: critical in Vitest ≤4.1.10 (UI server/mocker file read), high in Vite ≤7.3.6 (dev server path traversal / `server.fs.deny` bypass), low in esbuild's Windows dev server, and moderate via minimatch in the ESLint toolchain. They affect `make dev` and test runs, not the embedded bundle. Patch fixes exist within the current majors (vite 7.3.7, vitest 4.1.12) and are the first item of the dependency-upgrade phase.
+6. **Repository license** remains a product-owner decision.
