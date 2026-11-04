@@ -6,7 +6,7 @@ No real infrastructure, cloud accounts, remote state backends, init, plan, refre
 
 ## Evidence collected
 
-Environment: macOS 13 amd64, Go 1.27.2, Node 24.2.0, npm 11.3.0, Playwright Chrome Headless Shell 145.
+Environment: macOS 13 amd64, Go 1.27.2 (module minimum `go 1.26.0`), Node 24.2.0, npm 11.3.0, Playwright Chrome Headless Shell 145.
 
 | Check | Result |
 | --- | --- |
@@ -53,10 +53,10 @@ All direct dependencies moved to the newest release within their current major, 
 
 ## Open items
 
-1. **Remote CI** has not run. The workflow is updated but unexecuted on Linux/Windows runners.
+1. **Remote CI** has not run. The workflow (Go 1.27.2, Node 24, SHA-pinned v7 actions, embedded-asset drift check on Linux) is unexecuted on Linux/Windows runners.
 2. **Native browser auto-open** was not exercised; the demo uses `--no-browser`.
 3. **Cross-platform runtime**: Linux and Windows binaries compile but were not run.
 4. **Real compatibility**: no real Terraform/OpenTofu/backend certification. The supported version range is tested through synthetic JSON and fake executables only.
 5. **Dev-dependency advisories**: `npm audit --omit=dev` is clean. The critical Vitest and high Vite dev-server advisories were fixed by the in-major update (vite 7.3.7, vitest 4.1.12). Remaining: one moderate minimatch ReDoS reached through typescript-eslint (lint-time only, project-controlled globs) and one low esbuild serve-mode advisory on Windows (Vite does not use esbuild's server). Neither affects the embedded bundle.
-7. **Playwright pinned at 1.58.0**: 1.64 dropped macOS 13 browser support, which the development machine runs. CI runners could use a newer version; revisit when the development machine moves to macOS 14+.
-6. **Repository license** remains a product-owner decision.
+6. **Playwright pinned at 1.58.0**: 1.64 dropped macOS 13 browser support, which the development machine runs. CI runners could use a newer version; revisit when the development machine moves to macOS 14+.
+7. **Repository license** remains a product-owner decision.

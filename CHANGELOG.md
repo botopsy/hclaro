@@ -8,6 +8,7 @@
 - Fixed an ambiguous browser-test locator.
 - Scoped Go test/vet to project packages so `web/node_modules` is never compiled; CI and `make install` now use `npm ci` only.
 - Updated frontend dependencies within their current majors, fixing critical/high Vitest and Vite dev-server advisories. Playwright held at 1.58 for macOS 13.
+- Raised the Go minimum to 1.26. Pinned CI actions to v7 release commits, disabled credential persistence and dependency caches, and added an embedded-asset drift check.
 - Open: remote CI run, Linux/Windows runtime checks, real engine certification.
 
 ## 0.1.0-alpha.1 — M1 implementation, verification incomplete

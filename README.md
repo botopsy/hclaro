@@ -6,7 +6,7 @@ A local, read-only workspace for Terraform and OpenTofu. Browse recorded resourc
 
 ## Run the isolated demo
 
-Go 1.24 or newer and Make are sufficient; the frontend is already built and embedded:
+Go 1.26 or newer and Make are sufficient; the frontend is already built and embedded:
 
 ```sh
 make demo
@@ -18,7 +18,7 @@ Do not install the fake executable on your normal PATH.
 
 ## Build from source
 
-Build prerequisites: Go 1.24+, Node.js 22.12+ (Node 24 recommended), npm, and Make. Node is a **build tool only**. Go race tests also require a C compiler.
+Build prerequisites: Go 1.26+, Node.js 22.12+ (Node 24 recommended), npm, and Make. Node is a **build tool only**. Go race tests also require a C compiler.
 
 ```sh
 make install     # install frontend dependencies; requires npm registry access
