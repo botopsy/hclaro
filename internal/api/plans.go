@@ -82,6 +82,8 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		switch {
 		case errors.Is(err, operations.ErrBusy):
 			errorJSON(w, 409, "operation_running")
+		case errors.Is(err, operations.ErrLoading):
+			errorJSON(w, 409, "workspace_loading")
 		case errors.Is(err, operations.ErrUnavailable):
 			errorJSON(w, 409, "planning_unavailable")
 		case errors.Is(err, operations.ErrVarFiles):

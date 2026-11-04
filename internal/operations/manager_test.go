@@ -258,6 +258,10 @@ func TestWorkspaceChangeAndAvailability(t *testing.T) {
 			t.Fatalf("%+v: %v", info, err)
 		}
 	}
+	loading := workspace.New(workspace.Info{Project: "x", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
+	if _, err := NewManager(loading, &engine.Fake{}, t.TempDir()).StartPlan(nil); !errors.Is(err, ErrLoading) {
+		t.Fatalf("plan accepted while the workspace was loading: %v", err)
+	}
 	// A project with no recorded state can still be planned.
 	m, _ = setup(t, &engine.Fake{StateJSON: fixtures.Empty, PlanJSON: fixtures.PlanNoChanges}, workspace.Info{})
 	if op, err := m.StartPlan(nil); err != nil || wait(t, m, op.ID).Status != Succeeded {

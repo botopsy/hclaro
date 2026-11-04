@@ -32,6 +32,7 @@ const (
 var (
 	ErrBusy        = errors.New("another operation is running")
 	ErrUnavailable = errors.New("planning is unavailable for this workspace")
+	ErrLoading     = errors.New("the workspace is still being read")
 	ErrVarFiles    = errors.New("invalid variable file selection")
 	ErrNotFound    = errors.New("operation not found")
 	ErrNotRunning  = errors.New("operation is not running")
@@ -148,7 +149,10 @@ func (m *Manager) StartPlan(varFiles []string) (Operation, error) {
 		return Operation{}, ErrBusy
 	}
 	snap := m.store.Get()
-	if m.planner == nil || !snap.Info.Capabilities.CanPlan || snap.Status == "loading" {
+	if snap.Status == "loading" {
+		return Operation{}, ErrLoading
+	}
+	if m.planner == nil || !snap.Info.Capabilities.CanPlan {
 		return Operation{}, ErrUnavailable
 	}
 	allowed := workspace.VarFiles(m.root)

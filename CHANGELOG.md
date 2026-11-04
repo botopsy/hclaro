@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — M2 plan visualizer
+
+- Explicit plan runs from the UI with a preflight dialog: `plan -input=false -json -out=<private temp>`, then `show -json`; optional variable files from the project root.
+- Plan review: per-action counts and filters, complete change list (including collateral deletes, reads, moves, imports and deposed objects), attribute diffs with sensitive / known-after-apply / forces-replacement markers, outputs, drift, plan SHA-256 and configuration-change warning.
+- Live sanitized progress over SSE with bounded replay, cancellation (interrupt, then kill after 15 s), one-hour timeout and shutdown cleanup. Saved plans are deleted as soon as review data is extracted.
+- Operations view with session history.
+- Two CSRF-protected POST routes (start plan, cancel). No apply endpoint.
+
+
 ## Unreleased — M1 verification closed locally
 
 - Embedded the production Vite build in place of the offline preview.
