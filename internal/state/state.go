@@ -155,7 +155,8 @@ var safeKeys = map[string]bool{
 	"allocated_storage": true, "multi_az": true, "encrypted": true,
 }
 
-func riskyKey(key string) bool {
+// RiskyKey reports attribute names that are always redacted, whatever their value.
+func RiskyKey(key string) bool {
 	key = strings.ToLower(key)
 	for _, part := range []string{"secret", "password", "passwd", "token", "credential", "private", "access_key", "api_key", "connection", "user_data", "certificate", "kubeconfig", "authorization"} {
 		if strings.Contains(key, part) {
@@ -176,8 +177,12 @@ func Suspicious(value string) bool {
 	return strings.Count(value, ".") == 2 && strings.HasPrefix(value, "eyJ")
 }
 
+// Redact applies the state redaction policy to a value with its sensitivity marker.
+// key is the attribute name the value belongs to; only allowlisted keys reveal scalars.
+func Redact(value, marker any, key string) any { return redact(value, marker, key, 0) }
+
 func redact(value, marker any, key string, depth int) any {
-	if marker == true || riskyKey(key) || depth > 64 {
+	if marker == true || RiskyKey(key) || depth > 64 {
 		return Redacted
 	}
 	switch v := value.(type) {

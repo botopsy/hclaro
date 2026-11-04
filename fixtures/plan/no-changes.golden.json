@@ -1,0 +1,51 @@
+{
+  "formatVersion": "1.2",
+  "engineVersion": "1.9.8",
+  "timestamp": "2026-11-05T09:00:00Z",
+  "errored": false,
+  "summary": {
+    "no-op": 1
+  },
+  "changes": [
+    {
+      "id": "7bd59af9ade4306e034fee49c07cb299",
+      "address": "aws_vpc.main",
+      "module": "",
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "main",
+      "provider": "registry.terraform.io/hashicorp/aws",
+      "actions": [
+        "no-op"
+      ],
+      "action": "no-op",
+      "attributeChanges": 0
+    }
+  ],
+  "drift": [],
+  "outputs": [],
+  "warnings": [],
+  "details": {
+    "7bd59af9ade4306e034fee49c07cb299": {
+      "id": "7bd59af9ade4306e034fee49c07cb299",
+      "address": "aws_vpc.main",
+      "module": "",
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "main",
+      "provider": "registry.terraform.io/hashicorp/aws",
+      "actions": [
+        "no-op"
+      ],
+      "action": "no-op",
+      "attributeChanges": 0,
+      "attributes": [],
+      "before": {
+        "id": "vpc-1"
+      },
+      "after": {
+        "id": "vpc-1"
+      }
+    }
+  }
+}

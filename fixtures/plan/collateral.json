@@ -1,0 +1,129 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_changes": [
+    {
+      "address": "aws_instance.web[0]",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create",
+          "delete"
+        ],
+        "before": {
+          "id": "i-1",
+          "ami": "ami-a",
+          "instance_type": "t3.small"
+        },
+        "after": {
+          "ami": "ami-b",
+          "instance_type": "t3.small"
+        },
+        "after_unknown": {
+          "id": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {},
+        "replace_paths": [
+          [
+            "ami"
+          ]
+        ]
+      },
+      "index": 0,
+      "action_reason": "replace_by_request"
+    },
+    {
+      "address": "aws_instance.web[1]",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create",
+          "delete"
+        ],
+        "before": {
+          "id": "i-2",
+          "ami": "ami-a",
+          "instance_type": "t3.small"
+        },
+        "after": {
+          "ami": "ami-b",
+          "instance_type": "t3.small"
+        },
+        "after_unknown": {
+          "id": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {},
+        "replace_paths": [
+          [
+            "ami"
+          ]
+        ]
+      },
+      "index": 1,
+      "action_reason": "replace_by_request"
+    },
+    {
+      "address": "aws_lb_target_group_attachment.web[2]",
+      "mode": "managed",
+      "type": "aws_lb_target_group_attachment",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "tga-3",
+          "port": 80
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": false
+      },
+      "index": 2,
+      "action_reason": "delete_because_count_index"
+    },
+    {
+      "address": "aws_lb.edge",
+      "mode": "managed",
+      "type": "aws_lb",
+      "name": "edge",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "lb-1",
+          "name": "edge"
+        },
+        "after": {
+          "id": "lb-1",
+          "name": "edge"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-05T09:00:00Z",
+  "applyable": true,
+  "complete": true,
+  "errored": false
+}

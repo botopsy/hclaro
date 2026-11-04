@@ -24,7 +24,9 @@ type Adapter interface {
 
 type CLI struct{ Name, Executable, Root string }
 
-var ErrUnsafeArgs = errors.New("inherited TF_CLI_ARGS contains unsupported arguments; M1 accepts only -no-color")
+var ErrUnsafeArgs = errors.New("inherited TF_CLI_ARGS contains unsupported arguments; only -no-color is accepted")
+
+const readTimeout = 45 * time.Second
 
 // Detect resolves an executable once. No executable path is accepted from HTTP.
 func Detect(root, preferred string) (*CLI, error) {
@@ -56,9 +58,9 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (c *CLI) run(ctx context.Context, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
+// command applies the shared subprocess policy: argv only, the project root as working
+// directory, no inherited logging and only -no-color from TF_CLI_ARGS.
+func (c *CLI) command(ctx context.Context, args ...string) (*exec.Cmd, error) {
 	cmd := exec.CommandContext(ctx, c.Executable, args...)
 	cmd.Dir = c.Root
 	cmd.WaitDelay = time.Second
@@ -79,6 +81,16 @@ func (c *CLI) run(ctx context.Context, args ...string) ([]byte, error) {
 		cmd.Env = append(cmd.Env, item)
 	}
 	cmd.Env = append(cmd.Env, "TF_IN_AUTOMATION=1", "CHECKPOINT_DISABLE=1", "TF_LOG=OFF")
+	return cmd, nil
+}
+
+func (c *CLI) run(ctx context.Context, timeout time.Duration, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd, err := c.command(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
 	buf := &boundedBuffer{max: state.MaxBytes}
 	cmd.Stdout = buf
 	// Never return raw stderr: even diagnostics from read-only commands can contain secrets.
@@ -105,7 +117,7 @@ func Supported(name, version string) bool {
 }
 
 func (c *CLI) Version(ctx context.Context) (string, error) {
-	b, err := c.run(ctx, "version", "-json")
+	b, err := c.run(ctx, readTimeout, "version", "-json")
 	if err != nil {
 		return "", err
 	}
@@ -125,7 +137,7 @@ func (c *CLI) Version(ctx context.Context) (string, error) {
 	return v.Terraform, nil
 }
 func (c *CLI) Workspace(ctx context.Context) (string, error) {
-	b, err := c.run(ctx, "workspace", "show")
+	b, err := c.run(ctx, readTimeout, "workspace", "show")
 	if err != nil {
 		return "", err
 	}
@@ -135,7 +147,9 @@ func (c *CLI) Workspace(ctx context.Context) (string, error) {
 	}
 	return name, nil
 }
-func (c *CLI) State(ctx context.Context) ([]byte, error) { return c.run(ctx, "show", "-json") }
+func (c *CLI) State(ctx context.Context) ([]byte, error) {
+	return c.run(ctx, readTimeout, "show", "-json")
+}
 
 // Mock is intentionally injectable by tests, never selectable through the public API.
 type Mock struct {

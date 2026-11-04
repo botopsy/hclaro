@@ -1,0 +1,62 @@
+{
+  "formatVersion": "1.2",
+  "engineVersion": "1.9.8",
+  "timestamp": "2026-11-05T09:00:00Z",
+  "errored": true,
+  "summary": {
+    "update": 1
+  },
+  "changes": [
+    {
+      "id": "7bd59af9ade4306e034fee49c07cb299",
+      "address": "aws_vpc.main",
+      "module": "",
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "main",
+      "provider": "registry.terraform.io/hashicorp/aws",
+      "actions": [
+        "update"
+      ],
+      "action": "update",
+      "attributeChanges": 1
+    }
+  ],
+  "drift": [],
+  "outputs": [],
+  "warnings": [
+    "The engine reported this plan as errored. It is incomplete and must not be applied."
+  ],
+  "details": {
+    "7bd59af9ade4306e034fee49c07cb299": {
+      "id": "7bd59af9ade4306e034fee49c07cb299",
+      "address": "aws_vpc.main",
+      "module": "",
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "main",
+      "provider": "registry.terraform.io/hashicorp/aws",
+      "actions": [
+        "update"
+      ],
+      "action": "update",
+      "attributeChanges": 1,
+      "attributes": [
+        {
+          "path": "cidr_block",
+          "before": "10.0.0.0/16",
+          "after": "10.1.0.0/16",
+          "kind": "changed"
+        }
+      ],
+      "before": {
+        "cidr_block": "10.0.0.0/16",
+        "id": "vpc-1"
+      },
+      "after": {
+        "cidr_block": "10.1.0.0/16",
+        "id": "vpc-1"
+      }
+    }
+  }
+}

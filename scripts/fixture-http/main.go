@@ -3,18 +3,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"hclaro/fixtures"
 	"hclaro/internal/api"
 	"hclaro/internal/engine"
+	"hclaro/internal/operations"
 	"hclaro/internal/ui"
 	"hclaro/internal/workspace"
 	"io"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -34,8 +37,28 @@ func main() {
 		input, _ = json.Marshal(map[string]any{"format_version": "1.0", "values": map[string]any{"root_module": map[string]any{"resources": resources}}})
 	}
 	store := workspace.New(workspace.Info{Project: "platform-infra", Initialized: true, Backend: "local", ExecutionMode: "local-cli", Warnings: []string{"Synthetic fixture. Recorded state, not live cloud inventory."}})
-	store.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo", JSON: input}, "terraform")
-	handler := api.Handler(store, ui.Assets(), "127.0.0.1:9273", strings.Repeat("a", 64), "test")
+	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: input, PlanJSON: fixtures.PlanAllActions, Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n"))}
+	store.Load(context.Background(), fake, "terraform")
+	// Each request runs in a fresh process, so a completed plan is recreated with
+	// deterministic IDs before handling it.
+	temp, err := os.MkdirTemp("", "hclaro-fixture-")
+	if err != nil {
+		os.Exit(1)
+	}
+	defer os.RemoveAll(temp)
+	manager := operations.NewManager(store, fake, temp)
+	manager.TempDir = temp
+	next := 0
+	manager.NewID = func() string { next++; return fmt.Sprintf("%032x", next) }
+	if op, err := manager.StartPlan(nil); err == nil {
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+			if current, _, _ := manager.Operation(op.ID); current.Status != operations.Running {
+				break
+			}
+		}
+	}
+	defer manager.Close(5 * time.Second)
+	handler := api.Handler(store, manager, ui.Assets(), "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
 	r := httptest.NewRequest(request.Method, "http://127.0.0.1:9273"+request.Path, nil)
 	for k, v := range request.Headers {
 		r.Header.Set(k, v)
