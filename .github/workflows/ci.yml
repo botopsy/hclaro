@@ -6,8 +6,11 @@ jobs:
   verify:
     runs-on: ${{ matrix.os }}
     strategy:
+      # Report every OS on failure instead of cancelling the rest.
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Ubuntu is pinned: Playwright 1.58 (held for macOS 13 development) does not support ubuntu-latest (26.04).
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     steps:
       # Actions are pinned to release commits; the comment names the release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
