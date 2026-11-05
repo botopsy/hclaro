@@ -244,10 +244,11 @@ func Parse(input []byte) (Review, error) {
 		out := Output{Name: name, Actions: actions(raw.Actions), Action: Classify(raw.Actions)}
 		out.Sensitive = raw.BeforeSensitive == true || raw.AfterSensitive == true
 		out.Unknown = raw.AfterUnknown == true
-		// Output values have arbitrary names and are often secrets: only structure is shown.
-		out.Before = state.Redact(raw.Before, raw.BeforeSensitive, "")
+		// Outputs follow the attribute policy, with the output name as the key: sensitive,
+		// secret-named and credential-shaped values stay hidden.
+		out.Before = state.Redact(raw.Before, raw.BeforeSensitive, name)
 		// after_unknown can mark parts of a value, such as elements of a list of new IDs.
-		out.After = overlayUnknown(state.Redact(raw.After, raw.AfterSensitive, ""), raw.AfterUnknown, 0)
+		out.After = overlayUnknown(state.Redact(raw.After, raw.AfterSensitive, name), raw.AfterUnknown, 0)
 		review.Outputs = append(review.Outputs, out)
 	}
 	if review.Summary[Unknown] > 0 {
@@ -293,7 +294,7 @@ func normalize(raw rawResourceChange, drift bool) (Detail, error) {
 	c := Change{
 		ID: hex.EncodeToString(hash[:16]), Address: raw.Address, PreviousAddress: raw.PreviousAddress,
 		Module: raw.Module, Mode: raw.Mode, Type: raw.Type, Name: raw.Name,
-		Index: state.Redact(raw.Index, nil, "index"), Provider: raw.Provider, Deposed: raw.Deposed,
+		Index: state.InstanceKey(raw.Index), Provider: raw.Provider, Deposed: raw.Deposed,
 		Actions: actions(raw.Change.Actions), Action: Classify(raw.Change.Actions),
 		Importing: raw.Change.Importing != nil,
 	}
@@ -381,11 +382,11 @@ func row(ch rawChange, path []any, before, after any, unknown bool) AttributeCha
 	r := AttributeChange{Path: render(path), Unknown: unknown}
 	bs, as := sensitiveAt(ch.BeforeSensitive, path), sensitiveAt(ch.AfterSensitive, path)
 	r.Sensitive = bs || as
-	r.Before = leaf(before, path, bs)
+	r.Before = leaf(before, path, markerAt(ch.BeforeSensitive, path))
 	if unknown {
 		r.After = KnownAfterApply
 	} else {
-		r.After = leaf(after, path, as)
+		r.After = leaf(after, path, markerAt(ch.AfterSensitive, path))
 	}
 	switch {
 	case unknown:
@@ -405,13 +406,11 @@ func row(ch rawChange, path []any, before, after any, unknown bool) AttributeCha
 	return r
 }
 
-// leaf redacts a value at a path: any risky ancestor key or sensitivity marker hides it.
-func leaf(value any, path []any, sensitive bool) any {
+// leaf redacts a value at a path: any risky ancestor key hides it, and the sensitivity
+// marker at the path is applied to the value, including markers nested inside it.
+func leaf(value any, path []any, marker any) any {
 	if value == nil {
 		return nil
-	}
-	if sensitive {
-		return state.Redacted
 	}
 	key := ""
 	for _, segment := range path {
@@ -422,7 +421,31 @@ func leaf(value any, path []any, sensitive bool) any {
 			key = k
 		}
 	}
-	return state.Redact(value, nil, key)
+	return state.Redact(value, marker, key)
+}
+
+// markerAt returns the sensitivity marker for the value at path: true when the path or
+// any ancestor is marked, otherwise the nested marker tree (or nil).
+func markerAt(marker any, path []any) any {
+	for _, segment := range path {
+		if marker == true {
+			return true
+		}
+		switch m := marker.(type) {
+		case map[string]any:
+			k, _ := segment.(string)
+			marker = m[k]
+		case []any:
+			i, ok := segment.(int)
+			if !ok || i >= len(m) {
+				return nil
+			}
+			marker = m[i]
+		default:
+			return nil
+		}
+	}
+	return marker
 }
 
 func sensitiveAt(marker any, path []any) bool {

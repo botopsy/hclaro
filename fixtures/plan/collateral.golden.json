@@ -97,8 +97,8 @@
       "attributes": [
         {
           "path": "ami",
-          "before": "[redacted]",
-          "after": "[redacted]",
+          "before": "ami-a",
+          "after": "ami-b",
           "kind": "changed",
           "forcesReplacement": true
         },
@@ -111,12 +111,12 @@
         }
       ],
       "before": {
-        "ami": "[redacted]",
+        "ami": "ami-a",
         "id": "i-1",
         "instance_type": "t3.small"
       },
       "after": {
-        "ami": "[redacted]",
+        "ami": "ami-b",
         "id": "[known after apply]",
         "instance_type": "t3.small"
       }
@@ -175,8 +175,8 @@
       "attributes": [
         {
           "path": "ami",
-          "before": "[redacted]",
-          "after": "[redacted]",
+          "before": "ami-a",
+          "after": "ami-b",
           "kind": "changed",
           "forcesReplacement": true
         },
@@ -189,12 +189,12 @@
         }
       ],
       "before": {
-        "ami": "[redacted]",
+        "ami": "ami-a",
         "id": "i-2",
         "instance_type": "t3.small"
       },
       "after": {
-        "ami": "[redacted]",
+        "ami": "ami-b",
         "id": "[known after apply]",
         "instance_type": "t3.small"
       }

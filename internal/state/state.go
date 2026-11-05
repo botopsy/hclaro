@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -121,7 +122,7 @@ func Parse(input []byte) (Index, error) {
 				}
 			}
 			hash := sha256.Sum256([]byte(r.Address))
-			resource := Resource{ID: hex.EncodeToString(hash[:16]), Address: r.Address, Mode: r.Mode, Type: r.Type, Name: r.Name, Provider: r.Provider, Module: m.Address, Index: redact(r.Index, nil, "index", 0), Attributes: redact(r.Values, r.Sensitive, "", 0)}
+			resource := Resource{ID: hex.EncodeToString(hash[:16]), Address: r.Address, Mode: r.Mode, Type: r.Type, Name: r.Name, Provider: r.Provider, Module: m.Address, Index: InstanceKey(r.Index), Attributes: redact(r.Values, r.Sensitive, "", 0)}
 			idx.Resources = append(idx.Resources, resource)
 			idx.ByID[resource.ID] = resource
 			idx.Providers[r.Provider]++
@@ -146,19 +147,19 @@ func Parse(input []byte) (Index, error) {
 	return idx, nil
 }
 
-var safeKeys = map[string]bool{
-	"id": true, "arn": true, "name": true, "region": true, "availability_zone": true,
-	"instance_type": true, "engine": true, "engine_version": true, "version": true,
-	"cidr_block": true, "vpc_id": true, "subnet_id": true, "instance_state": true,
-	"status": true, "bucket": true, "resource_group_name": true, "location": true,
-	"index": true, "size": true, "port": true, "enabled": true, "count": true,
-	"allocated_storage": true, "multi_az": true, "encrypted": true,
+// riskyKeyParts are attribute-name fragments whose values are always redacted,
+// whether or not the provider marks them sensitive.
+var riskyKeyParts = []string{
+	"secret", "password", "passwd", "passphrase", "token", "credential",
+	"private_key", "client_key", "signing_key", "key_material", "access_key", "api_key", "license_key",
+	"connection_string", "user_data", "custom_data", "certificate_body", "certificate_chain", "certificate_pem", "cert_pem",
+	"kubeconfig", "kube_config", "authorization", "auth_header", "sas_url", "sas_token",
 }
 
 // RiskyKey reports attribute names that are always redacted, whatever their value.
 func RiskyKey(key string) bool {
 	key = strings.ToLower(key)
-	for _, part := range []string{"secret", "password", "passwd", "token", "credential", "private", "access_key", "api_key", "connection", "user_data", "certificate", "kubeconfig", "authorization"} {
+	for _, part := range riskyKeyParts {
 		if strings.Contains(key, part) {
 			return true
 		}
@@ -166,19 +167,108 @@ func RiskyKey(key string) bool {
 	return false
 }
 
-// Suspicious catches common credential shapes even under otherwise safe attribute keys.
+var (
+	awsAccessKeyID = regexp.MustCompile(`(^|[^A-Z0-9])(AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[A-Z0-9]{16}([^A-Z0-9]|$)`)
+	urlUserinfo    = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://[^/\s@]*:[^/\s@]*@`)
+	tokenRun       = regexp.MustCompile(`[A-Za-z0-9+/=_]{20,}`)
+)
+
+// knownTokenPrefixes are well-known vendor credential prefixes.
+var knownTokenPrefixes = []string{"ghp_", "gho_", "ghs_", "ghu_", "github_pat_", "glpat-", "xoxb-", "xoxp-", "xoxa-", "sk_live_", "rk_live_", "sk-ant-"}
+
+// Suspicious catches common credential shapes: PEM blocks, key=value secrets, bearer
+// tokens, JWTs, AWS access key IDs, URLs with embedded passwords and vendor token
+// prefixes. It is also used on addresses and names, where a match rejects the input,
+// so it deliberately excludes the random-string heuristic in LooksSecret.
 func Suspicious(value string) bool {
 	lower := strings.ToLower(value)
-	for _, marker := range []string{"do_not_leak", "-----begin ", "password=", "password:", "secret=", "token=", "bearer ", "akia", "asia", "://"} {
+	for _, marker := range []string{"do_not_leak", "-----begin ", "password=", "password:", "passwd=", "pwd=", "secret=", "token=", "apikey=", "api_key=", "bearer "} {
 		if strings.Contains(lower, marker) {
 			return true
 		}
 	}
-	return strings.Count(value, ".") == 2 && strings.HasPrefix(value, "eyJ")
+	for _, prefix := range knownTokenPrefixes {
+		if strings.Contains(value, prefix) {
+			return true
+		}
+	}
+	if strings.Count(value, ".") == 2 && strings.HasPrefix(value, "eyJ") {
+		return true
+	}
+	return awsAccessKeyID.MatchString(value) || urlUserinfo.MatchString(value)
 }
 
+// LooksSecret is Suspicious plus long random-looking strings: generated secrets that no
+// provider marked sensitive. It decides whether an attribute value is shown.
+func LooksSecret(value string) bool {
+	if Suspicious(value) {
+		return true
+	}
+	for _, run := range tokenRun.FindAllString(value, -1) {
+		if randomLooking(run) {
+			return true
+		}
+	}
+	return false
+}
+
+// randomLooking flags generated secrets that no provider marked sensitive. Random
+// strings switch between upper case, lower case and digits far more often than words,
+// identifiers (CamelCase, snake_case) or paths do. Cloud resource IDs such as
+// i-0abc… are split on '-' before they get here and stay below the 20-character floor.
+// Long hex strings (hashes, etags) are deliberately caught too: many vendor API keys
+// are plain hex and cannot be told apart from a digest.
+func randomLooking(run string) bool {
+	class := func(r rune) int {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return 1
+		case r >= 'A' && r <= 'Z':
+			return 2
+		case r >= '0' && r <= '9':
+			return 3
+		}
+		return 0
+	}
+	seen := map[int]bool{}
+	switches, pairs, prev := 0, 0, -1
+	for _, r := range run {
+		c := class(r)
+		if c == 0 {
+			prev = -1
+			continue
+		}
+		seen[c] = true
+		if prev != -1 {
+			pairs++
+			if c != prev {
+				switches++
+			}
+		}
+		prev = c
+	}
+	return len(seen) >= 2 && pairs > 0 && float64(switches)/float64(pairs) >= 0.3
+}
+
+// InstanceKey returns a count/for_each key for display. Keys are part of the address,
+// which is already checked with Suspicious, so the random-string heuristic is not applied.
+func InstanceKey(key any) any {
+	switch k := key.(type) {
+	case nil, json.Number:
+		return k
+	case string:
+		if !Suspicious(k) {
+			return k
+		}
+	}
+	return Redacted
+}
+
+// maxShownString bounds a single revealed string; longer values are redacted.
+const maxShownString = 16 << 10
+
 // Redact applies the state redaction policy to a value with its sensitivity marker.
-// key is the attribute name the value belongs to; only allowlisted keys reveal scalars.
+// key is the attribute name the value belongs to.
 func Redact(value, marker any, key string) any { return redact(value, marker, key, 0) }
 
 func redact(value, marker any, key string, depth int) any {
@@ -212,13 +302,11 @@ func redact(value, marker any, key string, depth int) any {
 	case nil:
 		return nil
 	case string:
-		if safeKeys[key] && len(v) <= 512 && !Suspicious(v) {
+		if len(v) <= maxShownString && !LooksSecret(v) {
 			return v
 		}
 	case bool, json.Number:
-		if safeKeys[key] {
-			return v
-		}
+		return v
 	}
 	return Redacted
 }

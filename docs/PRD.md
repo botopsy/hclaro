@@ -176,7 +176,7 @@ Whitespace before commands above is purely illustrative; actual CLI should accep
 - Support `managed` and `data` instances; robustly parse `count` indexes, `for_each` string keys (including escaped names), nested module instances and provider source addresses.
 - Flatten to canonical resource instance records, keeping full address and raw path if available.
 - Group by module/provider/type and support full-address search.
-- Sensitive values must not be sent raw to the frontend. A conservative masking policy is required because not every sensitive secret is reliably tagged.
+- Sensitive values must not be sent raw to the frontend. Because not every secret is reliably tagged, values under secret-like names and credential-shaped or random-looking values are masked even without a marker; other values are shown as the engine CLI would show them.
 - Never fetch provider API data while rendering inspector; state is state, not fresh cloud truth.
 
 **Acceptance:** 300+ resource fixture renders correct counts with no duplicate instances; indexed addresses are exact; sensitive fixture value never appears in UI, API responses, terminal logs or local history.
