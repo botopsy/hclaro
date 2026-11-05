@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — M4 import wizard (draft)
+## 0.1.0-alpha.4 — 2026-11-05
+
+Replace, saved-plan apply and import are new in this release. They have been tested only against synthetic engine output, not a real Terraform/OpenTofu engine; treat them as drafts and use them only on disposable workspaces.
 
 ### Import
 
@@ -10,8 +12,6 @@
 - Import plans count imports separately, are applicable even when the import is the only (no-op) change, and always require the typed `apply <workspace>` phrase.
 - Unavailable workspaces (for example remote execution) get a manual recipe; `terraform import` is never run.
 - Capabilities gain `supportsImportBlocks`, `supportsGeneratedConfig`, `canImport` and `importReason`. New routes: `GET /api/v1/imports/options`, `POST /api/v1/imports/preview`, `POST /api/v1/imports`.
-
-## M3 replace and apply (draft)
 
 ### Replace
 
@@ -25,6 +25,20 @@
 - Apply needs a one-time, five-minute approval bound to the plan, and typing `apply <workspace>` for plans that delete, replace or forget objects. Context, engine version, workspace and the file's SHA-256 are re-checked; the engine's stale-plan refusal is reported, never retried.
 - Apply logs stream like plan logs. State is re-read afterwards, and the outcome (applied, not applied, uncertain) is reported separately from the exit status.
 - New routes: `POST /api/v1/plans/{id}/approval`, `POST /api/v1/plans/{id}/apply`. `POST /api/v1/plans` accepts `replace` (resource IDs).
+- After a failed apply request, the dialog requests a new approval and asks for the phrase again instead of having to be closed and reopened.
+- On startup, saved-plan directories older than three hours (left only by a Hclaro process that was killed) are deleted from the temp directory.
+
+### Details drawer
+
+- Resource and change details open in a non-modal drawer docked to the right edge: 720px by default, resizable by dragging or with arrow keys, width remembered per browser. Esc or × closes it.
+
+### Fixes
+
+- A leading icon in information lines (plan, replacement and import summaries) no longer sits on its own line.
+
+### Development
+
+- Pull requests and `master` are verified on CircleCI instead of GitHub Actions; tagged releases still build on GitHub Actions.
 
 ## 0.1.0-alpha.3 — 2026-11-05
 
