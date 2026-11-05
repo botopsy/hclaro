@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased — redaction policy
+## 0.1.0-alpha.3 — 2026-11-05
+
+### Readability
+
+- Larger type: text that was 7–11px is now 10–14px; main UI text is 13–14px.
+- Attribute names in the JSON tree no longer shrink when values are long (`arn` no longer wraps to "ar / n").
+
+### Redaction policy
 
 - Redaction now hides likely secrets instead of everything outside a 25-name allowlist. Hidden: values marked sensitive (at any depth), secret-like attribute names, and credential-shaped or random-looking values (PEM, JWT, bearer, AWS access key IDs, URLs with passwords, vendor token prefixes, long mixed-case or hex strings). Tags, enums, booleans, numbers, IDs, ARNs and regions are now shown in the inspector and plan review.
 - Output values follow the same policy instead of always being hidden.

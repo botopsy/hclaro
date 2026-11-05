@@ -12,7 +12,7 @@ import (
 	"hclaro/internal/cli"
 )
 
-var version = "0.1.0-alpha.2"
+var version = "0.1.0-alpha.3"
 
 func main() { os.Exit(run()) }
 func run() int {
