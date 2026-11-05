@@ -74,8 +74,9 @@ export type EngineDiagnostic = {
 };
 export type Operation = {
   id: string;
-  kind: 'plan' | 'apply';
-  status: 'running' | 'succeeded' | 'failed' | 'cancelled';
+  kind: 'plan' | 'apply' | 'init';
+  // queued, cancelling and unknown are used by Hub initialization only.
+  status: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
   stage: string;
   startedAt: string;
   completedAt?: string;
@@ -98,7 +99,14 @@ export type Operation = {
   cancelRequested: boolean;
   logDropped: number;
   logRetained: boolean;
+  // Hub initialization only.
+  projectId?: string;
+  notices?: string[];
+  lockfileChanged?: boolean;
 };
+export function operationActive(op: Pick<Operation, 'status'>) {
+  return op.status === 'queued' || op.status === 'running' || op.status === 'cancelling';
+}
 export type OperationEvent = {
   seq: number;
   time: string;
@@ -301,6 +309,33 @@ export type Project = {
   providerLock: boolean;
   launch: boolean;
   inspection?: Inspection;
+  // The operation holding the project root, such as "init".
+  busy?: string;
+};
+// Read-only init preflight; no engine command runs to produce it.
+export type InitStatus = {
+  projectId: string;
+  alias: string;
+  rootPath: string;
+  status: ProjectStatus;
+  problem?: string;
+  initialized: boolean;
+  backend: string;
+  executionMode: string;
+  backendDeclared: boolean;
+  engine?: string;
+  engineVersion?: string;
+  dataDir: string;
+  lockfile: boolean;
+  cliDefault?: string;
+  command: string[];
+  notices: string[];
+  canInit: boolean;
+  reason?: string;
+  reasonCode?: string;
+  contextId?: string;
+  busy?: string;
+  operation?: Operation;
 };
 export type ProjectList = {
   projects: Project[];

@@ -27,7 +27,11 @@ func errorJSON(w http.ResponseWriter, code int, name string) {
 // Handler serves the API and embedded UI. hub is nil when the Workspace Hub is disabled.
 func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.Hub, assets fs.FS, host, token, csrf, version string) http.Handler {
 	mux := http.NewServeMux()
-	planRoutes(mux, store, manager, csrf, version)
+	var inits *operations.Inits
+	if hub != nil {
+		inits = hub.Inits
+	}
+	planRoutes(mux, store, manager, inits, csrf, version)
 	importRoutes(mux, store, manager)
 	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": version})

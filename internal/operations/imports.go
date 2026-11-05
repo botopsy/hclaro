@@ -90,14 +90,20 @@ func (m *Manager) StartImport(req ImportRequest) (Operation, error) {
 	if preview.SHA256 == "" || preview.SHA256 != req.PreviewSHA256 {
 		return Operation{}, reject("preview_changed", "The import block or destination changed since you reviewed it. Review the preview again.")
 	}
+	release, ok := m.Locks.Acquire(m.root, "import")
+	if !ok {
+		return Operation{}, ErrBusy
+	}
 	switch err := imports.WriteNew(m.root, preview.File, []byte(preview.Content)); {
 	case errors.Is(err, imports.ErrFileExists):
+		release()
 		return Operation{}, reject("file_exists", fmt.Sprintf("%s already exists. Nothing was written.", preview.File))
 	case err != nil:
+		release()
 		return Operation{}, reject("write_failed", fmt.Sprintf("%s could not be written safely. Nothing was planned.", preview.File))
 	}
 	target := &ImportTarget{Address: preview.Address, File: preview.File, GeneratedFile: preview.GeneratedFile, Provider: req.Provider}
-	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: []string{}, Import: target}), nil
+	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: []string{}, Import: target}, release), nil
 }
 
 // importWarnings flags an import plan that does not import the requested address.

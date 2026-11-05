@@ -48,7 +48,7 @@ func summarize(p *operations.Plan) planSummary {
 	return planSummary{p.ID, p.OperationID, p.CreatedAt, p.Engine, p.Workspace, p.VarFiles, p.Kind, p.Replace, p.Summary, p.Errored, changes, outputs, len(p.Drift)}
 }
 
-func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, csrf, version string) {
+func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, inits *operations.Inits, csrf, version string) {
 	mux.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"csrfToken": csrf, "version": version})
 	})
@@ -177,7 +177,7 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		writeJSON(w, 200, map[string]any{"operations": manager.Operations()})
 	})
 	mux.HandleFunc("GET /api/v1/operations/{id}", func(w http.ResponseWriter, r *http.Request) {
-		op, _, ok := lookupOperation(r, manager)
+		op, _, ok := lookupOperation(r, manager, inits)
 		if !ok {
 			errorJSON(w, 404, "operation_not_found")
 			return
@@ -193,6 +193,9 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			return
 		}
 		op, err := manager.Cancel(r.PathValue("id"))
+		if errors.Is(err, operations.ErrNotFound) && inits != nil {
+			op, err = inits.Cancel(r.PathValue("id"))
+		}
 		switch {
 		case errors.Is(err, operations.ErrNotFound):
 			errorJSON(w, 404, "operation_not_found")
@@ -203,7 +206,7 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		}
 	})
 	mux.HandleFunc("GET /api/v1/operations/{id}/events", func(w http.ResponseWriter, r *http.Request) {
-		_, log, ok := lookupOperation(r, manager)
+		_, log, ok := lookupOperation(r, manager, inits)
 		if !ok {
 			errorJSON(w, 404, "operation_not_found")
 			return
@@ -225,7 +228,10 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			}
 			after = n
 		}
-		stream(w, r, manager, r.PathValue("id"), log, after)
+		stream(w, r, func() operations.Operation {
+			op, _, _ := lookupOperation(r, manager, inits)
+			return op
+		}, log, after)
 	})
 }
 
@@ -264,17 +270,21 @@ func lookupPlan(r *http.Request, manager *operations.Manager) (*operations.Plan,
 	return p, true
 }
 
-func lookupOperation(r *http.Request, manager *operations.Manager) (operations.Operation, *operations.Log, bool) {
+// lookupOperation finds a launch-project operation or a Hub initialization by ID.
+func lookupOperation(r *http.Request, manager *operations.Manager, inits *operations.Inits) (operations.Operation, *operations.Log, bool) {
 	id := r.PathValue("id")
 	if !idPattern.MatchString(id) {
 		return operations.Operation{}, nil, false
 	}
-	return manager.Operation(id)
+	if op, log, ok := manager.Operation(id); ok {
+		return op, log, ok
+	}
+	return inits.Operation(id)
 }
 
 // stream sends retained log events as SSE, then status updates until the operation ends.
 // Clients resume with ?after=<seq> or Last-Event-ID; replay is bounded by the log ring.
-func stream(w http.ResponseWriter, r *http.Request, manager *operations.Manager, id string, log *operations.Log, after int64) {
+func stream(w http.ResponseWriter, r *http.Request, current func() operations.Operation, log *operations.Log, after int64) {
 	rc := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -295,10 +305,7 @@ func stream(w http.ResponseWriter, r *http.Request, manager *operations.Manager,
 		}
 		return rc.Flush() == nil
 	}
-	status := func() bool {
-		op, _, _ := manager.Operation(id)
-		return send("status", "", op)
-	}
+	status := func() bool { return send("status", "", current()) }
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 	first := true

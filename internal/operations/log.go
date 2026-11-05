@@ -133,7 +133,7 @@ var (
 )
 
 // translate converts one engine UI line into a log event and, for diagnostics, a record.
-// kind is "plan" or "apply". ok is false for lines that are not part of the rendered
+// kind is "plan", "apply" or "init". ok is false for lines that are not part of the rendered
 // subset; ok with empty text means a recognized event that is deliberately not shown.
 func translate(line []byte, kind, engineLabel string, k *known) (level, text string, diag *EngineDiagnostic, ok bool) {
 	var m uiMessage
@@ -142,8 +142,11 @@ func translate(line []byte, kind, engineLabel string, k *known) (level, text str
 	}
 	switch m.Type {
 	case "version":
-		if kind == "apply" {
+		switch kind {
+		case "apply":
 			return "info", "Apply started", nil, true
+		case "init":
+			return "info", "Initialization started", nil, true
 		}
 		return "info", "Planning started", nil, true
 	case "apply_start":
@@ -194,7 +197,7 @@ func translate(line []byte, kind, engineLabel string, k *known) (level, text str
 			label = "Error"
 		}
 		return level, label + ": " + d.Summary, d, true
-	case "log":
+	case "log", "init_output":
 		level := "info"
 		if m.Level == "warn" || m.Level == "error" {
 			level = m.Level

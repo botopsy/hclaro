@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, ExternalLink, Folder, FolderOpen, FolderPlus, Layers3, LoaderCircle, Pencil, Pin, PinOff, Plus, RefreshCcw, Search, ShieldCheck, Trash2, Wrench, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, ExternalLink, Folder, FolderOpen, FolderPlus, Layers3, LoaderCircle, Pencil, Play, Pin, PinOff, Plus, RefreshCcw, Search, ShieldCheck, Trash2, Wrench, X } from 'lucide-react';
 import { api, ApiError, openInNewTab, send } from '../api';
 import type { FolderListing, Project, ProjectList } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { contextPath, navigate, productionLike, projectPath } from '../router';
+import { InitWizard } from './InitWizard';
 
 export const projectsQuery = {
   queryKey: ['projects'],
@@ -105,7 +106,7 @@ export function HubView({ notify }: { notify: (text: string) => void }) {
    <section aria-label="Projects"><h2 className="hub-section">Projects <span className="muted">{projects.length}</span></h2>
     {projects.length === 0 ? <div className="empty-state"><FolderPlus size={28} /><h2>Add your first project</h2><p>Register each Terraform or OpenTofu root folder you work with, such as <code>infra/dev</code> and <code>infra/prod</code>. Hclaro stores the path and a name, nothing else, and does not scan your disk.</p><Button onClick={() => setDialog({ kind: 'add' })} disabled={!writable}><Plus size={15} />Add project</Button></div> : ordered.length === 0 ? <div className="empty-state"><Search size={24} /><h2>No matching projects</h2><p>Workspaces are searchable once a project has been opened in this session.</p><Button variant="outline" onClick={() => setSearch('')}>Clear search</Button></div> : <ul className="hub-list" onKeyDown={arrowKeys}>{ordered.map(p => <ProjectCard key={p.id} project={p} writable={writable} first={projects[0]?.id === p.id} last={projects.at(-1)?.id === p.id} onPin={() => void update(p, { pinned: !p.pinned }, p.pinned ? 'Project unpinned' : 'Project pinned')} onMove={step => void move(p, step)} onDialog={kind => setDialog({ kind, project: p })} />)}</ul>}
    </section>
-   <p className="info-note"><ShieldCheck size={15} /><span>Opening a project lists its workspaces with the CLI and opening a workspace reads its recorded state; either may contact the backend. Hclaro never runs init, selects a workspace or refreshes state from the Hub. Removing a project only forgets it here.</span></p>
+   <p className="info-note"><ShieldCheck size={15} /><span>Opening a project lists its workspaces with the CLI and opening a workspace reads its recorded state; either may contact the backend. Init runs only after you review and confirm it on a project's page. Hclaro never selects a workspace or refreshes state from the Hub. Removing a project only forgets it here.</span></p>
    {dialog?.kind === 'add' && <AddProjectDialog initialPath={dialog.path} onClose={() => setDialog(undefined)} onAdded={p => {
         setDialog(undefined);
         notify(`${p.alias} added`);
@@ -150,6 +151,8 @@ function ProjectCard({ project: p, writable, first, last, onPin, onMove, onDialo
     <div className="hub-tags">
      <span className={`hub-status hub-status-${p.status}`}>{statusLabel[p.status]}</span>
      {p.launch && <span className="hub-tag">Opened from terminal</span>}
+     {p.busy === 'init' && <span className="hub-tag hub-tag-busy"><LoaderCircle className="spin" size={11} />Initializing</span>}
+     {ready && !p.initialized && !p.busy && <span className="hub-tag hub-tag-warn">Not initialized</span>}
      {productionLike(p.alias, p.rootPath.split(/[\\/]/).at(-1)) && <ProductionBadge />}
     </div>
     <dl className="hub-facts">
@@ -317,13 +320,21 @@ function RemoveDialog({ project, onClose, onRemoved }: { project: Project; onClo
 // when the page opens; choosing one only changes this tab's context.
 export function ProjectView({ id }: { id: string }) {
   const client = useQueryClient();
-  const list = useQuery(projectsQuery);
+  // While init runs without its dialog open, poll so the page notices when it finishes.
+  const list = useQuery({ ...projectsQuery, refetchInterval: q => q.state.data?.projects.some(p => p.id === id && p.busy) ? 2000 : false });
   const project = list.data?.projects.find(p => p.id === id);
+  const [initOpen, setInitOpen] = useState(false);
+  // Listing workspaces waits while init runs or its wizard is open: the root is claimed.
   const inspect = useQuery({
     queryKey: ['inspect', id],
     queryFn: () => send<Project>('POST', `projects/${id}/inspect`, {}),
-    enabled: project?.status === 'ready'
+    enabled: project?.status === 'ready' && !project.busy && !initOpen
   });
+  const initFinished = useCallback(() => {
+    void client.invalidateQueries({ queryKey: ['projects'] });
+    void client.invalidateQueries({ queryKey: ['inspect', id] });
+    client.removeQueries({ queryKey: ['context-open', id] });
+  }, [client, id]);
   const current = inspect.data || project;
   const inspection = inspect.data?.inspection;
   useEffect(() => {
@@ -334,15 +345,20 @@ export function ProjectView({ id }: { id: string }) {
   const env = list.data?.environment;
   return <div className="hub project-view">
    <div className="hub-toolbar"><Button variant="ghost" onClick={() => navigate('/projects')}><ArrowLeft size={14} />All projects</Button><span className="context-spacer" />{current.status === 'ready' && <Button variant="outline" onClick={() => void inspect.refetch()} disabled={inspect.isFetching}><RefreshCcw size={14} className={inspect.isFetching ? 'spin' : undefined} />List workspaces again</Button>}</div>
-   <section className="surface"><div className="surface-heading"><div><h2>{current.alias} {productionLike(current.alias) && <ProductionBadge />}</h2><p className="mono">{current.rootPath}</p></div><FolderOpen size={18} /></div>
+   {current.busy === 'init' && !initOpen && <div className="hub-banner" role="status"><LoaderCircle className="spin" size={15} /><span><strong>Initialization is running.</strong> Workspaces can be listed when it finishes.</span><span className="context-spacer" /><Button size="small" variant="outline" onClick={() => setInitOpen(true)}>Show progress</Button></div>}
+   <section className="surface"><div className="surface-heading"><div><h2>{current.alias} {productionLike(current.alias) && <ProductionBadge />}</h2><p className="mono">{current.rootPath}</p></div>{current.status === 'ready' ? <Button size="small" variant={current.initialized ? 'outline' : 'default'} onClick={() => setInitOpen(true)} disabled={!!current.busy && current.busy !== 'init'}><Play size={13} />{current.initialized ? 'Run init again…' : 'Initialize…'}</Button> : <FolderOpen size={18} />}</div>
     <dl className="metadata"><div><dt>Engine</dt><dd>{inspection?.engine ? `${engineName(inspection.engine)} ${inspection.version || ''}` : engineName(current.enginePreference)}</dd></div><div><dt>Initialized</dt><dd>{current.initialized ? 'Yes' : 'Not detected'}</dd></div><div><dt>Backend type</dt><dd>{current.backend}</dd></div><div><dt>Execution mode</dt><dd>{current.executionMode}</dd></div><div><dt>Data directory</dt><dd className="mono">{env?.dataDir || '.terraform'}</dd></div><div><dt>Provider lockfile</dt><dd>{current.providerLock ? 'Present' : 'Not detected'}</dd></div></dl>
    </section>
    <section aria-labelledby="workspaces-title"><h2 className="hub-section" id="workspaces-title">CLI workspaces</h2>
-    {current.status !== 'ready' ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{statusLabel[current.status]}</h2><p>{current.problem}</p><Button variant="outline" onClick={() => navigate('/projects')}>Repair or remove in the Hub</Button></div> : inspect.isPending || inspect.isFetching && !inspection ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Listing workspaces</h2><p>Running <code>workspace list</code> through the local CLI. This may contact the backend. No workspace is selected or created.</p></div> : inspect.error ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>Workspaces unavailable</h2><p>{message(inspect.error)}</p><Button variant="outline" onClick={() => void inspect.refetch()}>Try again</Button></div> : inspection?.diagnostic ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{inspection.diagnostic.code === 'uninitialized' ? 'Initialize this project first' : inspection.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspaces unavailable'}</h2><p>{inspection.diagnostic.message}</p><span className="safe-note"><ShieldCheck size={13} />Nothing was initialized or changed.</span></div> : inspection && inspection.workspaces.length === 0 ? <div className="empty-state"><Layers3 size={24} /><h2>No workspaces listed</h2><p>The CLI returned no workspace names Hclaro can display.</p></div> : inspection && <>
+    {current.status !== 'ready' ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{statusLabel[current.status]}</h2><p>{current.problem}</p><Button variant="outline" onClick={() => navigate('/projects')}>Repair or remove in the Hub</Button></div> : inspect.isPending || inspect.isFetching && !inspection ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Listing workspaces</h2><p>Running <code>workspace list</code> through the local CLI. This may contact the backend. No workspace is selected or created.</p></div> : inspect.error ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>Workspaces unavailable</h2><p>{message(inspect.error)}</p><Button variant="outline" onClick={() => void inspect.refetch()}>Try again</Button></div> : inspection?.diagnostic ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{inspection.diagnostic.code === 'uninitialized' ? 'Initialize this project first' : inspection.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspaces unavailable'}</h2><p>{inspection.diagnostic.code === 'uninitialized' ? 'Backend initialization was not detected. Review and run init here, or run it yourself in a terminal. Nothing was initialized automatically.' : inspection.diagnostic.message}</p>{inspection.diagnostic.code === 'uninitialized' && <Button onClick={() => setInitOpen(true)}><Play size={14} />Review and initialize…</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing was initialized or changed.</span></div> : inspection && inspection.workspaces.length === 0 ? <div className="empty-state"><Layers3 size={24} /><h2>No workspaces listed</h2><p>The CLI returned no workspace names Hclaro can display.</p></div> : inspection && <>
      <ul className="workspace-list" onKeyDown={arrowKeys}>{inspection.workspaces.map(ws => <li key={ws}><button className="workspace-open" data-hub-item onClick={() => navigate(contextPath(id, ws))}><Layers3 size={15} /><strong>{ws}</strong>{ws === inspection.cliDefault && <span className="hub-tag" title="Selected in this project's CLI data directory. Opening another workspace here does not change it.">CLI default</span>}{productionLike(ws) && <ProductionBadge />}<span className="context-spacer" /><span className="muted">Read state</span><ArrowRight size={14} /></button><Button variant="ghost" size="icon" aria-label={`Open ${ws} in a new tab`} title="Open in a new browser tab" onClick={() => openInNewTab(contextPath(id, ws))}><ExternalLink size={14} /></Button></li>)}</ul>
      {inspection.hiddenWorkspaces > 0 && <p className="muted">{inspection.hiddenWorkspaces} workspace name{inspection.hiddenWorkspaces === 1 ? '' : 's'} with unusual characters {inspection.hiddenWorkspaces === 1 ? 'is' : 'are'} not shown.</p>}
      <p className="info-note"><ShieldCheck size={15} /><span>Choosing a workspace changes only this browser tab: each command Hclaro runs for it gets <code>TF_WORKSPACE</code> in its own environment. Your terminal's selected workspace stays <strong>{inspection.cliDefault || 'unchanged'}</strong>. Hub workspaces are read-only.</span></p>
     </>}
    </section>
+   {initOpen && <InitWizard projectId={id} onClose={() => {
+        setInitOpen(false);
+        void client.invalidateQueries({ queryKey: ['projects'] });
+      }} onFinished={initFinished} />}
   </div>;
 }

@@ -24,3 +24,10 @@ func interrupt(p *os.Process) error {
 	}
 	return nil
 }
+
+// prepareGroup already applies: the engine gets its own process group.
+func prepareGroup(cmd *exec.Cmd) { prepareInterrupt(cmd) }
+
+func interruptGroup(p *os.Process) error { return interrupt(p) }
+
+func killGroup(p *os.Process) error { return p.Kill() }

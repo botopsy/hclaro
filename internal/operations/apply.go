@@ -265,13 +265,18 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	if err := m.checkLocked(p, current); err != nil {
 		return Operation{}, err
 	}
+	release, claimed := m.Locks.Acquire(m.root, "apply")
+	if !claimed {
+		return Operation{}, reject("operation_running", "Another operation, such as initialization, is running in this project. Wait for it to finish.")
+	}
 	a.applying = true
 	ctx, cancel := context.WithTimeout(m.base, m.ApplyTimeout)
 	e := &entry{
-		op:     Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), Import: p.Import, PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true},
-		log:    NewLog(logEvents, logBytes),
-		cancel: cancel,
-		start:  time.Now(),
+		op:      Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), Import: p.Import, PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true},
+		log:     NewLog(logEvents, logBytes),
+		cancel:  cancel,
+		start:   time.Now(),
+		release: release,
 	}
 	m.entries = append(m.entries, e)
 	m.trim()
@@ -351,6 +356,7 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	}
 	o.LogDropped = e.log.Dropped()
 	m.running = nil
+	e.release()
 	m.mu.Unlock()
 	level := "info"
 	if code != "applied" {

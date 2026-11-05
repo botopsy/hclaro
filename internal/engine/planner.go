@@ -259,9 +259,17 @@ type Fake struct {
 	// BlockApply makes Apply wait for cancellation.
 	BlockApply bool
 	Delay      time.Duration
-	calls      []string
-	requests   []PlanRequest
-	applied    [][]byte
+	// InitLines and InitStderr are emitted by Init on stdout and stderr; InitErr is its
+	// result, BlockInit makes it wait for cancellation and InitDataDir is created on success.
+	InitLines   [][]byte
+	InitStderr  [][]byte
+	InitErr     error
+	BlockInit   bool
+	InitDataDir string
+	calls       []string
+	requests    []PlanRequest
+	applied     [][]byte
+	inits       [][]string
 }
 
 func (m *Fake) record(call string) {
@@ -381,3 +389,5 @@ func (m *Fake) Apply(ctx context.Context, path string, line func([]byte)) error 
 	}
 	return m.ApplyErr
 }
+
+func mkdirAll(path string) error { return os.MkdirAll(path, 0o755) }

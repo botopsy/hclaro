@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
 	"time"
 
+	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 )
 
@@ -40,6 +42,8 @@ func projectError(w http.ResponseWriter, hub *projects.Hub, err error) {
 		reasonJSON(w, 409, "too_many_projects", "The Hub holds at most 200 projects.")
 	case errors.Is(err, projects.ErrSharedDataDir):
 		reasonJSON(w, 409, "shared_data_dir", "TF_DATA_DIR is an absolute path, so every project would share one data directory and backend initialization. Restart Hclaro without it, or with a relative TF_DATA_DIR.")
+	case errors.Is(err, projects.ErrBusy):
+		reasonJSON(w, 409, "project_busy", "Initialization or another operation is running in this project. Wait for it to finish, then try again.")
 	case errors.Is(err, projects.ErrInvalidWorkspace):
 		reasonJSON(w, 400, "invalid_workspace", "That is not a workspace name Hclaro can read.")
 	default:
@@ -194,6 +198,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 				"project_changed": "This project's folder or engine changed. Open the workspace again.",
 				"reloaded":        "A newer read of this workspace replaced this one.",
 				"evicted":         "This snapshot was released to save memory. Open the workspace again.",
+				"initialized":     "This project was initialized after this snapshot was read. Open the workspace again.",
 			}[reason]
 			if message == "" {
 				message = "This workspace view is no longer open. Open the workspace again."
@@ -203,6 +208,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		}
 		return c
 	}
+	initRoutes(mux, hub)
 	mux.HandleFunc("GET /api/v1/contexts/{cid}", func(w http.ResponseWriter, r *http.Request) {
 		if c := contextOf(w, r); c != nil {
 			writeJSON(w, 200, workspaceBody(c.Snapshot(), c))
@@ -216,6 +222,53 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	mux.HandleFunc("GET /api/v1/contexts/{cid}/resources/{rid}", func(w http.ResponseWriter, r *http.Request) {
 		if c := contextOf(w, r); c != nil {
 			resourceDetail(w, c.Snapshot(), r.PathValue("rid"))
+		}
+	})
+}
+
+var contextIDPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// initRoutes serve the read-only init preflight and the explicit, CSRF-protected start of a
+// standard init. The server builds the argv; the request only names the reviewed context.
+func initRoutes(mux *http.ServeMux, hub *projects.Hub) {
+	mux.HandleFunc("GET /api/v1/projects/{id}/init-status", func(w http.ResponseWriter, r *http.Request) {
+		status, err := hub.InitStatus(r.PathValue("id"))
+		if err != nil {
+			projectError(w, hub, err)
+			return
+		}
+		writeJSON(w, 200, status)
+	})
+	mux.HandleFunc("POST /api/v1/projects/{id}/operations/init", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Mode              string `json:"mode"`
+			ExpectedContextID string `json:"expectedContextId"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		// Only the standard mode exists: no upgrade, migration, reconfiguration or backend values.
+		if body.Mode != "standard" {
+			reasonJSON(w, 400, "invalid_mode", "Only the standard init is available.")
+			return
+		}
+		if !contextIDPattern.MatchString(body.ExpectedContextID) {
+			reasonJSON(w, 400, "invalid_context", "Review the project before initializing it.")
+			return
+		}
+		op, err := hub.StartInit(r.PathValue("id"), body.ExpectedContextID)
+		var refusal *projects.InitRefusal
+		switch {
+		case errors.As(err, &refusal):
+			reasonJSON(w, 409, refusal.Code, refusal.Message)
+		case errors.Is(err, projects.ErrContextChanged):
+			reasonJSON(w, 409, "context_changed", "The project, its engine or the environment changed since you reviewed it. Nothing was run. Review it again.")
+		case errors.Is(err, operations.ErrClosed):
+			reasonJSON(w, 503, "shutting_down", "Hclaro is shutting down.")
+		case err != nil:
+			projectError(w, hub, err)
+		default:
+			writeJSON(w, 202, op)
 		}
 	})
 }
