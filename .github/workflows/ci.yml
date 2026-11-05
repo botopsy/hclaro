@@ -1,8 +1,7 @@
 name: M1 checks
-# Pull requests and master are verified on CircleCI (.circleci/config.yml). This workflow
-# runs only when the release workflow calls it, or by hand.
+# Pull requests, master and releases run on CircleCI (.circleci/config.yml). This workflow
+# is a manual fallback only.
 on:
-  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
