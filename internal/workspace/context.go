@@ -60,6 +60,13 @@ const (
 // Provider plugin binaries are covered only through .terraform.lock.hcl checksums.
 // An empty result means a walk exceeded its limits.
 func Fingerprint(root string, environ []string, labels ...string) string {
+	return FingerprintExcept(root, environ, nil, labels...)
+}
+
+// FingerprintExcept is Fingerprint with root-level files in skip left out. Import plans use
+// it to tell an engine-generated configuration file apart from other edits made while the
+// plan ran.
+func FingerprintExcept(root string, environ []string, skip map[string]bool, labels ...string) string {
 	h := sha256.New()
 	field := func(b []byte) {
 		h.Write(b)
@@ -90,7 +97,7 @@ func Fingerprint(root string, environ []string, labels ...string) string {
 	if !filepath.IsAbs(dataDir) {
 		dataDir = filepath.Join(root, dataDir)
 	}
-	budget := &walkBudget{}
+	budget := &walkBudget{skip: skip}
 	if hashTree(h, root, root, budget) != nil {
 		return ""
 	}
@@ -109,6 +116,8 @@ func Fingerprint(root string, environ []string, labels ...string) string {
 type walkBudget struct {
 	files int
 	bytes int64
+	// skip names root-relative, slash-separated paths that are not hashed.
+	skip map[string]bool
 }
 
 func configFile(name string) bool {
@@ -134,6 +143,9 @@ func hashTree(h hash.Hash, base, dir string, budget *walkBudget) error {
 			return nil
 		}
 		if !d.Type().IsRegular() || !configFile(d.Name()) {
+			return nil
+		}
+		if rel, err := filepath.Rel(base, path); err == nil && budget.skip[filepath.ToSlash(rel)] {
 			return nil
 		}
 		return hashFile(h, base, path, budget)

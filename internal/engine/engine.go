@@ -116,6 +116,19 @@ func Supported(name, version string) bool {
 	return name == "terraform" && minor >= 5 && minor <= 17 || name == "tofu" && minor >= 6 && minor <= 13
 }
 
+// ImportSupport reports declarative import capabilities for a supported version. Import
+// blocks and -generate-config-out arrived in Terraform 1.5 and OpenTofu 1.6, the lowest
+// versions Supported accepts; the check stays explicit so the range can widen safely.
+func ImportSupport(name, version string) (blocks, generate bool) {
+	m := versionPattern.FindStringSubmatch(version)
+	if m == nil || !Supported(name, version) {
+		return false, false
+	}
+	minor, _ := strconv.Atoi(m[1])
+	ok := name == "terraform" && minor >= 5 || name == "tofu" && minor >= 6
+	return ok, ok
+}
+
 func (c *CLI) Version(ctx context.Context) (string, error) {
 	b, err := c.run(ctx, readTimeout, "version", "-json")
 	if err != nil {

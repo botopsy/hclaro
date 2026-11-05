@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -46,6 +47,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer os.RemoveAll(temp)
+	if resolved, err := filepath.EvalSymlinks(temp); err == nil {
+		temp = resolved
+	}
+	// A root module with one resource block, so the import wizard can preview against it.
+	_ = os.WriteFile(filepath.Join(temp, "main.tf"), []byte("resource \"aws_s3_bucket\" \"legacy_logs\" {}\n"), 0o644)
 	manager := operations.NewManager(store, fake, temp)
 	manager.TempDir = temp
 	next := 0

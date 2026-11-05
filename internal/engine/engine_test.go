@@ -125,3 +125,17 @@ func TestBoundedOutput(t *testing.T) {
 		t.Fatal("output limit failed")
 	}
 }
+
+func TestImportSupport(t *testing.T) {
+	for _, c := range []struct {
+		name, version string
+		want          bool
+	}{
+		{"terraform", "1.5.0", true}, {"terraform", "1.9.8", true}, {"tofu", "1.6.0", true},
+		{"terraform", "1.4.6", false}, {"tofu", "1.5.0", false}, {"terraform", "1.10.0-rc1", false}, {"terraform", "2.0.0", false},
+	} {
+		if blocks, generate := ImportSupport(c.name, c.version); blocks != c.want || generate != c.want {
+			t.Errorf("%s %s: %v %v", c.name, c.version, blocks, generate)
+		}
+	}
+}

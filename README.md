@@ -2,7 +2,7 @@
 
 A local, read-only workspace for Terraform and OpenTofu. Browse recorded resource instances, nested modules, and provider sources; search canonical addresses and inspect redacted attributes. No accounts, telemetry, external runtime assets, or infrastructure mutations.
 
-**Milestone 3 alpha (draft).** Browse state, run a plan and review every proposed change, plan the replacement of selected instances, and apply a reviewed saved plan after explicit confirmation (local execution only). Start with the synthetic demo. See verification status for [M1](docs/M01-verification.md), [M2](docs/M02-verification.md) and [M3](docs/M03-verification.md). Apply has not yet been run against a real engine. Real Terraform/OpenTofu certification is still open, so treat this as an alpha, not a release.
+**Milestone 4 alpha (draft).** Browse state, run a plan and review every proposed change, plan the replacement of selected instances, import an existing object through a reviewed import block, and apply a reviewed saved plan after explicit confirmation (local execution only). Start with the synthetic demo. See verification status for [M1](docs/M01-verification.md), [M2](docs/M02-verification.md), [M3](docs/M03-verification.md) and [M4](docs/M04-verification.md). Apply and import have not yet been run against a real engine. Real Terraform/OpenTofu certification is still open, so treat this as an alpha, not a release.
 
 ## Run the isolated demo
 
@@ -46,7 +46,7 @@ make lint        # go vet + TypeScript + ESLint
 
 Hclaro inspects only the selected directory; it never searches parent directories. Terraform is preferred when both CLIs are on PATH. The port is dynamically allocated unless supplied. The browser opens automatically; if it does not, use the printed URL. Exit codes: 0 success/help/version, 1 startup failure, 2 invalid arguments.
 
-Launch runs only `version -json`, `workspace show`, and `show -json`. It never runs init, plan, refresh, apply, destroy, import, replace, or state modifications. A plan runs only when you confirm it in the UI (see [Plans](#plans)). Reading state can contact the configured remote backend and load installed provider plugins. Use an initialized project and your existing credentials/environment; Hclaro does not resolve or store credentials itself.
+Launch runs only `version -json`, `workspace show`, and `show -json`. It never runs init, plan, refresh, apply, destroy, import, replace, or state modifications. A plan runs only when you confirm it in the UI (see [Plans](#plans)). Hclaro never runs `terraform import`/`tofu import`; imports use import blocks and a reviewed plan (see [Import](#import)). Reading state can contact the configured remote backend and load installed provider plugins. Use an initialized project and your existing credentials/environment; Hclaro does not resolve or store credentials itself.
 
 The UI displays **one recorded snapshot**, not live provider inventory or drift detection. Browsing, searching, filtering, sorting, and opening details read process memory. Restart Hclaro to reread state after an external change. Inherited `TF_CLI_ARGS` settings are accepted only when they contain `-no-color`; other injected flags fail explicitly because they can redirect raw output or alter reads. `TF_DATA_DIR`, `TF_WORKSPACE`, CLI configuration, and credential settings are inherited. `TF_LOG*` and update checks are disabled for child reads to prevent secret-bearing log files and update telemetry.
 
@@ -91,6 +91,21 @@ Any plan, not only a replacement, can be applied when all of these hold:
 Only then is the saved plan kept, in a private `0700` temp directory. **Review and apply…** asks the server for a one-time confirmation valid for five minutes, then shows the action counts, the exact command and the plan digest. Plans that delete, replace or forget anything require typing `apply <workspace>`. Hclaro then re-checks the workspace and the file's SHA-256 and runs `apply -input=false -json <saved plan>`. A saved plan never prompts, so this dialog is the only confirmation. Closing it applies nothing.
 
 The saved plan is deleted after one apply attempt, whatever the result, and also when it expires, when a newer plan replaces it, and when Hclaro stops. There is no automatic re-plan: if the engine reports the plan as stale, run a new one. After an apply, Hclaro re-reads state and reports the outcome separately from the process status: **applied**, **not applied**, or **uncertain** when an apply failed or was interrupted after starting.
+
+## Import
+
+**Import** brings an object that already exists outside Terraform/OpenTofu into state. Enter the resource instance address (managed resources only, with its count index or for_each key if the block uses one), the provider's import ID, an optional provider reference such as `aws.west`, and the name of a **new** file in the root module. **Check and preview** writes nothing and runs nothing. It reports:
+
+- the address is already in state, or an object of the same type with that `id` is already managed elsewhere (both block the import);
+- a missing resource block (blocks the import unless the engine generates one), or a block that could not be verified;
+- an instance key that does not match the block's `count`/`for_each` (warning; the check is textual, the plan is authoritative);
+- an existing import or moved block for the same address, an existing destination file, override file names, and import IDs that look like credentials (all block the import).
+
+The preview shows the exact new file. **Write file and plan import** needs a separate consent checkbox. Hclaro then writes the file without overwriting anything (temporary file, then a hard link that fails if the name exists; symlinks and a swapped project directory are refused) and runs a full plan, exactly like **Run plan**: you review the import together with every other change the plan contains. Applying uses the normal apply dialog. Because an import writes state, it always requires typing `apply <workspace>`.
+
+The engine can generate the resource block (`-generate-config-out`) for root-module addresses without an instance key when no block exists. It writes a second new file, `<name>_generated.tf`, during the plan. The review shows a redacted copy of it before anything can be applied; the file on disk contains the values the engine read from the object, so review it before committing it.
+
+Hclaro never deletes files you approved. After a failed plan or apply the review says how to retry (fix the file, then run any plan: plans include import blocks in your configuration) or back out (delete the file). When importing through Hclaro is unavailable, for example for remote execution backends, the wizard still checks the request and shows a manual recipe: the import block plus `plan -out`, `show` and `apply` of the saved plan. The legacy `import` command is shown only as a labeled alternative because it writes state without a reviewable plan.
 
 ## Development
 

@@ -43,7 +43,7 @@ func planHelper() {
 		os.Exit(2)
 	}
 	for _, a := range args[4:] {
-		if !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") {
+		if !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") && !strings.HasPrefix(a, "-generate-config-out=") {
 			os.Exit(2)
 		}
 	}
@@ -191,6 +191,17 @@ func TestPlanCancelInterruptsGracefully(t *testing.T) {
 	}
 }
 
+func TestPlanGenerateConfigArgument(t *testing.T) {
+	c := planCLI(t, "ok")
+	out := filepath.Join(t.TempDir(), "plan.tfplan")
+	if err := c.Plan(context.Background(), PlanRequest{Out: out, VarFiles: []string{"prod.tfvars"}, GenerateConfigOut: "imports_generated.tf"}, func([]byte) {}); err != nil {
+		t.Fatal(err)
+	}
+	if written, _ := os.ReadFile(out); string(written) != "-var-file=prod.tfvars,-generate-config-out=imports_generated.tf" {
+		t.Fatalf("argv %q", written)
+	}
+}
+
 func TestPlanRejectsUnsafeInputs(t *testing.T) {
 	c := planCLI(t, "ok")
 	for _, request := range []PlanRequest{
@@ -203,6 +214,11 @@ func TestPlanRejectsUnsafeInputs(t *testing.T) {
 		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{"a.b\n-target=c"}},
 		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{"a.b", "a.b"}},
 		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{""}},
+		{Out: filepath.Join(t.TempDir(), "p"), GenerateConfigOut: "../outside.tf"},
+		{Out: filepath.Join(t.TempDir(), "p"), GenerateConfigOut: "/tmp/abs.tf"},
+		{Out: filepath.Join(t.TempDir(), "p"), GenerateConfigOut: "-destroy.tf"},
+		{Out: filepath.Join(t.TempDir(), "p"), GenerateConfigOut: "gen.tfvars"},
+		{Out: filepath.Join(t.TempDir(), "p"), GenerateConfigOut: "gen.tf", Replace: []string{"a.b"}},
 	} {
 		if err := c.Plan(context.Background(), request, func([]byte) {}); err == nil {
 			t.Fatalf("%+v accepted", request)

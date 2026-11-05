@@ -30,7 +30,7 @@ const plan = {
 const applicable: Plan = { ...plan, apply: { available: true, artifactRetained: true, expiresAt: '2026-11-05T10:00:00Z' } };
 const options: PlanOptions = { canPlan: true, canApply: true, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 's3', varFiles: ['prod.tfvars'] };
 const operation: Operation = { id: 'b'.repeat(32), kind: 'plan', status: 'succeeded', stage: 'Finished', startedAt: '2026-11-05T09:00:00Z', durationMs: 4200, exitCode: 0, command: ['terraform', 'plan', '-input=false', '-json', '-out=<private temporary file>'], varFiles: [], replace: [], planId, stateReloaded: false, engineDiagnostics: [], cancelRequested: false, logDropped: 0, logRetained: true };
-const approval: Approval = { confirmationToken: 'f'.repeat(64), expiresAt: '2026-11-05T09:05:00Z', planId, artifactSha256: 'c'.repeat(64), engine: 'terraform', workspace: 'demo', summary: { create: 1, replace: 2, delete: 2 }, replace: [], destructive: true, phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>'] };
+const approval: Approval = { confirmationToken: 'f'.repeat(64), expiresAt: '2026-11-05T09:05:00Z', planId, artifactSha256: 'c'.repeat(64), engine: 'terraform', workspace: 'demo', summary: { create: 1, replace: 2, delete: 2 }, replace: [], imports: 0, destructive: true, phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>'] };
 
 type Route = (url: string, init?: RequestInit) => Response | undefined;
 let posts: { url: string; init: RequestInit }[] = [];

@@ -22,6 +22,11 @@ type Capabilities struct {
 	PlanReason   string `json:"planReason,omitempty"`
 	CanApply     bool   `json:"canApplySavedPlan"`
 	ApplyReason  string `json:"applyReason,omitempty"`
+	// Import blocks and configuration generation depend on the engine and version.
+	SupportsImportBlocks    bool   `json:"supportsImportBlocks"`
+	SupportsGeneratedConfig bool   `json:"supportsGeneratedConfig"`
+	CanImport               bool   `json:"canImport"`
+	ImportReason            string `json:"importReason,omitempty"`
 }
 type Info struct {
 	Project       string       `json:"project"`
@@ -161,7 +166,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		snap.Index = state.Empty()
 		// A project without recorded state can still be planned; other failures cannot.
 		planning := snap.Info.Capabilities
-		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above and restart Hclaro.", ApplyReason: "Applying needs a readable workspace."}
+		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above and restart Hclaro.", ApplyReason: "Applying needs a readable workspace.", ImportReason: "Importing needs a readable workspace. Resolve the issue above and restart Hclaro."}
 		if code == "state_absent" {
 			snap.Info.Capabilities = planning
 		}
@@ -219,6 +224,16 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		snap.Info.Capabilities.ApplyReason = "This engine adapter cannot apply saved plans."
 	default:
 		snap.Info.Capabilities.CanApply = true
+	}
+	caps := &snap.Info.Capabilities
+	caps.SupportsImportBlocks, caps.SupportsGeneratedConfig = engine.ImportSupport(engineName, version)
+	switch {
+	case !caps.SupportsImportBlocks:
+		caps.ImportReason = "This engine version does not support import blocks. Use the manual recipe."
+	case !caps.CanPlan:
+		caps.ImportReason = "Importing through Hclaro needs a local plan, which is unavailable for this workspace: " + caps.PlanReason + " Use the manual recipe with your own reviewed workflow."
+	default:
+		caps.CanImport = true
 	}
 	s.set(snap)
 	input, err := adapter.State(ctx)
