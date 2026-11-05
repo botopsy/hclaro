@@ -111,11 +111,12 @@ function Workbench({
     }),
     enabled: !!scoped
   });
+  // The launch view also reads the registry (no engine command) to find its own Hub entry.
   const projects = useQuery({
     ...projectsQuery,
-    enabled: !!scoped
+    enabled: !!scoped || route.kind === 'launch'
   });
-  const project = projects.data?.projects.find(p => p.id === scoped?.projectId);
+  const project = projects.data?.projects?.find(p => p.id === scoped?.projectId);
   // Launch routes keep their original paths; a Hub context reads only through its own ID.
   const base = scoped ? opened.data ? `contexts/${opened.data.id}` : undefined : '';
   const workspace = useQuery({
@@ -137,6 +138,19 @@ function Workbench({
     if (noLaunch && route.kind === 'launch' && view !== 'Settings') navigate('/projects', true);
   }, [noLaunch, route.kind, view]);
   const reread = () => setGeneration(g => g + 1);
+  // Project tools run in a Hub workspace context. For the project opened from the terminal,
+  // Tools opens its Hub entry in the workspace this view reads; unsaved projects go to the
+  // Hub, which offers Save to Hub.
+  const launchProject = !scoped ? projects.data?.projects?.find(p => p.launch) : undefined;
+  const launchToolsWorkspace = w?.info.workspace || launchProject?.inspection?.cliDefault || 'default';
+  function openLaunchTools() {
+    if (launchProject) {
+      navigate(contextPath(launchProject.id, launchToolsWorkspace, 'Tools'));
+      return;
+    }
+    setNotice('Save this project to the Hub to run project tools: use Save to Hub below.');
+    navigate('/projects');
+  }
   // The project opened from the terminal is inspected and read again on the server, as at
   // startup, for example after it was initialized from the Hub. No init, plan or refresh runs.
   const [rereading, setRereading] = useState(false);
@@ -263,9 +277,10 @@ function Workbench({
           icon: Icon
         }) => {
           // Project tools run in a Hub workspace context only.
-          const unavailable = noLaunch && name !== 'Settings' || name === 'Tools' && !scoped;
+          const unavailable = noLaunch && name !== 'Settings';
+          const launchTools = name === 'Tools' && !scoped;
           const active = !onHub && view === name;
-          return <button key={name} aria-label={name} disabled={unavailable} title={name === 'Tools' && !scoped ? 'Project tools run in Hub workspaces. Open this project from Projects.' : unavailable ? 'Open a project from Projects first.' : undefined} className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>;
+          return <button key={name} aria-label={name} disabled={unavailable} title={unavailable ? 'Open a project from Projects first.' : launchTools ? launchProject ? `Opens project tools for this folder in a Hub tab, workspace ${launchToolsWorkspace}.` : 'Project tools run in Hub workspaces. Save this project to the Hub first.' : undefined} className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => launchTools ? openLaunchTools() : setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>;
         })}</nav>
    <div className="nav-label future-label">WORKFLOWS</div>
    {([['Plans', Workflow], ['Import', Import], ['Operations', Terminal]] as const).map(([name, Icon]) => {
@@ -277,7 +292,7 @@ function Workbench({
    <div className="sidebar-bottom"><div className="local-note"><ShieldCheck size={18} /><div><strong>Local by design</strong><span>Your state stays on your machine.</span></div></div><div className="sidebar-foot"><span><span className="dot" />Alpha</span><span>v0.1</span></div></div>
   </aside>
   <div className="workspace-shell">
-   <header className="topbar"><nav className="breadcrumbs" aria-label="Breadcrumb"><Folder size={15} />{onHub || scoped ? <><button className="crumb" onClick={() => navigate('/projects')}>Projects</button>{route.kind !== 'hub' && <><ChevronRight size={13} />{scoped ? <button className="crumb" onClick={() => navigate(projectPath(scoped.projectId))}>{project?.alias || opened.data?.alias || 'Project'}</button> : <strong>{projects.data?.projects.find(p => p.id === (route.kind === 'project' ? route.projectId : ''))?.alias || 'Project'}</strong>}</>}{scoped && <><ChevronRight size={13} /><span>{scoped.workspace}</span><ChevronRight size={13} /><strong>{view}</strong></>}</> : <><span>{w?.info.project || 'Workspace'}</span><ChevronRight size={13} /><strong>{view}</strong></>}</nav><div className="topbar-actions">{!onHub && !noLaunch && <Button variant="ghost" size="small" aria-label="Find a resource" onClick={() => {
+   <header className="topbar"><nav className="breadcrumbs" aria-label="Breadcrumb"><Folder size={15} />{onHub || scoped ? <><button className="crumb" onClick={() => navigate('/projects')}>Projects</button>{route.kind !== 'hub' && <><ChevronRight size={13} />{scoped ? <button className="crumb" onClick={() => navigate(projectPath(scoped.projectId))}>{project?.alias || opened.data?.alias || 'Project'}</button> : <strong>{projects.data?.projects?.find(p => p.id === (route.kind === 'project' ? route.projectId : ''))?.alias || 'Project'}</strong>}</>}{scoped && <><ChevronRight size={13} /><span>{scoped.workspace}</span><ChevronRight size={13} /><strong>{view}</strong></>}</> : <><span>{w?.info.project || 'Workspace'}</span><ChevronRight size={13} /><strong>{view}</strong></>}</nav><div className="topbar-actions">{!onHub && !noLaunch && <Button variant="ghost" size="small" aria-label="Find a resource" onClick={() => {
             setView('Resources');
             requestAnimationFrame(() => searchRef.current?.focus());
           }}><Search size={14} /><span className="hide-small">Search</span></Button>}<span className="session-label"><LockKeyhole size={12} />Private local session</span><Button variant="ghost" size="icon" aria-label="Toggle light and dark theme" onClick={() => changePreference({

@@ -109,7 +109,7 @@ Choosing a workspace in Hclaro (a row on the project page, the **Workspace** swi
 
 ### Project tools
 
-Each Hub workspace tab has a **Tools** view (also reachable with **Project tools** on the project page, including for projects that are not initialized yet). Four read-only commands run only when you click them, in that tab's project, engine and workspace:
+Each Hub workspace tab has a **Tools** view (also reachable with **Project tools** on the project page, including for projects that are not initialized yet). For the project opened from the terminal, **Tools** in the sidebar opens the same view for that folder's Hub entry, in the workspace the launch view reads; if the folder is not saved in the Hub yet, it takes you to **Save to Hub** first. Four read-only commands run only when you click them, in that tab's project, engine and workspace:
 
 | Tool | Command | Reads | Shows |
 | --- | --- | --- | --- |
