@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"hclaro/internal/operations"
 	"hclaro/internal/security"
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
@@ -21,8 +22,9 @@ func errorJSON(w http.ResponseWriter, code int, name string) {
 	writeJSON(w, code, map[string]string{"error": name})
 }
 
-func Handler(store *workspace.Store, assets fs.FS, host, token, version string) http.Handler {
+func Handler(store *workspace.Store, manager *operations.Manager, assets fs.FS, host, token, csrf, version string) http.Handler {
 	mux := http.NewServeMux()
+	planRoutes(mux, store, manager, csrf, version)
 	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": version})
 	})
@@ -115,5 +117,5 @@ func Handler(store *workspace.Store, assets fs.FS, host, token, version string) 
 		}
 		files.ServeHTTP(w, r)
 	})
-	return security.Guard(host, token, mux)
+	return security.Guard(host, token, csrf, mux)
 }

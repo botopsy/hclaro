@@ -16,9 +16,10 @@ import (
 )
 
 type Capabilities struct {
-	CanReadState bool `json:"canReadState"`
-	CanPlan      bool `json:"canPlan"`
-	CanApply     bool `json:"canApplySavedPlan"`
+	CanReadState bool   `json:"canReadState"`
+	CanPlan      bool   `json:"canPlan"`
+	PlanReason   string `json:"planReason,omitempty"`
+	CanApply     bool   `json:"canApplySavedPlan"`
 }
 type Info struct {
 	Project       string       `json:"project"`
@@ -149,7 +150,12 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	fail := func(code, message string) {
 		snap.Status = "error"
 		snap.Index = state.Empty()
-		snap.Info.Capabilities = Capabilities{}
+		// A project without recorded state can still be planned; other failures cannot.
+		planning := snap.Info.Capabilities
+		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above and restart Hclaro."}
+		if code == "state_absent" {
+			snap.Info.Capabilities = Capabilities{CanPlan: planning.CanPlan, PlanReason: planning.PlanReason}
+		}
 		snap.Diagnostic = &Diagnostic{code, message}
 		s.set(snap)
 	}
@@ -160,7 +166,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	version, err := adapter.Version(ctx)
 	if err != nil {
 		if errors.Is(err, engine.ErrUnsafeArgs) {
-			fail("unsafe_cli_args", "Inherited TF_CLI_ARGS settings contain unsupported flags. M1 accepts only -no-color. Remove the injected flags for version/workspace/show and restart. No values or flags were logged.")
+			fail("unsafe_cli_args", "Inherited TF_CLI_ARGS settings contain unsupported flags. Only -no-color is accepted. Remove the injected flags for version/workspace/show and restart. No values or flags were logged.")
 			return
 		}
 		fail("engine_version", "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13 and check the executable on PATH.")
@@ -175,18 +181,28 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	name, err := adapter.Workspace(ctx)
 	if err != nil {
 		if errors.Is(err, engine.ErrUnsafeArgs) {
-			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace settings and restart. M1 accepts only -no-color.")
+			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace settings and restart. Only -no-color is accepted.")
 			return
 		}
 		fail("workspace_error", "Unable to determine the active workspace. Check backend initialization and workspace selection with the CLI, then restart Hclaro.")
 		return
 	}
 	snap.Info.Workspace = name
+	switch _, planner := adapter.(engine.Planner); {
+	case !planner:
+		snap.Info.Capabilities.PlanReason = "This engine adapter is read-only."
+	case snap.Info.ExecutionMode == "remote-exec":
+		snap.Info.Capabilities.PlanReason = "Remote execution backends run plans remotely. Hclaro supports only local plans."
+	case snap.Info.ExecutionMode != "local-cli":
+		snap.Info.Capabilities.PlanReason = "The backend type could not be verified from initialization metadata, so local planning is not enabled."
+	default:
+		snap.Info.Capabilities.CanPlan = true
+	}
 	s.set(snap)
 	input, err := adapter.State(ctx)
 	if err != nil {
 		if errors.Is(err, engine.ErrUnsafeArgs) {
-			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_show settings and restart. M1 accepts only -no-color; output-file overrides could persist raw secrets.")
+			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_show settings and restart. Only -no-color is accepted; output-file overrides could persist raw secrets.")
 			return
 		}
 		fail("state_unavailable", "State is unavailable. Check backend access, credentials, SSO/VPN, and installed provider schemas with the CLI, then restart. No refresh was run.")

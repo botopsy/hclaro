@@ -72,6 +72,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url.endsWith('workspace')) return Response.json(workspace);
+    if (url.endsWith('operations')) return Response.json({ operations: [] });
     if (url.includes('resources/test')) return Response.json(resource);
     return Response.json({
       resources: [resource],
@@ -134,7 +135,7 @@ describe('Resource explorer', () => {
     app();
     expect(await screen.findByText('A clean slate')).toBeInTheDocument();
   });
-  it('stores only safe appearance settings and keeps future operations disabled', async () => {
+  it('stores only safe appearance settings and offers no apply workflow', async () => {
     app();
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', {
@@ -146,11 +147,11 @@ describe('Resource explorer', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(JSON.parse(localStorage.getItem('hclaro.preferences')!).theme).toBe('light');
     expect(screen.getByRole('button', {
-      name: /Plans/
-    })).toBeDisabled();
-    expect(screen.getByRole('button', {
-      name: /Operations/
-    })).toBeDisabled();
+      name: 'Plans'
+    })).toBeEnabled();
+    expect(screen.queryByRole('button', {
+      name: /apply/i
+    })).not.toBeInTheDocument();
   });
 });
 it('renders hostile JSON as text', () => {

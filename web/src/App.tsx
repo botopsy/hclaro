@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Command, Copy, Database, FileCode2, Folder, FolderTree, Layers3, LayoutDashboard, LoaderCircle, LockKeyhole, Monitor, Moon, Network, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Workflow, X } from 'lucide-react';
 import { api } from './api';
-import type { Module, Resource, ResourcePage, Workspace } from './types';
+import type { Module, Operation, Resource, ResourcePage, Workspace } from './types';
 import { Button } from './components/ui/button';
 import { JsonTree } from './components/JsonTree';
-type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Settings';
+import { PlansView } from './plans/PlansView';
+import { OperationsView } from './plans/OperationsView';
+type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Settings' | 'Plans' | 'Operations';
 type Preferences = {
   theme: 'system' | 'light' | 'dark';
   density: 'comfortable' | 'compact';
@@ -70,6 +72,7 @@ export default function App() {
   const [selected, setSelected] = useState<string>();
   const [treeVisible, setTreeVisible] = useState(true);
   const [notice, setNotice] = useState('');
+  const [planId, setPlanId] = useState<string>();
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLElement>(null);
   const workspace = useQuery({
@@ -78,6 +81,12 @@ export default function App() {
     refetchInterval: q => q.state.data?.status === 'loading' ? 700 : false
   });
   const w = workspace.data;
+  const operations = useQuery({
+    queryKey: ['operations'],
+    queryFn: () => api<{ operations: Operation[] }>('operations'),
+    refetchInterval: q => q.state.data?.operations?.some(o => o.status === 'running') ? 2000 : false
+  });
+  const runningOperation = operations.data?.operations?.find(o => o.status === 'running');
   const ready = w?.status === 'ready' || w?.status === 'empty';
   const parameters = new URLSearchParams({
     query,
@@ -178,8 +187,7 @@ export default function App() {
           icon: Icon
         }) => <button key={name} aria-label={name} className={`nav-item ${view === name ? 'active' : ''}`} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>)}</nav>
    <div className="nav-label future-label">WORKFLOWS</div>
-   <button className="nav-item unavailable" disabled><Workflow size={17} /><span>Plans</span><span className="soon">SOON</span></button>
-   <button className="nav-item unavailable" disabled><Terminal size={17} /><span>Operations</span><span className="soon">SOON</span></button>
+   {([['Plans', Workflow], ['Operations', Terminal]] as const).map(([name, Icon]) => <button key={name} aria-label={name} className={`nav-item ${view === name ? 'active' : ''}`} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Operations' && runningOperation && <span className="nav-count running-dot" aria-label="Operation running"><LoaderCircle className="spin" size={11} /></span>}</button>)}
    <div className="sidebar-bottom"><div className="local-note"><ShieldCheck size={18} /><div><strong>Local by design</strong><span>Your state stays on your machine.</span></div></div><div className="sidebar-foot"><span><span className="dot" />Read-only alpha</span><span>v0.1</span></div></div>
   </aside>
   <div className="workspace-shell">
@@ -189,10 +197,13 @@ export default function App() {
           }}><Search size={14} /><span className="hide-small">Search</span></Button><span className="session-label"><LockKeyhole size={12} />Private local session</span><Button variant="ghost" size="icon" aria-label="Toggle light and dark theme" onClick={() => changePreference({
             theme: document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
           })}><Sun className="theme-to-light" size={17} /><Moon className="theme-to-dark" size={17} /></Button></div></header>
-   <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" /><div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div><span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div><span className="context-spacer" /><span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>
+   <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" /><div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div><span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div><span className="context-spacer" />{runningOperation && <button className="context-running" onClick={() => setView('Plans')}><LoaderCircle className="spin" size={12} />Plan running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>
    <main id="main-content" tabIndex={-1} className="main-content">
-    <div className="page-heading"><div><div className="eyebrow">YOUR INFRASTRUCTURE, IN FOCUS</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />Read-only</span></div>
-    {view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : workspace.isPending || w?.status === 'loading' ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Reading your workspace</h2><p>Inspecting recorded state through the local CLI. No plan or refresh is run.</p></div> : workspace.error ? <ErrorState message={workspace.error.message} retry={() => {
+    <div className="page-heading"><div><div className="eyebrow">YOUR INFRASTRUCTURE, IN FOCUS</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Operations' ? 'Plans run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' ? 'Review only' : 'Read-only'}</span></div>
+    {view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : view === 'Plans' ? <PlansView project={w?.info.project || 'this project'} workspaceStatus={w?.status} planId={planId} choosePlan={setPlanId} copy={copy} /> : view === 'Operations' ? <OperationsView openPlan={id => {
+          setPlanId(id);
+          setView('Plans');
+        }} /> : workspace.isPending || w?.status === 'loading' ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Reading your workspace</h2><p>Inspecting recorded state through the local CLI. No plan or refresh is run.</p></div> : workspace.error ? <ErrorState message={workspace.error.message} retry={() => {
           void workspace.refetch();
         }} /> : w?.diagnostic ? <ErrorState title={w.diagnostic.code === 'uninitialized' ? 'Initialize this workspace first' : w.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspace needs attention'} message={w.diagnostic.message} /> : w && <>
      {view === 'Resources' && <>

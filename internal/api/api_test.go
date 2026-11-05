@@ -11,13 +11,14 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
 
 func setup() http.Handler {
 	s := workspace.New(workspace.Info{Project: "demo", Initialized: true})
 	s.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo", JSON: fixtures.State}, "terraform")
-	return Handler(s, fstest.MapFS{"index.html": {Data: []byte("app")}}, "127.0.0.1:9273", strings.Repeat("a", 64), "test")
+	return Handler(s, operations.NewManager(s, nil, ""), fstest.MapFS{"index.html": {Data: []byte("app")}}, "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
 }
 func request(handler http.Handler, path, host, origin, token, method string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "http://127.0.0.1:9273"+path, nil)
@@ -93,7 +94,7 @@ func TestResourcesAndSecretBoundary(t *testing.T) {
 			t.Fatal(path)
 		}
 	}
-	for _, path := range []string{"/api/v1/plans", "/api/v1/apply", "/api/v1/imports", "/api/v1/execute"} {
+	for _, path := range []string{"/api/v1/apply", "/api/v1/imports", "/api/v1/execute", "/api/v1/plans/" + strings.Repeat("0", 32), "/api/v1/plans/not-an-id"} {
 		if get(path).Code != 404 {
 			t.Fatal(path)
 		}

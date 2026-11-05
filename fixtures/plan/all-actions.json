@@ -1,0 +1,487 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_changes": [
+    {
+      "address": "aws_s3_bucket.logs",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "logs",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "hclaro-logs",
+          "region": "eu-central-1",
+          "tags": {
+            "env": "demo"
+          },
+          "secret_access_key": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "policy": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after_unknown": {
+          "id": true,
+          "arn": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "policy": true
+        }
+      }
+    },
+    {
+      "address": "module.network.aws_subnet.main[0]",
+      "mode": "managed",
+      "type": "aws_subnet",
+      "name": "main",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "subnet-0a1",
+          "cidr_block": "10.0.1.0/24",
+          "availability_zone": "eu-central-1a",
+          "tags": {
+            "Name": "app-a"
+          },
+          "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after": {
+          "id": "subnet-0a1",
+          "cidr_block": "10.0.1.0/24",
+          "availability_zone": "eu-central-1a",
+          "tags": {
+            "Name": "app-a",
+            "owner": "platform"
+          },
+          "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after_unknown": {},
+        "before_sensitive": {
+          "password": true
+        },
+        "after_sensitive": {
+          "password": true
+        }
+      },
+      "module_address": "module.network",
+      "index": 0
+    },
+    {
+      "address": "module.network.aws_subnet.main[1]",
+      "mode": "managed",
+      "type": "aws_subnet",
+      "name": "main",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "subnet-0a1",
+          "cidr_block": "10.0.1.0/24",
+          "availability_zone": "eu-central-1a",
+          "tags": {
+            "Name": "app-a"
+          },
+          "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after": {
+          "id": "subnet-0a1",
+          "cidr_block": "10.0.1.0/24",
+          "availability_zone": "eu-central-1a",
+          "tags": {
+            "Name": "app-a"
+          },
+          "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after_unknown": {},
+        "before_sensitive": {
+          "password": true
+        },
+        "after_sensitive": {
+          "password": true
+        }
+      },
+      "module_address": "module.network",
+      "index": 1
+    },
+    {
+      "address": "aws_iam_role.legacy",
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "legacy",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "legacy",
+          "name": "legacy-deployer",
+          "policy": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": false
+      },
+      "action_reason": "delete_because_no_resource_config"
+    },
+    {
+      "address": "module.compute.aws_instance.main[0]",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "main",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "id": "i-0aa",
+          "instance_type": "t3.small",
+          "ami": "ami-old",
+          "user_data": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "availability_zone": "eu-central-1a"
+        },
+        "after": {
+          "instance_type": "t3.small",
+          "ami": "ami-new",
+          "user_data": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "availability_zone": "eu-central-1a"
+        },
+        "after_unknown": {
+          "id": true,
+          "arn": true
+        },
+        "before_sensitive": {
+          "user_data": true
+        },
+        "after_sensitive": {
+          "user_data": true
+        },
+        "replace_paths": [
+          [
+            "ami"
+          ]
+        ]
+      },
+      "module_address": "module.compute",
+      "index": 0,
+      "action_reason": "replace_because_cannot_update"
+    },
+    {
+      "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "node",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create",
+          "delete"
+        ],
+        "before": {
+          "id": "i-0bb",
+          "instance_type": "t3.micro",
+          "tags": {
+            "pool": "blue"
+          }
+        },
+        "after": {
+          "instance_type": "t3.micro",
+          "tags": {
+            "pool": "blue"
+          }
+        },
+        "after_unknown": {
+          "id": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {}
+      },
+      "module_address": "module.compute.module.workers[\"blue.eu\"]",
+      "index": "quote\"key",
+      "action_reason": "replace_by_request"
+    },
+    {
+      "address": "data.aws_caller_identity.current",
+      "mode": "data",
+      "type": "aws_caller_identity",
+      "name": "current",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "read"
+        ],
+        "before": null,
+        "after": {
+          "account_id": "000000000000"
+        },
+        "after_unknown": {
+          "id": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {}
+      },
+      "action_reason": "read_because_config_unknown"
+    },
+    {
+      "address": "aws_db_instance.primary",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "primary",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "db-1",
+          "engine_version": "15.4",
+          "allocated_storage": 20,
+          "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "connection": {
+            "host": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+          }
+        },
+        "after": {
+          "id": "db-1",
+          "engine_version": "16.1",
+          "allocated_storage": 40,
+          "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "connection": {
+            "host": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+          }
+        },
+        "after_unknown": {},
+        "before_sensitive": {
+          "password": true
+        },
+        "after_sensitive": {
+          "password": true
+        }
+      }
+    },
+    {
+      "address": "aws_instance.retired",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "retired",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "i-0dd",
+          "instance_type": "t3.nano"
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": false
+      },
+      "deposed": "00000001"
+    },
+    {
+      "address": "aws_security_group.web",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "sg-1",
+          "name": "web"
+        },
+        "after": {
+          "id": "sg-1",
+          "name": "web-public"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      },
+      "previous_address": "aws_security_group.legacy_web"
+    },
+    {
+      "address": "aws_vpc.imported",
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "imported",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "vpc-1",
+          "cidr_block": "10.0.0.0/16"
+        },
+        "after": {
+          "id": "vpc-1",
+          "cidr_block": "10.0.0.0/16"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {},
+        "importing": {
+          "id": "vpc-1"
+        }
+      }
+    },
+    {
+      "address": "random_password.unused",
+      "mode": "managed",
+      "type": "random_password",
+      "name": "unused",
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "forget"
+        ],
+        "before": {
+          "id": "none",
+          "result": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {
+          "result": true
+        },
+        "after_sensitive": false
+      }
+    },
+    {
+      "address": "aws_lb.edge",
+      "mode": "managed",
+      "type": "aws_lb",
+      "name": "edge",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update",
+          "delete"
+        ],
+        "before": {
+          "id": "lb-1",
+          "name": "edge"
+        },
+        "after": {
+          "id": "lb-1",
+          "name": "edge2"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-05T09:00:00Z",
+  "applyable": true,
+  "complete": true,
+  "errored": false,
+  "output_changes": {
+    "bucket_name": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after": "hclaro-logs",
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "db_password": {
+      "actions": [
+        "update"
+      ],
+      "before": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+      "after": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+      "after_unknown": false,
+      "before_sensitive": true,
+      "after_sensitive": true
+    },
+    "instance_ids": {
+      "actions": [
+        "update"
+      ],
+      "before": [
+        "i-0aa"
+      ],
+      "after": null,
+      "after_unknown": true,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "legacy_role": {
+      "actions": [
+        "delete"
+      ],
+      "before": "legacy-deployer",
+      "after": null,
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "region": {
+      "actions": [
+        "no-op"
+      ],
+      "before": "eu-central-1",
+      "after": "eu-central-1",
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    }
+  },
+  "resource_drift": [
+    {
+      "address": "aws_s3_bucket.artifacts",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "artifacts",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "hclaro-demo-artifacts",
+          "tags": {
+            "env": "demo"
+          },
+          "policy": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after": {
+          "id": "hclaro-demo-artifacts",
+          "tags": {
+            "env": "demo",
+            "changed_by": "console"
+          },
+          "policy": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ]
+}

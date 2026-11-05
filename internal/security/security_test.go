@@ -19,7 +19,7 @@ func TestTokensAndRequestBounds(t *testing.T) {
 	if len(one) != 64 || one == two {
 		t.Fatal("weak or reused token")
 	}
-	handler := Guard("127.0.0.1:9273", one, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	handler := Guard("127.0.0.1:9273", one, two, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
 	for _, tc := range []struct {
 		name, host, origin, site, auth, body, path string
 		code                                       int
@@ -52,5 +52,51 @@ func TestTokensAndRequestBounds(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != 400 {
 		t.Fatal("chunked body accepted")
+	}
+}
+
+func TestMutatingRequests(t *testing.T) {
+	token, csrf := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	handler := Guard("127.0.0.1:9273", token, csrf, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(202) }))
+	origin, op := "http://127.0.0.1:9273", "/api/v1/operations/"+strings.Repeat("0", 32)+"/cancel"
+	for _, tc := range []struct {
+		name, method, path, origin, site, csrf, contentType, body, auth string
+		code                                                            int
+	}{
+		{"start plan", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "{}", token, 202},
+		{"cancel", "POST", op, origin, "", csrf, "application/json; charset=utf-8", "{}", token, 202},
+		{"origin required", "POST", "/api/v1/plans", "", "same-origin", csrf, "application/json", "{}", token, 403},
+		{"foreign origin", "POST", "/api/v1/plans", "http://evil.example", "same-origin", csrf, "application/json", "{}", token, 403},
+		{"localhost origin", "POST", "/api/v1/plans", "http://localhost:9273", "", csrf, "application/json", "{}", token, 403},
+		{"same-site is not same-origin", "POST", "/api/v1/plans", origin, "same-site", csrf, "application/json", "{}", token, 403},
+		{"csrf token required", "POST", "/api/v1/plans", origin, "same-origin", "", "application/json", "{}", token, 403},
+		{"csrf token must match", "POST", "/api/v1/plans", origin, "same-origin", token, "application/json", "{}", token, 403},
+		{"form posts rejected", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/x-www-form-urlencoded", "a=1", token, 415},
+		{"text posts rejected", "POST", "/api/v1/plans", origin, "same-origin", csrf, "text/plain", "{}", token, 415},
+		{"empty body", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "", token, 413},
+		{"large body", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/json", strings.Repeat(" ", MaxBody+1), token, 413},
+		{"session required", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "{}", "", 401},
+		{"no apply route", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/apply", origin, "same-origin", csrf, "application/json", "{}", token, 405},
+		{"no arbitrary post", "POST", "/api/v1/workspace", origin, "same-origin", csrf, "application/json", "{}", token, 405},
+		{"bad operation id", "POST", "/api/v1/operations/../../cancel", origin, "same-origin", csrf, "application/json", "{}", token, 405},
+		{"put rejected", "PUT", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "{}", token, 405},
+		{"delete rejected", "DELETE", op, origin, "same-origin", csrf, "application/json", "{}", token, 405},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(tc.method, "http://127.0.0.1:9273"+tc.path, strings.NewReader(tc.body))
+			for k, v := range map[string]string{"Origin": tc.origin, "Sec-Fetch-Site": tc.site, "X-Hclaro-CSRF": tc.csrf, "Content-Type": tc.contentType} {
+				if v != "" {
+					r.Header.Set(k, v)
+				}
+			}
+			if tc.auth != "" {
+				r.Header.Set("Authorization", "Bearer "+tc.auth)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+			if w.Code != tc.code {
+				t.Fatalf("status %d, want %d", w.Code, tc.code)
+			}
+		})
 	}
 }

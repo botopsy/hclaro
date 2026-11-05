@@ -1,0 +1,2 @@
+{"@level": "info", "@message": "Terraform 1.9.8", "@module": "terraform.ui", "@timestamp": "2026-11-05T09:00:00.000000Z", "type": "version", "terraform": "1.9.8", "ui": "1.2"}
+{"@level": "error", "@message": "Error: Error acquiring the state lock", "@module": "terraform.ui", "@timestamp": "2026-11-05T09:00:00.000000Z", "type": "diagnostic", "diagnostic": {"severity": "error", "summary": "Error acquiring the state lock", "detail": "Lock Info:\n  ID: 1234\n  Path: s3://bucket/DO_NOT_LEAK_HCLARO_TEST_SECRET\n  Who: someone@host"}}

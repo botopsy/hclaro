@@ -13,6 +13,9 @@ import (
 
 // The Go test binary is the fake executable: no shell or real IaC engine is involved.
 func TestHelperProcess(t *testing.T) {
+	if os.Getenv("HCLARO_PLAN_HELPER") == "1" {
+		planHelper()
+	}
 	if os.Getenv("HCLARO_TEST_HELPER") != "1" {
 		return
 	}

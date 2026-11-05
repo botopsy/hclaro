@@ -16,6 +16,7 @@ import (
 
 	"hclaro/internal/api"
 	"hclaro/internal/engine"
+	"hclaro/internal/operations"
 	"hclaro/internal/security"
 	"hclaro/internal/ui"
 	"hclaro/internal/workspace"
@@ -39,7 +40,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.Usage = func() {
 		fmt.Fprintln(output, "Hclaro — local Terraform & OpenTofu explorer\n\nUsage: hclaro [flags]")
 		flags.PrintDefaults()
-		fmt.Fprintln(output, "\nRead-only: no init, plan, refresh or infrastructure mutations.\nExit codes: 0 success, 1 startup failure, 2 invalid arguments.")
+		fmt.Fprintln(output, "\nLaunch is read-only: no init, plan or refresh runs automatically. Plans run only when\nrequested in the UI, and Hclaro never applies them.\nExit codes: 0 success, 1 startup failure, 2 invalid arguments.")
 	}
 	if err := flags.Parse(args); err != nil {
 		return o, err
@@ -82,9 +83,10 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	store := workspace.New(info)
 	cli, detectErr := engine.Detect(root, o.Engine)
 	var adapter engine.Adapter
+	var planner engine.Planner
 	engineName := o.Engine
 	if detectErr == nil {
-		adapter = cli
+		adapter, planner = cli, cli
 		engineName = cli.Name
 	}
 	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(o.Port)))
@@ -99,16 +101,23 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	if err != nil {
 		return errors.New("unable to create secure session")
 	}
+	csrf, err := security.Token()
+	if err != nil {
+		return errors.New("unable to create secure session")
+	}
 	host := listener.Addr().String()
-	server := &http.Server{Handler: api.Handler(store, ui.Assets(), host, token, version), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	manager := operations.NewManager(store, planner, root)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// Request contexts derive from runCtx so event streams end promptly on shutdown.
+	// SSE responses extend their own write deadline per event.
+	server := &http.Server{Handler: api.Handler(store, manager, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	loaded := make(chan struct{})
 	go func() { defer close(loaded); store.Load(runCtx, adapter, engineName) }()
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()
 	url := "http://" + host + "/#session=" + token
-	fmt.Fprintf(output, "Hclaro %s · read-only explorer\nReading recorded state; the CLI may contact the configured backend.\nOpen this private session URL:\n%s\nPress Ctrl+C to stop.\n", version, url)
+	fmt.Fprintf(output, "Hclaro %s · local Terraform & OpenTofu workspace\nReading recorded state; the CLI may contact the configured backend.\nOpen this private session URL:\n%s\nPress Ctrl+C to stop.\n", version, url)
 	if !o.NoBrowser {
 		go func() {
 			browserCtx, done := context.WithTimeout(runCtx, 5*time.Second)
@@ -127,6 +136,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		}
 	}
 	cancel()
+	// A running plan is interrupted and its private temp files removed before exit.
+	manager.Close(20 * time.Second)
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()
 	_ = server.Shutdown(shutdownCtx)

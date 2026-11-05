@@ -1,0 +1,39 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_changes": [
+    {
+      "address": "aws_vpc.main",
+      "mode": "managed",
+      "type": "aws_vpc",
+      "name": "main",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "vpc-1",
+          "cidr_block": "10.0.0.0/16"
+        },
+        "after": {
+          "id": "vpc-1",
+          "cidr_block": "10.1.0.0/16"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-05T09:00:00Z",
+  "applyable": false,
+  "complete": true,
+  "errored": true
+}

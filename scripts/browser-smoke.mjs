@@ -59,6 +59,26 @@ try{
  await page.setViewportSize({width:820,height:1180})
  await page.screenshot({path:'docs/screenshots/resources-tablet-light.png',fullPage:true})
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'tablet horizontal overflow')
+ // Plans: review a plan produced by the real Go operations manager and plan parser.
+ await page.setViewportSize({width:1512,height:1050})
+ await page.getByRole('button',{name:'Toggle light and dark theme'}).click()
+ await page.getByRole('button',{name:'Plans',exact:true}).click()
+ await page.getByText(/11 resource changes and 4 output changes/).waitFor()
+ assert.equal(await page.getByRole('button',{name:/apply/i}).count(),0,'apply control rendered')
+ await page.getByRole('button',{name:/Replace\s*2/}).click()
+ await page.getByRole('button',{name:/module\.compute\.aws_instance\.main\[0\]/}).click()
+ await page.getByText('Destroy the existing object, then create a replacement.').waitFor()
+ assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in plan review')
+ await page.screenshot({path:'docs/screenshots/plans-dark.png',fullPage:true})
+ await page.getByRole('button',{name:'Run plan',exact:true}).first().click()
+ await page.getByRole('dialog',{name:'Run a plan'}).waitFor()
+ await page.screenshot({path:'docs/screenshots/plan-preflight-dark.png'})
+ await page.keyboard.press('Escape')
+ await page.getByRole('dialog').waitFor({state:'detached'})
+ await page.getByRole('button',{name:'Operations',exact:true}).click()
+ await page.getByRole('button',{name:/terraform plan/}).click()
+ await page.getByText(/Plan ready for review/).waitFor()
+ assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in operation log')
  // Exercise 1,000 resources through the same handler; rendering stays bounded to 50 rows.
  large=true
  await page.reload()
@@ -71,6 +91,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, copy, quoted keys, filters, overview, themes, tablet layout, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, copy, quoted keys, filters, overview, themes, tablet layout, plan review, preflight, operation log replay, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

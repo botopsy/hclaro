@@ -2,7 +2,7 @@
 
 A local, read-only workspace for Terraform and OpenTofu. Browse recorded resource instances, nested modules, and provider sources; search canonical addresses and inspect redacted attributes. No accounts, telemetry, external runtime assets, or infrastructure mutations.
 
-**Milestone 1 alpha.** Start with the synthetic demo. The embedded UI is the production React/Vite build, and local tests, lint, build, live loopback demo and browser checks pass (see [verification status](docs/M01-verification.md)). Remote CI, Linux/Windows runtime checks and real Terraform/OpenTofu certification are still open, so treat this as an alpha, not a release.
+**Milestone 2 alpha.** Browse state and, when you ask, run a plan and review every proposed change. Hclaro never applies plans. Start with the synthetic demo. See verification status for [M1](docs/M01-verification.md) and [M2](docs/M02-verification.md). Real Terraform/OpenTofu certification is still open, so treat this as an alpha, not a release.
 
 ## Run the isolated demo
 
@@ -46,7 +46,7 @@ make lint        # go vet + TypeScript + ESLint
 
 Hclaro inspects only the selected directory; it never searches parent directories. Terraform is preferred when both CLIs are on PATH. The port is dynamically allocated unless supplied. The browser opens automatically; if it does not, use the printed URL. Exit codes: 0 success/help/version, 1 startup failure, 2 invalid arguments.
 
-Launch runs only `version -json`, `workspace show`, and `show -json`. It never runs init, plan, refresh, apply, destroy, import, replace, or state modifications. Reading state can contact the configured remote backend and load installed provider plugins. Use an initialized project and your existing credentials/environment; Hclaro does not resolve or store credentials itself.
+Launch runs only `version -json`, `workspace show`, and `show -json`. It never runs init, plan, refresh, apply, destroy, import, replace, or state modifications. A plan runs only when you confirm it in the UI (see [Plans](#plans)). Reading state can contact the configured remote backend and load installed provider plugins. Use an initialized project and your existing credentials/environment; Hclaro does not resolve or store credentials itself.
 
 The UI displays **one recorded snapshot**, not live provider inventory or drift detection. Browsing, searching, filtering, sorting, and opening details read process memory. Restart Hclaro to reread state after an external change. Inherited `TF_CLI_ARGS` settings are accepted only when they contain `-no-color`; other injected flags fail explicitly because they can redirect raw output or alter reads. `TF_DATA_DIR`, `TF_WORKSPACE`, CLI configuration, and credential settings are inherited. `TF_LOG*` and update checks are disabled for child reads to prevent secret-bearing log files and update telemetry.
 
@@ -59,7 +59,23 @@ The private URL contains a random launch credential in its **fragment**, which i
 - Inspector with canonical address, provider source, module, instance key, nested JSON, and copy actions.
 - Overview with resource, data source, child-module and provider counts and distribution by type.
 - Light/dark/system themes, compact density, and flat/module grouping. Cmd/Ctrl+K focuses resource search; arrow keys navigate resource buttons; Escape closes details. Tab and native disclosure controls navigate modules and JSON.
-- Plans and Operations are visibly unavailable. No mutation endpoints or arbitrary executor exist.
+
+
+## Plans
+
+Open **Plans** and choose **Run plan**. A preflight dialog explains that the engine will contact providers and the backend with your existing credentials, may lock the state, and will not change infrastructure. You can add optional variable files from the project root; `terraform.tfvars` and `*.auto.tfvars` load automatically as usual.
+
+Hclaro then runs `plan -input=false -json -out=<private temp file>` and streams a sanitized progress log. You can cancel at any time: the engine is interrupted so it can release its lock. Afterwards Hclaro reads the saved plan with `show -json`, records its SHA-256, and deletes it.
+
+The review shows:
+
+- Counts per action (create, update, replace, delete, read, forget, unknown, no change), which also filter the list. Unknown action combinations are flagged as potentially destructive.
+- Every resource change in engine order, including collateral deletions, data reads, moves, imports and deposed objects. Unchanged resources are behind a toggle.
+- Per change: the full address, the replacement order (destroy-then-create or create-then-destroy), the reason, and an attribute diff marking redacted, sensitive, `known after apply`, and `forces replacement` values. A change to a redacted value is still listed.
+- Output changes (values always redacted) and changes made outside Terraform/OpenTofu (drift).
+- Metadata: engine, workspace, variable files, plan SHA-256, and a warning when configuration changed since the plan.
+
+Plans are **review only**. There is no apply button or endpoint. Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans with status, duration, exit code and their logs. History lives in memory only.
 
 ## Development
 
@@ -108,6 +124,10 @@ The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**,
 | Locked session | Open the latest private URL from the running terminal. |
 | Occupied port | Choose another `--port`, or omit the flag. |
 | Loopback permission denied | Run in an environment permitting listeners on 127.0.0.1. |
+| Plan unavailable | The Plans view states why: remote execution backend, unverified backend type, missing engine or workspace error. |
+| State locked | Another operation holds the lock. Wait, or investigate with your CLI. Hclaro never force-unlocks. |
+| Plan credentials/network errors | Refresh SSO or credentials in your terminal, check VPN, then run the plan again. |
+| `TF_CLI_ARGS_plan` refused | Remove injected flags other than `-no-color`; they could change what a reviewed plan contains. |
 | Redacted attributes | Sensitivity markers, credential-like names and values, and all unrecognized scalar attributes are masked on the server. There is no reveal/raw-state endpoint. |
 
 Metadata (addresses, module paths, provider sources, and selected identity attributes) must not be used to store secrets. Redaction is intentionally conservative and may hide useful values. See [security policy](SECURITY.md), [architecture](docs/architecture.md), and [M01 evidence and unresolved gates](docs/M01-verification.md).
