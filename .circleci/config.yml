@@ -1,7 +1,8 @@
 # CircleCI verification and releases for Hclaro. The GitHub CI workflow remains only as a
 # manual fallback.
 #
-# - Pull requests: full suite and browser checks on Linux; Go and unit tests on Windows.
+# - Pull requests: full suite and browser checks on Linux; Go and unit tests on Windows and
+#   macOS when Go code, fixtures, scripts or CI changed.
 # - master: full suite on Linux, Windows and macOS.
 # - Changes that touch only docs/, tasks/ or Markdown files stop after checkout.
 # - Tags like v1.2.3 or v1.2.3-alpha.1: full suite on all three OSes, then cross-compile,
@@ -41,11 +42,16 @@ parameters:
     default: botopsy/hclaro
 
 commands:
-  skip-docs-only:
-    description: Stop the job when the change touches only documentation.
+  skip-unrelated-changes:
+    description: Stop the job when the change touches nothing it tests.
+    parameters:
+      go-only:
+        description: Run only when Go code, test fixtures, scripts or CI changed.
+        type: boolean
+        default: false
     steps:
       - run:
-          name: Skip documentation-only changes
+          name: Skip unrelated changes
           command: |
             # A release always runs everything.
             [ -z "${CIRCLE_TAG:-}" ] || exit 0
@@ -57,10 +63,19 @@ commands:
             # When the diff cannot be computed, run everything.
             changed=$(git diff --name-only "$base" HEAD) || exit 0
             [ -n "$changed" ] || exit 0
-            if ! printf '%s\n' "$changed" | grep -Ev '^(docs/|tasks/)|\.md$' | grep -q .; then
-              echo "Only documentation changed:"; printf '  %s\n' $changed
-              circleci-agent step halt
+            # grep reads all input (no -q): under pipefail an early exit could kill printf
+            # and make a match look like a miss.
+            if [ "<< parameters.go-only >>" = true ]; then
+              # fixtures/ is embedded into Go tests; scripts/ holds the fake engine and fixture server.
+              relevant='\.go$|^go\.(mod|sum)$|^(scripts|fixtures|\.circleci)/'
+              printf '%s\n' "$changed" | grep -E "$relevant" >/dev/null && exit 0
+              echo "No Go code, fixtures, scripts or CI changed:"
+            else
+              printf '%s\n' "$changed" | grep -Ev '^(docs/|tasks/)|\.md$' >/dev/null && exit 0
+              echo "Only documentation changed:"
             fi
+            printf '  %s\n' $changed
+            circleci-agent step halt
 
   toolchain:
     description: Install pinned Go and Node and point every cache at .cache/ in the checkout.
@@ -180,10 +195,14 @@ jobs:
       browser:
         type: boolean
         default: false
+      go-only:
+        type: boolean
+        default: false
     executor: << parameters.os >>
     steps:
       - checkout
-      - skip-docs-only
+      - skip-unrelated-changes:
+          go-only: << parameters.go-only >>
       - toolchain:
           os: << parameters.os >>
       - restore-caches:
@@ -379,9 +398,16 @@ workflows:
           os: linux
           static: true
           browser: true
+      # Windows and macOS run on pull requests only when Go code changes; master and
+      # releases always run them.
       - verify:
           name: windows-unit
           os: windows
+          go-only: true
+      - verify:
+          name: macos-unit
+          os: macos
+          go-only: true
 
   master:
     when:
