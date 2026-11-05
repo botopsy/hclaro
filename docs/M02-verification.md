@@ -23,6 +23,7 @@ Environment: macOS 13 amd64, Go 1.27.2, Node 24.2.0, npm 11.3.0, Playwright 1.58
 | Security guard | 18 POST cases: exact Origin required, `localhost` and foreign origins refused, `same-site` refused, CSRF token required and matched, form/text content types 415, empty and >16 KiB bodies 413, missing session 401, PUT/DELETE/unknown POST paths and `/plans/{id}/apply` 405. |
 | API over HTTP | Acknowledgement required; unknown fields, trailing JSON and bad variable files rejected before the engine runs; full plan flow with SSE (`log`/`status`/`end`), resume from `after`, every change and drift detail retrieved, canary absent from every response; GET routes never invoke the engine; cancel flow; remote-execution workspace refused with a reason. |
 | Live loopback demo (`bin/hclaro` + synthetic CLI) | Plan started with curl using Origin + CSRF; POST without Origin or CSRF 403, form body 415, missing acknowledgement 400. Temp directory created `0700` during planning and empty afterwards. All 14 change/drift details, plan, operations, options, session, workspace and resources responses plus the SSE stream: canary 0 (318 in the fixture state). Apply route 405. Slow plan: second plan 409, cancel interrupted the synthetic CLI gracefully ("Interrupt received"), status `cancelled`, no plan, temp removed. Ctrl+C during a plan: exit under 1 s, temp removed, no engine processes left. Server log canary 0. |
+| CI (PR #2) | Passed on ubuntu-24.04, macos-latest and windows-latest (runs 41986644861, 41986651371). The first Windows run failed because the checkout converted golden fixtures to CRLF; `.gitattributes` now keeps `fixtures/**` LF. |
 | Live browser run (one-off Playwright script against the live demo) | A real browser opened Plans, confirmed the preflight, streamed the log, rendered the review, then started and cancelled a second plan. The server accepted the browser's POSTs, which proves the browser sent the exact Origin and CSRF headers; no page errors, no external requests, no canary. This script needs a TCP listener and is not part of `make browser-test`. |
 
 ## Defects found and fixed during verification
@@ -51,7 +52,7 @@ Environment: macOS 13 amd64, Go 1.27.2, Node 24.2.0, npm 11.3.0, Playwright 1.58
 ## Open items
 
 1. **Real engine certification.** `plan -json` and `show -json <plan>` follow documented Terraform and OpenTofu behavior, but no real engine, provider or backend has been run. Plan JSON fields beyond the documented common subset (for example `deferred_changes`) produce warnings, not rendering.
-2. **This branch's CI run** on Linux and Windows is pending until it is pushed.
+2. **Windows runtime behavior.** CI runs the test suite on Windows, but the cancel path below was not exercised against a running engine there.
 3. **Windows cancellation** kills the engine immediately (no interrupt available), which can leave a state lock. Documented; not exercised on Windows.
 4. **Diagnostics are heuristic.** Free-text engine and provider messages are sanitized line by line; an unrecognized secret inside an error message can still be shown.
 5. **UI reconnection.** The SSE client resumes from the last sequence number; server-side replay is tested, but a dropped connection mid-plan was not simulated in a browser.
