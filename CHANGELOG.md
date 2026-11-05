@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-alpha.5 — 2026-11-06
+
+The Workspace Hub, guided init, CLI workspace lifecycle and project tools are new in this release. They have been tested only against a synthetic engine, not a real Terraform/OpenTofu engine or remote backend; treat them as drafts and use them only on disposable projects.
 
 ### Project tools (M8, draft)
 
