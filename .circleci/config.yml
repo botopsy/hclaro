@@ -1,13 +1,16 @@
-# CircleCI verification for Hclaro. It replaces the push/pull_request triggers of the
-# GitHub "M1 checks" workflow; tagged releases still run on GitHub Actions.
+# CircleCI verification and releases for Hclaro. The GitHub CI workflow remains only as a
+# manual fallback.
 #
 # - Pull requests: full suite and browser checks on Linux; Go and unit tests on Windows.
 # - master: full suite on Linux, Windows and macOS.
 # - Changes that touch only docs/, tasks/ or Markdown files stop after checkout.
+# - Tags like v1.2.3 or v1.2.3-alpha.1: full suite on all three OSes, then cross-compile,
+#   package, smoke-test the packages natively and publish a GitHub release.
 #
 # No orbs: every step is written here. Toolchains are downloaded from go.dev and
-# nodejs.org at pinned versions and checked against pinned SHA-256 sums. Nothing here
-# uses real credentials, cloud accounts or a real Terraform/OpenTofu engine.
+# nodejs.org at pinned versions and checked against pinned SHA-256 sums. The only
+# credential is GITHUB_RELEASE_TOKEN, in the hclaro-release context, used by the publish
+# job. Nothing here uses cloud accounts or a real Terraform/OpenTofu engine.
 version: 2.1
 
 executors:
@@ -33,6 +36,9 @@ parameters:
   node-version:
     type: string
     default: "24.22.1"
+  github-repo:
+    type: string
+    default: botopsy/hclaro
 
 commands:
   skip-docs-only:
@@ -41,6 +47,8 @@ commands:
       - run:
           name: Skip documentation-only changes
           command: |
+            # A release always runs everything.
+            [ -z "${CIRCLE_TAG:-}" ] || exit 0
             if [ "$CIRCLE_BRANCH" = master ]; then
               base=HEAD^1
             else
@@ -242,11 +250,129 @@ jobs:
           path: .cache/browser-failure.png
           destination: browser-failure.png
 
+  release-build:
+    executor: linux
+    steps:
+      - checkout
+      - run:
+          name: Validate tag
+          command: |
+            if ! printf '%s' "$CIRCLE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+              echo "Tag '$CIRCLE_TAG' is not a semantic version like v1.2.3 or v1.2.3-alpha.1"; exit 1
+            fi
+      - toolchain:
+          os: linux
+      - restore-caches:
+          os: linux
+      - run:
+          name: Install frontend dependencies
+          command: npm ci --prefix web --no-audit --no-fund
+      - run:
+          name: Embedded assets match a fresh build
+          command: npm --prefix web run build && git diff --exit-code -- internal/ui/dist
+      - run:
+          name: Cross-compile
+          command: make cross VERSION="${CIRCLE_TAG#v}"
+      - run:
+          name: Package
+          command: |
+            set -euo pipefail
+            command -v zip >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends zip; }
+            VERSION="${CIRCLE_TAG#v}"
+            mkdir -p release
+            for bin in dist/hclaro-*; do
+              target="${bin#dist/hclaro-}"; target="${target%.exe}"
+              name="hclaro_${VERSION}_${target//-/_}"
+              stage="release/stage/$name"
+              mkdir -p "$stage"
+              exe=hclaro; case "$target" in windows-*) exe=hclaro.exe ;; esac
+              cp "$bin" "$stage/$exe"
+              cp README.md SECURITY.md CHANGELOG.md internal/ui/dist/THIRD-PARTY-NOTICES.txt "$stage/"
+              # Fixed mtimes and ownership keep archives reproducible for a given commit.
+              find "$stage" -exec touch -d "@$(git log -1 --format=%ct)" {} +
+              case "$target" in
+                windows-*) (cd release/stage && zip -qrX "../$name.zip" "$name") ;;
+                *) tar -C release/stage --sort=name --owner=0 --group=0 --numeric-owner -czf "release/$name.tar.gz" "$name" ;;
+              esac
+            done
+            rm -rf release/stage
+            (cd release && sha256sum hclaro_* > "hclaro_${VERSION}_checksums.txt")
+            cat "release/hclaro_${VERSION}_checksums.txt"
+      - persist_to_workspace:
+          root: .
+          paths: [release]
+      - store_artifacts:
+          path: release
+          destination: release
+
+  release-smoke:
+    # Run each packaged binary natively. Linux arm64 and macOS amd64 are cross-compiled only.
+    parameters:
+      os:
+        type: enum
+        enum: [linux, windows, macos]
+      target:
+        type: string
+      ext:
+        type: string
+    executor: << parameters.os >>
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Verify checksum and run --version
+          command: |
+            set -euo pipefail
+            VERSION="${CIRCLE_TAG#v}"
+            cd release
+            name="hclaro_${VERSION}_<< parameters.target >>"
+            line=$(grep " $name.<< parameters.ext >>\$" "hclaro_${VERSION}_checksums.txt")
+            if command -v sha256sum >/dev/null; then echo "$line" | sha256sum -c -; else echo "$line" | shasum -a 256 -c -; fi
+            case "<< parameters.os >>" in
+              windows) "$(cygpath -u "$SYSTEMROOT")/System32/tar.exe" -xf "$name.zip"; exe="$name/hclaro.exe" ;;
+              *) tar -xzf "$name.tar.gz"; exe="$name/hclaro" ;;
+            esac
+            out="$("$exe" --version | tr -d '\r')"
+            echo "$out"
+            [ "$out" = "hclaro $VERSION" ]
+
+  release-publish:
+    executor: linux
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Publish GitHub release
+          # GITHUB_RELEASE_TOKEN comes from the hclaro-release context, which only this job uses.
+          command: |
+            set -euo pipefail
+            : "${GITHUB_RELEASE_TOKEN:?Add GITHUB_RELEASE_TOKEN to the hclaro-release context}"
+            VERSION="${CIRCLE_TAG#v}"
+            api="https://api.github.com/repos/<< pipeline.parameters.github-repo >>"
+            gh() { curl -fsS -H "Authorization: Bearer $GITHUB_RELEASE_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@"; }
+            # The tag must already exist on GitHub (like gh release create --verify-tag).
+            gh "$api/git/ref/tags/$CIRCLE_TAG" >/dev/null
+            # Any pre-release suffix (alpha, beta, rc) is published as a GitHub pre-release.
+            prerelease=false; case "$VERSION" in *-*) prerelease=true ;; esac
+            body=$(jq -n --arg tag "$CIRCLE_TAG" --arg name "Hclaro $VERSION" --argjson pre "$prerelease" \
+              '{tag_name: $tag, name: $name, prerelease: $pre, draft: true, generate_release_notes: true}')
+            # Created as a draft and published only after every archive is attached.
+            created=$(gh -X POST "$api/releases" -d "$body")
+            id=$(printf '%s' "$created" | jq -r .id)
+            upload=$(printf '%s' "$created" | jq -r .upload_url); upload="${upload%%\{*}"
+            for f in release/*; do
+              gh -X POST -H "Content-Type: application/octet-stream" --data-binary "@$f" "$upload?name=$(basename "$f")" >/dev/null
+              echo "Uploaded $(basename "$f")"
+            done
+            gh -X PATCH "$api/releases/$id" -d '{"draft": false}' | jq -r .html_url
+
 workflows:
   pull-request:
     when:
-      not:
-        equal: [master, << pipeline.git.branch >>]
+      and:
+        - not:
+            equal: [master, << pipeline.git.branch >>]
+        - not: << pipeline.git.tag >>
     jobs:
       - verify:
           name: linux
@@ -274,3 +400,46 @@ workflows:
           name: macos
           os: macos
           browser: true
+
+  release:
+    when:
+      matches:
+        pattern: "^v[0-9].*$"
+        value: << pipeline.git.tag >>
+    jobs:
+      - verify:
+          name: release-linux
+          os: linux
+          static: true
+          browser: true
+      - verify:
+          name: release-windows
+          os: windows
+          browser: true
+      - verify:
+          name: release-macos
+          os: macos
+          browser: true
+      - release-build:
+          requires: [release-linux, release-windows, release-macos]
+      - release-smoke:
+          name: smoke-linux
+          os: linux
+          target: linux_amd64
+          ext: tar.gz
+          requires: [release-build]
+      - release-smoke:
+          name: smoke-macos
+          os: macos
+          target: darwin_arm64
+          ext: tar.gz
+          requires: [release-build]
+      - release-smoke:
+          name: smoke-windows
+          os: windows
+          target: windows_amd64
+          ext: zip
+          requires: [release-build]
+      - release-publish:
+          context: hclaro-release
+          requires: [smoke-linux, smoke-macos, smoke-windows]
