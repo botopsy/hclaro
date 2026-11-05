@@ -246,10 +246,8 @@ func Parse(input []byte) (Review, error) {
 		out.Unknown = raw.AfterUnknown == true
 		// Output values have arbitrary names and are often secrets: only structure is shown.
 		out.Before = state.Redact(raw.Before, raw.BeforeSensitive, "")
-		out.After = state.Redact(raw.After, raw.AfterSensitive, "")
-		if out.Unknown {
-			out.After = KnownAfterApply
-		}
+		// after_unknown can mark parts of a value, such as elements of a list of new IDs.
+		out.After = overlayUnknown(state.Redact(raw.After, raw.AfterSensitive, ""), raw.AfterUnknown, 0)
 		review.Outputs = append(review.Outputs, out)
 	}
 	if review.Summary[Unknown] > 0 {

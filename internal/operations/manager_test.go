@@ -339,13 +339,15 @@ func TestLogIsBounded(t *testing.T) {
 
 func TestTranslateSanitizes(t *testing.T) {
 	for input, want := range map[string]string{
-		`{"type":"log","@message":"\u001b[31mtoken=abc\u001b[0m"}`:                                                           "[line withheld: looks like a secret]",
-		`{"type":"log","@level":"warn","@message":"plain message"}`:                                                          "plain message",
+		`{"type":"log","@message":"\u001b[31mtoken=abc\u001b[0m"}`:  "[line withheld: looks like a secret]",
+		`{"type":"log","@level":"warn","@message":"plain message"}`: "plain message",
+		// Terraform 1.5's interrupt message starts with a newline.
+		`{"type":"log","@message":"\nInterrupt received.\nPlease wait for Terraform to exit"}`:                               "Interrupt received.\n…",
 		`{"type":"planned_change","change":{"resource":{"addr":"a.b[\"DO_NOT_LEAK_x\"]"},"action":"create"}}`:                "[redacted address]: plan to create",
 		`{"type":"planned_change","change":{"resource":{"addr":"a.b"},"action":"<script>"}}`:                                 "a.b: plan to unknown",
 		`{"type":"diagnostic","diagnostic":{"severity":"error","summary":"Bad","detail":"password = \"hunter2\"\nok line"}}`: "Error: Bad",
 	} {
-		_, text, diag, ok := translate([]byte(input), "Terraform")
+		_, text, diag, ok := translate([]byte(input), "Terraform", nil)
 		if !ok || text != want {
 			t.Errorf("%s: got %q", input, text)
 		}
@@ -354,7 +356,7 @@ func TestTranslateSanitizes(t *testing.T) {
 		}
 	}
 	for _, input := range []string{`not json`, `{"type":"apply_start"}`, `{}`} {
-		if _, _, _, ok := translate([]byte(input), "Terraform"); ok {
+		if _, _, _, ok := translate([]byte(input), "Terraform", nil); ok {
 			t.Errorf("%s rendered", input)
 		}
 	}

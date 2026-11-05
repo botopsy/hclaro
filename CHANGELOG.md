@@ -7,6 +7,10 @@
 - Live sanitized progress over SSE with bounded replay, cancellation (interrupt, then kill after 15 s), one-hour timeout and shutdown cleanup. Saved plans are deleted as soon as review data is extracted.
 - Operations view with session history.
 - Two CSRF-protected POST routes (start plan, cancel). No apply endpoint.
+- Windows cancellation sends `CTRL_BREAK` to the engine's own process group, so it can release a state lock before the 15 s kill.
+- Diagnostics and log messages redact known input values (`TF_VAR_*` and loaded variable files) before the line heuristics.
+- The context fingerprint now covers the data directory (backend metadata, workspace, modules) and planning environment variables, and is taken before the engine runs.
+- Verified against real Terraform 1.5.5 on a disposable local project. Fixes found there: the default local backend (no `backend` block) is now recognized for planning; partly unknown outputs show "known after apply" per element; a blank first line no longer hides the interrupt message.
 
 
 ## Unreleased — M1 verification closed locally
