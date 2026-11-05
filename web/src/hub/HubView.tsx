@@ -342,6 +342,8 @@ export function ProjectView({ id }: { id: string }) {
     void client.invalidateQueries({ queryKey: ['projects'] });
     void client.invalidateQueries({ queryKey: ['inspect', id] });
     client.removeQueries({ queryKey: ['context-open', id] });
+    // An init of the project opened from the terminal makes the server read it again.
+    void client.invalidateQueries({ queryKey: ['workspace'] });
   }, [client, id]);
   const workspaceFinished = useCallback(() => {
     void client.invalidateQueries({ queryKey: ['projects'] });

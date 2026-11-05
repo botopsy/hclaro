@@ -148,7 +148,10 @@ type Hub struct {
 	Locks *rootlock.Set
 	// Launch is the canonical root Hclaro was started with, or "".
 	Launch string
-	Now    func() time.Time
+	// LaunchChanged runs after an init of the launch root has ended and released the root,
+	// so the launch project can be read again. Nil does nothing.
+	LaunchChanged func()
+	Now           func() time.Time
 	// MaxContexts bounds snapshots kept in memory; the oldest is closed first.
 	MaxContexts int
 	base        context.Context

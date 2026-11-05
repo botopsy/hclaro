@@ -129,6 +129,9 @@ type Manager struct {
 	ApprovalTTL  time.Duration
 	// Reload re-reads state after an apply. It is nil in tests that do not need it.
 	Reload func(context.Context)
+	// Reinspect reads the launch project's folder metadata again. With Reload it lets
+	// Reread pick up changes made outside Hclaro's plans, such as an init. Nil disables Reread.
+	Reinspect func() workspace.Info
 	// Locks, when set, is shared with Hub initialization so a plan, import or apply never
 	// runs in a root that is being initialized, and the other way around.
 	Locks    *rootlock.Set
@@ -620,6 +623,35 @@ func (m *Manager) Plan(id string) (*Plan, bool) {
 
 // Close cancels any running operation, waits (bounded) for its cleanup and deletes any
 // retained saved plan.
+// Reread inspects the launch project's folder again and reads its state in the background,
+// as at startup. It runs no init, plan or refresh. It is refused while a plan, apply or
+// import runs, while another operation (such as a Hub init) holds the root, and while a
+// read is already in progress.
+func (m *Manager) Reread() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch {
+	case m.closed:
+		return ErrClosed
+	case m.root == "" || m.Reinspect == nil || m.Reload == nil:
+		return ErrUnavailable
+	case m.running != nil:
+		return ErrBusy
+	case m.store.Get().Status == "loading":
+		return ErrLoading
+	}
+	if _, busy := m.Locks.Holder(m.root); busy {
+		return ErrBusy
+	}
+	m.store.Reset(m.Reinspect())
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		m.Reload(m.base)
+	}()
+	return nil
+}
+
 func (m *Manager) Close(wait time.Duration) {
 	m.mu.Lock()
 	m.closed = true

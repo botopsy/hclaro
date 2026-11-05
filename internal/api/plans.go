@@ -173,6 +173,25 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		}
 		writeJSON(w, 200, detail)
 	})
+	// Reload inspects the launch project again and rereads its state, as at startup.
+	mux.HandleFunc("POST /api/v1/workspace/reload", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		switch err := manager.Reread(); {
+		case errors.Is(err, operations.ErrBusy):
+			writeJSON(w, 409, map[string]string{"error": "operation_running", "reason": "An operation is running in this project. Read it again when it finishes."})
+		case errors.Is(err, operations.ErrLoading):
+			errorJSON(w, 409, "workspace_loading")
+		case errors.Is(err, operations.ErrClosed):
+			errorJSON(w, 503, "shutting_down")
+		case err != nil:
+			writeJSON(w, 409, map[string]string{"error": "reload_unavailable", "reason": "No project was opened from the terminal."})
+		default:
+			writeJSON(w, 202, map[string]string{"status": "loading"})
+		}
+	})
 	mux.HandleFunc("GET /api/v1/operations", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"operations": manager.Operations()})
 	})

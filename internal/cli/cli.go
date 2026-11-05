@@ -147,6 +147,11 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	defer cancel()
 	// After an apply, state is re-read so the explorer shows what the engine recorded.
 	manager.Reload = func(ctx context.Context) { store.Load(ctx, adapter, engineName) }
+	if root != "" {
+		// "Read again" and a Hub init of this folder inspect it again before reading state.
+		manager.Reinspect = func() workspace.Info { return workspace.Inspect(root) }
+		hub.LaunchChanged = func() { _ = manager.Reread() }
+	}
 	// Request contexts derive from runCtx so event streams end promptly on shutdown.
 	// SSE responses extend their own write deadline per event.
 	server := &http.Server{Handler: api.Handler(store, manager, hub, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
