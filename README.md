@@ -107,7 +107,17 @@ $env:CGO_ENABLED='0'; $env:GOOS='windows'; $env:GOARCH='amd64'
 go build -trimpath -buildvcs=false -ldflags='-s -w' -o hclaro.exe ./cmd/hclaro
 ```
 
-Cross-compilation is not OS runtime validation. Release signing, installers, and package-manager distribution are outside M1.
+Cross-compilation is not OS runtime validation. Release signing, installers, and package-manager distribution are not provided.
+
+### Releases
+
+Pushing a tag such as `v0.2.0` or `v0.2.0-alpha.1` runs `.github/workflows/release.yml`. It reruns the full CI suite on all three OSes, rebuilds the frontend and checks it matches the committed embed, cross-compiles with the tag's version, and packages each target as `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) with the README, changelog, security policy and third-party notices, plus a SHA-256 checksums file. Linux amd64, macOS arm64 and Windows amd64 packages are then checksum-verified and run with `--version` on native runners; Linux arm64 and macOS amd64 are cross-compiled only. Finally it creates a GitHub release with the archives attached. Tags with a suffix (`-alpha.1`, `-rc.1`) are marked as pre-releases.
+
+```sh
+git tag v0.1.0-alpha.2 && git push origin v0.1.0-alpha.2
+```
+
+Binaries are unsigned: macOS Gatekeeper and Windows SmartScreen will warn on first launch. Verify downloads with `shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing`.
 
 ## Compatibility and troubleshooting
 
