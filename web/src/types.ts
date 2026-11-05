@@ -74,7 +74,7 @@ export type EngineDiagnostic = {
 };
 export type Operation = {
   id: string;
-  kind: 'plan' | 'apply' | 'init' | 'workspace';
+  kind: 'plan' | 'apply' | 'init' | 'workspace' | 'tool';
   // queued, cancelling and unknown are used by Hub initialization and workspace commands only.
   status: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
   stage: string;
@@ -105,6 +105,60 @@ export type Operation = {
   lockfileChanged?: boolean;
   // Hub workspace commands only.
   workspace?: WorkspaceResult;
+  // Hub project tools only.
+  tool?: ToolResult;
+};
+export type ToolName = 'validate' | 'fmt-check' | 'providers' | 'outputs-metadata';
+// A tool's sanitized result. outcome is passed, findings (the check ran and found problems)
+// or not_checked (it did not complete; nothing can be concluded).
+export type ToolResult = {
+  tool: ToolName;
+  contextId: string;
+  workspace: string;
+  usesWorkspace: boolean;
+  engineVersion?: string;
+  outcome: 'passed' | 'findings' | 'not_checked';
+  output?: 'json' | 'human';
+  partial?: boolean;
+  valid?: boolean;
+  errors: number;
+  warnings: number;
+  findings: ToolFinding[];
+  format?: {
+    recursive: boolean;
+    checked: number;
+    folders: number;
+    unformatted: string[];
+    hidden: number;
+    skipped: string[];
+  };
+  providers?: {
+    configuration: ProviderRequirement[];
+    state: ProviderRequirement[];
+    hidden: number;
+  };
+  outputs?: {
+    items: OutputMeta[];
+    hidden: number;
+  };
+};
+export type ToolFinding = {
+  severity: 'error' | 'warning';
+  summary: string;
+  detail?: string;
+  file?: string;
+  line?: number;
+  column?: number;
+};
+export type ProviderRequirement = {
+  source: string;
+  constraint?: string;
+  module?: string;
+};
+export type OutputMeta = {
+  name: string;
+  type: string;
+  sensitive: boolean;
 };
 export function operationActive(op: Pick<Operation, 'status'>) {
   return op.status === 'queued' || op.status === 'running' || op.status === 'cancelling';

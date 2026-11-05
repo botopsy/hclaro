@@ -1,0 +1,34 @@
+{
+  "format_version": "1.0",
+  "valid": false,
+  "error_count": 2,
+  "warning_count": 1,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "summary": "Unsupported argument",
+      "detail": "An argument named \"bucket_name\" is not expected here.",
+      "range": {"filename": "main.tf", "start": {"line": 3, "column": 3, "byte": 40}, "end": {"line": 3, "column": 14, "byte": 51}},
+      "snippet": {"context": "resource \"aws_s3_bucket\" \"logs\"", "code": "  bucket_name = \"plain-unflagged-secret-7f3a\"", "start_line": 3, "highlight_start_offset": 2, "highlight_end_offset": 13, "values": []}
+    },
+    {
+      "severity": "error",
+      "summary": "Invalid reference",
+      "detail": "A reference to a resource type must be followed by at least one attribute access.\npassword = \"DO_NOT_LEAK_HCLARO_TEST_SECRET\"",
+      "range": {"filename": "modules/db/main.tf", "start": {"line": 12, "column": 9, "byte": 200}, "end": {"line": 12, "column": 20, "byte": 211}},
+      "snippet": {"context": null, "code": "  password = \"DO_NOT_LEAK_HCLARO_TEST_SECRET\"", "start_line": 12, "highlight_start_offset": 8, "highlight_end_offset": 19, "values": []}
+    },
+    {
+      "severity": "error",
+      "summary": "Outside file",
+      "detail": "A diagnostic whose file is outside the project root.",
+      "range": {"filename": "../../etc/passwd", "start": {"line": 1, "column": 1, "byte": 0}, "end": {"line": 1, "column": 2, "byte": 1}}
+    },
+    {
+      "severity": "warning",
+      "summary": "Deprecated attribute",
+      "detail": "The attribute \"acl\" is deprecated.",
+      "range": {"filename": "main.tf", "start": {"line": 4, "column": 3, "byte": 60}, "end": {"line": 4, "column": 6, "byte": 63}}
+    }
+  ]
+}

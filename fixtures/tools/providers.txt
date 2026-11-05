@@ -1,0 +1,14 @@
+
+Providers required by configuration:
+.
+├── provider[registry.terraform.io/hashicorp/aws] ~> 5.0
+├── provider[registry.terraform.io/hashicorp/random]
+└── module.network
+    ├── provider[registry.terraform.io/hashicorp/aws] >= 4.0
+    └── module.subnets
+        └── provider[registry.terraform.io/hashicorp/aws]
+
+Providers required by state:
+
+    provider[registry.terraform.io/hashicorp/aws]
+

@@ -103,25 +103,37 @@ func (r *Inits) Start(req InitRequest) (Operation, error) {
 	op := Operation{
 		Kind: "init", Command: InitCommand(req.Engine, false), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices),
 	}
-	return r.begin(op, req.Release, func(ctx context.Context, e *initEntry) { r.run(ctx, e, req) })
+	return r.begin(op, req.Release, nil, func(ctx context.Context, e *initEntry) { r.run(ctx, e, req) })
 }
 
 // begin records a queued operation for a project and runs it in the background. The caller
-// has claimed the project root; release gives it up once the operation ends.
-func (r *Inits) begin(op Operation, release func(), run func(context.Context, *initEntry)) (Operation, error) {
+// has claimed the project root; release gives it up once the operation ends. conflict, when
+// set, is checked under the same lock against the recorded operations and refuses to start.
+func (r *Inits) begin(op Operation, release func(), conflict func([]*initEntry) error, run func(context.Context, *initEntry)) (Operation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
 		release()
 		return Operation{}, ErrClosed
 	}
+	if conflict != nil {
+		if err := conflict(r.entries); err != nil {
+			release()
+			return Operation{}, err
+		}
+	}
 	ctx, cancel := context.WithCancel(r.base)
 	op.ID, op.Status, op.Stage, op.StartedAt = r.NewID(), Queued, "Queued", time.Now().UTC().Format(time.RFC3339)
 	op.VarFiles, op.Replace, op.Diagnostics, op.LogRetained = []string{}, []string{}, []EngineDiagnostic{}, true
 	e := &initEntry{projectID: op.ProjectID, entry: entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release}}
 	r.entries = append(r.entries, e)
-	if len(r.entries) > maxInits {
-		r.entries = r.entries[len(r.entries)-maxInits:]
+	// The oldest finished operations are forgotten first; running ones stay reachable.
+	for i := 0; len(r.entries) > maxInits && i < len(r.entries); {
+		if active(r.entries[i].op.Status) {
+			i++
+			continue
+		}
+		r.entries = slices.Delete(r.entries, i, i+1)
 	}
 	for i := 0; i < len(r.entries)-maxInitLogs; i++ {
 		if s := r.entries[i].op.Status; s != Queued && s != Running && s != Cancelling {
@@ -396,6 +408,9 @@ func (r *Inits) snapshot(e *initEntry) Operation {
 		w.Workspaces = slices.Clone(w.Workspaces)
 		op.Workspace = &w
 	}
+	if op.Tool != nil {
+		op.Tool = op.Tool.clone()
+	}
 	if op.LockfileChanged != nil {
 		v := *op.LockfileChanged
 		op.LockfileChanged = &v
@@ -421,6 +436,22 @@ func (r *Inits) Operation(id string) (Operation, *Log, bool) {
 		return Operation{}, nil, false
 	}
 	return r.snapshot(e), e.log, true
+}
+
+// List returns a project's retained operations, newest first.
+func (r *Inits) List(projectID string) []Operation {
+	if r == nil {
+		return []Operation{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := []Operation{}
+	for i := len(r.entries) - 1; i >= 0; i-- {
+		if r.entries[i].projectID == projectID {
+			out = append(out, r.snapshot(r.entries[i]))
+		}
+	}
+	return out
 }
 
 // Latest returns the most recent operation of one kind ("init" or "workspace") in a project.

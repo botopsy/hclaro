@@ -214,6 +214,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	}
 	initRoutes(mux, hub)
 	workspaceRoutes(mux, hub)
+	toolRoutes(mux, hub)
 	mux.HandleFunc("GET /api/v1/contexts/{cid}", func(w http.ResponseWriter, r *http.Request) {
 		if c := contextOf(w, r); c != nil {
 			writeJSON(w, 200, workspaceBody(c.Snapshot(), c))
@@ -333,4 +334,60 @@ func workspaceRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			writeJSON(w, 202, op)
 		}
 	})
+}
+
+var hubIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// toolRoutes serve the read-only project utilities and the project's operation history. The
+// server builds the argv from the tool name; the request names only an open workspace
+// context and, for fmt -check, whether the check is recursive.
+func toolRoutes(mux *http.ServeMux, hub *projects.Hub) {
+	mux.HandleFunc("GET /api/v1/projects/{id}/operations", func(w http.ResponseWriter, r *http.Request) {
+		ops, err := hub.Operations(r.PathValue("id"))
+		if err != nil {
+			projectError(w, hub, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"operations": ops})
+	})
+	for _, tool := range []engine.Tool{engine.ToolValidate, engine.ToolFormat, engine.ToolProviders, engine.ToolOutputs} {
+		mux.HandleFunc("POST /api/v1/projects/{id}/operations/"+string(tool), func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				ContextID string `json:"contextId"`
+				Recursive *bool  `json:"recursive"`
+			}
+			if !decodeBody(w, r, &body) {
+				return
+			}
+			// Only fmt -check has an option; every other flag is fixed server-side.
+			if body.Recursive != nil && tool != engine.ToolFormat {
+				errorJSON(w, 400, "invalid_request")
+				return
+			}
+			if !hubIDPattern.MatchString(body.ContextID) {
+				reasonJSON(w, 400, "invalid_context", "Open a workspace of this project, then run the tool from it.")
+				return
+			}
+			op, err := hub.StartTool(r.PathValue("id"), body.ContextID, tool, body.Recursive != nil && *body.Recursive)
+			var refusal *projects.ToolRefusal
+			switch {
+			case errors.As(err, &refusal):
+				reasonJSON(w, 409, refusal.Code, refusal.Message)
+			case errors.Is(err, projects.ErrContextNotFound):
+				reasonJSON(w, 404, "context_closed", "This workspace view is no longer open, or belongs to another project. Open the workspace again.")
+			case errors.Is(err, projects.ErrContextChanged):
+				reasonJSON(w, 409, "context_changed", "The project's engine or folder changed after this workspace was opened. Nothing was run. Open the workspace again.")
+			case errors.Is(err, operations.ErrToolRunning):
+				reasonJSON(w, 409, "tool_running", "This tool is already running for this workspace. Wait for it to finish or cancel it.")
+			case errors.Is(err, operations.ErrToolsBusy):
+				reasonJSON(w, 409, "tools_busy", "Too many project tools are running. Wait for some to finish.")
+			case errors.Is(err, operations.ErrClosed):
+				reasonJSON(w, 503, "shutting_down", "Hclaro is shutting down.")
+			case err != nil:
+				projectError(w, hub, err)
+			default:
+				writeJSON(w, 202, op)
+			}
+		})
+	}
 }

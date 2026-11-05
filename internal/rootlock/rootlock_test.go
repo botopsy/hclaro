@@ -56,3 +56,38 @@ func TestConcurrentClaimsHaveOneWinner(t *testing.T) {
 		t.Fatalf("%d winners", wins)
 	}
 }
+
+func TestSharedClaims(t *testing.T) {
+	s := New()
+	a, ok := s.AcquireShared("/infra/dev")
+	if !ok {
+		t.Fatal("shared claim refused")
+	}
+	b, ok := s.AcquireShared("/infra/dev")
+	if !ok {
+		t.Fatal("shared claims must coexist")
+	}
+	if _, ok := s.Acquire("/infra/dev", "init"); ok {
+		t.Fatal("exclusive claim accepted while shared claims are held")
+	}
+	if _, held := s.Holder("/infra/dev"); held {
+		t.Fatal("shared claims are not exclusive holders")
+	}
+	if n := s.Readers("/infra/dev"); n != 2 {
+		t.Fatalf("%d readers", n)
+	}
+	a()
+	a()
+	if n := s.Readers("/infra/dev"); n != 1 {
+		t.Fatalf("release must be idempotent: %d readers", n)
+	}
+	b()
+	release, ok := s.Acquire("/infra/dev", "init")
+	if !ok {
+		t.Fatal("exclusive claim refused after shared claims ended")
+	}
+	if _, ok := s.AcquireShared("/infra/dev"); ok {
+		t.Fatal("shared claim accepted while an exclusive claim is held")
+	}
+	release()
+}

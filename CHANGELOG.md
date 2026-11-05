@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Project tools (M8, draft)
+
+- Each Hub workspace tab has a **Tools** view (and the project page a **Project tools** button) with four read-only commands that run only on click: **Validate** (`validate -json`, human-output fallback), **Format check** (`fmt -check -no-color`, optional `-recursive`), **Providers** (`providers`) and **Outputs** (`output -json`, metadata only).
+- Commands are fixed server-side; the request names only an open workspace context (and `recursive` for format check). No plain `fmt`, `-diff`, `-write`, `-chdir`, paths, executables or extra flags. Inherited `TF_CLI_ARGS`/`TF_CLI_ARGS_<command>` other than `-no-color` refuse.
+- Validate distinguishes **valid**, **not valid** and **not validated** (init needed, providers missing, unreadable output), with sanitized diagnostics and `file:line:column`; snippets are never decoded. A not-validated result offers to review Init without running it.
+- Format check enumerates the files it reads first, shows only those paths, never follows linked folders (a linked folder refuses a recursive check; a linked file outside the project refuses any check) and never writes.
+- Providers and outputs run with the context's workspace as child `TF_WORKSPACE`; validate and format check run without one. Output values are skipped by the decoder and never stored, logged or returned; names that look like secrets are counted only.
+- Tools take a shared claim on the project root: they run alongside each other and in parallel across projects, never alongside init, workspace commands or plans in the same folder. The same tool cannot run twice at once in one context. Cancel interrupts the process group and discards partial output.
+- Operation center: **Operations in this project** lists init, workspace and tool operations for the project (this workspace or all) with status, duration, result and sanitized logs. In memory only; running operations are never evicted from the history.
+- New routes: `POST /api/v1/projects/{id}/operations/{validate|fmt-check|providers|outputs-metadata}` (`{contextId, recursive?}`), `GET /api/v1/projects/{id}/operations`; operations use `kind: "tool"` and the shared `/api/v1/operations/{id}` routes. Client route `/projects/<id>/workspaces/<name>/tools`.
+- The synthetic CLI emulates validate, fmt -check, providers and output -json with failure modes (`HCLARO_FAKE_TOOL`).
+
 ### CLI workspace lifecycle (M7, draft)
 
 - A Hub project page offers **New workspace…** and, under **Advanced actions**, **Set CLI default…** and **Delete** per workspace. Each lists workspaces with the CLI first, shows the exact command, effects and inherited-setting notices, and runs only after a checkbox (create, set default) or the exact typed name (delete).
