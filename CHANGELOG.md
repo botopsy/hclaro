@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — release packaging
+
+- Tag-triggered release workflow: full CI, embed drift check, cross-compiled archives for macOS/Linux (amd64, arm64) and Windows amd64 with checksums, native `--version` smoke tests, and a GitHub release (pre-release for suffixed tags).
+- CI no longer runs twice on tag pushes; the release workflow calls it instead.
+
 ## Unreleased — M2 plan visualizer
 
 - Explicit plan runs from the UI with a preflight dialog: `plan -input=false -json -out=<private temp>`, then `show -json`; optional variable files from the project root.
