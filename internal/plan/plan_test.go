@@ -102,7 +102,7 @@ func TestAllActions(t *testing.T) {
 	for _, a := range cbd.Attributes {
 		cbdRows[a.Path] = a
 	}
-	if !cbdRows["ami"].ForcesReplacement || cbdRows["ami"].Before != "[redacted]" || cbdRows["ami"].Kind != "changed" {
+	if !cbdRows["ami"].ForcesReplacement || cbdRows["ami"].Before != "ami-old" || cbdRows["ami"].Kind != "changed" {
 		t.Fatalf("replace path not marked: %+v", cbdRows["ami"])
 	}
 	if cbdRows["id"].After != KnownAfterApply || !cbdRows["id"].Unknown || cbdRows["id"].Before != "i-0aa" {
@@ -127,7 +127,7 @@ func TestAllActions(t *testing.T) {
 		t.Fatalf("unchanged sensitive values must not appear as changes: %+v", db.Attributes)
 	}
 	subnet := c["module.network.aws_subnet.main[0]"]
-	if len(subnet.Attributes) != 1 || subnet.Attributes[0].Path != "tags.owner" || subnet.Attributes[0].Kind != "added" || subnet.Attributes[0].After != "[redacted]" {
+	if len(subnet.Attributes) != 1 || subnet.Attributes[0].Path != "tags.owner" || subnet.Attributes[0].Kind != "added" || subnet.Attributes[0].After != "platform" {
 		t.Fatalf("nested map addition: %+v", subnet.Attributes)
 	}
 	bucket := c["aws_s3_bucket.logs"]

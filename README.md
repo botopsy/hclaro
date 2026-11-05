@@ -72,7 +72,7 @@ The review shows:
 - Counts per action (create, update, replace, delete, read, forget, unknown, no change), which also filter the list. Unknown action combinations are flagged as potentially destructive.
 - Every resource change in engine order, including collateral deletions, data reads, moves, imports and deposed objects. Unchanged resources are behind a toggle.
 - Per change: the full address, the replacement order (destroy-then-create or create-then-destroy), the reason, and an attribute diff marking redacted, sensitive, `known after apply`, and `forces replacement` values. A change to a redacted value is still listed.
-- Output changes (values always redacted) and changes made outside Terraform/OpenTofu (drift).
+- Output changes and changes made outside Terraform/OpenTofu (drift).
 - Metadata: engine, workspace, variable files, plan SHA-256, and a warning when configuration changed since the plan.
 
 Plans are **review only**. There is no apply button or endpoint. Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans with status, duration, exit code and their logs. History lives in memory only.
@@ -138,6 +138,6 @@ The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**,
 | State locked | Another operation holds the lock. Wait, or investigate with your CLI. Hclaro never force-unlocks. |
 | Plan credentials/network errors | Refresh SSO or credentials in your terminal, check VPN, then run the plan again. |
 | `TF_CLI_ARGS_plan` refused | Remove injected flags other than `-no-color`; they could change what a reviewed plan contains. |
-| Redacted attributes | Sensitivity markers, credential-like names and values, and all unrecognized scalar attributes are masked on the server. There is no reveal/raw-state endpoint. |
+| Redacted attributes | Values marked sensitive, secret-like attribute names (`password`, `token`, `private_key`, …) and credential-shaped or long random-looking values, including hex hashes, are masked on the server. There is no reveal/raw-state endpoint. |
 
-Metadata (addresses, module paths, provider sources, and selected identity attributes) must not be used to store secrets. Redaction is intentionally conservative and may hide useful values. See [security policy](SECURITY.md), [architecture](docs/architecture.md), and [M01 evidence and unresolved gates](docs/M01-verification.md).
+Metadata (addresses, module paths, provider sources) must not be used to store secrets. Redaction relies on markers and heuristics: a secret that is not marked sensitive, has an ordinary name and does not look random can be shown. See [security policy](SECURITY.md), [architecture](docs/architecture.md), and [M01 evidence and unresolved gates](docs/M01-verification.md).

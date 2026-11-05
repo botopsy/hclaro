@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — redaction policy
+
+- Redaction now hides likely secrets instead of everything outside a 25-name allowlist. Hidden: values marked sensitive (at any depth), secret-like attribute names, and credential-shaped or random-looking values (PEM, JWT, bearer, AWS access key IDs, URLs with passwords, vendor token prefixes, long mixed-case or hex strings). Tags, enums, booleans, numbers, IDs, ARNs and regions are now shown in the inspector and plan review.
+- Output values follow the same policy instead of always being hidden.
+- Fixed: a plan diff row whose value is an object ignored sensitivity markers nested inside it.
+- `asia`/`akia` substrings and plain URLs no longer hide values or reject state metadata; only full AWS access key IDs and URLs with credentials do.
+- Plan diffs say "not set" / "removed" instead of "—".
+
 ## 0.1.0-alpha.2 — 2026-11-05
 
 First release published by the release workflow. Covers everything since 0.1.0-alpha.1.

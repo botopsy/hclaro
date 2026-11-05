@@ -15,10 +15,10 @@ export function ActionBadge({ action }: { action: string }) {
   return <span className={`action-badge tone-${tone}`}><Icon size={12} aria-hidden="true" />{label}</span>;
 }
 
-function Value({ value, unknown }: { value: unknown; unknown?: boolean }) {
+function Value({ value, unknown, empty = '—' }: { value: unknown; unknown?: boolean; empty?: string }) {
   if (unknown || value === '[known after apply]') return <span className="unknown-value">known after apply</span>;
   if (value === '[redacted]') return <span className="redacted"><LockKeyhole size={11} />redacted</span>;
-  if (value === null || value === undefined) return <span className="muted">—</span>;
+  if (value === null || value === undefined) return <span className="muted">{empty}</span>;
   if (typeof value === 'object') return <code className="json-inline">{JSON.stringify(value)}</code>;
   return <code className={typeof value === 'string' ? 'json-string' : 'json-value'}>{String(value)}</code>;
 }
@@ -111,7 +111,7 @@ function ChangeInspector({ planId, changeId, close, copy }: { planId: string; ch
      <div><dt>Module</dt><dd className="mono">{d.module || 'Root module'}</dd></div>
     </dl>
     <div className="attributes-header"><h3>Attribute changes</h3><span className="muted">{d.attributes.length}{d.truncated && '+'}</span></div>
-    <div className="redaction-note"><LockKeyhole size={12} />Sensitive and unrecognized values are redacted; a change to a redacted value is still listed.</div>
+    <div className="redaction-note"><LockKeyhole size={12} />Values Terraform marks sensitive, secret-named attributes and credential-like values are hidden; a change to a hidden value is still listed.</div>
     {d.attributes.length ? <AttributeTable rows={d.attributes} /> : <p className="muted">No attribute changes.</p>}
     {d.truncated && <p className="muted">Only the first 1,000 attribute changes are shown.</p>}
     <details className="full-values"><summary>Full values before and after</summary><div className="json-viewer"><JsonTree name="before" value={d.before ?? {}} /><JsonTree name="after" value={d.after ?? {}} /></div></details>
@@ -122,12 +122,12 @@ function ChangeInspector({ planId, changeId, close, copy }: { planId: string; ch
 function AttributeTable({ rows }: { rows: AttributeChange[] }) {
   return <table className="diff-table"><thead><tr><th scope="col">Attribute</th><th scope="col">Before</th><th scope="col">After</th></tr></thead><tbody>{rows.map(r => <tr key={r.path} className={`diff-${r.kind}`}>
    <th scope="row"><code>{r.path}</code>{r.forcesReplacement && <span className="flag destroy">forces replacement</span>}{r.sensitive && <span className="flag"><LockKeyhole size={10} />sensitive</span>}</th>
-   <td><Value value={r.before} /></td>
-   <td><Value value={r.after} unknown={r.unknown} /></td>
+   <td><Value value={r.before} empty="not set" /></td>
+   <td><Value value={r.after} unknown={r.unknown} empty="removed" /></td>
   </tr>)}</tbody></table>;
 }
 
 function Outputs({ outputs }: { outputs: OutputChange[] }) {
   if (!outputs.length) return <div className="empty-state"><Braces size={26} /><h2>No output changes</h2></div>;
-  return <div className="surface outputs"><p className="redaction-note"><LockKeyhole size={12} />Output values are always redacted because their names do not indicate whether they hold secrets.</p><table className="diff-table"><thead><tr><th scope="col">Output</th><th scope="col">Action</th><th scope="col">Before</th><th scope="col">After</th></tr></thead><tbody>{outputs.map(o => <tr key={o.name}><th scope="row"><code>{o.name}</code>{o.sensitive && <span className="flag"><LockKeyhole size={10} />sensitive</span>}</th><td><ActionBadge action={o.action} /></td><td><Value value={o.before} /></td><td><Value value={o.after} unknown={o.unknown} /></td></tr>)}</tbody></table></div>;
+  return <div className="surface outputs"><p className="redaction-note"><LockKeyhole size={12} />Sensitive outputs, secret-named outputs and credential-like values are hidden.</p><table className="diff-table"><thead><tr><th scope="col">Output</th><th scope="col">Action</th><th scope="col">Before</th><th scope="col">After</th></tr></thead><tbody>{outputs.map(o => <tr key={o.name}><th scope="row"><code>{o.name}</code>{o.sensitive && <span className="flag"><LockKeyhole size={10} />sensitive</span>}</th><td><ActionBadge action={o.action} /></td><td><Value value={o.before} empty="not set" /></td><td><Value value={o.after} unknown={o.unknown} empty="removed" /></td></tr>)}</tbody></table></div>;
 }

@@ -235,7 +235,7 @@
       ],
       "action": "create",
       "before": null,
-      "after": "[redacted]"
+      "after": "hclaro-logs"
     },
     {
       "name": "db_password",
@@ -254,7 +254,7 @@
       ],
       "action": "update",
       "before": [
-        "[redacted]"
+        "i-0aa"
       ],
       "after": "[known after apply]",
       "unknown": true
@@ -265,7 +265,7 @@
         "delete"
       ],
       "action": "delete",
-      "before": "[redacted]",
+      "before": "legacy-deployer",
       "after": null
     },
     {
@@ -274,8 +274,8 @@
         "no-op"
       ],
       "action": "no-op",
-      "before": "[redacted]",
-      "after": "[redacted]"
+      "before": "eu-central-1",
+      "after": "eu-central-1"
     }
   ],
   "warnings": [
@@ -311,14 +311,18 @@
       ],
       "before": {
         "allocated_storage": 20,
-        "connection": "[redacted]",
+        "connection": {
+          "host": "[redacted]"
+        },
         "engine_version": "15.4",
         "id": "db-1",
         "password": "[redacted]"
       },
       "after": {
         "allocated_storage": 40,
-        "connection": "[redacted]",
+        "connection": {
+          "host": "[redacted]"
+        },
         "engine_version": "16.1",
         "id": "db-1",
         "password": "[redacted]"
@@ -401,8 +405,8 @@
       "attributes": [
         {
           "path": "ami",
-          "before": "[redacted]",
-          "after": "[redacted]",
+          "before": "ami-old",
+          "after": "ami-new",
           "kind": "changed",
           "forcesReplacement": true
         },
@@ -422,14 +426,14 @@
         }
       ],
       "before": {
-        "ami": "[redacted]",
+        "ami": "ami-old",
         "availability_zone": "eu-central-1a",
         "id": "i-0aa",
         "instance_type": "t3.small",
         "user_data": "[redacted]"
       },
       "after": {
-        "ami": "[redacted]",
+        "ami": "ami-new",
         "arn": "[known after apply]",
         "availability_zone": "eu-central-1a",
         "id": "[known after apply]",
@@ -458,7 +462,7 @@
         "id": "subnet-0a1",
         "password": "[redacted]",
         "tags": {
-          "Name": "[redacted]"
+          "Name": "app-a"
         }
       },
       "after": {
@@ -467,7 +471,7 @@
         "id": "subnet-0a1",
         "password": "[redacted]",
         "tags": {
-          "Name": "[redacted]"
+          "Name": "app-a"
         }
       }
     },
@@ -489,7 +493,7 @@
         {
           "path": "tags.owner",
           "before": null,
-          "after": "[redacted]",
+          "after": "platform",
           "kind": "added"
         }
       ],
@@ -499,7 +503,7 @@
         "id": "subnet-0a1",
         "password": "[redacted]",
         "tags": {
-          "Name": "[redacted]"
+          "Name": "app-a"
         }
       },
       "after": {
@@ -508,8 +512,8 @@
         "id": "subnet-0a1",
         "password": "[redacted]",
         "tags": {
-          "Name": "[redacted]",
-          "owner": "[redacted]"
+          "Name": "app-a",
+          "owner": "platform"
         }
       }
     },
@@ -569,7 +573,7 @@
         {
           "path": "tags.env",
           "before": null,
-          "after": "[redacted]",
+          "after": "demo",
           "kind": "added"
         }
       ],
@@ -582,7 +586,7 @@
         "region": "eu-central-1",
         "secret_access_key": "[redacted]",
         "tags": {
-          "env": "[redacted]"
+          "env": "demo"
         }
       }
     },
@@ -604,7 +608,7 @@
         {
           "path": "account_id",
           "before": null,
-          "after": "[redacted]",
+          "after": "000000000000",
           "kind": "added"
         },
         {
@@ -617,7 +621,7 @@
       ],
       "before": null,
       "after": {
-        "account_id": "[redacted]",
+        "account_id": "000000000000",
         "id": "[known after apply]"
       }
     },
@@ -744,7 +748,7 @@
         {
           "path": "tags.changed_by",
           "before": null,
-          "after": "[redacted]",
+          "after": "console",
           "kind": "added"
         }
       ],
@@ -752,15 +756,15 @@
         "id": "hclaro-demo-artifacts",
         "policy": "[redacted]",
         "tags": {
-          "env": "[redacted]"
+          "env": "demo"
         }
       },
       "after": {
         "id": "hclaro-demo-artifacts",
         "policy": "[redacted]",
         "tags": {
-          "changed_by": "[redacted]",
-          "env": "[redacted]"
+          "changed_by": "console",
+          "env": "demo"
         }
       }
     },
@@ -824,14 +828,14 @@
         "id": "i-0bb",
         "instance_type": "t3.micro",
         "tags": {
-          "pool": "[redacted]"
+          "pool": "blue"
         }
       },
       "after": {
         "id": "[known after apply]",
         "instance_type": "t3.micro",
         "tags": {
-          "pool": "[redacted]"
+          "pool": "blue"
         }
       }
     }

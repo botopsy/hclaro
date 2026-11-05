@@ -320,7 +320,7 @@ function Inspector({
             void copy(resource.address, 'Address');
           }}><Copy size={13} /></Button></div><code>{resource.address}</code></div><dl className="metadata"><div><dt>Provider</dt><dd className="mono">{resource.provider || 'Not recorded'}</dd></div><div><dt>Module</dt><dd className="mono">{resource.module || 'Root module'}</dd></div><div><dt>Instance key</dt><dd className="mono">{resource.index === undefined ? '—' : JSON.stringify(resource.index)}</dd></div><div><dt>Source</dt><dd>Recorded state</dd></div></dl><div className="attributes-header"><h3>Attributes</h3><Button variant="ghost" size="icon" aria-label="Copy redacted JSON" onClick={() => {
           void copy(JSON.stringify(resource.attributes, null, 2), 'Redacted JSON');
-        }}><Copy size={14} /></Button></div><div className="redaction-note"><LockKeyhole size={12} />Sensitive & unrecognized values are redacted.</div><div className="json-viewer"><JsonTree value={resource.attributes} /></div></div>}</aside>;
+        }}><Copy size={14} /></Button></div><div className="redaction-note"><LockKeyhole size={12} />Sensitive, secret-named and credential-like values are hidden.</div><div className="json-viewer"><JsonTree value={resource.attributes} /></div></div>}</aside>;
 }
 function Overview({
   workspace: w,
