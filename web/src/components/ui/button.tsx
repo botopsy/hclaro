@@ -12,7 +12,8 @@ const buttonVariants = cva('button', {
     variant: {
       default: 'button-default',
       ghost: 'button-ghost',
-      outline: 'button-outline'
+      outline: 'button-outline',
+      destructive: 'button-destructive'
     },
     size: {
       default: '',

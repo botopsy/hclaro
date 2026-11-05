@@ -24,11 +24,26 @@ func planHelper() {
 		os.Stdout.Write(b)
 		os.Exit(0)
 	}
+	if len(args) > 0 && args[0] == "apply" {
+		if len(args) != 4 || strings.Join(args[:3], " ") != "apply -input=false -json" || !filepath.IsAbs(args[3]) {
+			os.Exit(2)
+		}
+		b, err := os.ReadFile(args[3])
+		if err != nil {
+			os.Exit(4)
+		}
+		fmt.Printf("{\"type\":\"apply_start\",\"plan\":%q}\n", b)
+		if os.Getenv("HCLARO_PLAN_MODE") == "stale" {
+			fmt.Fprintln(os.Stderr, "Error: Saved plan is stale")
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if len(args) < 4 || strings.Join(args[:3], " ") != "plan -input=false -json" || !strings.HasPrefix(args[3], "-out=") || !filepath.IsAbs(strings.TrimPrefix(args[3], "-out=")) {
 		os.Exit(2)
 	}
 	for _, a := range args[4:] {
-		if !strings.HasPrefix(a, "-var-file=") {
+		if !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") {
 			os.Exit(2)
 		}
 	}
@@ -66,7 +81,7 @@ func planCLI(t *testing.T, mode string) *CLI {
 	t.Helper()
 	t.Setenv("HCLARO_PLAN_HELPER", "1")
 	t.Setenv("HCLARO_PLAN_MODE", mode)
-	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_plan", "TF_CLI_ARGS_show"} {
+	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_plan", "TF_CLI_ARGS_show", "TF_CLI_ARGS_apply"} {
 		t.Setenv(key, "")
 	}
 	exe, err := os.Executable()
@@ -94,6 +109,51 @@ func TestPlanStreamsAndWritesArtifact(t *testing.T) {
 	}
 	if b, err := c.ShowPlan(context.Background(), out); err != nil || string(b) != string(written) {
 		t.Fatalf("show %q %v", b, err)
+	}
+}
+
+// Each selected address becomes exactly one -replace argv element, with quotes and
+// brackets passed verbatim and no -target.
+func TestPlanReplaceArguments(t *testing.T) {
+	c := planCLI(t, "ok")
+	out := filepath.Join(t.TempDir(), "plan.tfplan")
+	addresses := []string{`module.compute.aws_instance.main[0]`, `module.compute.module.workers["blue.eu"].aws_instance.node["quote\"key"]`}
+	if err := c.Plan(context.Background(), PlanRequest{Out: out, VarFiles: []string{"prod.tfvars"}, Replace: addresses}, func([]byte) {}); err != nil {
+		t.Fatal(err)
+	}
+	written, _ := os.ReadFile(out)
+	want := "-var-file=prod.tfvars,-replace=" + addresses[0] + ",-replace=" + addresses[1]
+	if string(written) != want {
+		t.Fatalf("argv %q\nwant %q", written, want)
+	}
+}
+
+func TestApplyPassesOnlySavedPlan(t *testing.T) {
+	c := planCLI(t, "ok")
+	path := filepath.Join(t.TempDir(), "plan.tfplan")
+	if err := os.WriteFile(path, []byte("reviewed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := c.Apply(context.Background(), path, func(line []byte) { got = append(got, string(line)) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != `{"type":"apply_start","plan":"reviewed"}` {
+		t.Fatalf("%q", got)
+	}
+	if err := c.Apply(context.Background(), "relative.tfplan", func([]byte) {}); err == nil {
+		t.Fatal("relative saved plan accepted")
+	}
+	t.Setenv("TF_CLI_ARGS_apply", "-auto-approve")
+	if err := c.Apply(context.Background(), path, func([]byte) {}); !errors.Is(err, ErrUnsafeArgs) {
+		t.Fatal("injected apply flag accepted")
+	}
+	t.Setenv("TF_CLI_ARGS_apply", "")
+	stale := planCLI(t, "stale")
+	err := stale.Apply(context.Background(), path, func([]byte) {})
+	var exit *ExitError
+	if !errors.As(err, &exit) || exit.Hint != "stale_plan" {
+		t.Fatalf("%v", err)
 	}
 }
 
@@ -138,6 +198,11 @@ func TestPlanRejectsUnsafeInputs(t *testing.T) {
 		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{"../x.tfvars"}},
 		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{"-destroy"}},
 		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{""}},
+		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{"-destroy"}},
+		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{"data.aws_caller_identity.current"}},
+		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{"a.b\n-target=c"}},
+		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{"a.b", "a.b"}},
+		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{""}},
 	} {
 		if err := c.Plan(context.Background(), request, func([]byte) {}); err == nil {
 			t.Fatalf("%+v accepted", request)
@@ -163,6 +228,7 @@ func TestClassify(t *testing.T) {
 		"No valid credential sources found":                   "credentials",
 		"Error: The SSO session associated with this profile": "credentials",
 		"dial tcp: lookup example: no such host":              "network",
+		"Error: Saved plan is stale":                          "stale_plan",
 		"Error: Invalid reference":                            "",
 	} {
 		if got := Classify(text); got != want {

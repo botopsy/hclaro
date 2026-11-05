@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The Go parser's golden output keeps the frontend honest about the API contract.
 import golden from '../../../fixtures/plan/all-actions.golden.json';
 import { PlansView } from './PlansView';
-import type { Operation, Plan, PlanOptions } from '../types';
+import type { Approval, Operation, Plan, PlanOptions } from '../types';
 
 const canary = 'DO_NOT_LEAK_HCLARO_TEST_SECRET';
 const planId = 'a'.repeat(32);
@@ -19,14 +19,18 @@ const plan = {
   currentEngineVersion: '1.9.8',
   workspace: 'demo',
   varFiles: [],
+  kind: 'plan',
+  replace: [],
+  destructive: true,
   artifactSha256: 'c'.repeat(64),
-  artifactRetained: false,
   fingerprint: 'd'.repeat(64),
   contextChanged: false,
-  apply: { available: false, reason: 'Applying plans is not available in this version of Hclaro.' }
+  apply: { available: false, artifactRetained: false, reason: 'Remote execution backends are read-only in Hclaro.' }
 } as unknown as Plan;
-const options: PlanOptions = { canPlan: true, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 's3', varFiles: ['prod.tfvars'] };
-const operation: Operation = { id: 'b'.repeat(32), kind: 'plan', status: 'succeeded', stage: 'Finished', startedAt: '2026-11-05T09:00:00Z', durationMs: 4200, exitCode: 0, command: ['terraform', 'plan', '-input=false', '-json', '-out=<private temporary file>'], varFiles: [], planId, engineDiagnostics: [], cancelRequested: false, logDropped: 0, logRetained: true };
+const applicable: Plan = { ...plan, apply: { available: true, artifactRetained: true, expiresAt: '2026-11-05T10:00:00Z' } };
+const options: PlanOptions = { canPlan: true, canApply: true, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 's3', varFiles: ['prod.tfvars'] };
+const operation: Operation = { id: 'b'.repeat(32), kind: 'plan', status: 'succeeded', stage: 'Finished', startedAt: '2026-11-05T09:00:00Z', durationMs: 4200, exitCode: 0, command: ['terraform', 'plan', '-input=false', '-json', '-out=<private temporary file>'], varFiles: [], replace: [], planId, stateReloaded: false, engineDiagnostics: [], cancelRequested: false, logDropped: 0, logRetained: true };
+const approval: Approval = { confirmationToken: 'f'.repeat(64), expiresAt: '2026-11-05T09:05:00Z', planId, artifactSha256: 'c'.repeat(64), engine: 'terraform', workspace: 'demo', summary: { create: 1, replace: 2, delete: 2 }, replace: [], destructive: true, phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>'] };
 
 type Route = (url: string, init?: RequestInit) => Response | undefined;
 let posts: { url: string; init: RequestInit }[] = [];
@@ -48,9 +52,9 @@ function serve(...routes: Route[]) {
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
 }
-function view(planChoice?: string) {
+function view(planChoice?: string, replace?: { id: string; address: string }[]) {
   const choose = vi.fn();
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" planId={planChoice} choosePlan={choose} copy={async () => {}} /></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" planId={planChoice} choosePlan={choose} replace={replace} copy={async () => {}} /></QueryClientProvider>);
   return choose;
 }
 beforeEach(() => serve());
@@ -60,7 +64,7 @@ afterEach(() => {
 });
 
 describe('Plans', () => {
-  it('shows every planned change, including collateral, and never offers apply', async () => {
+  it('shows every planned change, including collateral, and offers no apply when unavailable', async () => {
     view();
     expect(await screen.findByText(/11 resource changes and 4 output changes/)).toBeInTheDocument();
     const counts = screen.getByRole('group', { name: 'Filter by action' });
@@ -75,6 +79,7 @@ describe('Plans', () => {
     await userEvent.click(screen.getByLabelText('Show unchanged'));
     expect(within(table).getByText('module.network.aws_subnet.main[1]')).toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('Review only');
+    expect(screen.getByRole('note')).toHaveTextContent('Remote execution backends are read-only');
     expect(screen.queryByRole('button', { name: /apply/i })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('action combination Hclaro does not recognize');
     expect(document.body).not.toHaveTextContent(canary);
@@ -119,7 +124,7 @@ describe('Plans', () => {
     await user.click(screen.getByLabelText('prod.tfvars'));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Run plan' }));
     await waitFor(() => expect(posts).toHaveLength(1));
-    expect(JSON.parse(posts[0].init.body as string)).toEqual({ acknowledgeBackendAccess: true, varFiles: ['prod.tfvars'] });
+    expect(JSON.parse(posts[0].init.body as string)).toEqual({ acknowledgeBackendAccess: true, varFiles: ['prod.tfvars'], replace: [] });
     expect((posts[0].init.headers as Record<string, string>)['X-Hclaro-CSRF']).toBe('e'.repeat(64));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
@@ -188,5 +193,87 @@ describe('Plans', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel plan' }));
     await waitFor(() => expect(posts.some(p => p.url.endsWith(`/operations/${running.id}/cancel`))).toBe(true));
     expect(await screen.findByText('Cancelling')).toBeInTheDocument();
+  });
+
+  it('plans a replacement with opaque IDs and lists every requested instance', async () => {
+    serve((_url, init) => init?.method === 'POST' ? Response.json({ ...operation, status: 'running', planId: undefined }, { status: 202 }) : undefined);
+    const targets = [{ id: '1'.repeat(32), address: 'module.compute.aws_instance.main[0]' }, { id: '2'.repeat(32), address: 'module.compute.module.workers["blue.eu"].aws_instance.node["quote\\"key"]' }];
+    view(undefined, targets);
+    const dialog = await screen.findByRole('dialog', { name: 'Plan a replacement' });
+    expect(dialog).toHaveTextContent('module.compute.aws_instance.main[0]');
+    expect(dialog).toHaveTextContent('not a targeted one');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Plan replacement' }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    // Addresses never leave the browser as command input; the server resolves IDs from state.
+    expect(JSON.parse(posts[0].init.body as string)).toEqual({ acknowledgeBackendAccess: true, varFiles: [], replace: targets.map(t => t.id) });
+  });
+
+  it('shows requested replacements next to collateral changes', async () => {
+    const replacePlan = { ...plan, kind: 'replace', replace: ['module.compute.aws_instance.main[0]', 'aws_instance.gone'] } as Plan;
+    serve(url => url.endsWith(`/plans/${planId}`) ? Response.json(replacePlan) : undefined);
+    view();
+    const summary = await screen.findByRole('region', { name: 'Requested replacements' });
+    expect(summary).toHaveTextContent('Replacement requested for 2 instances');
+    expect(within(summary).getByText('aws_instance.gone').closest('li')).toHaveTextContent('not in plan');
+    expect(summary).toHaveTextContent(/other changes are part of this plan, including \d+ deletions or replacements you did not select/);
+    expect(summary).toHaveTextContent('expect downtime');
+  });
+
+  it('applies only after the server approval and the typed phrase; declining sends nothing', async () => {
+    serve((url, init) => {
+      if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
+      if (url.endsWith('/approval') && init?.method === 'POST') return Response.json(approval);
+      if (url.endsWith('/apply') && init?.method === 'POST') return Response.json({ ...operation, kind: 'apply', status: 'running' }, { status: 202 });
+      return undefined;
+    });
+    view();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    expect(await within(dialog).findByText(/2 replace/)).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('terraform apply -input=false -json <reviewed saved plan cccccccccccc>');
+    expect(dialog).toHaveTextContent('cannot guarantee zero downtime');
+    // Escape declines: an approval was requested, but nothing was applied.
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Review and apply…' }));
+    dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const apply = await within(dialog).findByRole('button', { name: 'Apply plan' });
+    expect(apply).toBeDisabled();
+    await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply dem');
+    expect(apply).toBeDisabled();
+    await user.keyboard('{Enter}');
+    expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(0);
+    await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'o');
+    await user.click(apply);
+    await waitFor(() => expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(1));
+    const sent = posts.find(p => p.url.endsWith('/apply'))!;
+    expect(JSON.parse(sent.init.body as string)).toEqual({ confirmationToken: approval.confirmationToken, confirmation: 'apply demo' });
+    expect((sent.init.headers as Record<string, string>)['X-Hclaro-CSRF']).toBe('e'.repeat(64));
+  });
+
+  it('shows why the server refused an approval', async () => {
+    serve((url, init) => {
+      if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
+      if (url.endsWith('/approval') && init?.method === 'POST') return Response.json({ error: 'context_changed', reason: 'Configuration changed since this plan was created. Run a new plan.' }, { status: 409 });
+      return undefined;
+    });
+    view();
+    await userEvent.click(await screen.findByRole('button', { name: 'Review and apply…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Configuration changed since this plan was created');
+    expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
+  });
+
+  it('reports an interrupted apply as an uncertain outcome', async () => {
+    const interrupted: Operation = { ...operation, kind: 'apply', status: 'cancelled', outcome: 'uncertain', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z', diagnostic: { code: 'apply_cancelled', message: 'The apply was interrupted. Infrastructure may be partly changed.' } };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [interrupted, operation] }) : undefined);
+    view();
+    const [alert] = await screen.findAllByRole('alert');
+    expect(alert).toHaveTextContent('Apply interrupted');
+    expect(alert).toHaveTextContent('may be partly changed');
+    expect(alert).toHaveTextContent('State was re-read');
+    expect(alert).toHaveTextContent('cannot be applied again');
   });
 });

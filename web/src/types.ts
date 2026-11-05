@@ -34,7 +34,9 @@ export type Workspace = {
     capabilities: {
       canReadState: boolean;
       canPlan: boolean;
+      planReason?: string;
       canApplySavedPlan: boolean;
+      applyReason?: string;
     };
   };
   managed: number;
@@ -51,6 +53,8 @@ export type PlanAction = 'create' | 'update' | 'delete' | 'replace' | 'read' | '
 export type PlanOptions = {
   canPlan: boolean;
   reason?: string;
+  canApply: boolean;
+  applyReason?: string;
   engine: string;
   version: string;
   workspace: string;
@@ -65,7 +69,7 @@ export type EngineDiagnostic = {
 };
 export type Operation = {
   id: string;
-  kind: 'plan';
+  kind: 'plan' | 'apply';
   status: 'running' | 'succeeded' | 'failed' | 'cancelled';
   stage: string;
   startedAt: string;
@@ -74,7 +78,12 @@ export type Operation = {
   exitCode?: number;
   command: string[];
   varFiles: string[];
+  replace: string[];
   planId?: string;
+  // Applies only: whether the engine changed infrastructure is known (applied, not_applied)
+  // or not (uncertain).
+  outcome?: 'applied' | 'not_applied' | 'uncertain';
+  stateReloaded: boolean;
   diagnostic?: {
     code: string;
     message: string;
@@ -138,6 +147,8 @@ export type PlanSummary = {
   engine: string;
   workspace: string;
   varFiles: string[];
+  kind: 'plan' | 'replace';
+  replace: string[];
   summary: Partial<Record<PlanAction, number>>;
   errored: boolean;
   changes: number;
@@ -161,12 +172,36 @@ export type Plan = {
   drift: PlanChange[];
   outputs: OutputChange[];
   warnings: string[];
+  kind: 'plan' | 'replace';
+  replace: string[];
+  destructive: boolean;
   artifactSha256: string;
-  artifactRetained: boolean;
   fingerprint: string;
   contextChanged: boolean;
-  apply: {
-    available: boolean;
-    reason: string;
-  };
+  apply: ApplyStatus;
+};
+export type ApplyStatus = {
+  available: boolean;
+  reason?: string;
+  artifactRetained: boolean;
+  expiresAt?: string;
+};
+// A one-time confirmation issued by the server for one reviewed plan.
+export type Approval = {
+  confirmationToken: string;
+  expiresAt: string;
+  planId: string;
+  artifactSha256: string;
+  engine: string;
+  workspace: string;
+  summary: Partial<Record<PlanAction, number>>;
+  replace: string[];
+  destructive: boolean;
+  phrase?: string;
+  command: string[];
+};
+// A managed instance chosen in the explorer; the server receives only the opaque ID.
+export type ReplaceTarget = {
+  id: string;
+  address: string;
 };

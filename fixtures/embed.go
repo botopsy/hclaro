@@ -23,4 +23,6 @@ var (
 	PlanLog []byte
 	//go:embed plan/plan-log-locked.jsonl
 	PlanLogLocked []byte
+	//go:embed plan/apply-log.jsonl
+	ApplyLog []byte
 )

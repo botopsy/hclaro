@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -95,14 +96,35 @@ func assertTempEmpty(t *testing.T, m *Manager) {
 	}
 }
 
+func assertArtifactPrivate(t *testing.T, m *Manager) {
+	t.Helper()
+	entries, err := os.ReadDir(m.TempDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("want one retained plan directory: %v %v", entries, err)
+	}
+	// Windows has no POSIX modes; access there follows the user's temp directory ACL.
+	if runtime.GOOS == "windows" {
+		return
+	}
+	dir := filepath.Join(m.TempDir, entries[0].Name())
+	info, err := os.Stat(dir)
+	if err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("plan directory mode %v %v", info, err)
+	}
+	file, err := os.Stat(filepath.Join(dir, "plan.tfplan"))
+	if err != nil || file.Mode().Perm() != 0o600 {
+		t.Fatalf("plan file mode %v %v", file, err)
+	}
+}
+
 func TestPlanSucceeds(t *testing.T) {
 	fake := &engine.Fake{Lines: lines(fixtures.PlanLog), PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
-	op, err := m.StartPlan(nil)
+	op, err := m.StartPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.StartPlan(nil); err != nil && !errors.Is(err, ErrBusy) {
+	if _, err := m.StartPlan(nil, nil); err != nil && !errors.Is(err, ErrBusy) {
 		t.Fatal(err)
 	}
 	done := wait(t, m, op.ID)
@@ -114,10 +136,14 @@ func TestPlanSucceeds(t *testing.T) {
 		t.Fatal("plan not stored")
 	}
 	digest := sha256.Sum256(fixtures.PlanAllActions)
-	if p.ArtifactSHA256 != hex.EncodeToString(digest[:]) || p.ArtifactRetained || p.Apply.Available || p.Workspace != "demo" || p.Fingerprint == "" || len(p.Changes) != 13 {
+	if p.ArtifactSHA256 != hex.EncodeToString(digest[:]) || p.Kind != "plan" || !p.Destructive || p.Workspace != "demo" || p.Fingerprint == "" || len(p.Changes) != 13 {
 		t.Fatalf("plan metadata: %+v", p)
 	}
-	assertTempEmpty(t, m)
+	// An applicable plan keeps exactly one private saved artifact.
+	if status := m.ApplyStatus(p, m.currentFingerprint(p)); !status.Available || !status.ArtifactRetained {
+		t.Fatalf("apply status %+v", status)
+	}
+	assertArtifactPrivate(t, m)
 	_, log, _ := m.Operation(op.ID)
 	events, _, finished, _ := log.Since(0)
 	if !finished {
@@ -147,12 +173,12 @@ func TestPlanSucceeds(t *testing.T) {
 func TestCancelRemovesArtifactsAndLeavesNoPlan(t *testing.T) {
 	fake := &engine.Fake{Lines: lines(fixtures.PlanLog), Block: true}
 	m, _ := setup(t, fake, workspace.Info{})
-	op, err := m.StartPlan(nil)
+	op, err := m.StartPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitStage(t, m, op.ID, "Planning")
-	if _, err := m.StartPlan(nil); !errors.Is(err, ErrBusy) {
+	if _, err := m.StartPlan(nil, nil); !errors.Is(err, ErrBusy) {
 		t.Fatalf("second plan must be rejected while one runs: %v", err)
 	}
 	if _, err := m.Cancel(op.ID); err != nil {
@@ -175,7 +201,7 @@ func TestCancelRemovesArtifactsAndLeavesNoPlan(t *testing.T) {
 	// The manager accepts a new plan after cancellation.
 	fake.Block = false
 	fake.PlanJSON = fixtures.PlanNoChanges
-	next, err := m.StartPlan(nil)
+	next, err := m.StartPlan(nil, nil)
 	if err != nil || wait(t, m, next.ID).Status != Succeeded {
 		t.Fatalf("plan after cancel: %v", err)
 	}
@@ -196,7 +222,7 @@ func TestFailureClassification(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			m, _ := setup(t, tc.fake, workspace.Info{})
-			op, err := m.StartPlan(nil)
+			op, err := m.StartPlan(nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -221,12 +247,12 @@ func TestFailureClassification(t *testing.T) {
 func TestTimeoutAndShutdown(t *testing.T) {
 	m, _ := setup(t, &engine.Fake{Block: true}, workspace.Info{})
 	m.Timeout = 50 * time.Millisecond
-	op, _ := m.StartPlan(nil)
+	op, _ := m.StartPlan(nil, nil)
 	if done := wait(t, m, op.ID); done.Status != Failed || done.Diagnostic.Code != "timeout" {
 		t.Fatalf("%+v", done)
 	}
 	m.Timeout = time.Hour
-	op, _ = m.StartPlan(nil)
+	op, _ = m.StartPlan(nil, nil)
 	waitStage(t, m, op.ID, "Planning")
 	m.Close(5 * time.Second)
 	done, _, _ := m.Operation(op.ID)
@@ -234,7 +260,7 @@ func TestTimeoutAndShutdown(t *testing.T) {
 		t.Fatalf("%+v", done)
 	}
 	assertTempEmpty(t, m)
-	if _, err := m.StartPlan(nil); !errors.Is(err, ErrClosed) {
+	if _, err := m.StartPlan(nil, nil); !errors.Is(err, ErrClosed) {
 		t.Fatal("plan accepted after shutdown")
 	}
 }
@@ -243,7 +269,7 @@ func TestWorkspaceChangeAndAvailability(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
 	m, _ := setup(t, fake, workspace.Info{})
 	fake.WorkspaceValue = "prod"
-	op, _ := m.StartPlan(nil)
+	op, _ := m.StartPlan(nil, nil)
 	done := wait(t, m, op.ID)
 	if done.Diagnostic.Code != "workspace_changed" || !strings.Contains(done.Diagnostic.Message, `"demo"`) {
 		t.Fatalf("%+v", done.Diagnostic)
@@ -254,17 +280,17 @@ func TestWorkspaceChangeAndAvailability(t *testing.T) {
 		{Project: "x", Initialized: false, Backend: "local", ExecutionMode: "local-cli"},
 	} {
 		m, _ := setup(t, &engine.Fake{}, info)
-		if _, err := m.StartPlan(nil); !errors.Is(err, ErrUnavailable) {
+		if _, err := m.StartPlan(nil, nil); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("%+v: %v", info, err)
 		}
 	}
 	loading := workspace.New(workspace.Info{Project: "x", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	if _, err := NewManager(loading, &engine.Fake{}, t.TempDir()).StartPlan(nil); !errors.Is(err, ErrLoading) {
+	if _, err := NewManager(loading, &engine.Fake{}, t.TempDir()).StartPlan(nil, nil); !errors.Is(err, ErrLoading) {
 		t.Fatalf("plan accepted while the workspace was loading: %v", err)
 	}
 	// A project with no recorded state can still be planned.
 	m, _ = setup(t, &engine.Fake{StateJSON: fixtures.Empty, PlanJSON: fixtures.PlanNoChanges}, workspace.Info{})
-	if op, err := m.StartPlan(nil); err != nil || wait(t, m, op.ID).Status != Succeeded {
+	if op, err := m.StartPlan(nil, nil); err != nil || wait(t, m, op.ID).Status != Succeeded {
 		t.Fatalf("absent state should allow planning: %v", err)
 	}
 }
@@ -284,11 +310,11 @@ func TestVarFileSelection(t *testing.T) {
 		t.Fatalf("candidates %s", got)
 	}
 	for _, bad := range [][]string{{"../prod.tfvars"}, {"terraform.tfvars"}, {"link.tfvars"}, {"-flag.tfvars"}, {"prod.tfvars", "prod.tfvars"}, {"a", "b", "c", "d", "e", "f", "g", "h", "i"}} {
-		if _, err := m.StartPlan(bad); !errors.Is(err, ErrVarFiles) {
+		if _, err := m.StartPlan(bad, nil); !errors.Is(err, ErrVarFiles) {
 			t.Fatalf("%v accepted", bad)
 		}
 	}
-	op, err := m.StartPlan([]string{"prod.tfvars", "base.tfvars.json"})
+	op, err := m.StartPlan([]string{"prod.tfvars", "base.tfvars.json"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +373,7 @@ func TestTranslateSanitizes(t *testing.T) {
 		`{"type":"planned_change","change":{"resource":{"addr":"a.b"},"action":"<script>"}}`:                                 "a.b: plan to unknown",
 		`{"type":"diagnostic","diagnostic":{"severity":"error","summary":"Bad","detail":"password = \"hunter2\"\nok line"}}`: "Error: Bad",
 	} {
-		_, text, diag, ok := translate([]byte(input), "Terraform", nil)
+		_, text, diag, ok := translate([]byte(input), "plan", "Terraform", nil)
 		if !ok || text != want {
 			t.Errorf("%s: got %q", input, text)
 		}
@@ -355,8 +381,19 @@ func TestTranslateSanitizes(t *testing.T) {
 			t.Errorf("detail %q", diag.Detail)
 		}
 	}
-	for _, input := range []string{`not json`, `{"type":"apply_start"}`, `{}`} {
-		if _, _, _, ok := translate([]byte(input), "Terraform", nil); ok {
+	for input, want := range map[string]string{
+		`{"type":"version"}`: "Apply started",
+		`{"type":"apply_start","hook":{"resource":{"addr":"a.b"},"action":"delete"}}`:                                "a.b: delete started",
+		`{"type":"apply_errored","hook":{"resource":{"addr":"a.b"},"action":"create"}}`:                              "a.b: create failed",
+		`{"type":"provision_progress","hook":{"resource":{"addr":"a.b"}},"output":"DO_NOT_LEAK_HCLARO_TEST_SECRET"}`: "",
+		`{"type":"change_summary","changes":{"add":2,"change":0,"remove":2,"operation":"apply"}}`:                    "Apply complete: 2 added, 0 changed, 2 destroyed.",
+	} {
+		if _, text, _, ok := translate([]byte(input), "apply", "Terraform", nil); !ok || text != want {
+			t.Errorf("apply %s: got %q", input, text)
+		}
+	}
+	for _, input := range []string{`not json`, `{"type":"apply_unknown"}`, `{}`} {
+		if _, _, _, ok := translate([]byte(input), "plan", "Terraform", nil); ok {
 			t.Errorf("%s rendered", input)
 		}
 	}

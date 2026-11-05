@@ -21,9 +21,9 @@ func Token() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// mutating lists the only routes that accept POST. Neither applies infrastructure changes:
-// one starts a plan, the other cancels a running operation.
-var mutating = regexp.MustCompile(`^/api/v1/(plans|operations/[0-9a-f]{32}/cancel)$`)
+// mutating lists the only routes that accept POST: start a plan, approve a reviewed plan,
+// apply it with that one-time approval, and cancel a running operation.
+var mutating = regexp.MustCompile(`^/api/v1/(plans|plans/[0-9a-f]{32}/(approval|apply)|operations/[0-9a-f]{32}/cancel)$`)
 
 func equal(got, want string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1

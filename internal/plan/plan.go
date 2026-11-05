@@ -100,6 +100,10 @@ type Review struct {
 	Outputs       []Output          `json:"outputs"`
 	Warnings      []string          `json:"warnings"`
 	Details       map[string]Detail `json:"-"`
+	// Applyable is false when the engine says the plan cannot be applied, or it is errored.
+	Applyable bool `json:"-"`
+	// Deferred counts changes the engine postponed; such a plan is incomplete.
+	Deferred int `json:"-"`
 }
 
 type rawChange struct {
@@ -175,6 +179,8 @@ func Parse(input []byte) (Review, error) {
 		Drift     []rawResourceChange  `json:"resource_drift"`
 		Outputs   map[string]rawChange `json:"output_changes"`
 		Deferred  []json.RawMessage    `json:"deferred_changes"`
+		Applyable *bool                `json:"applyable"`
+		Complete  *bool                `json:"complete"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(input))
 	dec.UseNumber()
@@ -196,6 +202,9 @@ func Parse(input []byte) (Review, error) {
 		review.Timestamp = doc.Timestamp
 	}
 	review.Errored = doc.Errored
+	// Older engines omit applyable/complete; an errored plan is never applyable.
+	review.Applyable = !doc.Errored && (doc.Applyable == nil || *doc.Applyable) && (doc.Complete == nil || *doc.Complete)
+	review.Deferred = len(doc.Deferred)
 	if doc.Errored {
 		review.Warnings = append(review.Warnings, "The engine reported this plan as errored. It is incomplete and must not be applied.")
 	}

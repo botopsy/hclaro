@@ -2,7 +2,7 @@
 
 A local, read-only workspace for Terraform and OpenTofu. Browse recorded resource instances, nested modules, and provider sources; search canonical addresses and inspect redacted attributes. No accounts, telemetry, external runtime assets, or infrastructure mutations.
 
-**Milestone 2 alpha.** Browse state and, when you ask, run a plan and review every proposed change. Hclaro never applies plans. Start with the synthetic demo. See verification status for [M1](docs/M01-verification.md) and [M2](docs/M02-verification.md). Real Terraform/OpenTofu certification is still open, so treat this as an alpha, not a release.
+**Milestone 3 alpha (draft).** Browse state, run a plan and review every proposed change, plan the replacement of selected instances, and apply a reviewed saved plan after explicit confirmation (local execution only). Start with the synthetic demo. See verification status for [M1](docs/M01-verification.md), [M2](docs/M02-verification.md) and [M3](docs/M03-verification.md). Apply has not yet been run against a real engine. Real Terraform/OpenTofu certification is still open, so treat this as an alpha, not a release.
 
 ## Run the isolated demo
 
@@ -75,7 +75,22 @@ The review shows:
 - Output changes and changes made outside Terraform/OpenTofu (drift).
 - Metadata: engine, workspace, variable files, plan SHA-256, and a warning when configuration changed since the plan.
 
-Plans are **review only**. There is no apply button or endpoint. Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans with status, duration, exit code and their logs. History lives in memory only.
+Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans and applies with status, duration, exit code and their logs. History lives in memory only.
+
+## Replace and apply
+
+In **Resources**, tick the checkbox of one or more managed instances (up to 50; data sources cannot be selected) and choose **Plan replacement…**. Hclaro runs a full plan with one `-replace=<address>` argument per instance, using the exact address from state. It never adds `-target`. The review lists the requested instances, flags any the plan does not actually replace, and counts every other change in the plan, including deletions and replacements you did not select. Replacing destroys and recreates objects; Hclaro does not promise zero downtime.
+
+Any plan, not only a replacement, can be applied when all of these hold:
+
+- the workspace uses local execution (remote/cloud execution stays plan-only);
+- the plan is not errored, incomplete or deferred, and has changes;
+- it is the most recent applicable plan, less than one hour old;
+- configuration, variable files, the lock file, the engine version and the workspace are unchanged since planning.
+
+Only then is the saved plan kept, in a private `0700` temp directory. **Review and apply…** asks the server for a one-time confirmation valid for five minutes, then shows the action counts, the exact command and the plan digest. Plans that delete, replace or forget anything require typing `apply <workspace>`. Hclaro then re-checks the workspace and the file's SHA-256 and runs `apply -input=false -json <saved plan>`. A saved plan never prompts, so this dialog is the only confirmation. Closing it applies nothing.
+
+The saved plan is deleted after one apply attempt, whatever the result, and also when it expires, when a newer plan replaces it, and when Hclaro stops. There is no automatic re-plan: if the engine reports the plan as stale, run a new one. After an apply, Hclaro re-reads state and reports the outcome separately from the process status: **applied**, **not applied**, or **uncertain** when an apply failed or was interrupted after starting.
 
 ## Development
 

@@ -158,12 +158,14 @@ func TestPlanFlowOverHTTP(t *testing.T) {
 	if len(list.Plans) != 1 || list.Plans[0].Changes != 11 || list.Plans[0].Drift != 1 {
 		t.Fatalf("%+v", list)
 	}
-	detail := decode[struct {
+	type planDetail struct {
 		operations.Plan
-		ContextChanged bool `json:"contextChanged"`
-	}](t, s.do("GET", "/api/v1/plans/"+op.PlanID, ""))
-	if detail.Apply.Available || detail.ArtifactRetained || detail.ContextChanged || len(detail.Changes) != 13 || detail.ArtifactSHA256 == "" {
-		t.Fatalf("plan detail: %+v", detail.Plan)
+		ContextChanged bool                   `json:"contextChanged"`
+		Apply          operations.ApplyStatus `json:"apply"`
+	}
+	detail := decode[planDetail](t, s.do("GET", "/api/v1/plans/"+op.PlanID, ""))
+	if !detail.Apply.Available || !detail.Apply.ArtifactRetained || detail.ContextChanged || len(detail.Changes) != 13 || detail.ArtifactSHA256 == "" {
+		t.Fatalf("plan detail: %+v %+v", detail.Apply, detail.Plan)
 	}
 	// Every change and drift record is individually retrievable and redacted.
 	for _, c := range append(detail.Changes, detail.Drift...) {
@@ -176,11 +178,92 @@ func TestPlanFlowOverHTTP(t *testing.T) {
 			t.Fatal(path)
 		}
 	}
-	if s.do("POST", "/api/v1/plans/"+op.PlanID+"/apply", `{}`).Code != 405 {
-		t.Fatal("apply must not exist")
-	}
 	if calls := strings.Count(strings.Join(s.fake.Calls(), ","), "plan"); calls != 2 {
 		t.Fatalf("GET requests must never run the engine: %v", s.fake.Calls())
+	}
+	applyPath := "/api/v1/plans/" + op.PlanID + "/apply"
+	refused := func(w *httptest.ResponseRecorder, code int, name string) {
+		t.Helper()
+		if w.Code != code || !strings.Contains(w.Body.String(), name) {
+			t.Fatalf("want %d %s, got %d %s", code, name, w.Code, w.Body.String())
+		}
+	}
+	// GET never applies; apply without an approval, with a forged token, or with the wrong
+	// typed confirmation is refused, and a used token cannot be replayed.
+	refused(s.do("GET", applyPath, ""), 404, "route_not_found")
+	refused(s.do("POST", applyPath, `{"confirmationToken":"x","confirmation":"apply demo"}`), 409, "approval_required")
+	refused(s.do("POST", applyPath, `{"confirmationToken":"x","autoApprove":true}`), 400, "invalid_request")
+	approval := decode[operations.Approval](t, s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{}`))
+	if approval.Phrase != "apply demo" || !approval.Destructive || approval.ArtifactSHA256 != detail.ArtifactSHA256 || len(approval.Token) != 64 || strings.Join(approval.Command[:4], " ") != "terraform apply -input=false -json" {
+		t.Fatalf("approval %+v", approval)
+	}
+	refused(s.do("POST", applyPath, `{"confirmationToken":"`+approval.Token+`","confirmation":"apply"}`), 409, "confirmation_mismatch")
+	refused(s.do("POST", applyPath, `{"confirmationToken":"`+approval.Token+`","confirmation":"apply demo"}`), 409, "approval_required")
+	approval = decode[operations.Approval](t, s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{}`))
+	refused(s.do("POST", applyPath, `{"confirmationToken":"`+strings.Repeat("0", 64)+`","confirmation":"apply demo"}`), 409, "approval_invalid")
+	if strings.Contains(strings.Join(s.fake.Calls(), ","), "apply") {
+		t.Fatal("refused requests reached the engine")
+	}
+	approval = decode[operations.Approval](t, s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{}`))
+	w = s.do("POST", applyPath, `{"confirmationToken":"`+approval.Token+`","confirmation":"apply demo"}`)
+	if w.Code != 202 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	applied := s.wait(decode[operations.Operation](t, w).ID)
+	if applied.Status != operations.Succeeded || applied.Outcome != "applied" || applied.Kind != "apply" || applied.PlanID != op.PlanID {
+		t.Fatalf("%+v", applied)
+	}
+	if got := s.fake.Applied(); len(got) != 1 || !bytes.Equal(got[0], fixtures.PlanAllActions) {
+		t.Fatalf("applied %d artifacts", len(got))
+	}
+	// A saved plan is applied at most once.
+	detail = decode[planDetail](t, s.do("GET", "/api/v1/plans/"+op.PlanID, ""))
+	if detail.Apply.Available || detail.Apply.ArtifactRetained {
+		t.Fatalf("%+v", detail.Apply)
+	}
+	refused(s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{}`), 409, "not_applicable")
+	parseSSE(s.do("GET", "/api/v1/operations/"+applied.ID+"/events", "").Body.String())
+}
+
+func TestReplacePlanOverHTTP(t *testing.T) {
+	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanCollateral})
+	resources := decode[struct {
+		Resources []struct{ ID, Address, Mode string } `json:"resources"`
+	}](t, s.do("GET", "/api/v1/resources?query=compute.aws_instance.main%5B1&limit=5", ""))
+	data := decode[struct {
+		Resources []struct{ ID string } `json:"resources"`
+	}](t, s.do("GET", "/api/v1/resources?mode=data", ""))
+	if len(resources.Resources) == 0 || len(data.Resources) == 0 {
+		t.Fatal("fixture resources missing")
+	}
+	first, second := resources.Resources[0], resources.Resources[1]
+	for _, body := range []string{
+		`{"acknowledgeBackendAccess":true,"replace":["` + data.Resources[0].ID + `"]}`,
+		`{"acknowledgeBackendAccess":true,"replace":["` + first.ID + `","` + first.ID + `"]}`,
+		`{"acknowledgeBackendAccess":true,"replace":["module.compute.aws_instance.main[1]"]}`,
+		`{"acknowledgeBackendAccess":true,"replace":["-target=x"]}`,
+	} {
+		if w := s.do("POST", "/api/v1/plans", body); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_replace") {
+			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
+		}
+	}
+	w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true,"replace":["`+first.ID+`","`+second.ID+`"]}`)
+	if w.Code != 202 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	op := s.wait(decode[operations.Operation](t, w).ID)
+	requests := s.fake.Requests()
+	if len(requests) != 1 || strings.Join(requests[0].Replace, "|") != first.Address+"|"+second.Address {
+		t.Fatalf("requests %+v", requests)
+	}
+	if strings.Join(op.Command[5:], " ") != "-replace="+first.Address+" -replace="+second.Address {
+		t.Fatalf("command %q", op.Command)
+	}
+	p := decode[operations.Plan](t, s.do("GET", "/api/v1/plans/"+op.PlanID, ""))
+	// The collateral fixture replaces other instances, so both requests are flagged as
+	// not replaced while every collateral change remains listed.
+	if p.Kind != "replace" || len(p.Replace) != 2 || len(p.Changes) != 4 || !p.Destructive || len(p.Warnings) != 2 {
+		t.Fatalf("%+v", p)
 	}
 }
 

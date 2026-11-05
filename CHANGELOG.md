@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — M3 replace and apply (draft)
+
+### Replace
+
+- Select managed instances in the resource explorer (up to 50; data sources cannot be selected) and plan their replacement: a full plan with one `-replace=<address>` per instance, never `-target`.
+- Replacement review lists the requested instances, flags any the plan does not replace, and counts every other change, including deletions and replacements you did not select.
+
+### Saved-plan apply
+
+- Apply a reviewed plan for locally executed workspaces. Remote/cloud execution stays plan-only.
+- Only the most recent eligible plan keeps its saved file (private `0700` temp directory, one hour). It is deleted after one apply attempt, on expiry, when superseded and on shutdown.
+- Apply needs a one-time, five-minute approval bound to the plan, and typing `apply <workspace>` for plans that delete, replace or forget objects. Context, engine version, workspace and the file's SHA-256 are re-checked; the engine's stale-plan refusal is reported, never retried.
+- Apply logs stream like plan logs. State is re-read afterwards, and the outcome (applied, not applied, uncertain) is reported separately from the exit status.
+- New routes: `POST /api/v1/plans/{id}/approval`, `POST /api/v1/plans/{id}/apply`. `POST /api/v1/plans` accepts `replace` (resource IDs).
+
 ## 0.1.0-alpha.3 — 2026-11-05
 
 ### Readability

@@ -18,7 +18,7 @@ await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:host
 await context.route('**/*',async route=>{
  const req=route.request(),url=new URL(req.url())
  if(url.origin!==host){external.push(url.origin);await route.abort();return}
- const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers()}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':''},maxBuffer:8<<20}))
+ const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':''},maxBuffer:8<<20}))
  const body=Buffer.from(response.body,'base64')
  if(url.pathname.startsWith('/api/')) assert(!body.includes(Buffer.from(canary)),'secret crossed actual API boundary')
  const headers=Object.fromEntries(Object.entries(response.headers).map(([k,v])=>[k,v.join(', ')]))
@@ -31,6 +31,9 @@ try{
  await page.goto(`${host}/#session=${token}`)
  await page.getByRole('button',{name:/artifacts.*aws_s3_bucket/}).waitFor()
  assert(!(await page.locator('body').innerText()).includes(canary))
+ // The replacement checkbox column must stay narrow; the resource column takes the space.
+ const columns=await page.locator('.resource-list .resources-table thead th').evaluateAll(cells=>cells.map(c=>c.getBoundingClientRect().width))
+ assert(columns[0]<=48&&columns[1]>=400,`resource table column widths ${columns}`)
  await page.getByRole('button',{name:/artifacts.*aws_s3_bucket/}).click()
  await page.getByLabel('Resource inspector').getByText('redacted',{exact:true}).first().waitFor()
  await page.getByRole('button',{name:'Copy resource address',exact:true}).click()
@@ -39,14 +42,22 @@ try{
  assert(!(await page.evaluate(()=>navigator.clipboard.readText())).includes(canary))
  await fs.mkdir('docs/screenshots',{recursive:true})
  await page.screenshot({path:'docs/screenshots/resources-dark.png',fullPage:true})
- const drawerWidth=()=>page.locator('aside.inspector').evaluate(e=>e.getBoundingClientRect().width)
- assert.equal(await drawerWidth(),720,'details drawer opens at its default width')
+ // Width settles after the resize event and the next layout, so poll briefly before asserting.
+ const drawerWidth=async expected=>{
+  let width
+  for(const deadline=Date.now()+2000;Date.now()<deadline;await page.waitForTimeout(25)){
+   width=await page.locator('aside.inspector').evaluate(e=>e.getBoundingClientRect().width)
+   if(width===expected) break
+  }
+  return width
+ }
+ assert.equal(await drawerWidth(720),720,'details drawer opens at its default width')
  await page.getByRole('separator',{name:'Resize resource inspector'}).press('ArrowLeft')
- assert.equal(await drawerWidth(),760,'keyboard resizes the drawer')
+ assert.equal(await drawerWidth(760),760,'keyboard resizes the drawer')
  await page.setViewportSize({width:700,height:1050})
- assert.equal(await drawerWidth(),620,'drawer is capped to a narrow window')
+ assert.equal(await drawerWidth(620),620,'drawer is capped to a narrow window')
  await page.setViewportSize({width:1512,height:1050})
- assert.equal(await drawerWidth(),760,'a narrow window does not overwrite the chosen width')
+ assert.equal(await drawerWidth(760),760,'a narrow window does not overwrite the chosen width')
  await page.getByRole('separator',{name:'Resize resource inspector'}).press('ArrowRight')
  await page.getByRole('button',{name:'Close inspector',exact:true}).click()
  await page.getByLabel('Search resources',{exact:true}).fill('quote')
@@ -58,6 +69,21 @@ try{
  await page.getByLabel('Filter resource mode').selectOption('data')
  await page.getByRole('button',{name:/current.*aws_caller_identity/}).waitFor()
  await page.getByRole('button',{name:'Reset',exact:true}).click()
+ // Replacement: only managed instances are selectable; the preflight lists exact addresses.
+ assert.equal(await page.getByLabel(/Select data\..* for replacement/).count(),0,'data source selectable')
+ await page.getByLabel('Search resources',{exact:true}).fill('quote')
+ await page.getByLabel(/Select module\.compute\.module\.workers.* for replacement/).check()
+ await page.getByRole('button',{name:'Reset',exact:true}).click()
+ await page.getByLabel('Select aws_iam_role.deployer for replacement',{exact:true}).check()
+ await page.getByRole('region',{name:'Replacement selection'}).getByText(/2 instances selected/).waitFor()
+ await page.getByRole('button',{name:'Plan replacement…'}).click()
+ const replaceDialog=page.getByRole('dialog',{name:'Plan a replacement'})
+ await replaceDialog.getByText('module.compute.module.workers["blue.eu"].aws_instance.node["quote\\"key"]',{exact:true}).waitFor()
+ await page.screenshot({path:'docs/screenshots/replace-preflight-dark.png'})
+ await page.keyboard.press('Escape')
+ await replaceDialog.waitFor({state:'detached'})
+ await page.getByRole('button',{name:'Resources',exact:true}).click()
+ await page.getByRole('button',{name:'Clear',exact:true}).click()
  await page.getByRole('button',{name:'Overview',exact:true}).click()
  await page.getByRole('heading',{name:'Workspace overview'}).waitFor()
  await page.screenshot({path:'docs/screenshots/overview-dark.png',fullPage:true})
@@ -73,7 +99,14 @@ try{
  await page.getByRole('button',{name:'Toggle light and dark theme'}).click()
  await page.getByRole('button',{name:'Plans',exact:true}).click()
  await page.getByText(/11 resource changes and 4 output changes/).waitFor()
- assert.equal(await page.getByRole('button',{name:/apply/i}).count(),0,'apply control rendered')
+ // The fixture workspace executes locally, so the reviewed plan can be applied after confirmation.
+ await page.getByRole('button',{name:'Review and apply…'}).click()
+ const applyDialog=page.getByRole('dialog',{name:'Apply this plan'})
+ await applyDialog.getByText('apply demo',{exact:true}).waitFor()
+ assert(await applyDialog.getByRole('button',{name:'Apply plan'}).isDisabled(),'apply enabled before typed confirmation')
+ await page.screenshot({path:'docs/screenshots/apply-dialog-dark.png'})
+ await page.keyboard.press('Escape')
+ await applyDialog.waitFor({state:'detached'})
  await page.getByRole('button',{name:/Replace\s*2/}).click()
  await page.getByRole('button',{name:/module\.compute\.aws_instance\.main\[0\]/}).click()
  await page.getByText('Destroy the existing object, then create a replacement.').waitFor()
@@ -100,6 +133,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, plan review, preflight, operation log replay, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply confirmation gating, preflight, operation log replay, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

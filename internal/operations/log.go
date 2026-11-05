@@ -107,6 +107,7 @@ type uiMessage struct {
 	Type    string `json:"type"`
 	Hook    struct {
 		Resource uiResource `json:"resource"`
+		Action   string     `json:"action"`
 	} `json:"hook"`
 	Change struct {
 		Resource uiResource `json:"resource"`
@@ -115,6 +116,7 @@ type uiMessage struct {
 	} `json:"change"`
 	Changes struct {
 		Add, Change, Import, Remove int
+		Operation                   string
 	} `json:"changes"`
 	Outputs    map[string]json.RawMessage `json:"outputs"`
 	Diagnostic struct {
@@ -131,15 +133,30 @@ var (
 )
 
 // translate converts one engine UI line into a log event and, for diagnostics, a record.
-// ok is false for lines that are not part of the rendered subset.
-func translate(line []byte, engineLabel string, k *known) (level, text string, diag *EngineDiagnostic, ok bool) {
+// kind is "plan" or "apply". ok is false for lines that are not part of the rendered
+// subset; ok with empty text means a recognized event that is deliberately not shown.
+func translate(line []byte, kind, engineLabel string, k *known) (level, text string, diag *EngineDiagnostic, ok bool) {
 	var m uiMessage
 	if json.Unmarshal(line, &m) != nil {
 		return "", "", nil, false
 	}
 	switch m.Type {
 	case "version":
+		if kind == "apply" {
+			return "info", "Apply started", nil, true
+		}
 		return "info", "Planning started", nil, true
+	case "apply_start":
+		return "info", address(m.Hook.Resource.Addr) + ": " + word(m.Hook.Action) + " started", nil, true
+	case "apply_complete":
+		return "info", address(m.Hook.Resource.Addr) + ": " + word(m.Hook.Action) + " complete", nil, true
+	case "apply_errored":
+		return "error", address(m.Hook.Resource.Addr) + ": " + word(m.Hook.Action) + " failed", nil, true
+	case "apply_progress", "provision_start", "provision_progress", "provision_complete", "ephemeral_op_start", "ephemeral_op_complete":
+		// Progress ticks and provisioner output (which can echo secrets) are not shown.
+		return "", "", nil, true
+	case "provision_errored":
+		return "error", address(m.Hook.Resource.Addr) + ": provisioner failed", nil, true
 	case "refresh_start":
 		return "info", address(m.Hook.Resource.Addr) + ": refreshing state", nil, true
 	case "refresh_complete":
@@ -153,6 +170,9 @@ func translate(line []byte, engineLabel string, k *known) (level, text string, d
 	case "resource_drift":
 		return "warn", address(m.Change.Resource.Addr) + ": changed outside " + engineLabel + " (" + word(m.Change.Action) + ")", nil, true
 	case "change_summary":
+		if m.Changes.Operation == "apply" {
+			return "info", fmt.Sprintf("Apply complete: %d added, %d changed, %d destroyed.", m.Changes.Add, m.Changes.Change, m.Changes.Remove), nil, true
+		}
 		text := fmt.Sprintf("Plan: %d to add, %d to change, %d to destroy", m.Changes.Add, m.Changes.Change, m.Changes.Remove)
 		if m.Changes.Import > 0 {
 			text += fmt.Sprintf(", %d to import", m.Changes.Import)

@@ -60,7 +60,7 @@ func TestDiagnosticsScrubKnownInputs(t *testing.T) {
 	fake := &engine.Fake{Lines: [][]byte{[]byte(diag), []byte(logLine)}, PlanErr: &engine.ExitError{Code: 1}}
 	m, root := setup(t, fake, workspace.Info{})
 	writeFiles(t, root, map[string]string{"prod.tfvars": `name = "opaque-input-7731"`})
-	op, err := m.StartPlan([]string{"prod.tfvars"})
+	op, err := m.StartPlan([]string{"prod.tfvars"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

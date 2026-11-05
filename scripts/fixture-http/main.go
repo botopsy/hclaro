@@ -22,8 +22,8 @@ import (
 
 func main() {
 	var request struct {
-		Method, Path string
-		Headers      map[string]string
+		Method, Path, Body string
+		Headers            map[string]string
 	}
 	if json.NewDecoder(io.LimitReader(os.Stdin, 16384)).Decode(&request) != nil {
 		os.Exit(1)
@@ -50,7 +50,7 @@ func main() {
 	manager.TempDir = temp
 	next := 0
 	manager.NewID = func() string { next++; return fmt.Sprintf("%032x", next) }
-	if op, err := manager.StartPlan(nil); err == nil {
+	if op, err := manager.StartPlan(nil, nil); err == nil {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 			if current, _, _ := manager.Operation(op.ID); current.Status != operations.Running {
 				break
@@ -59,7 +59,11 @@ func main() {
 	}
 	defer manager.Close(5 * time.Second)
 	handler := api.Handler(store, manager, ui.Assets(), "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
-	r := httptest.NewRequest(request.Method, "http://127.0.0.1:9273"+request.Path, nil)
+	var body io.Reader
+	if request.Body != "" {
+		body = strings.NewReader(request.Body)
+	}
+	r := httptest.NewRequest(request.Method, "http://127.0.0.1:9273"+request.Path, body)
 	for k, v := range request.Headers {
 		r.Header.Set(k, v)
 	}
