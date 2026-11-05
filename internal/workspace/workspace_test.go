@@ -82,3 +82,32 @@ func TestUnavailableDistinctFromEmpty(t *testing.T) {
 		t.Fatal(s.Get())
 	}
 }
+
+func TestImplicitLocalBackend(t *testing.T) {
+	t.Setenv("TF_DATA_DIR", "")
+	for name, tc := range map[string]struct {
+		file, content, backend string
+	}{
+		"no backend block":      {"main.tf", `resource "terraform_data" "cloud" {}`, "local"},
+		"backend block":         {"backend.tf", "terraform {\n  backend \"s3\" {}\n}", "unknown"},
+		"one-line backend":      {"main.tf", `terraform { backend "gcs" {} }`, "unknown"},
+		"cloud block":           {"main.tf", "terraform {\n  cloud {\n    organization = \"x\"\n  }\n}", "unknown"},
+		"JSON backend":          {"main.tf.json", `{"terraform": {"backend": {"s3": {}}}}`, "unknown"},
+		"commented-out backend": {"main.tf", "# backend \"s3\" {}\nterraform {}", "unknown"},
+	} {
+		root := t.TempDir()
+		_ = os.WriteFile(filepath.Join(root, tc.file), []byte(tc.content), 0o600)
+		_ = os.Mkdir(filepath.Join(root, ".terraform"), 0o700)
+		info := Inspect(root)
+		want := map[string]string{"local": "local-cli", "unknown": "unsupported"}[tc.backend]
+		if info.Backend != tc.backend || info.ExecutionMode != want {
+			t.Errorf("%s: %s/%s", name, info.Backend, info.ExecutionMode)
+		}
+	}
+	// Not initialized: no backend is assumed.
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "main.tf"), []byte(`terraform {}`), 0o600)
+	if info := Inspect(root); info.Backend != "unknown" {
+		t.Fatal(info.Backend)
+	}
+}

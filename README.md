@@ -111,7 +111,7 @@ Cross-compilation is not OS runtime validation. Release signing, installers, and
 
 ## Compatibility and troubleshooting
 
-The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**, using the documented common `show -json` interface and JSON state format major version 1. Prereleases, other engine major versions, plan JSON, duplicates, and malformed records fail closed. Tests use synthetic official-format output and fake executables; no real engine/provider/backend combination has been certified yet. Remote/cloud backends are read-only, with execution mode shown explicitly; absent metadata remains unknown.
+The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**, using the documented common `show -json` interface and JSON state format major version 1. Prereleases, other engine major versions, plan JSON, duplicates, and malformed records fail closed. Tests use synthetic official-format output and fake executables. Terraform 1.5.5 has also been run for real against a disposable local project (local backend, built-in resources only); no cloud provider, remote backend or OpenTofu release has been certified. Remote/cloud backends are read-only, with execution mode shown explicitly. An initialized project with no `backend` or `cloud` block uses the default local backend; otherwise absent metadata remains unknown.
 
 | Situation | What to do |
 | --- | --- |
@@ -124,7 +124,7 @@ The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**,
 | Locked session | Open the latest private URL from the running terminal. |
 | Occupied port | Choose another `--port`, or omit the flag. |
 | Loopback permission denied | Run in an environment permitting listeners on 127.0.0.1. |
-| Plan unavailable | The Plans view states why: remote execution backend, unverified backend type, missing engine or workspace error. |
+| Plan unavailable | The Plans view states why: remote execution backend, unverified backend type, missing engine or workspace error. An unverified backend usually means a `backend` block that was not initialized: run `init` yourself, then restart. |
 | State locked | Another operation holds the lock. Wait, or investigate with your CLI. Hclaro never force-unlocks. |
 | Plan credentials/network errors | Refresh SSO or credentials in your terminal, check VPN, then run the plan again. |
 | `TF_CLI_ARGS_plan` refused | Remove injected flags other than `-no-color`; they could change what a reviewed plan contains. |

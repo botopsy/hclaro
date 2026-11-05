@@ -301,11 +301,14 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	// MkdirTemp creates 0700 directories; enforce it in case of an unusual umask policy.
 	_ = os.Chmod(dir, 0o700)
 	out := filepath.Join(dir, "plan.tfplan")
+	// Taken before the engine runs, so edits made while planning count as a context change.
+	fingerprint := m.Fingerprint(snap, e.op.VarFiles)
 	m.stage(e, "Planning")
 	label := engineLabel(snap.Info.Engine)
+	inputs := collectKnown(m.root, e.op.VarFiles, os.Environ())
 	undecoded := false
 	err = m.planner.Plan(ctx, engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles}, func(line []byte) {
-		level, text, diag, ok := translate(line, label)
+		level, text, diag, ok := translate(line, label, inputs)
 		if !ok {
 			if !undecoded {
 				undecoded = true
@@ -358,7 +361,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	return &Plan{
 		Review: review, ID: m.NewID(), OperationID: e.op.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, ArtifactSHA256: digest,
-		Fingerprint: m.Fingerprint(snap, e.op.VarFiles),
+		Fingerprint: fingerprint,
 		Apply:       Apply{Reason: "Applying plans is not available in this version of Hclaro. Plans are for review only, and the saved plan file was deleted after review data was extracted."},
 	}, "", &zero
 }
@@ -381,9 +384,9 @@ func (m *Manager) classify(e *entry, hint string) string {
 }
 
 // Fingerprint identifies the plan context: engine, version, workspace, variable file
-// selection and the configuration files under the project root.
+// selection, configuration files, engine data directory and planning environment.
 func (m *Manager) Fingerprint(snap workspace.Snapshot, varFiles []string) string {
-	return workspace.Fingerprint(m.root, append([]string{snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}, varFiles...)...)
+	return workspace.Fingerprint(m.root, os.Environ(), append([]string{snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}, varFiles...)...)
 }
 
 func sha256File(path string) (string, error) {

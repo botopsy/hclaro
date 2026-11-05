@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -126,10 +125,9 @@ func TestPlanCancelInterruptsGracefully(t *testing.T) {
 	case <-time.After(gracePeriod + 5*time.Second):
 		t.Fatal("cancel did not stop the engine")
 	}
-	if runtime.GOOS != "windows" {
-		if _, err := os.Stat(out + ".interrupted"); err != nil {
-			t.Fatal("engine was not interrupted gracefully before being killed")
-		}
+	// On Windows the interrupt is a CTRL_BREAK to the engine's own process group.
+	if _, err := os.Stat(out + ".interrupted"); err != nil {
+		t.Fatal("engine was not interrupted gracefully before being killed")
 	}
 }
 

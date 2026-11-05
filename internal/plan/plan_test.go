@@ -238,6 +238,20 @@ func TestAttributeDiffEdges(t *testing.T) {
 	}
 }
 
+// Real Terraform 1.5 output: a list of new IDs is marked unknown per element, not as a whole.
+func TestOutputPartialUnknown(t *testing.T) {
+	r, err := Parse([]byte(`{"format_version":"1.2","planned_values":{},"output_changes":{
+		"ids":{"actions":["create"],"before":null,"after":[null,null],"after_unknown":[true,true],"before_sensitive":false,"after_sensitive":false},
+		"all":{"actions":["create"],"before":null,"after":null,"after_unknown":true,"before_sensitive":false,"after_sensitive":false}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := json.Marshal(r.Outputs)
+	if string(got) != `[{"name":"all","actions":["create"],"action":"create","before":null,"after":"[known after apply]","unknown":true},{"name":"ids","actions":["create"],"action":"create","before":null,"after":["[known after apply]","[known after apply]"]}]` {
+		t.Fatal(string(got))
+	}
+}
+
 func FuzzParse(f *testing.F) {
 	f.Add(fixtures.PlanAllActions)
 	f.Add(fixtures.PlanCollateral)

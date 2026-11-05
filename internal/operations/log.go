@@ -132,7 +132,7 @@ var (
 
 // translate converts one engine UI line into a log event and, for diagnostics, a record.
 // ok is false for lines that are not part of the rendered subset.
-func translate(line []byte, engineLabel string) (level, text string, diag *EngineDiagnostic, ok bool) {
+func translate(line []byte, engineLabel string, k *known) (level, text string, diag *EngineDiagnostic, ok bool) {
 	var m uiMessage
 	if json.Unmarshal(line, &m) != nil {
 		return "", "", nil, false
@@ -161,7 +161,7 @@ func translate(line []byte, engineLabel string) (level, text string, diag *Engin
 	case "outputs":
 		return "info", fmt.Sprintf("Output changes: %d", len(m.Outputs)), nil, true
 	case "diagnostic":
-		d := &EngineDiagnostic{Severity: word(m.Diagnostic.Severity), Summary: sanitize(m.Diagnostic.Summary, 1), Detail: sanitize(m.Diagnostic.Detail, 20)}
+		d := &EngineDiagnostic{Severity: word(m.Diagnostic.Severity), Summary: sanitize(m.Diagnostic.Summary, k, 1), Detail: sanitize(m.Diagnostic.Detail, k, 20)}
 		if m.Diagnostic.Address != "" {
 			d.Address = address(m.Diagnostic.Address)
 		}
@@ -179,7 +179,7 @@ func translate(line []byte, engineLabel string) (level, text string, diag *Engin
 		if m.Level == "warn" || m.Level == "error" {
 			level = m.Level
 		}
-		return level, sanitize(m.Message, 1), nil, true
+		return level, sanitize(m.Message, k, 1), nil, true
 	}
 	return "", "", nil, false
 }
@@ -201,11 +201,12 @@ func word(s string) string {
 	return "unknown"
 }
 
-// sanitize keeps at most maxLines lines of free text, withholding any line that looks like a
-// credential or an assignment to a risky attribute name. This is heuristic: engine and
-// provider messages are free text, so unrecognized secrets can still pass.
-func sanitize(text string, maxLines int) string {
-	lines := strings.Split(stripControls(text), "\n")
+// sanitize keeps at most maxLines lines of free text. Known input values are replaced first;
+// then any line that looks like a credential or an assignment to a risky attribute name is
+// withheld. The line checks are heuristic: a secret that is neither a known input nor
+// recognizable, such as one returned by a provider API, can still pass.
+func sanitize(text string, k *known, maxLines int) string {
+	lines := strings.Split(strings.TrimSpace(k.scrub(stripControls(text))), "\n")
 	out := make([]string, 0, min(len(lines), maxLines))
 	for i, line := range lines {
 		if i == maxLines {

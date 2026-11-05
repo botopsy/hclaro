@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -73,11 +72,9 @@ func (c *CLI) Plan(ctx context.Context, request PlanRequest, line func([]byte)) 
 	}
 	// Interrupt first so the engine can stop providers and release a state lock;
 	// the process is killed only after the grace period.
+	prepareInterrupt(cmd)
 	cmd.Cancel = func() error {
-		if runtime.GOOS == "windows" {
-			return cmd.Process.Kill()
-		}
-		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		if err := interrupt(cmd.Process); err != nil {
 			return cmd.Process.Kill()
 		}
 		return nil

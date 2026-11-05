@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -125,6 +126,13 @@ func Inspect(root string) Info {
 			}
 		}
 	}
+	// Without a backend or cloud block, init records no backend metadata and the engine uses
+	// the default local backend. A block that was never initialized makes the engine refuse
+	// to plan, so this cannot route a plan to a remote backend.
+	if info.Backend == "unknown" && info.Initialized && !fileExists(metadata) && !declaresBackend(root) {
+		info.Backend = "local"
+		info.ExecutionMode = "local-cli"
+	}
 	if info.Backend == "unknown" {
 		info.Warnings = append(info.Warnings, "Backend type is unavailable from initialized metadata; execution mode is unverified.")
 	}
@@ -225,4 +233,35 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	snap.CapturedAt = time.Now().UTC().Format(time.RFC3339)
 	snap.Index = idx
 	s.set(snap)
+}
+
+var (
+	backendBlock = regexp.MustCompile(`(^|[\s{])(backend\s+"[^"]*"|cloud)\s*\{`)
+	backendJSON  = regexp.MustCompile(`"(backend|cloud)"\s*:`)
+)
+
+// declaresBackend reports whether a root module file may declare a backend or cloud block.
+// The scan is textual and errs towards true, for example for a commented-out block or a
+// file that cannot be read.
+func declaresBackend(root string) bool {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return true
+	}
+	for _, e := range entries {
+		name := e.Name()
+		hcl := strings.HasSuffix(name, ".tf") || strings.HasSuffix(name, ".tofu")
+		js := strings.HasSuffix(name, ".tf.json") || strings.HasSuffix(name, ".tofu.json")
+		if !hcl && !js {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil || len(b) > 16<<20 {
+			return true
+		}
+		if hcl && backendBlock.Match(b) || js && backendJSON.Match(b) {
+			return true
+		}
+	}
+	return false
 }
