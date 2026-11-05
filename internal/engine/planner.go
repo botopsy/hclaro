@@ -266,10 +266,22 @@ type Fake struct {
 	InitErr     error
 	BlockInit   bool
 	InitDataDir string
-	calls       []string
-	requests    []PlanRequest
-	applied     [][]byte
-	inits       [][]string
+	// Workspaces, CLIDefault and WorkspaceStates back the WorkspaceManager methods.
+	// WorkspaceErr fails ChangeWorkspace, BlockWorkspace makes it wait for cancellation,
+	// ListErr fails listings and ListErrAfter sets it after a successful change.
+	Workspaces      []string
+	CLIDefault      string
+	WorkspaceStates map[string][]byte
+	WorkspaceLines  [][]byte
+	WorkspaceErr    error
+	BlockWorkspace  bool
+	ListErr         error
+	ListErrAfter    bool
+	StateErr        error
+	calls           []string
+	requests        []PlanRequest
+	applied         [][]byte
+	inits           [][]string
 }
 
 func (m *Fake) record(call string) {

@@ -44,8 +44,8 @@ type InitRequest struct {
 	Release  func()
 }
 
-// Inits runs initialization operations for Hub projects. Different roots may initialize in
-// parallel; the root claim keeps one operation per root.
+// Inits runs Hub project operations: initialization and workspace commands. Different roots
+// may run in parallel; the root claim keeps one operation per root.
 type Inits struct {
 	mu      sync.Mutex
 	entries []*initEntry
@@ -100,21 +100,25 @@ func InitCommand(engineName string, json bool) []string {
 // Start records the operation and runs it in the background. The engine starts only after
 // its version is supported and Revalidate passes.
 func (r *Inits) Start(req InitRequest) (Operation, error) {
+	op := Operation{
+		Kind: "init", Command: InitCommand(req.Engine, false), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices),
+	}
+	return r.begin(op, req.Release, func(ctx context.Context, e *initEntry) { r.run(ctx, e, req) })
+}
+
+// begin records a queued operation for a project and runs it in the background. The caller
+// has claimed the project root; release gives it up once the operation ends.
+func (r *Inits) begin(op Operation, release func(), run func(context.Context, *initEntry)) (Operation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
-		req.Release()
+		release()
 		return Operation{}, ErrClosed
 	}
 	ctx, cancel := context.WithCancel(r.base)
-	e := &initEntry{projectID: req.ProjectID, entry: entry{
-		op: Operation{
-			ID: r.NewID(), Kind: "init", Status: Queued, Stage: "Queued", StartedAt: time.Now().UTC().Format(time.RFC3339),
-			Command: InitCommand(req.Engine, false), VarFiles: []string{}, Replace: []string{}, Diagnostics: []EngineDiagnostic{},
-			LogRetained: true, ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices),
-		},
-		log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: req.Release,
-	}}
+	op.ID, op.Status, op.Stage, op.StartedAt = r.NewID(), Queued, "Queued", time.Now().UTC().Format(time.RFC3339)
+	op.VarFiles, op.Replace, op.Diagnostics, op.LogRetained = []string{}, []string{}, []EngineDiagnostic{}, true
+	e := &initEntry{projectID: op.ProjectID, entry: entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release}}
 	r.entries = append(r.entries, e)
 	if len(r.entries) > maxInits {
 		r.entries = r.entries[len(r.entries)-maxInits:]
@@ -126,7 +130,11 @@ func (r *Inits) Start(req InitRequest) (Operation, error) {
 		}
 	}
 	r.wg.Add(1)
-	go r.run(ctx, e, req)
+	go func() {
+		defer r.wg.Done()
+		defer e.cancel()
+		run(ctx, e)
+	}()
 	return r.snapshot(e), nil
 }
 
@@ -147,8 +155,6 @@ func (r *Inits) stage(e *initEntry, stage string) {
 }
 
 func (r *Inits) run(ctx context.Context, e *initEntry, req InitRequest) {
-	defer r.wg.Done()
-	defer e.cancel()
 	before := req.Lockfile()
 	code, exitCode, ran := r.execute(ctx, e, req)
 	status := Failed
@@ -385,6 +391,11 @@ func (r *Inits) snapshot(e *initEntry) Operation {
 	op.Command = slices.Clone(op.Command)
 	op.Notices = slices.Clone(op.Notices)
 	op.Diagnostics = slices.Clone(op.Diagnostics)
+	if op.Workspace != nil {
+		w := *op.Workspace
+		w.Workspaces = slices.Clone(w.Workspaces)
+		op.Workspace = &w
+	}
 	if op.LockfileChanged != nil {
 		v := *op.LockfileChanged
 		op.LockfileChanged = &v
@@ -412,12 +423,12 @@ func (r *Inits) Operation(id string) (Operation, *Log, bool) {
 	return r.snapshot(e), e.log, true
 }
 
-// Latest returns the most recent initialization of a project.
-func (r *Inits) Latest(projectID string) (Operation, bool) {
+// Latest returns the most recent operation of one kind ("init" or "workspace") in a project.
+func (r *Inits) Latest(projectID, kind string) (Operation, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for i := len(r.entries) - 1; i >= 0; i-- {
-		if r.entries[i].projectID == projectID {
+		if r.entries[i].projectID == projectID && r.entries[i].op.Kind == kind {
 			return r.snapshot(r.entries[i]), true
 		}
 	}

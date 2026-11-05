@@ -3553,3 +3553,59 @@ kbd {
 .status-unknown {
   color: var(--warn);
 }
+
+/* Workspace lifecycle (M07) */
+.workspace-heading {
+  align-items: center;
+  gap: 12px;
+  display: flex;
+}
+
+.workspace-heading .hub-section {
+  flex: 1;
+}
+
+.workspace-advanced {
+  color: var(--muted);
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  display: inline-flex;
+}
+
+.hub-tag-quiet {
+  color: var(--subtle);
+}
+
+.workspace-support {
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  display: flex;
+}
+
+.workspace-confirm {
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  display: flex;
+}
+
+.workspace-confirm input {
+  max-width: 320px;
+}
+
+@media (width <= 640px) {
+  .workspace-heading {
+    flex-wrap: wrap;
+  }
+
+  .workspace-list li {
+    flex-wrap: wrap;
+  }
+
+  .workspace-open {
+    flex-basis: 100%;
+  }
+}
