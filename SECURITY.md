@@ -1,13 +1,14 @@
 # Security
 
-Hclaro never changes infrastructure. Launch is read-only. Since M2, a user can explicitly start a **plan**, which contacts providers and the backend and may lock the state, but never writes state or infrastructure. No apply/import/replace/destroy/state-edit API or generic executor exists. Development and CI use only synthetic fixtures and fake engines.
+Launch is read-only. Since M2, a user can explicitly start a **plan**, which contacts providers and the backend and may lock the state, but never writes state or infrastructure. Since M3, a user can **apply a reviewed saved plan** for a locally executed workspace after a one-time, plan-bound confirmation; this changes infrastructure and state. There is no import, destroy, state-edit, unlock or generic executor API, and no way to apply anything other than the reviewed saved file. Development and CI use only synthetic fixtures and fake engines.
 
 ## Protected boundaries
 
 - Bind exclusively to 127.0.0.1; exact Host and Origin validation, cross-site fetch rejection, no wildcard CORS.
 - Random per-launch bearer authorization for every API, including health. The private URL uses a fragment, not an HTTP query credential.
 - GET/HEAD for every read route; bodies rejected; bounded queries, headers, request duration, engine output and parsing depth.
-- Exactly two POST routes (start plan, cancel operation). Each requires the exact Origin, same-origin fetch metadata when present, JSON content type, a per-launch CSRF header, a body of at most 16 KiB, strict decoding, and an explicit backend-access acknowledgement for plans. No apply route exists.
+- Exactly four POST routes (start plan, approve a plan, apply an approved plan, cancel operation). Each requires the exact Origin, same-origin fetch metadata when present, JSON content type, a per-launch CSRF header, a body of at most 16 KiB and strict decoding; plans also need an explicit backend-access acknowledgement.
+- Apply needs a one-time token issued for that plan (256 bits, five minutes, invalidated by any use) and, for plans that delete, replace or forget objects, a typed phrase. The server re-checks the context fingerprint, engine version, workspace, plan age and the saved file's SHA-256 before running `apply` on that file only. Replacement targets are opaque IDs resolved to managed instance addresses from state, each passed as a single argv element.
 - Plans: fixed argv (`plan -input=false -json -out=…`), no user-supplied flags; variable files limited to a server-side list of root `*.tfvars` names; unsafe `TF_CLI_ARGS_plan` refused. One operation at a time.
 - Saved plans are written only to a private `0700` OS temp directory, set to `0600`, hashed, read back and deleted immediately — and on failure, cancellation, timeout and shutdown. They are never written to the project.
 - Plan values and outputs are redacted with the state policy after diffing. Progress logs are rebuilt from typed engine events; free text is sanitized line by line; stderr is never returned.
@@ -18,6 +19,8 @@ Hclaro never changes infrastructure. Launch is read-only. Since M2, a user can e
 ## Limits
 
 A local process that can inspect memory, modify executables, or read terminal/browser session credentials is outside the threat model. Existing IaC engines, provider plugins, selected directories and inherited credential configuration are trusted local inputs; state inspection can load plugins and contact the configured backend. This does not turn existing provider behavior into a security sandbox.
+
+While a plan can be applied, its saved file stays in a private `0700` directory under the OS temp directory for up to one hour. Saved plans can contain plaintext secrets. Hclaro deletes it after an apply attempt, on expiry, when superseded and on normal shutdown; if the process is killed (for example `kill -9` or a crash), the file remains until the OS cleans its temp directory. Apply runs with the user's own credentials and cannot be undone by Hclaro; an interrupted apply can leave infrastructure partly changed.
 
 Sensitive values should not appear in resource addresses/instance keys or module/provider identifiers. No heuristic can identify every secret: a secret the provider does not mark sensitive, stored under an ordinary attribute name and not looking random (such as a short human-chosen password), is shown. Engine and provider diagnostics are free text. Known input values (`TF_VAR_*` and values from loaded variable files) are replaced and credential-shaped lines are withheld, but a secret that is neither, such as one returned by a provider API inside an error message, can still be shown. A forcefully stopped plan (after the 15-second grace period, or immediately on Windows when Hclaro has no console) can leave a state lock; Hclaro never unlocks state. Shown values are not a promise that the data is safe to share publicly. Do not share the private session URL.
 

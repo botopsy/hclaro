@@ -14,30 +14,42 @@ import (
 	"time"
 )
 
-// Planner is the only engine surface that can run a plan. It has no apply method.
+// Planner is the engine surface that can run a plan. It has no apply method.
 type Planner interface {
 	Workspace(context.Context) (string, error)
 	Plan(ctx context.Context, request PlanRequest, line func([]byte)) error
 	ShowPlan(ctx context.Context, path string) ([]byte, error)
 }
 
+// Applier applies a saved plan file and nothing else: there is no way to pass options,
+// targets or an unsaved configuration. It is a separate interface so read-only and
+// plan-only adapters cannot apply.
+type Applier interface {
+	Apply(ctx context.Context, path string, line func([]byte)) error
+}
+
 // PlanRequest holds validated inputs. Out is an absolute path in a private temp directory;
-// VarFiles are bare file names inside the project root.
+// VarFiles are bare file names inside the project root. Replace holds exact managed
+// resource instance addresses taken from parsed state, one -replace argument each.
 type PlanRequest struct {
 	Out      string
 	VarFiles []string
+	Replace  []string
 }
 
-// ExitError reports a failed plan without engine output. Hint is a classification derived
-// from stderr keywords; the stderr text itself is never returned.
+// ExitError reports a failed engine command without its output. Hint is a classification
+// derived from stderr keywords; the stderr text itself is never returned.
 type ExitError struct {
 	Code int
 	Hint string
 }
 
-func (e *ExitError) Error() string { return "engine plan failed" }
+func (e *ExitError) Error() string { return "engine command failed" }
 
-var ErrCancelled = errors.New("engine plan was cancelled or timed out")
+var ErrCancelled = errors.New("engine command was cancelled or timed out")
+
+// MaxReplace bounds how many instances one plan may replace.
+const MaxReplace = 50
 
 const (
 	maxLine       = 1 << 20
@@ -56,7 +68,39 @@ func planArgs(request PlanRequest) ([]string, error) {
 		}
 		args = append(args, "-var-file="+name)
 	}
+	if len(request.Replace) > MaxReplace {
+		return nil, errors.New("too many replace addresses")
+	}
+	seen := map[string]bool{}
+	for _, address := range request.Replace {
+		// Each address is one argv element, so quotes and brackets reach the engine verbatim.
+		if !validAddress(address) || seen[address] {
+			return nil, errors.New("invalid replace address")
+		}
+		seen[address] = true
+		args = append(args, "-replace="+address)
+	}
 	return args, nil
+}
+
+func validAddress(address string) bool {
+	if address == "" || len(address) > 1024 || strings.HasPrefix(address, "-") || strings.HasPrefix(address, "data.") {
+		return false
+	}
+	for _, r := range address {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func applyArgs(path string) ([]string, error) {
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("saved plan path must be absolute")
+	}
+	// A saved plan never prompts, so -auto-approve is neither needed nor passed.
+	return []string{"apply", "-input=false", "-json", path}, nil
 }
 
 // Plan streams machine-readable UI lines to line. Lines longer than 1 MiB are truncated,
@@ -66,6 +110,19 @@ func (c *CLI) Plan(ctx context.Context, request PlanRequest, line func([]byte)) 
 	if err != nil {
 		return err
 	}
+	return c.stream(ctx, args, line)
+}
+
+// Apply applies the saved plan at path and streams machine-readable UI lines.
+func (c *CLI) Apply(ctx context.Context, path string, line func([]byte)) error {
+	args, err := applyArgs(path)
+	if err != nil {
+		return err
+	}
+	return c.stream(ctx, args, line)
+}
+
+func (c *CLI) stream(ctx context.Context, args []string, line func([]byte)) error {
 	cmd, err := c.command(ctx, args...)
 	if err != nil {
 		return err
@@ -138,6 +195,8 @@ func (c *CLI) ShowPlan(ctx context.Context, path string) ([]byte, error) {
 func Classify(text string) string {
 	lower := strings.ToLower(text)
 	switch {
+	case strings.Contains(lower, "saved plan is stale") || strings.Contains(lower, "plan file is stale") || strings.Contains(lower, "saved plan no longer valid"):
+		return "stale_plan"
 	case strings.Contains(lower, "state lock") || strings.Contains(lower, "lock info") || strings.Contains(lower, "conditionalcheckfailed"):
 		return "state_locked"
 	case strings.Contains(lower, "backend initialization required") || strings.Contains(lower, "module not installed") || strings.Contains(lower, "required plugins are not installed") || strings.Contains(lower, "inconsistent dependency lock file") || strings.Contains(lower, "please run \"terraform init\"") || strings.Contains(lower, "please run \"tofu init\""):
@@ -176,11 +235,16 @@ type Fake struct {
 	PlanJSON       []byte
 	PlanErr        error
 	ShowErr        error
+	ApplyLines     [][]byte
+	ApplyErr       error
 	// Block makes Plan wait for cancellation, to exercise cancel paths.
-	Block    bool
-	Delay    time.Duration
-	calls    []string
-	requests []PlanRequest
+	Block bool
+	// BlockApply makes Apply wait for cancellation.
+	BlockApply bool
+	Delay      time.Duration
+	calls      []string
+	requests   []PlanRequest
+	applied    [][]byte
 }
 
 func (m *Fake) record(call string) {
@@ -203,6 +267,20 @@ func (m *Fake) Requests() []PlanRequest {
 	return append([]PlanRequest(nil), m.requests...)
 }
 
+// Applied returns the saved plan contents passed to each Apply call.
+func (m *Fake) Applied() [][]byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([][]byte(nil), m.applied...)
+}
+
+// SetWorkspace changes the workspace reported from now on.
+func (m *Fake) SetWorkspace(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.WorkspaceValue = name
+}
+
 func (m *Fake) Version(context.Context) (string, error) {
 	m.record("version")
 	return m.VersionValue, nil
@@ -213,6 +291,8 @@ func (m *Fake) State(context.Context) ([]byte, error) {
 }
 func (m *Fake) Workspace(context.Context) (string, error) {
 	m.record("workspace")
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.WorkspaceValue, nil
 }
 func (m *Fake) Plan(ctx context.Context, request PlanRequest, line func([]byte)) error {
@@ -254,4 +334,26 @@ func (m *Fake) ShowPlan(_ context.Context, path string) ([]byte, error) {
 	}
 	defer f.Close()
 	return io.ReadAll(io.LimitReader(f, 64<<20))
+}
+
+func (m *Fake) Apply(ctx context.Context, path string, line func([]byte)) error {
+	m.record("apply")
+	if _, err := applyArgs(path); err != nil {
+		return err
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.applied = append(m.applied, b)
+	m.mu.Unlock()
+	for _, l := range m.ApplyLines {
+		line(l)
+	}
+	if m.BlockApply {
+		<-ctx.Done()
+		return ErrCancelled
+	}
+	return m.ApplyErr
 }

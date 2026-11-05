@@ -1,5 +1,5 @@
-// Package operations runs explicitly requested engine operations one at a time.
-// M2 runs plans only; there is no apply path.
+// Package operations runs explicitly requested engine operations one at a time: plans,
+// and applies of a reviewed saved plan after a one-time approval (see apply.go).
 package operations
 
 import (
@@ -34,6 +34,7 @@ var (
 	ErrUnavailable = errors.New("planning is unavailable for this workspace")
 	ErrLoading     = errors.New("the workspace is still being read")
 	ErrVarFiles    = errors.New("invalid variable file selection")
+	ErrReplace     = errors.New("invalid replace selection")
 	ErrNotFound    = errors.New("operation not found")
 	ErrNotRunning  = errors.New("operation is not running")
 	ErrClosed      = errors.New("hclaro is shutting down")
@@ -45,17 +46,21 @@ type Diagnostic struct {
 }
 
 type Operation struct {
-	ID              string             `json:"id"`
-	Kind            string             `json:"kind"`
-	Status          string             `json:"status"`
-	Stage           string             `json:"stage"`
-	StartedAt       string             `json:"startedAt"`
-	CompletedAt     string             `json:"completedAt,omitempty"`
-	DurationMs      int64              `json:"durationMs"`
-	ExitCode        *int               `json:"exitCode,omitempty"`
-	Command         []string           `json:"command"`
-	VarFiles        []string           `json:"varFiles"`
-	PlanID          string             `json:"planId,omitempty"`
+	ID          string   `json:"id"`
+	Kind        string   `json:"kind"`
+	Status      string   `json:"status"`
+	Stage       string   `json:"stage"`
+	StartedAt   string   `json:"startedAt"`
+	CompletedAt string   `json:"completedAt,omitempty"`
+	DurationMs  int64    `json:"durationMs"`
+	ExitCode    *int     `json:"exitCode,omitempty"`
+	Command     []string `json:"command"`
+	VarFiles    []string `json:"varFiles"`
+	Replace     []string `json:"replace"`
+	PlanID      string   `json:"planId,omitempty"`
+	// Outcome is set for applies: applied, not_applied or uncertain.
+	Outcome         string             `json:"outcome,omitempty"`
+	StateReloaded   bool               `json:"stateReloaded"`
 	Diagnostic      *Diagnostic        `json:"diagnostic,omitempty"`
 	Diagnostics     []EngineDiagnostic `json:"engineDiagnostics"`
 	CancelRequested bool               `json:"cancelRequested"`
@@ -63,25 +68,23 @@ type Operation struct {
 	LogRetained     bool               `json:"logRetained"`
 }
 
-// Apply describes apply eligibility. In this release it is always unavailable.
-type Apply struct {
-	Available bool   `json:"available"`
-	Reason    string `json:"reason"`
-}
-
-// Plan is a reviewed, redacted plan. The saved artifact is deleted once this is built.
+// Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved
+// artifact can still be applied is tracked separately (see ApplyStatus).
 type Plan struct {
 	plan.Review
-	ID               string   `json:"id"`
-	OperationID      string   `json:"operationId"`
-	CreatedAt        string   `json:"createdAt"`
-	Engine           string   `json:"engine"`
-	Workspace        string   `json:"workspace"`
-	VarFiles         []string `json:"varFiles"`
-	ArtifactSHA256   string   `json:"artifactSha256"`
-	ArtifactRetained bool     `json:"artifactRetained"`
-	Fingerprint      string   `json:"fingerprint"`
-	Apply            Apply    `json:"apply"`
+	ID          string   `json:"id"`
+	OperationID string   `json:"operationId"`
+	CreatedAt   string   `json:"createdAt"`
+	Engine      string   `json:"engine"`
+	Workspace   string   `json:"workspace"`
+	VarFiles    []string `json:"varFiles"`
+	// Kind is "plan" or "replace"; Replace lists the requested instance addresses.
+	Kind           string   `json:"kind"`
+	Replace        []string `json:"replace"`
+	ArtifactSHA256 string   `json:"artifactSha256"`
+	Fingerprint    string   `json:"fingerprint"`
+	// Destructive plans delete, replace or forget objects, or contain unrecognized actions.
+	Destructive bool `json:"destructive"`
 }
 
 type entry struct {
@@ -95,16 +98,27 @@ type Manager struct {
 	mu      sync.Mutex
 	store   *workspace.Store
 	planner engine.Planner
+	applier engine.Applier
 	root    string
 	TempDir string
 	Timeout time.Duration
-	entries []*entry
-	plans   []*Plan
-	running *entry
-	base    context.Context
-	stop    context.CancelFunc
-	wg      sync.WaitGroup
-	closed  bool
+	// ApplyTimeout bounds an apply; PlanMaxAge bounds how long a saved plan stays
+	// applicable; ApprovalTTL bounds how long a confirmation token is valid.
+	ApplyTimeout time.Duration
+	PlanMaxAge   time.Duration
+	ApprovalTTL  time.Duration
+	// Reload re-reads state after an apply. It is nil in tests that do not need it.
+	Reload   func(context.Context)
+	entries  []*entry
+	plans    []*Plan
+	running  *entry
+	artifact *artifact
+	// notes explains why a plan cannot be applied; bounded by the plan history.
+	notes  map[string]string
+	base   context.Context
+	stop   context.CancelFunc
+	wg     sync.WaitGroup
+	closed bool
 	// NewID creates operation and plan IDs. Synthetic helpers replace it for determinism.
 	NewID func() string
 }
@@ -120,7 +134,8 @@ const (
 
 func NewManager(store *workspace.Store, planner engine.Planner, root string) *Manager {
 	base, stop := context.WithCancel(context.Background())
-	return &Manager{store: store, planner: planner, root: root, Timeout: time.Hour, base: base, stop: stop, NewID: newID}
+	applier, _ := planner.(engine.Applier)
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID}
 }
 
 func newID() string {
@@ -138,8 +153,10 @@ func engineLabel(name string) string {
 	return "Terraform"
 }
 
-// StartPlan validates the request and starts a plan in the background.
-func (m *Manager) StartPlan(varFiles []string) (Operation, error) {
+// StartPlan validates the request and starts a plan in the background. replaceIDs are
+// opaque resource IDs from the current snapshot; only managed instances are accepted and
+// each becomes one -replace argument with the exact address from state.
+func (m *Manager) StartPlan(varFiles, replaceIDs []string) (Operation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -166,13 +183,27 @@ func (m *Manager) StartPlan(varFiles []string) (Operation, error) {
 		}
 		selected = append(selected, name)
 	}
+	if len(replaceIDs) > engine.MaxReplace {
+		return Operation{}, ErrReplace
+	}
+	replace := []string{}
+	for _, id := range replaceIDs {
+		resource, ok := snap.Index.ByID[id]
+		if !ok || resource.Mode != "managed" || slices.Contains(replace, resource.Address) {
+			return Operation{}, ErrReplace
+		}
+		replace = append(replace, resource.Address)
+	}
 	command := []string{snap.Info.Engine, "plan", "-input=false", "-json", "-out=<private temporary file>"}
 	for _, name := range selected {
 		command = append(command, "-var-file="+name)
 	}
+	for _, address := range replace {
+		command = append(command, "-replace="+address)
+	}
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
 	e := &entry{
-		op:     Operation{ID: m.NewID(), Kind: "plan", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: command, VarFiles: selected, Diagnostics: []EngineDiagnostic{}, LogRetained: true},
+		op:     Operation{ID: m.NewID(), Kind: "plan", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: command, VarFiles: selected, Replace: replace, Diagnostics: []EngineDiagnostic{}, LogRetained: true},
 		log:    NewLog(logEvents, logBytes),
 		cancel: cancel,
 		start:  time.Now(),
@@ -182,7 +213,7 @@ func (m *Manager) StartPlan(varFiles []string) (Operation, error) {
 	m.running = e
 	m.wg.Add(1)
 	go m.run(ctx, e, snap)
-	return e.op, nil
+	return m.snapshot(e), nil
 }
 
 // trim keeps bounded history; logs are dropped first, metadata later. Caller holds mu.
@@ -227,7 +258,7 @@ var messages = map[string]string{
 func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 	defer m.wg.Done()
 	defer e.cancel()
-	result, code, exitCode := m.execute(ctx, e, snap)
+	result, kept, code, exitCode := m.execute(ctx, e, snap)
 	m.mu.Lock()
 	o := &e.op
 	o.CompletedAt = time.Now().UTC().Format(time.RFC3339)
@@ -240,8 +271,12 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 		o.PlanID = result.ID
 		m.plans = append(m.plans, result)
 		if len(m.plans) > maxPlans {
+			for _, old := range m.plans[:len(m.plans)-maxPlans] {
+				delete(m.notes, old.ID)
+			}
 			m.plans = m.plans[len(m.plans)-maxPlans:]
 		}
+		m.retainLocked(result, kept)
 	case code == "cancelled" || code == "shutdown":
 		o.Status = Cancelled
 	default:
@@ -260,14 +295,18 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 	switch {
 	case result != nil:
 		e.log.Append("info", fmt.Sprintf("Plan ready for review: %d resource change(s), %d output change(s).", len(result.Changes), len(result.Outputs)))
+		if kept == nil {
+			e.log.Append("info", "The saved plan file was deleted after review data was extracted; this plan cannot be applied.")
+		}
 	case code != "":
 		e.log.Append("error", message)
 	}
 	e.log.Finish()
 }
 
-// execute runs one plan. The private temp directory is removed on every return path.
-func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot) (*Plan, string, *int) {
+// execute runs one plan. The private temp directory is removed on every return path,
+// except when the plan is eligible for apply: then it is returned as an artifact.
+func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot) (result *Plan, kept *artifact, code string, exitCode *int) {
 	stopped := func() string {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -282,22 +321,26 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	m.stage(e, "Checking workspace")
 	name, err := m.planner.Workspace(ctx)
 	if ctx.Err() != nil {
-		return nil, stopped(), nil
+		return nil, nil, stopped(), nil
 	}
 	if errors.Is(err, engine.ErrUnsafeArgs) {
-		return nil, "unsafe_cli_args", nil
+		return nil, nil, "unsafe_cli_args", nil
 	}
 	if err != nil {
-		return nil, "workspace_error", nil
+		return nil, nil, "workspace_error", nil
 	}
 	if name != snap.Info.Workspace {
-		return nil, "workspace_changed", nil
+		return nil, nil, "workspace_changed", nil
 	}
 	dir, err := os.MkdirTemp(m.TempDir, "hclaro-plan-")
 	if err != nil {
-		return nil, "plan_failed", nil
+		return nil, nil, "plan_failed", nil
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		if kept == nil {
+			_ = os.RemoveAll(dir)
+		}
+	}()
 	// MkdirTemp creates 0700 directories; enforce it in case of an unusual umask policy.
 	_ = os.Chmod(dir, 0o700)
 	out := filepath.Join(dir, "plan.tfplan")
@@ -307,8 +350,8 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	label := engineLabel(snap.Info.Engine)
 	inputs := collectKnown(m.root, e.op.VarFiles, os.Environ())
 	undecoded := false
-	err = m.planner.Plan(ctx, engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles}, func(line []byte) {
-		level, text, diag, ok := translate(line, label, inputs)
+	err = m.planner.Plan(ctx, engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, Replace: e.op.Replace}, func(line []byte) {
+		level, text, diag, ok := translate(line, "plan", label, inputs)
 		if !ok {
 			if !undecoded {
 				undecoded = true
@@ -316,7 +359,9 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 			}
 			return
 		}
-		e.log.Append(level, text)
+		if text != "" {
+			e.log.Append(level, text)
+		}
 		if diag != nil {
 			m.update(e, func(o *Operation) {
 				if len(o.Diagnostics) < maxDiags {
@@ -329,41 +374,50 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		var exit *engine.ExitError
 		switch {
 		case ctx.Err() != nil || errors.Is(err, engine.ErrCancelled):
-			return nil, stopped(), nil
+			return nil, nil, stopped(), nil
 		case errors.Is(err, engine.ErrUnsafeArgs):
-			return nil, "unsafe_cli_args", nil
+			return nil, nil, "unsafe_cli_args", nil
 		case errors.As(err, &exit):
 			code := exit.Code
-			return nil, m.classify(e, exit.Hint), &code
+			return nil, nil, m.classify(e, exit.Hint), &code
 		}
-		return nil, "plan_failed", nil
+		return nil, nil, "plan_failed", nil
 	}
 	zero := 0
 	m.stage(e, "Reading plan")
 	_ = os.Chmod(out, 0o600)
 	digest, err := sha256File(out)
 	if err != nil {
-		return nil, "plan_read", &zero
+		return nil, nil, "plan_read", &zero
 	}
 	document, err := m.planner.ShowPlan(ctx, out)
 	if ctx.Err() != nil {
-		return nil, stopped(), &zero
+		return nil, nil, stopped(), &zero
 	}
 	if err != nil {
-		return nil, "plan_read", &zero
+		return nil, nil, "plan_read", &zero
 	}
-	// The artifact holds secrets and there is no apply path, so it is removed immediately.
-	_ = os.RemoveAll(dir)
 	review, err := plan.Parse(document)
 	if err != nil {
-		return nil, "plan_format", &zero
+		return nil, nil, "plan_format", &zero
 	}
-	return &Plan{
+	kind := "plan"
+	if len(e.op.Replace) > 0 {
+		kind = "replace"
+		review.Warnings = append(review.Warnings, replaceWarnings(review, e.op.Replace)...)
+	}
+	result = &Plan{
 		Review: review, ID: m.NewID(), OperationID: e.op.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, ArtifactSHA256: digest,
-		Fingerprint: fingerprint,
-		Apply:       Apply{Reason: "Applying plans is not available in this version of Hclaro. Plans are for review only, and the saved plan file was deleted after review data was extracted."},
-	}, "", &zero
+		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
+		ArtifactSHA256: digest, Fingerprint: fingerprint,
+		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Summary[plan.Unknown] > 0,
+	}
+	// The artifact holds secrets in plaintext. It is kept only when it could be applied;
+	// otherwise the deferred cleanup removes it now.
+	if snap.Info.Capabilities.CanApply && m.applier != nil && ineligible(result) == "" {
+		kept = &artifact{planID: result.ID, dir: dir, path: out, digest: digest, fingerprint: fingerprint, workspace: name, version: snap.Info.Version, engine: snap.Info.Engine, created: time.Now()}
+	}
+	return result, kept, "", &zero
 }
 
 // classify prefers the structured diagnostics over the stderr hint.
@@ -449,6 +503,7 @@ func (m *Manager) snapshot(e *entry) Operation {
 	op := e.op
 	op.Command = slices.Clone(op.Command)
 	op.VarFiles = slices.Clone(op.VarFiles)
+	op.Replace = slices.Clone(op.Replace)
 	op.Diagnostics = slices.Clone(op.Diagnostics)
 	if op.Status == Running {
 		op.DurationMs = time.Since(e.start).Milliseconds()
@@ -490,7 +545,8 @@ func (m *Manager) Plan(id string) (*Plan, bool) {
 	return nil, false
 }
 
-// Close cancels any running operation and waits (bounded) for its cleanup.
+// Close cancels any running operation, waits (bounded) for its cleanup and deletes any
+// retained saved plan.
 func (m *Manager) Close(wait time.Duration) {
 	m.mu.Lock()
 	m.closed = true
@@ -502,4 +558,7 @@ func (m *Manager) Close(wait time.Duration) {
 	case <-done:
 	case <-time.After(wait):
 	}
+	m.mu.Lock()
+	m.releaseLocked("Hclaro stopped and deleted the saved plan.")
+	m.mu.Unlock()
 }

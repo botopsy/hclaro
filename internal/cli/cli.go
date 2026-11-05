@@ -40,7 +40,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.Usage = func() {
 		fmt.Fprintln(output, "Hclaro — local Terraform & OpenTofu explorer\n\nUsage: hclaro [flags]")
 		flags.PrintDefaults()
-		fmt.Fprintln(output, "\nLaunch is read-only: no init, plan or refresh runs automatically. Plans run only when\nrequested in the UI, and Hclaro never applies them.\nExit codes: 0 success, 1 startup failure, 2 invalid arguments.")
+		fmt.Fprintln(output, "\nLaunch is read-only: no init, plan or refresh runs automatically. Plans run only when\nrequested in the UI. A plan is applied only from its reviewed saved file, after explicit\nconfirmation in the UI, and only for locally executed backends.\nExit codes: 0 success, 1 startup failure, 2 invalid arguments.")
 	}
 	if err := flags.Parse(args); err != nil {
 		return o, err
@@ -109,6 +109,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager := operations.NewManager(store, planner, root)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// After an apply, state is re-read so the explorer shows what the engine recorded.
+	manager.Reload = func(ctx context.Context) { store.Load(ctx, adapter, engineName) }
 	// Request contexts derive from runCtx so event streams end promptly on shutdown.
 	// SSE responses extend their own write deadline per event.
 	server := &http.Server{Handler: api.Handler(store, manager, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}

@@ -21,20 +21,28 @@ const messages: Record<string, string> = {
   invalid_var_files: 'The selected variable files are no longer available. Reopen the plan dialog and choose again.',
   acknowledgement_required: 'Confirm that planning may contact providers and the backend.',
   shutting_down: 'Hclaro is shutting down.',
-  log_not_retained: 'The log for this operation is no longer kept. Only the most recent operation logs are retained.'
+  log_not_retained: 'The log for this operation is no longer kept. Only the most recent operation logs are retained.',
+  invalid_replace: 'The selected instances are no longer in the state snapshot, or include data sources. Reselect managed instances and try again.',
+  approval_required: 'Confirm the plan again before applying it.',
+  approval_invalid: 'The confirmation expired or was already used. Review the plan and confirm again.',
+  confirmation_mismatch: 'The typed confirmation did not match. Nothing was applied.'
 };
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
     super(message);
   }
 }
+// Server-side refusals carry a specific reason (for example, why a plan cannot be applied).
 async function failure(response: Response): Promise<never> {
   if (response.status === 401) throw new ApiError('unauthorized', 'This session is locked. Open the private URL printed by the running Hclaro CLI.');
   let code = '';
+  let reason = '';
   try {
-    code = (await response.json() as { error?: string }).error || '';
+    const body = await response.json() as { error?: string; reason?: string };
+    code = body.error || '';
+    reason = body.reason || '';
   } catch {/* Non-JSON errors use the generic message. */}
-  throw new ApiError(code, messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.');
+  throw new ApiError(code, reason || messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.');
 }
 export async function api<T>(path: string): Promise<T> {
   const response = await fetch(`/api/v1/${path}`, {

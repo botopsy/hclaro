@@ -23,6 +23,8 @@ type planSummary struct {
 	Engine      string         `json:"engine"`
 	Workspace   string         `json:"workspace"`
 	VarFiles    []string       `json:"varFiles"`
+	Kind        string         `json:"kind"`
+	Replace     []string       `json:"replace"`
 	Summary     map[string]int `json:"summary"`
 	Errored     bool           `json:"errored"`
 	Changes     int            `json:"changes"`
@@ -43,7 +45,7 @@ func summarize(p *operations.Plan) planSummary {
 			outputs++
 		}
 	}
-	return planSummary{p.ID, p.OperationID, p.CreatedAt, p.Engine, p.Workspace, p.VarFiles, p.Summary, p.Errored, changes, outputs, len(p.Drift)}
+	return planSummary{p.ID, p.OperationID, p.CreatedAt, p.Engine, p.Workspace, p.VarFiles, p.Kind, p.Replace, p.Summary, p.Errored, changes, outputs, len(p.Drift)}
 }
 
 func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, csrf, version string) {
@@ -52,20 +54,25 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 	})
 	mux.HandleFunc("GET /api/v1/plans/options", func(w http.ResponseWriter, r *http.Request) {
 		snap := store.Get()
+		caps := snap.Info.Capabilities
 		writeJSON(w, 200, struct {
-			CanPlan   bool     `json:"canPlan"`
-			Reason    string   `json:"reason,omitempty"`
-			Engine    string   `json:"engine"`
-			Version   string   `json:"version"`
-			Workspace string   `json:"workspace"`
-			Backend   string   `json:"backend"`
-			VarFiles  []string `json:"varFiles"`
-		}{snap.Info.Capabilities.CanPlan, snap.Info.Capabilities.PlanReason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles()})
+			CanPlan     bool     `json:"canPlan"`
+			Reason      string   `json:"reason,omitempty"`
+			CanApply    bool     `json:"canApply"`
+			ApplyReason string   `json:"applyReason,omitempty"`
+			Engine      string   `json:"engine"`
+			Version     string   `json:"version"`
+			Workspace   string   `json:"workspace"`
+			Backend     string   `json:"backend"`
+			VarFiles    []string `json:"varFiles"`
+		}{caps.CanPlan, caps.PlanReason, caps.CanApply, caps.ApplyReason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles()})
 	})
 	mux.HandleFunc("POST /api/v1/plans", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Acknowledge *bool    `json:"acknowledgeBackendAccess"`
 			VarFiles    []string `json:"varFiles"`
+			// Replace holds opaque resource IDs from the snapshot, never addresses.
+			Replace []string `json:"replace"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -78,7 +85,7 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			errorJSON(w, 400, "acknowledgement_required")
 			return
 		}
-		op, err := manager.StartPlan(body.VarFiles)
+		op, err := manager.StartPlan(body.VarFiles, body.Replace)
 		switch {
 		case errors.Is(err, operations.ErrBusy):
 			errorJSON(w, 409, "operation_running")
@@ -88,6 +95,8 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			errorJSON(w, 409, "planning_unavailable")
 		case errors.Is(err, operations.ErrVarFiles):
 			errorJSON(w, 400, "invalid_var_files")
+		case errors.Is(err, operations.ErrReplace):
+			errorJSON(w, 400, "invalid_replace")
 		case errors.Is(err, operations.ErrClosed):
 			errorJSON(w, 503, "shutting_down")
 		case err != nil:
@@ -114,9 +123,45 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		current := manager.Fingerprint(snap, p.VarFiles)
 		writeJSON(w, 200, struct {
 			*operations.Plan
-			EngineVersionLabel string `json:"currentEngineVersion"`
-			ContextChanged     bool   `json:"contextChanged"`
-		}{p, snap.Info.Version, current == "" || current != p.Fingerprint})
+			EngineVersionLabel string                 `json:"currentEngineVersion"`
+			ContextChanged     bool                   `json:"contextChanged"`
+			Apply              operations.ApplyStatus `json:"apply"`
+		}{p, snap.Info.Version, current == "" || current != p.Fingerprint, manager.ApplyStatus(p, current)})
+	})
+	mux.HandleFunc("POST /api/v1/plans/{id}/approval", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !idPattern.MatchString(r.PathValue("id")) {
+			errorJSON(w, 404, "plan_not_found")
+			return
+		}
+		approval, err := manager.Approve(r.PathValue("id"))
+		if err != nil {
+			applyError(w, err)
+			return
+		}
+		writeJSON(w, 200, approval)
+	})
+	mux.HandleFunc("POST /api/v1/plans/{id}/apply", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Token        string `json:"confirmationToken"`
+			Confirmation string `json:"confirmation"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !idPattern.MatchString(r.PathValue("id")) {
+			errorJSON(w, 404, "plan_not_found")
+			return
+		}
+		op, err := manager.StartApply(r.PathValue("id"), body.Token, body.Confirmation)
+		if err != nil {
+			applyError(w, err)
+			return
+		}
+		writeJSON(w, 202, op)
 	})
 	mux.HandleFunc("GET /api/v1/plans/{id}/changes/{change}", func(w http.ResponseWriter, r *http.Request) {
 		p, ok := lookupPlan(r, manager)
@@ -182,6 +227,29 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		}
 		stream(w, r, manager, r.PathValue("id"), log, after)
 	})
+}
+
+func decodeBody(w http.ResponseWriter, r *http.Request, body any) bool {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if dec.Decode(body) != nil || dec.More() {
+		errorJSON(w, 400, "invalid_request")
+		return false
+	}
+	return true
+}
+
+// applyError maps a refused approval or apply to a typed response. Nothing was run.
+func applyError(w http.ResponseWriter, err error) {
+	var rejected *operations.RejectError
+	switch {
+	case errors.Is(err, operations.ErrNotFound):
+		errorJSON(w, 404, "plan_not_found")
+	case errors.As(err, &rejected):
+		writeJSON(w, 409, map[string]string{"error": rejected.Code, "reason": rejected.Reason})
+	default:
+		errorJSON(w, 500, "apply_not_started")
+	}
 }
 
 func lookupPlan(r *http.Request, manager *operations.Manager) (*operations.Plan, bool) {

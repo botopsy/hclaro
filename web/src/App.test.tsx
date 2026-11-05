@@ -135,6 +135,26 @@ describe('Resource explorer', () => {
     app();
     expect(await screen.findByText('A clean slate')).toBeInTheDocument();
   });
+  it('selects only managed instances for a replacement plan', async () => {
+    const data: Resource = { ...resource, id: 'data', address: 'data.aws_caller_identity.current', mode: 'data', type: 'aws_caller_identity', name: 'current' };
+    const ready = { ...workspace, info: { ...workspace.info, capabilities: { canReadState: true, canPlan: true, canApplySavedPlan: true } } };
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('workspace')) return Response.json(ready);
+      if (url.endsWith('operations')) return Response.json({ operations: [] });
+      if (url.endsWith('plans/options')) return Response.json({ canPlan: true, canApply: true, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 'local', varFiles: [] });
+      if (url.endsWith('plans')) return Response.json({ plans: [] });
+      return Response.json({ resources: [resource, data], total: 2 });
+    }));
+    app();
+    const user = userEvent.setup();
+    await user.click(await screen.findByLabelText(`Select ${resource.address} for replacement`));
+    expect(screen.queryByLabelText(`Select ${data.address} for replacement`)).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Replacement selection' })).toHaveTextContent('1 instance selected for replacement');
+    await user.click(screen.getByRole('button', { name: 'Plan replacement…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Plan a replacement' });
+    expect(dialog).toHaveTextContent(resource.address);
+    expect(screen.getByText('Changes only from a reviewed, confirmed plan')).toBeInTheDocument();
+  });
   it('stores only safe appearance settings and offers no apply workflow', async () => {
     app();
     const user = userEvent.setup();

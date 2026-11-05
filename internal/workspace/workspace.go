@@ -21,6 +21,7 @@ type Capabilities struct {
 	CanPlan      bool   `json:"canPlan"`
 	PlanReason   string `json:"planReason,omitempty"`
 	CanApply     bool   `json:"canApplySavedPlan"`
+	ApplyReason  string `json:"applyReason,omitempty"`
 }
 type Info struct {
 	Project       string       `json:"project"`
@@ -160,9 +161,9 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		snap.Index = state.Empty()
 		// A project without recorded state can still be planned; other failures cannot.
 		planning := snap.Info.Capabilities
-		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above and restart Hclaro."}
+		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above and restart Hclaro.", ApplyReason: "Applying needs a readable workspace."}
 		if code == "state_absent" {
-			snap.Info.Capabilities = Capabilities{CanPlan: planning.CanPlan, PlanReason: planning.PlanReason}
+			snap.Info.Capabilities = planning
 		}
 		snap.Diagnostic = &Diagnostic{code, message}
 		s.set(snap)
@@ -205,6 +206,19 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		snap.Info.Capabilities.PlanReason = "The backend type could not be verified from initialization metadata, so local planning is not enabled."
 	default:
 		snap.Info.Capabilities.CanPlan = true
+	}
+	// Saved-plan apply is offered only where Hclaro itself produced the plan file locally.
+	// Remote execution has no verified contract that the reviewed plan is what gets applied.
+	_, applier := adapter.(engine.Applier)
+	switch {
+	case snap.Info.ExecutionMode == "remote-exec":
+		snap.Info.Capabilities.ApplyReason = "Remote execution backends are read-only in Hclaro: there is no verified contract that a plan reviewed here is exactly what the remote run applies."
+	case !snap.Info.Capabilities.CanPlan:
+		snap.Info.Capabilities.ApplyReason = "Applying requires local planning, which is unavailable for this workspace."
+	case !applier:
+		snap.Info.Capabilities.ApplyReason = "This engine adapter cannot apply saved plans."
+	default:
+		snap.Info.Capabilities.CanApply = true
 	}
 	s.set(snap)
 	input, err := adapter.State(ctx)
