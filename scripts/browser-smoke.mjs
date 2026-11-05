@@ -39,6 +39,15 @@ try{
  assert(!(await page.evaluate(()=>navigator.clipboard.readText())).includes(canary))
  await fs.mkdir('docs/screenshots',{recursive:true})
  await page.screenshot({path:'docs/screenshots/resources-dark.png',fullPage:true})
+ const drawerWidth=()=>page.locator('aside.inspector').evaluate(e=>e.getBoundingClientRect().width)
+ assert.equal(await drawerWidth(),720,'details drawer opens at its default width')
+ await page.getByRole('separator',{name:'Resize resource inspector'}).press('ArrowLeft')
+ assert.equal(await drawerWidth(),760,'keyboard resizes the drawer')
+ await page.setViewportSize({width:700,height:1050})
+ assert.equal(await drawerWidth(),620,'drawer is capped to a narrow window')
+ await page.setViewportSize({width:1512,height:1050})
+ assert.equal(await drawerWidth(),760,'a narrow window does not overwrite the chosen width')
+ await page.getByRole('separator',{name:'Resize resource inspector'}).press('ArrowRight')
  await page.getByRole('button',{name:'Close inspector',exact:true}).click()
  await page.getByLabel('Search resources',{exact:true}).fill('quote')
  await page.getByRole('button',{name:/node.*aws_instance/}).waitFor()
@@ -91,6 +100,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, copy, quoted keys, filters, overview, themes, tablet layout, plan review, preflight, operation log replay, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, plan review, preflight, operation log replay, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

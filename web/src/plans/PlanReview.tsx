@@ -4,6 +4,7 @@ import { ArrowRightLeft, Braces, Copy, Fingerprint, Import, LoaderCircle, LockKe
 import { api } from '../api';
 import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, PlanChange } from '../types';
 import { Button } from '../components/ui/button';
+import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
 import { actionOrder, clock, engineLabel, meta, reasonLabel, replaceOrder } from './labels';
 
@@ -95,7 +96,7 @@ function ChangeInspector({ planId, changeId, close, copy }: { planId: string; ch
   const detail = useQuery({ queryKey: ['plan-change', planId, changeId], queryFn: () => api<ChangeDetail>(`plans/${planId}/changes/${changeId}`) });
   const d = detail.data;
   const order = d && replaceOrder(d.actions);
-  return <aside className="inspector" aria-label="Change details">
+  return <Drawer label="Change details" onClose={close}>
    <div className="inspector-header"><span><Braces size={15} />Change details</span><Button variant="ghost" size="icon" aria-label="Close change details" onClick={close}><X size={16} /></Button></div>
    {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading change…</div> : detail.error ? <div className="empty-state error-state" role="alert"><p>{detail.error.message}</p></div> : d && <div className="inspector-body">
     <div className="inspector-title"><ActionBadge action={d.action} /><span className="mono muted">{d.actions.join(', ')}</span></div>
@@ -116,7 +117,7 @@ function ChangeInspector({ planId, changeId, close, copy }: { planId: string; ch
     {d.truncated && <p className="muted">Only the first 1,000 attribute changes are shown.</p>}
     <details className="full-values"><summary>Full values before and after</summary><div className="json-viewer"><JsonTree name="before" value={d.before ?? {}} /><JsonTree name="after" value={d.after ?? {}} /></div></details>
    </div>}
-  </aside>;
+  </Drawer>;
 }
 
 function AttributeTable({ rows }: { rows: AttributeChange[] }) {
