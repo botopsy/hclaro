@@ -112,7 +112,10 @@ commands:
                   echo "1314008898bd40df77af4b014f777f08873dbdfbcd3d92308728ee03304fe04f  go.zip" | sha256sum -c -
                   curl -fsSLo node.zip https://nodejs.org/dist/v<< pipeline.parameters.node-version >>/node-v<< pipeline.parameters.node-version >>-win-x64.zip
                   echo "d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5  node.zip" | sha256sum -c -
-                  powershell -NoProfile -Command "Expand-Archive -Path '$(cygpath -w "$sdk/go.zip")' -DestinationPath '$(cygpath -w "$sdk")'; Expand-Archive -Path '$(cygpath -w "$sdk/node.zip")' -DestinationPath '$(cygpath -w "$sdk")'"
+                  # Windows' own bsdtar reads zip archives; PowerShell's Expand-Archive takes minutes.
+                  wintar="$(cygpath -u "$SYSTEMROOT")/System32/tar.exe"
+                  "$wintar" -xf "$(cygpath -w "$sdk/go.zip")" -C "$(cygpath -w "$sdk")"
+                  "$wintar" -xf "$(cygpath -w "$sdk/node.zip")" -C "$(cygpath -w "$sdk")"
                   mv "node-v<< pipeline.parameters.node-version >>-win-x64" node
                   echo "export PATH=\"$sdk/go/bin:$sdk/node:\$PATH\"" >> "$BASH_ENV"
                   # Go and Node are native Windows programs and need Windows paths.
@@ -137,7 +140,7 @@ commands:
     steps:
       - restore_cache:
           keys:
-            - go-v1-<< parameters.os >>-{{ checksum "go.sum" }}
+            - go-v1-<< parameters.os >>-{{ checksum "go.mod" }}
             - go-v1-<< parameters.os >>-
       - restore_cache:
           keys:
@@ -149,7 +152,7 @@ commands:
         type: string
     steps:
       - save_cache:
-          key: go-v1-<< parameters.os >>-{{ checksum "go.sum" }}
+          key: go-v1-<< parameters.os >>-{{ checksum "go.mod" }}
           paths: [.cache/go, .cache/gomod]
       - save_cache:
           key: npm-v1-<< parameters.os >>-{{ checksum "web/package-lock.json" }}
@@ -181,8 +184,13 @@ jobs:
           name: Install frontend dependencies
           command: npm ci --prefix web --no-audit --no-fund
       - run:
-          name: Go tests (race)
-          command: go test -race ./cmd/... ./internal/... ./scripts/...
+          name: Go tests
+          # The race detector needs cgo, and the Windows image has no C compiler. Races are
+          # checked on Linux for every change and on macOS for master; Windows runs the same
+          # tests without -race for platform behavior (paths, permissions, CTRL_BREAK).
+          command: |
+            if [ "<< parameters.os >>" = windows ]; then race=; else race=-race; fi
+            go test $race ./cmd/... ./internal/... ./scripts/...
       - run:
           name: Go vet
           command: go vet ./cmd/... ./internal/... ./scripts/...
