@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +101,10 @@ func assertArtifactPrivate(t *testing.T, m *Manager) {
 	entries, err := os.ReadDir(m.TempDir)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("want one retained plan directory: %v %v", entries, err)
+	}
+	// Windows has no POSIX modes; access there follows the user's temp directory ACL.
+	if runtime.GOOS == "windows" {
+		return
 	}
 	dir := filepath.Join(m.TempDir, entries[0].Name())
 	info, err := os.Stat(dir)
