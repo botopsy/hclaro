@@ -107,6 +107,10 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	host := listener.Addr().String()
 	manager := operations.NewManager(store, planner, root)
+	// A saved plan can hold secrets; remove any left by an earlier Hclaro that was killed.
+	if n := manager.SweepStale(time.Now()); n > 0 {
+		fmt.Fprintf(output, "Deleted %d saved plan%s left by an earlier session that did not stop cleanly.\n", n, map[bool]string{true: "", false: "s"}[n == 1])
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// After an apply, state is re-read so the explorer shows what the engine recorded.

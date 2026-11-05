@@ -10,6 +10,7 @@ import (
 	"hclaro/fixtures"
 	"hclaro/internal/api"
 	"hclaro/internal/engine"
+	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/ui"
 	"hclaro/internal/workspace"
@@ -39,6 +40,10 @@ func main() {
 	}
 	store := workspace.New(workspace.Info{Project: "platform-infra", Initialized: true, Backend: "local", ExecutionMode: "local-cli", Warnings: []string{"Synthetic fixture. Recorded state, not live cloud inventory."}})
 	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: input, PlanJSON: fixtures.PlanAllActions, Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n"))}
+	importing := os.Getenv("HCLARO_FIXTURE_IMPORT") == "1"
+	if importing {
+		fake.PlanJSON, fake.GeneratedConfig = fixtures.PlanImport, fixtures.ImportGenerated
+	}
 	store.Load(context.Background(), fake, "terraform")
 	// Each request runs in a fresh process, so a completed plan is recreated with
 	// deterministic IDs before handling it.
@@ -51,12 +56,25 @@ func main() {
 		temp = resolved
 	}
 	// A root module with one resource block, so the import wizard can preview against it.
-	_ = os.WriteFile(filepath.Join(temp, "main.tf"), []byte("resource \"aws_s3_bucket\" \"legacy_logs\" {}\n"), 0o644)
+	// The import review instead has the engine generate the block.
+	mainTF := "resource \"aws_s3_bucket\" \"legacy_logs\" {}\n"
+	if importing {
+		mainTF = "terraform {}\n"
+	}
+	_ = os.WriteFile(filepath.Join(temp, "main.tf"), []byte(mainTF), 0o644)
+	fake.Root = temp
 	manager := operations.NewManager(store, fake, temp)
 	manager.TempDir = temp
 	next := 0
 	manager.NewID = func() string { next++; return fmt.Sprintf("%032x", next) }
-	if op, err := manager.StartPlan(nil, nil); err == nil {
+	start := func() (operations.Operation, error) { return manager.StartPlan(nil, nil) }
+	if importing {
+		start = func() (operations.Operation, error) {
+			req := imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf", GenerateConfig: true}
+			return manager.StartImport(operations.ImportRequest{Request: req, PreviewSHA256: manager.PreviewImport(req).SHA256})
+		}
+	}
+	if op, err := start(); err == nil {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 			if current, _, _ := manager.Operation(op.ID); current.Status != operations.Running {
 				break

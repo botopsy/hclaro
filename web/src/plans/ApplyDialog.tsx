@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Fingerprint, LoaderCircle, Rocket, Terminal, TriangleAlert, X } from 'lucide-react';
 import { post } from '../api';
 import type { Approval, Operation, Plan } from '../types';
@@ -13,17 +13,28 @@ export function ApplyDialog({ plan, onStarted, onClose }: { plan: Plan; onStarte
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [checking, setChecking] = useState(true);
   const cancel = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   // Cancel has initial focus so Enter never applies by accident.
   useModal(dialog, cancel, onClose);
-  useEffect(() => {
-    let current = true;
-    post<Approval>(`plans/${plan.id}/approval`, {}).then(a => current && setApproval(a), e => current && setError(e instanceof Error ? e.message : 'This plan cannot be applied.'));
-    return () => {
-      current = false;
-    };
+  // A newer approval replaces the previous token on the server, so only the response to the
+  // latest request is used; closing the dialog ignores any pending one.
+  const latest = useRef(0);
+  // Each apply attempt consumes the token, so a failed attempt asks for a new one. If the plan
+  // can no longer be applied, that request fails and its reason replaces the apply error.
+  const requestApproval = useCallback(() => {
+    const request = ++latest.current;
+    const current = () => request === latest.current;
+    post<Approval>(`plans/${plan.id}/approval`, {}).then(a => current() && setApproval(a), e => current() && setError(e instanceof Error ? e.message : 'This plan cannot be applied.')).finally(() => current() && setChecking(false));
   }, [plan.id]);
+  useEffect(() => {
+    requestApproval();
+    const requests = latest;
+    return () => {
+      requests.current++;
+    };
+  }, [requestApproval]);
   const matches = !approval?.phrase || typed === approval.phrase;
   async function apply() {
     if (!approval || !matches) return;
@@ -35,6 +46,10 @@ export function ApplyDialog({ plan, onStarted, onClose }: { plan: Plan; onStarte
       setError(e instanceof Error ? e.message : 'The apply could not be started.');
       setBusy(false);
       setApproval(undefined);
+      // The phrase is typed again for every attempt.
+      setTyped('');
+      setChecking(true);
+      requestApproval();
     }
   }
   const engine = engineLabel(plan.engine);
@@ -43,7 +58,7 @@ export function ApplyDialog({ plan, onStarted, onClose }: { plan: Plan; onStarte
    <div ref={dialog} className="dialog apply-dialog" role="dialog" aria-modal="true" aria-labelledby="apply-title" aria-describedby="apply-summary">
     <div className="dialog-header"><h2 id="apply-title">Apply this plan</h2><Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
     <p id="apply-summary">{engine} will apply the saved plan you reviewed to workspace <strong>{plan.workspace}</strong>. This changes real infrastructure. A saved plan does not prompt again, so this is the final confirmation.</p>
-    {!approval && !error && <p role="status"><LoaderCircle className="spin" size={13} /> Checking that the plan can still be applied…</p>}
+    {checking && <p role="status"><LoaderCircle className="spin" size={13} /> Checking that the plan can still be applied…</p>}
     {approval && <>
      <div className="apply-counts" role="list" aria-label="Changes to apply">{counts.map(a => {
       const { label, icon: Icon, tone } = meta(a);

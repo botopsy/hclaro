@@ -253,6 +253,33 @@ describe('Plans', () => {
     expect((sent.init.headers as Record<string, string>)['X-Hclaro-CSRF']).toBe('e'.repeat(64));
   });
 
+  it('keeps the dialog usable after a failed apply request with a fresh approval', async () => {
+    let approvals = 0, applies = 0;
+    serve((url, init) => {
+      if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
+      if (url.endsWith('/approval') && init?.method === 'POST') return Response.json({ ...approval, confirmationToken: String(++approvals).repeat(64) });
+      if (url.endsWith('/apply') && init?.method === 'POST') return ++applies === 1 ? Response.json({ error: 'busy', reason: 'Another operation is running. Wait for it to finish.' }, { status: 409 }) : Response.json({ ...operation, kind: 'apply', status: 'running' }, { status: 202 });
+      return undefined;
+    });
+    view();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    await user.type(await within(dialog).findByLabelText('Confirmation phrase'), 'apply demo');
+    await user.click(within(dialog).getByRole('button', { name: 'Apply plan' }));
+    expect(await within(dialog).findByText('Another operation is running. Wait for it to finish.')).toHaveAttribute('role', 'alert');
+    // A new token is requested; the phrase must be typed again before the button is enabled.
+    const phrase = await within(dialog).findByLabelText('Confirmation phrase');
+    expect(phrase).toHaveValue('');
+    expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
+    await user.type(phrase, 'apply demo');
+    await user.click(within(dialog).getByRole('button', { name: 'Apply plan' }));
+    await waitFor(() => expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(2));
+    const last = posts.filter(p => p.url.endsWith('/apply'))[1];
+    expect(JSON.parse(last.init.body as string).confirmationToken).toBe(String(approvals).repeat(64));
+    expect(approvals).toBeGreaterThan(1);
+  });
+
   it('shows why the server refused an approval', async () => {
     serve((url, init) => {
       if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);

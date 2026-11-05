@@ -2094,6 +2094,13 @@ kbd {
   line-height: 1.6;
 }
 
+/* Icons are block-level by default; keep a leading icon on the first line of the text. */
+.info-line > svg {
+  vertical-align: -2px;
+  margin-right: 6px;
+  display: inline-block;
+}
+
 .plan-meta {
   border: 1px solid var(--border);
   background: var(--surface);
@@ -2902,6 +2909,7 @@ kbd {
 .config-status svg, .import-wizard .info-line svg {
   flex-shrink: 0;
   margin-top: 4px;
+  margin-right: 0;
 }
 
 .file-diff {

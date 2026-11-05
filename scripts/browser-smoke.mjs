@@ -12,13 +12,13 @@ const {chromium}=await import(pathToFileURL(path.join(modules,'playwright/index.
 const browser=await chromium.launch({headless:true,...(process.env.HCLARO_CHROME ? {executablePath:process.env.HCLARO_CHROME} : {}),args:['--no-sandbox','--disable-background-networking','--disable-component-update']})
 const token='a'.repeat(64), host='http://127.0.0.1:9273', canary='DO_NOT_LEAK_HCLARO_TEST_SECRET'
 const errors=[],consoleOutput=[],external=[]
-let large=false
+let large=false,importReview=false
 const context=await browser.newContext({viewport:{width:1512,height:1050},colorScheme:'dark',reducedMotion:'reduce'})
 await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:host})
 await context.route('**/*',async route=>{
  const req=route.request(),url=new URL(req.url())
  if(url.origin!==host){external.push(url.origin);await route.abort();return}
- const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':''},maxBuffer:8<<20}))
+ const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':'',HCLARO_FIXTURE_IMPORT:importReview?'1':''},maxBuffer:8<<20}))
  const body=Buffer.from(response.body,'base64')
  if(url.pathname.startsWith('/api/')) assert(!body.includes(Buffer.from(canary)),'secret crossed actual API boundary')
  const headers=Object.fromEntries(Object.entries(response.headers).map(([k,v])=>[k,v.join(', ')]))
@@ -135,6 +135,18 @@ try{
  await page.getByText(/Resource block found in/).waitFor()
  assert(await page.getByRole('button',{name:'Write file and plan import'}).isDisabled(),'write enabled before consent')
  await page.screenshot({path:'docs/screenshots/import-wizard-dark.png',fullPage:true})
+ // Import review: a plan started by the real import path, with engine-generated configuration.
+ importReview=true
+ await page.reload()
+ await page.getByRole('button',{name:'Plans',exact:true}).click()
+ const importSummary=page.getByRole('region',{name:'Requested import'})
+ await importSummary.getByText('aws_s3_bucket.legacy_logs').waitFor()
+ await importSummary.getByText(/other change is part of this plan/).waitFor()
+ await importSummary.getByText(/\[redacted\]/).first().waitFor()
+ await page.getByText(/1 import, /).waitFor()
+ assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in import review')
+ await page.screenshot({path:'docs/screenshots/import-review-dark.png',fullPage:true})
+ importReview=false
  // Exercise 1,000 resources through the same handler; rendering stays bounded to 50 rows.
  large=true
  await page.reload()
@@ -147,6 +159,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply confirmation gating, preflight, operation log replay, import collision and preview gating, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply confirmation gating, preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

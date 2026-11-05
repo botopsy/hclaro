@@ -65,6 +65,8 @@ A plan is **eligible** when the engine reports it applyable, it is not errored, 
 3. **Apply.** `POST /plans/{id}/apply {confirmationToken, confirmation}` consumes the token on any use (a mismatch or replay needs a new approval), compares token and phrase in constant time, repeats the checks, then starts an `apply` operation. The run confirms `workspace show` still matches and that the file's SHA-256 equals the reviewed digest, then executes `apply -input=false -json <file>`. `-auto-approve` is not passed: a saved plan never prompts. `TF_CLI_ARGS_apply` may only contain `-no-color`.
 4. **After.** The artifact is deleted after the attempt whatever the result, so a plan is applied at most once; there is no fallback re-plan. If the engine ran, state is re-read through the normal read path. The operation reports `outcome`: `applied`, `not_applied` (refused before the engine ran, or a stale plan/lock refused by the engine) or `uncertain` (failed or interrupted after starting), plus `stateReloaded`.
 
+On startup Hclaro deletes `hclaro-plan-*` directories in the temp directory that are older than plan expiry plus the apply timeout. They can only be left by a process that was killed; the age limit keeps another running instance's artifact safe, and symlinks are not followed.
+
 The engine's own stale-plan check (state serial/lineage) is the secondary defense for changes Hclaro cannot observe, such as another process writing state; it is classified as `stale_plan`. Cancelling an apply interrupts the engine like a plan; this can leave resources partly changed, which the UI says. Applies time out after two hours.
 
 ### Imports

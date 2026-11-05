@@ -321,3 +321,62 @@ func TestRemoteExecutionNeverRetainsArtifact(t *testing.T) {
 		t.Fatalf("%+v", caps)
 	}
 }
+
+func TestSweepStaleRemovesOnlyOldPlanDirectories(t *testing.T) {
+	m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+	now := time.Now()
+	old := now.Add(-(m.PlanMaxAge + m.ApplyTimeout + time.Minute))
+	mk := func(name string, mod time.Time) string {
+		dir := filepath.Join(m.TempDir, name)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "plan.tfplan"), []byte(canary), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(dir, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	stale := mk("hclaro-plan-1", old)
+	// A live instance may still apply a plan this recent.
+	recent := mk("hclaro-plan-2", now.Add(-m.PlanMaxAge))
+	other := mk("unrelated-1", old)
+	// A symlink named like a plan directory is never followed or removed.
+	target := mk("link-target", old)
+	link := filepath.Join(m.TempDir, "hclaro-plan-link")
+	linked := os.Symlink(target, link) == nil
+	if n := m.SweepStale(now); n != 1 {
+		t.Fatalf("removed %d", n)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("stale plan directory kept")
+	}
+	for _, keep := range []string{recent, other, target} {
+		if _, err := os.Stat(filepath.Join(keep, "plan.tfplan")); err != nil {
+			t.Fatalf("%s removed: %v", keep, err)
+		}
+	}
+	if linked {
+		if _, err := os.Lstat(link); err != nil {
+			t.Fatal("symlink removed")
+		}
+	}
+}
+
+func TestSweepStaleKeepsARetainedPlan(t *testing.T) {
+	m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+	op, err := m.StartPlan(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := wait(t, m, op.ID)
+	if n := m.SweepStale(time.Now()); n != 0 {
+		t.Fatalf("removed %d", n)
+	}
+	p, _ := m.Plan(done.PlanID)
+	if _, err := m.Approve(p.ID); err != nil {
+		t.Fatalf("retained plan no longer applicable: %v", err)
+	}
+}

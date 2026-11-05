@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"hclaro/internal/engine"
@@ -431,4 +433,35 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	}
 	zero := 0
 	return "applied", &zero, true
+}
+
+// SweepStale deletes saved-plan directories left behind by a Hclaro process that was killed
+// instead of stopped. Another running instance may share the temp directory, so only
+// directories older than the longest a live instance can still use one (plan expiry plus
+// apply timeout) are removed. It returns the number removed.
+func (m *Manager) SweepStale(now time.Time) int {
+	base := m.TempDir
+	if base == "" {
+		base = os.TempDir()
+	}
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return 0
+	}
+	cutoff := now.Add(-(m.PlanMaxAge + m.ApplyTimeout))
+	removed := 0
+	for _, e := range entries {
+		// ReadDir does not follow symlinks, so a link named like a plan directory is skipped.
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), "hclaro-plan-") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		if os.RemoveAll(filepath.Join(base, e.Name())) == nil {
+			removed++
+		}
+	}
+	return removed
 }
