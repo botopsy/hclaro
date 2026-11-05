@@ -31,6 +31,9 @@ try{
  await page.goto(`${host}/#session=${token}`)
  await page.getByRole('button',{name:/artifacts.*aws_s3_bucket/}).waitFor()
  assert(!(await page.locator('body').innerText()).includes(canary))
+ // The replacement checkbox column must stay narrow; the resource column takes the space.
+ const columns=await page.locator('.resource-list .resources-table thead th').evaluateAll(cells=>cells.map(c=>c.getBoundingClientRect().width))
+ assert(columns[0]<=48&&columns[1]>=400,`resource table column widths ${columns}`)
  await page.getByRole('button',{name:/artifacts.*aws_s3_bucket/}).click()
  await page.getByLabel('Resource inspector').getByText('redacted',{exact:true}).first().waitFor()
  await page.getByRole('button',{name:'Copy resource address',exact:true}).click()

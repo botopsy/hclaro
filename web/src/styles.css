@@ -2532,10 +2532,16 @@ kbd {
 
 /* M3: replacement selection, replace review and saved-plan apply */
 .select-column {
-  width: 34px;
   padding-right: 0 !important;
   text-align: center;
 }
+
+/* The explorer table gained a leading checkbox column, which shifts the positional
+   widths above; size its columns relative to that column instead. */
+.resources-table th.select-column { width: 40px; }
+.resources-table th.select-column + th { width: auto; }
+.resources-table th.select-column + th + th { width: 83px; }
+.resources-table th.select-column + th + th + th { width: 87px; }
 
 .select-column input {
   accent-color: var(--accent);
