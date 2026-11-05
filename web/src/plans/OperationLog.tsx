@@ -56,7 +56,7 @@ export function OperationLog({
     };
   }, [initial.id]);
   const done = !operationActive(operation);
-  const noun = operation.kind === 'apply' ? 'Apply' : operation.kind === 'init' ? 'Init' : operation.kind === 'workspace' ? 'Command' : 'Plan';
+  const noun = operation.kind === 'apply' ? 'Apply' : operation.kind === 'init' ? 'Init' : operation.kind === 'workspace' || operation.kind === 'tool' ? 'Command' : 'Plan';
   useEffect(() => {
     if (done) finished.current?.(operation);
   }, [done, operation]);
@@ -82,6 +82,6 @@ export function OperationLog({
    {truncated && <p className="log-note">Earlier lines were dropped to keep memory bounded.</p>}
    <ol ref={body} className="log-lines" role="log" aria-label={`${noun} output`} aria-live="polite">{events.map(e => <li key={e.seq} className={`log-${e.level}`}><time>{new Date(e.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>{e.text}</span></li>)}{!events.length && <li className="log-info"><span>Waiting for output…</span></li>}</ol>
    {error && <p className="log-note" role="alert">{error}</p>}
-   {!done && <p className="log-note">{operation.kind === 'apply' ? 'Interrupting asks the engine to stop after the changes in progress. Objects being created or destroyed at that moment can be left partly changed.' : operation.kind === 'init' ? 'Cancelling interrupts the engine and anything it started. Partly downloaded providers or modules may remain under the data directory; running init again completes them.' : operation.kind === 'workspace' ? 'Cancelling interrupts the engine. If the command already started, it may or may not take effect; Hclaro lists workspaces again afterwards and never undoes anything automatically.' : 'Cancelling interrupts the engine so it can release any state lock. Planning never changes infrastructure.'}</p>}
+   {!done && <p className="log-note">{operation.kind === 'apply' ? 'Interrupting asks the engine to stop after the changes in progress. Objects being created or destroyed at that moment can be left partly changed.' : operation.kind === 'init' ? 'Cancelling interrupts the engine and anything it started. Partly downloaded providers or modules may remain under the data directory; running init again completes them.' : operation.kind === 'workspace' ? 'Cancelling interrupts the engine. If the command already started, it may or may not take effect; Hclaro lists workspaces again afterwards and never undoes anything automatically.' : operation.kind === 'tool' ? 'Cancelling interrupts the engine. This command is read-only; partial output is discarded and no result is shown.' : 'Cancelling interrupts the engine so it can release any state lock. Planning never changes infrastructure.'}</p>}
   </section>;
 }

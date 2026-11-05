@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownAZ, Import, ArrowLeft, ArrowRight, Box, RefreshCcw, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Command, Copy, Database, ExternalLink, FileCode2, Folder, FolderKanban, FolderTree, Layers3, LayoutDashboard, LoaderCircle, LockKeyhole, Monitor, Moon, Network, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Workflow, X } from 'lucide-react';
+import { ArrowDownAZ, Import, ArrowLeft, ArrowRight, Box, RefreshCcw, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Command, Copy, Database, ExternalLink, FileCode2, Folder, FolderKanban, FolderTree, Layers3, LayoutDashboard, LoaderCircle, LockKeyhole, Monitor, Moon, Network, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Workflow, Wrench, X } from 'lucide-react';
 import { api, ApiError, openInNewTab, post } from './api';
 import type { ContextInfo, Module, Operation, ReplaceTarget, Resource, ResourcePage, Workspace } from './types';
 import { contextPath, isExplorerView, navigate, productionLike, projectPath, useRoute, type Route } from './router';
@@ -11,7 +11,8 @@ import { JsonTree } from './components/JsonTree';
 import { PlansView } from './plans/PlansView';
 import { OperationsView } from './plans/OperationsView';
 import { ImportView } from './imports/ImportView';
-type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Settings' | 'Plans' | 'Import' | 'Operations';
+import { ToolsView } from './hub/ToolsView';
+type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Tools' | 'Settings' | 'Plans' | 'Import' | 'Operations';
 type Preferences = {
   theme: 'system' | 'light' | 'dark';
   density: 'comfortable' | 'compact';
@@ -58,6 +59,9 @@ const navigation = [{
 }, {
   name: 'Providers',
   icon: Network
+}, {
+  name: 'Tools',
+  icon: Wrench
 }, {
   name: 'Settings',
   icon: Settings2
@@ -244,9 +248,10 @@ function Workbench({
           name,
           icon: Icon
         }) => {
-          const unavailable = noLaunch && name !== 'Settings';
+          // Project tools run in a Hub workspace context only.
+          const unavailable = noLaunch && name !== 'Settings' || name === 'Tools' && !scoped;
           const active = !onHub && view === name;
-          return <button key={name} aria-label={name} disabled={unavailable} title={unavailable ? 'Open a project from Projects first.' : undefined} className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>;
+          return <button key={name} aria-label={name} disabled={unavailable} title={name === 'Tools' && !scoped ? 'Project tools run in Hub workspaces. Open this project from Projects.' : unavailable ? 'Open a project from Projects first.' : undefined} className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>;
         })}</nav>
    <div className="nav-label future-label">WORKFLOWS</div>
    {([['Plans', Workflow], ['Import', Import], ['Operations', Terminal]] as const).map(([name, Icon]) => {
@@ -266,7 +271,7 @@ function Workbench({
           })}><Sun className="theme-to-light" size={17} /><Moon className="theme-to-dark" size={17} /></Button></div></header>
    {!onHub && !noLaunch && <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" />{scoped ? <div className="context-item"><Layers3 size={13} /><label htmlFor="workspace-switch">Workspace</label><select id="workspace-switch" className="workspace-switch" value={scoped.workspace} onChange={e => navigate(contextPath(scoped.projectId, e.target.value, isExplorerView(view) ? view : 'Resources'))}>{Array.from(new Set([scoped.workspace, ...(project?.inspection?.workspaces || [])])).map(ws => <option key={ws} value={ws}>{ws}{ws === project?.inspection?.cliDefault ? ' (CLI default)' : ''}</option>)}</select>{productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}</div> : <div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div>}<span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div><span className="context-spacer" />{scoped && <><Button variant="ghost" size="small" onClick={reread} disabled={w?.status === 'loading'} title="Read this workspace's recorded state again. No refresh is run."><RefreshCcw size={12} />Read again</Button><Button variant="ghost" size="small" onClick={() => openInNewTab(contextPath(scoped.projectId, scoped.workspace, isExplorerView(view) ? view : 'Resources'))} title="Open this workspace in a new browser tab"><ExternalLink size={12} />New tab</Button></>}{!scoped && runningOperation && <button className="context-running" onClick={() => setView('Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>}
    <main id="main-content" tabIndex={-1} className="main-content">
-    {onHub ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>{route.kind === 'hub' ? 'Projects' : 'Project workspaces'}</h1><p>{route.kind === 'hub' ? 'Every Terraform and OpenTofu root you work with, in one place.' : 'Open a CLI workspace to read its recorded state in this tab.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{route.kind === 'project' ? 'Changes ask first' : 'Read-only'}</span></div> : <div className="page-heading"><div><div className="eyebrow">{scoped ? `HUB WORKSPACE · ${scoped.workspace.toUpperCase()}` : 'YOUR INFRASTRUCTURE, IN FOCUS'}</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : 'Read-only'}</span></div>}
+    {onHub ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>{route.kind === 'hub' ? 'Projects' : 'Project workspaces'}</h1><p>{route.kind === 'hub' ? 'Every Terraform and OpenTofu root you work with, in one place.' : 'Open a CLI workspace to read its recorded state in this tab.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{route.kind === 'project' ? 'Changes ask first' : 'Read-only'}</span></div> : <div className="page-heading"><div><div className="eyebrow">{scoped ? `HUB WORKSPACE · ${scoped.workspace.toUpperCase()}` : 'YOUR INFRASTRUCTURE, IN FOCUS'}</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view === 'Tools' ? 'Project tools' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Tools' ? 'Validate, check formatting, and list provider requirements and output names. Read-only, and only when you ask.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : 'Read-only'}</span></div>}
     {route.kind === 'hub' ? <HubView notify={setNotice} /> : route.kind === 'project' ? <ProjectView id={route.projectId} /> : view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : view === 'Plans' ? <PlansView project={w?.info.project || 'this project'} workspaceStatus={w?.status} planId={planId} choosePlan={setPlanId} replace={pendingReplace} clearReplace={() => setPendingReplace(undefined)} copy={copy} /> : view === 'Import' ? <ImportView workspaceStatus={w?.status} copy={copy} onStarted={() => {
           setPlanId(undefined);
           setView('Plans');
@@ -274,7 +279,9 @@ function Workbench({
         }} /> : view === 'Operations' ? <OperationsView openPlan={id => {
           setPlanId(id);
           setView('Plans');
-        }} /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
+        }} /> : view === 'Tools' && scoped ? opened.data ? <ToolsView context={opened.data} /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
+          void opened.refetch();
+        }} retryLabel="Try again" /> : <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Opening this workspace…</p></div> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
           void opened.refetch();
         }} retryLabel="Try again" /> : opened.isPending && scoped || workspace.isPending || w?.status === 'loading' ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Reading your workspace</h2><p>{scoped ? <>Reading the recorded state of <strong>{scoped.workspace}</strong> through the local CLI with a per-command <code>TF_WORKSPACE</code>. No plan, refresh or workspace selection is run.</> : 'Inspecting recorded state through the local CLI. No plan or refresh is run.'}</p></div> : workspace.error ? <ErrorState message={workspace.error.message} retry={closed ? reread : () => {
           void workspace.refetch();

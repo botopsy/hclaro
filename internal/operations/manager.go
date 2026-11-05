@@ -77,6 +77,8 @@ type Operation struct {
 	LockfileChanged *bool    `json:"lockfileChanged,omitempty"`
 	// Workspace is set for Hub workspace commands.
 	Workspace *WorkspaceResult `json:"workspace,omitempty"`
+	// Tool is set for Hub project utilities (validate, fmt -check, providers, outputs).
+	Tool *ToolResult `json:"tool,omitempty"`
 }
 
 // Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved

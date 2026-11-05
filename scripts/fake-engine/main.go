@@ -24,6 +24,16 @@
 // "locked", "credentials", "slow" (waits for an interrupt after printing a line), "leak"
 // (echoes a canary and AWS_SECRET_ACCESS_KEY, then succeeds) and "list-fails-after" (succeeds,
 // then every later `workspace list` fails).
+// Project utilities: `validate -json` prints a valid document, or the invalid fixture when a
+// configuration file contains "# fake:invalid"; `validate -no-color` prints the human
+// equivalent. `fmt -check -no-color [-recursive]` lists configuration files containing
+// "# fake:unformatted" (exit 3) and fails on "# fake:syntax" (exit 2); it never writes.
+// `providers` prints the providers fixture. `output -json` prints
+// ".fake-outputs/<workspace>.json" when it exists, otherwise the outputs fixture (with
+// values, as the real engines do). HCLARO_FAKE_TOOL selects failures: "nojson" (validate
+// rejects -json), "noinit" (providers missing / backend not initialized), "prefix" (plain
+// text before the validate JSON), "leak" (echoes a canary and AWS_SECRET_ACCESS_KEY on
+// stderr) and "slow" (waits for an interrupt).
 // Invoked as "tofu", it reports an OpenTofu version.
 package main
 
@@ -97,6 +107,18 @@ func main() {
 		plan(strings.TrimPrefix(args[3], "-out="), generate)
 	case len(args) == 4 && strings.Join(args[:3], " ") == "apply -input=false -json":
 		apply(args[3])
+	case strings.Join(args, " ") == "validate -json":
+		validate(true)
+	case strings.Join(args, " ") == "validate -no-color":
+		validate(false)
+	case strings.Join(args, " ") == "fmt -check -no-color":
+		formatCheck(false)
+	case strings.Join(args, " ") == "fmt -check -no-color -recursive":
+		formatCheck(true)
+	case strings.Join(args, " ") == "providers":
+		providers()
+	case strings.Join(args, " ") == "output -json":
+		outputs()
 	case strings.Join(args, " ") == "init -input=false -no-color":
 		initialize(false)
 	case strings.Join(args, " ") == "init -input=false -json":
@@ -381,4 +403,145 @@ func changeWorkspace(action, name string) {
 	if os.Getenv("HCLARO_FAKE_WORKSPACE") == "list-fails-after" {
 		_ = os.WriteFile(".fake-list-broken", nil, 0o644)
 	}
+}
+
+// toolMode applies the shared HCLARO_FAKE_TOOL behaviors and reports the mode.
+func toolMode() string {
+	mode := os.Getenv("HCLARO_FAKE_TOOL")
+	switch mode {
+	case "slow":
+		interrupted := make(chan os.Signal, 1)
+		signal.Notify(interrupted, os.Interrupt)
+		fmt.Println("Reading configuration...")
+		select {
+		case <-interrupted:
+			fmt.Fprintln(os.Stderr, "Interrupted")
+			os.Exit(1)
+		case <-time.After(time.Minute):
+		}
+	case "leak":
+		fmt.Fprintln(os.Stderr, "debug: password=DO_NOT_LEAK_HCLARO_TEST_SECRET")
+		fmt.Fprintln(os.Stderr, "Using key "+os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	}
+	return mode
+}
+
+func marked(marker string) bool {
+	found := false
+	_ = filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() && path != "." && strings.HasPrefix(d.Name(), ".") {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".tf") {
+			if b, err := os.ReadFile(path); err == nil && bytes.Contains(b, []byte(marker)) {
+				found = true
+			}
+		}
+		return nil
+	})
+	return found
+}
+
+func validate(json bool) {
+	mode := toolMode()
+	invalid := marked("# fake:invalid")
+	if !json {
+		if mode == "noinit" {
+			fmt.Fprintf(os.Stderr, "\u2577\n\u2502 Error: Missing required provider\n\u2502 \n\u2502 Please run \"terraform init\".\n\u2575\n")
+			os.Exit(1)
+		}
+		if invalid {
+			fmt.Fprintf(os.Stderr, "\u2577\n\u2502 Error: Unsupported argument\n\u2502 \n\u2502   on main.tf line 3, in resource \"aws_s3_bucket\" \"logs\":\n\u2502    3:   bucket_name = \"plain-unflagged-secret-7f3a\"\n\u2502 \n\u2502 An argument named \"bucket_name\" is not expected here.\n\u2575\n")
+			os.Exit(1)
+		}
+		fmt.Println("Success! The configuration is valid.")
+		return
+	}
+	switch mode {
+	case "nojson":
+		fmt.Fprintln(os.Stderr, "flag provided but not defined: -json")
+		os.Exit(1)
+	case "noinit":
+		_, _ = os.Stdout.Write(fixtures.ValidateNoInit)
+		os.Exit(1)
+	case "prefix":
+		fmt.Println("Plain text printed before the JSON document.")
+	}
+	if invalid {
+		_, _ = os.Stdout.Write(fixtures.ValidateInvalid)
+		os.Exit(1)
+	}
+	_, _ = os.Stdout.Write(fixtures.ValidateValid)
+}
+
+// formatCheck mirrors the engines' traversal: hidden entries are skipped and linked folders
+// are not followed. It never writes a file.
+func formatCheck(recursive bool) {
+	toolMode()
+	listed, broken := []string{}, false
+	var walk func(dir string)
+	walk = func(dir string) {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, ".") || strings.HasSuffix(name, "~") {
+				continue
+			}
+			path := filepath.Join(dir, name)
+			if dir == "." {
+				path = name
+			}
+			if e.IsDir() {
+				if recursive {
+					walk(path)
+				}
+				continue
+			}
+			if !strings.HasSuffix(name, ".tf") && !strings.HasSuffix(name, ".tfvars") {
+				continue
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			if bytes.Contains(b, []byte("# fake:syntax")) {
+				fmt.Fprintf(os.Stderr, "\u2577\n\u2502 Error: Invalid character\n\u2502 \n\u2502   on %s line 1:\n\u2502 This character is not used within the language.\n\u2575\n", path)
+				broken = true
+			}
+			if bytes.Contains(b, []byte("# fake:unformatted")) {
+				listed = append(listed, path)
+			}
+		}
+	}
+	walk(".")
+	for _, l := range listed {
+		fmt.Println(filepath.ToSlash(l))
+	}
+	switch {
+	case broken:
+		os.Exit(2)
+	case len(listed) > 0:
+		os.Exit(3)
+	}
+}
+
+func providers() {
+	if toolMode() == "noinit" {
+		fmt.Print("\nProviders required by configuration:\n.\n\u2514\u2500\u2500 provider[registry.terraform.io/hashicorp/aws] ~> 5.0\n\n")
+		fmt.Fprintf(os.Stderr, "\u2577\n\u2502 Error: Backend initialization required, please run \"terraform init\"\n\u2575\n")
+		os.Exit(1)
+	}
+	_, _ = os.Stdout.Write(fixtures.Providers)
+}
+
+func outputs() {
+	if toolMode() == "noinit" {
+		fmt.Fprintf(os.Stderr, "\u2577\n\u2502 Error: Backend initialization required, please run \"terraform init\"\n\u2502 password=DO_NOT_LEAK_HCLARO_TEST_SECRET\n\u2575\n")
+		os.Exit(1)
+	}
+	if b, err := os.ReadFile(filepath.Join(".fake-outputs", filepath.Base(selectedWorkspace())+".json")); err == nil {
+		_, _ = os.Stdout.Write(b)
+		return
+	}
+	_, _ = os.Stdout.Write(fixtures.Outputs)
 }

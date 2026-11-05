@@ -97,7 +97,7 @@ func (r *Inits) StartWorkspace(req WorkspaceRequest) (Operation, error) {
 		Kind: "workspace", Command: WorkspaceCommand(req.Engine, req.Action, req.Name), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices),
 		Workspace: &WorkspaceResult{Action: req.Action, Name: req.Name, CLIDefaultBefore: req.Reviewed.Current},
 	}
-	return r.begin(op, req.Release, func(ctx context.Context, e *initEntry) { r.runWorkspace(ctx, e, req) })
+	return r.begin(op, req.Release, nil, func(ctx context.Context, e *initEntry) { r.runWorkspace(ctx, e, req) })
 }
 
 func (r *Inits) runWorkspace(ctx context.Context, e *initEntry, req WorkspaceRequest) {

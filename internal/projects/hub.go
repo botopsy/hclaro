@@ -141,6 +141,9 @@ type Hub struct {
 	// WorkspaceManagers resolves engines for workspace commands, which also run through Inits.
 	// Nil disables them.
 	WorkspaceManagers WorkspaceManagerFactory
+	// Tools resolves engines for the read-only project utilities, which also run through
+	// Inits. Nil disables them.
+	Tools ToolsFactory
 	// Locks is shared with the launch project's operation manager: one operation per root.
 	Locks *rootlock.Set
 	// Launch is the canonical root Hclaro was started with, or "".
@@ -165,7 +168,7 @@ type Hub struct {
 // NewHub creates a Hub. Close cancels running reads.
 func NewHub(registry *Registry, launch string) *Hub {
 	base, stop := context.WithCancel(context.Background())
-	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), WorkspaceManagers: DefaultWorkspaceManagers, Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, reviews: map[string]*pendingReview{}, loads: make(chan struct{}, 3)}
+	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), WorkspaceManagers: DefaultWorkspaceManagers, Tools: DefaultTools, Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, reviews: map[string]*pendingReview{}, loads: make(chan struct{}, 3)}
 }
 
 // Close cancels context reads and initializations and waits for them to stop.

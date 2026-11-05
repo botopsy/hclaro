@@ -1,0 +1,7 @@
+{
+  "db_password": {"sensitive": true, "type": "string", "value": "DO_NOT_LEAK_HCLARO_TEST_SECRET"},
+  "connection_string": {"sensitive": false, "type": "string", "value": "postgres://admin:plain-unflagged-secret-7f3a@db.internal:5432/app"},
+  "bucket_names": {"sensitive": false, "type": ["list", "string"], "value": ["network-dev-logs"]},
+  "endpoints": {"sensitive": false, "type": ["object", {"plain-unflagged-secret-7f3a": "string", "web": "string"}], "value": {"plain-unflagged-secret-7f3a": "x", "web": "https://example.invalid"}},
+  "token_DO_NOT_LEAK_HCLARO_TEST_SECRET": {"sensitive": false, "type": "string", "value": "x"}
+}

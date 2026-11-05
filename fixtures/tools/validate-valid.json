@@ -1,0 +1,15 @@
+{
+  "format_version": "1.0",
+  "valid": true,
+  "error_count": 0,
+  "warning_count": 1,
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "summary": "Deprecated attribute",
+      "detail": "The attribute \"acl\" is deprecated. Synthetic Hclaro fixture.",
+      "range": {"filename": "main.tf", "start": {"line": 4, "column": 3, "byte": 60}, "end": {"line": 4, "column": 6, "byte": 63}},
+      "snippet": {"context": "resource \"aws_s3_bucket\" \"logs\"", "code": "  acl = \"DO_NOT_LEAK_HCLARO_TEST_SECRET\"", "start_line": 4, "highlight_start_offset": 2, "highlight_end_offset": 5, "values": []}
+    }
+  ]
+}

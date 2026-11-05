@@ -29,4 +29,14 @@ var (
 	PlanImport []byte
 	//go:embed plan/import-generated.tf
 	ImportGenerated []byte
+	//go:embed tools/validate-valid.json
+	ValidateValid []byte
+	//go:embed tools/validate-invalid.json
+	ValidateInvalid []byte
+	//go:embed tools/validate-noinit.json
+	ValidateNoInit []byte
+	//go:embed tools/outputs.json
+	Outputs []byte
+	//go:embed tools/providers.txt
+	Providers []byte
 )

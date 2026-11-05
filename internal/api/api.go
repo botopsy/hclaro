@@ -74,7 +74,7 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 // clientRoute matches the Hub's client-side routes: /projects, /projects/<id> and
 // /projects/<id>/workspaces/<name>/<view>. Segments are only routing hints; the server
 // resolves IDs and names itself.
-var clientRoute = regexp.MustCompile(`^/projects(/[0-9a-f]{32}(/workspaces/[A-Za-z0-9_-]{1,90}(/(resources|overview|modules|providers))?)?)?/?$`)
+var clientRoute = regexp.MustCompile(`^/projects(/[0-9a-f]{32}(/workspaces/[A-Za-z0-9_-]{1,90}(/(resources|overview|modules|providers|tools))?)?)?/?$`)
 
 type workspaceResponse struct {
 	workspace.Snapshot

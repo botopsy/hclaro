@@ -75,7 +75,7 @@ The private URL contains a random launch credential in its **fragment**, which i
 
 Opening a project runs `version -json` and `workspace list` (no `TF_WORKSPACE`, so the marked workspace is the persisted **CLI default**). Opening a workspace reads its recorded state with `version -json`, `workspace list`, `workspace show` and `show -json`, each child getting `TF_WORKSPACE=<workspace>` in its own environment. Hclaro's own environment is not changed and `workspace select` never runs, so your terminal's workspace stays as it was. The engine must report the selected workspace back before anything is shown. Each tab holds its own project and workspace in the URL (`/projects/<id>/workspaces/<name>/resources`); **New tab** opens the same view in another tab, so `dev` and `prod` can be side by side. **Read again** rereads the state. Search, recently opened projects, arrow-key lists and a production-like-name hint (by name only, never a guarantee) are available.
 
-Hub workspaces are **read-only**: plans, applies and imports remain available only for the project Hclaro was launched with, in its CLI-selected workspace. The writes a Hub project offers are a reviewed init and reviewed workspace commands (below). With an inherited `TF_WORKSPACE`, the launch project keeps using it while Hub children replace it. An absolute `TF_DATA_DIR` would make every project share one data directory, so Hub reads are refused until Hclaro is restarted without it (a relative `TF_DATA_DIR` resolves inside each project).
+Hub workspaces are **read-only**: plans, applies and imports remain available only for the project Hclaro was launched with, in its CLI-selected workspace. The writes a Hub project offers are a reviewed init and reviewed workspace commands (below); its read-only **Project tools** run validate, a format check, providers and output metadata on request. With an inherited `TF_WORKSPACE`, the launch project keeps using it while Hub children replace it. An absolute `TF_DATA_DIR` would make every project share one data directory, so Hub reads are refused until Hclaro is restarted without it (a relative `TF_DATA_DIR` resolves inside each project).
 
 ### Initialize a project
 
@@ -104,6 +104,25 @@ Choosing a workspace in Hclaro (a row on the project page, the **Workspace** swi
 - `remote`/`cloud` backends, backends without multiple-workspace support, unknown backends and uninitialized projects cannot change workspaces here; the project page says why.
 - If the workspace list or CLI default changes between review and confirmation (for example in a terminal), nothing runs and you review again. One command at a time per project folder, shared with init and plans.
 - The result shows the exit code and the CLI default before and after. If the engine succeeded but workspaces cannot be listed afterwards, the result is **not confirmed**: list workspaces again before repeating anything. Nothing is retried or undone automatically.
+
+### Project tools
+
+Each Hub workspace tab has a **Tools** view (also reachable with **Project tools** on the project page, including for projects that are not initialized yet). Four read-only commands run only when you click them, in that tab's project, engine and workspace:
+
+| Tool | Command | Reads | Shows |
+| --- | --- | --- | --- |
+| **Validate** | `validate -json` (falls back to `validate -no-color` if no JSON result is printed) | Configuration | Valid / not valid / **not validated**, errors and warnings with `file:line:column` (text only) |
+| **Format check** | `fmt -check -no-color`, optionally `-recursive` | Configuration | Files that are not in canonical format |
+| **Providers** | `providers` | Configuration and this workspace's state | Required providers, version constraints, module, configuration vs. state |
+| **Outputs** | `output -json` | This workspace's state | Output names, types and whether they are marked sensitive; **never values** |
+
+- Validate checks syntax and internal consistency only. It is not a plan, does not contact the backend, detect drift or prove an apply would succeed. When it cannot run (for example, providers or modules are not installed) the result says **Not validated** and offers to review Init on the project page; nothing is initialized automatically.
+- Format check never writes: plain `fmt` and `-diff` are not available. Before running, Hclaro lists the configuration files the check reads (`.tf`, `.tfvars`, `.tftest.hcl`, and `.tofu`/`.tofutest.hcl` for OpenTofu; hidden folders and editor backups skipped, like the engines) and shows only reported paths from that list. Subfolders are included only when you tick **Include subfolders**. A symbolically linked folder refuses a recursive check, and a linked configuration file that points outside the project refuses any check; in a non-recursive check a linked folder is listed as not followed.
+- Providers and outputs read state, so they get the tab's workspace as a per-command `TF_WORKSPACE`; validate and format check get none. An inherited `TF_WORKSPACE` is never passed. Provider requirements do not show which cloud account or identity is in use, and nothing is downloaded or upgraded.
+- `output -json` prints every value in plaintext, including values not marked sensitive. Hclaro decodes only each output's name, type and `sensitive` flag; the values are skipped by the decoder and never kept, logged, cached or sent to the browser. Output names that look like secrets are counted, not shown. There is no way to reveal values in this release.
+- Inherited `TF_CLI_ARGS` or `TF_CLI_ARGS_<command>` with anything but `-no-color` makes a tool unavailable. There is no command box, path, `-chdir` or executable option: the request names only the open workspace and, for format check, whether to recurse.
+- A running command stays bound to the workspace it was started in, even if you switch the tab. Tools can run in parallel with each other and in several projects at once, but not while init, a workspace command or a plan runs in the same folder. Each result shows status, exit code, duration and the sanitized log, with **Cancel** while running; a cancelled or timed-out command shows no partial result.
+- **Operations in this project** lists init, workspace commands and tool runs for the project (this workspace or all), with status and a link back to the project page. History is in memory only and disappears when Hclaro stops; the last 50 operations and 10 logs are kept.
 
 ## Explorer
 

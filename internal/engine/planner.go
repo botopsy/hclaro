@@ -278,10 +278,20 @@ type Fake struct {
 	ListErr         error
 	ListErrAfter    bool
 	StateErr        error
-	calls           []string
-	requests        []PlanRequest
-	applied         [][]byte
-	inits           [][]string
+	// ValidateOut, ValidateHumanOut, FormatOut, ProvidersOut and OutputsOut are the captured
+	// output of the project utilities; ToolErr fails them and BlockTool makes them wait for
+	// cancellation.
+	ValidateOut      Capture
+	ValidateHumanOut Capture
+	FormatOut        Capture
+	ProvidersOut     Capture
+	OutputsOut       Capture
+	ToolErr          error
+	BlockTool        bool
+	calls            []string
+	requests         []PlanRequest
+	applied          [][]byte
+	inits            [][]string
 }
 
 func (m *Fake) record(call string) {
