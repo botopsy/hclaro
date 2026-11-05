@@ -139,6 +139,10 @@ go build -trimpath -buildvcs=false -ldflags='-s -w' -o hclaro.exe ./cmd/hclaro
 
 Cross-compilation is not OS runtime validation. Release signing, installers, and package-manager distribution are not provided.
 
+### Continuous integration
+
+Pull requests and `master` are verified on CircleCI (`.circleci/config.yml`). Pull requests run the full suite, the embedded-asset check and the synthetic browser checks on Linux, plus Go and unit tests on Windows (without the race detector: the Windows image has no C compiler). Merges to `master` run the suite and browser checks on Linux, Windows and macOS. Changes that touch only `docs/`, `tasks/` or Markdown files skip the checks. Go and Node are downloaded at pinned versions and verified against pinned SHA-256 sums; no orbs are used.
+
 ### Releases
 
 Pushing a tag such as `v0.2.0` or `v0.2.0-alpha.1` runs `.github/workflows/release.yml`. It reruns the full CI suite on all three OSes, rebuilds the frontend and checks it matches the committed embed, cross-compiles with the tag's version, and packages each target as `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) with the README, changelog, security policy and third-party notices, plus a SHA-256 checksums file. Linux amd64, macOS arm64 and Windows amd64 packages are then checksum-verified and run with `--version` on native runners; Linux arm64 and macOS amd64 are cross-compiled only. Finally it creates a GitHub release with the archives attached. Tags with a suffix (`-alpha.1`, `-rc.1`) are marked as pre-releases.

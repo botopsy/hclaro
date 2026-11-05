@@ -1,0 +1,276 @@
+# CircleCI verification for Hclaro. It replaces the push/pull_request triggers of the
+# GitHub "M1 checks" workflow; tagged releases still run on GitHub Actions.
+#
+# - Pull requests: full suite and browser checks on Linux; Go and unit tests on Windows.
+# - master: full suite on Linux, Windows and macOS.
+# - Changes that touch only docs/, tasks/ or Markdown files stop after checkout.
+#
+# No orbs: every step is written here. Toolchains are downloaded from go.dev and
+# nodejs.org at pinned versions and checked against pinned SHA-256 sums. Nothing here
+# uses real credentials, cloud accounts or a real Terraform/OpenTofu engine.
+version: 2.1
+
+executors:
+  linux:
+    docker:
+      # Ubuntu 24.04: Playwright 1.58 (held for macOS 13 development) does not support 26.04.
+      - image: cimg/base:2026.09-24.04@sha256:668174490adc470cd34eb3aa178939d65f817bc13ef657a94ff0278338f7d8da
+    resource_class: medium
+  windows:
+    machine:
+      image: windows-server-2022-gui:2026.10.2
+    resource_class: windows.medium
+    shell: bash.exe
+  macos:
+    macos:
+      xcode: 27.1.0
+    resource_class: m4pro.medium
+
+parameters:
+  go-version:
+    type: string
+    default: "1.27.2"
+  node-version:
+    type: string
+    default: "24.22.1"
+
+commands:
+  skip-docs-only:
+    description: Stop the job when the change touches only documentation.
+    steps:
+      - run:
+          name: Skip documentation-only changes
+          command: |
+            if [ "$CIRCLE_BRANCH" = master ]; then
+              base=HEAD^1
+            else
+              git fetch -q origin master && base=$(git merge-base origin/master HEAD) || exit 0
+            fi
+            # When the diff cannot be computed, run everything.
+            changed=$(git diff --name-only "$base" HEAD) || exit 0
+            [ -n "$changed" ] || exit 0
+            if ! printf '%s\n' "$changed" | grep -Ev '^(docs/|tasks/)|\.md$' | grep -q .; then
+              echo "Only documentation changed:"; printf '  %s\n' $changed
+              circleci-agent step halt
+            fi
+
+  toolchain:
+    description: Install pinned Go and Node and point every cache at .cache/ in the checkout.
+    parameters:
+      os:
+        type: enum
+        enum: [linux, windows, macos]
+    steps:
+      - when:
+          condition:
+            equal: [linux, << parameters.os >>]
+          steps:
+            - run:
+                name: Install Go and Node (Linux)
+                command: |
+                  set -euo pipefail
+                  cd /tmp
+                  curl -fsSLo go.tgz https://go.dev/dl/go<< pipeline.parameters.go-version >>.linux-amd64.tar.gz
+                  echo "ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5  go.tgz" | sha256sum -c -
+                  curl -fsSLo node.tgz https://nodejs.org/dist/v<< pipeline.parameters.node-version >>/node-v<< pipeline.parameters.node-version >>-linux-x64.tar.gz
+                  echo "eb6728e77c576a35162c122c45ccadf224d89ff00abc8dae46cc2897c6002d7c  node.tgz" | sha256sum -c -
+                  mkdir -p "$HOME/sdk/node"
+                  tar -C "$HOME/sdk" -xzf go.tgz
+                  tar -C "$HOME/sdk/node" --strip-components=1 -xzf node.tgz
+                  # The race detector needs a C toolchain.
+                  command -v gcc >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends gcc libc6-dev; }
+                  echo 'export PATH="$HOME/sdk/go/bin:$HOME/sdk/node/bin:$PATH"' >> "$BASH_ENV"
+                  echo 'export ROOT="$PWD"' >> "$BASH_ENV"
+      - when:
+          condition:
+            equal: [macos, << parameters.os >>]
+          steps:
+            - run:
+                name: Install Go and Node (macOS)
+                command: |
+                  set -euo pipefail
+                  cd /tmp
+                  curl -fsSLo go.tgz https://go.dev/dl/go<< pipeline.parameters.go-version >>.darwin-arm64.tar.gz
+                  echo "76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c4c5  go.tgz" | shasum -a 256 -c -
+                  curl -fsSLo node.tgz https://nodejs.org/dist/v<< pipeline.parameters.node-version >>/node-v<< pipeline.parameters.node-version >>-darwin-arm64.tar.gz
+                  echo "89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7  node.tgz" | shasum -a 256 -c -
+                  mkdir -p "$HOME/sdk/node"
+                  tar -C "$HOME/sdk" -xzf go.tgz
+                  tar -C "$HOME/sdk/node" --strip-components=1 -xzf node.tgz
+                  echo 'export PATH="$HOME/sdk/go/bin:$HOME/sdk/node/bin:$PATH"' >> "$BASH_ENV"
+                  echo 'export ROOT="$PWD"' >> "$BASH_ENV"
+      - when:
+          condition:
+            equal: [windows, << parameters.os >>]
+          steps:
+            - run:
+                name: Install Go and Node (Windows)
+                command: |
+                  set -euo pipefail
+                  sdk="$HOME/sdk"; mkdir -p "$sdk"; cd "$sdk"
+                  curl -fsSLo go.zip https://go.dev/dl/go<< pipeline.parameters.go-version >>.windows-amd64.zip
+                  echo "1314008898bd40df77af4b014f777f08873dbdfbcd3d92308728ee03304fe04f  go.zip" | sha256sum -c -
+                  curl -fsSLo node.zip https://nodejs.org/dist/v<< pipeline.parameters.node-version >>/node-v<< pipeline.parameters.node-version >>-win-x64.zip
+                  echo "d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5  node.zip" | sha256sum -c -
+                  # Windows' own bsdtar reads zip archives; PowerShell's Expand-Archive takes minutes.
+                  wintar="$(cygpath -u "$SYSTEMROOT")/System32/tar.exe"
+                  "$wintar" -xf "$(cygpath -w "$sdk/go.zip")" -C "$(cygpath -w "$sdk")"
+                  "$wintar" -xf "$(cygpath -w "$sdk/node.zip")" -C "$(cygpath -w "$sdk")"
+                  mv "node-v<< pipeline.parameters.node-version >>-win-x64" node
+                  echo "export PATH=\"$sdk/go/bin:$sdk/node:\$PATH\"" >> "$BASH_ENV"
+                  # Go and Node are native Windows programs and need Windows paths.
+                  echo 'export ROOT="$(cygpath -m "$PWD")"' >> "$BASH_ENV"
+      - run:
+          name: Point caches at the checkout
+          command: |
+            {
+              echo 'export GOCACHE="$ROOT/.cache/go"'
+              echo 'export GOMODCACHE="$ROOT/.cache/gomod"'
+              echo 'export npm_config_cache="$ROOT/.cache/npm"'
+              echo 'export PLAYWRIGHT_BROWSERS_PATH="$ROOT/.cache/ms-playwright"'
+            } >> "$BASH_ENV"
+            source "$BASH_ENV"
+            go version
+            node --version
+
+  restore-caches:
+    parameters:
+      os:
+        type: string
+    steps:
+      - restore_cache:
+          keys:
+            - go-v1-<< parameters.os >>-{{ checksum "go.mod" }}
+            - go-v1-<< parameters.os >>-
+      - restore_cache:
+          keys:
+            - npm-v1-<< parameters.os >>-{{ checksum "web/package-lock.json" }}
+
+  save-caches:
+    parameters:
+      os:
+        type: string
+    steps:
+      - save_cache:
+          key: go-v1-<< parameters.os >>-{{ checksum "go.mod" }}
+          paths: [.cache/go, .cache/gomod]
+      - save_cache:
+          key: npm-v1-<< parameters.os >>-{{ checksum "web/package-lock.json" }}
+          paths: [.cache/npm]
+
+jobs:
+  verify:
+    parameters:
+      os:
+        type: enum
+        enum: [linux, windows, macos]
+      # Typecheck, lint, the production build and the embedded-asset check are
+      # OS-independent and run once, on Linux.
+      static:
+        type: boolean
+        default: false
+      browser:
+        type: boolean
+        default: false
+    executor: << parameters.os >>
+    steps:
+      - checkout
+      - skip-docs-only
+      - toolchain:
+          os: << parameters.os >>
+      - restore-caches:
+          os: << parameters.os >>
+      - run:
+          name: Install frontend dependencies
+          command: npm ci --prefix web --no-audit --no-fund
+      - run:
+          name: Go tests
+          # The race detector needs cgo, and the Windows image has no C compiler. Races are
+          # checked on Linux for every change and on macOS for master; Windows runs the same
+          # tests without -race for platform behavior (paths, permissions, CTRL_BREAK).
+          command: |
+            if [ "<< parameters.os >>" = windows ]; then race=; else race=-race; fi
+            go test $race ./cmd/... ./internal/... ./scripts/...
+      - run:
+          name: Go vet
+          command: go vet ./cmd/... ./internal/... ./scripts/...
+      - run:
+          name: Vitest
+          command: npm --prefix web test
+      - when:
+          condition: << parameters.static >>
+          steps:
+            - run:
+                name: Typecheck and lint
+                command: npm --prefix web run typecheck && npm --prefix web run lint
+            - run:
+                name: Production build
+                command: npm --prefix web run build
+            - run:
+                name: Embedded assets match a fresh build
+                command: git diff --exit-code -- internal/ui/dist
+      - when:
+          condition: << parameters.browser >>
+          steps:
+            - run:
+                name: Build embedded host binary
+                command: CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o bin/hclaro ./cmd/hclaro
+            - restore_cache:
+                keys:
+                  - playwright-v1-<< parameters.os >>-{{ checksum "web/package-lock.json" }}
+            - run:
+                name: Install test browser
+                command: |
+                  # --with-deps installs system libraries on Linux only.
+                  if [ "<< parameters.os >>" = linux ]; then deps=--with-deps; else deps=; fi
+                  npm --prefix web exec -- playwright install $deps chromium
+            - save_cache:
+                key: playwright-v1-<< parameters.os >>-{{ checksum "web/package-lock.json" }}
+                paths: [.cache/ms-playwright]
+            - run:
+                name: Synthetic browser checks
+                command: |
+                  suffix=""; if [ "<< parameters.os >>" = windows ]; then suffix=".exe"; fi
+                  go build -o "bin/fixture-http${suffix}" ./scripts/fixture-http
+                  node scripts/browser-smoke.mjs
+            - store_artifacts:
+                path: docs/screenshots
+                destination: screenshots
+      - save-caches:
+          os: << parameters.os >>
+      - store_artifacts:
+          path: .cache/browser-failure.png
+          destination: browser-failure.png
+
+workflows:
+  pull-request:
+    when:
+      not:
+        equal: [master, << pipeline.git.branch >>]
+    jobs:
+      - verify:
+          name: linux
+          os: linux
+          static: true
+          browser: true
+      - verify:
+          name: windows-unit
+          os: windows
+
+  master:
+    when:
+      equal: [master, << pipeline.git.branch >>]
+    jobs:
+      - verify:
+          name: linux
+          os: linux
+          static: true
+          browser: true
+      - verify:
+          name: windows
+          os: windows
+          browser: true
+      - verify:
+          name: macos
+          os: macos
+          browser: true
