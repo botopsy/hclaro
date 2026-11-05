@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/imports"
 	"hclaro/internal/plan"
 	"hclaro/internal/workspace"
 )
@@ -58,6 +59,8 @@ type Operation struct {
 	VarFiles    []string `json:"varFiles"`
 	Replace     []string `json:"replace"`
 	PlanID      string   `json:"planId,omitempty"`
+	// Import is set for import plans.
+	Import *ImportTarget `json:"import,omitempty"`
 	// Outcome is set for applies: applied, not_applied or uncertain.
 	Outcome         string             `json:"outcome,omitempty"`
 	StateReloaded   bool               `json:"stateReloaded"`
@@ -78,11 +81,16 @@ type Plan struct {
 	Engine      string   `json:"engine"`
 	Workspace   string   `json:"workspace"`
 	VarFiles    []string `json:"varFiles"`
-	// Kind is "plan" or "replace"; Replace lists the requested instance addresses.
-	Kind           string   `json:"kind"`
-	Replace        []string `json:"replace"`
-	ArtifactSHA256 string   `json:"artifactSha256"`
-	Fingerprint    string   `json:"fingerprint"`
+	// Kind is "plan", "replace" or "import"; Replace lists the requested instance addresses.
+	Kind    string        `json:"kind"`
+	Replace []string      `json:"replace"`
+	Import  *ImportTarget `json:"import,omitempty"`
+	// GeneratedConfig is the redacted display copy of configuration the engine generated
+	// for an import; the file on disk is not changed.
+	GeneratedConfig          string `json:"generatedConfig,omitempty"`
+	GeneratedConfigTruncated bool   `json:"generatedConfigTruncated,omitempty"`
+	ArtifactSHA256           string `json:"artifactSha256"`
+	Fingerprint              string `json:"fingerprint"`
 	// Destructive plans delete, replace or forget objects, or contain unrecognized actions.
 	Destructive bool `json:"destructive"`
 }
@@ -172,16 +180,9 @@ func (m *Manager) StartPlan(varFiles, replaceIDs []string) (Operation, error) {
 	if m.planner == nil || !snap.Info.Capabilities.CanPlan {
 		return Operation{}, ErrUnavailable
 	}
-	allowed := workspace.VarFiles(m.root)
-	if len(varFiles) > 8 {
-		return Operation{}, ErrVarFiles
-	}
-	selected := []string{}
-	for _, name := range varFiles {
-		if !slices.Contains(allowed, name) || slices.Contains(selected, name) {
-			return Operation{}, ErrVarFiles
-		}
-		selected = append(selected, name)
+	selected, err := m.selectVarFiles(varFiles)
+	if err != nil {
+		return Operation{}, err
 	}
 	if len(replaceIDs) > engine.MaxReplace {
 		return Operation{}, ErrReplace
@@ -194,26 +195,47 @@ func (m *Manager) StartPlan(varFiles, replaceIDs []string) (Operation, error) {
 		}
 		replace = append(replace, resource.Address)
 	}
+	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: replace}), nil
+}
+
+// selectVarFiles validates a variable file selection against the files in the root.
+func (m *Manager) selectVarFiles(varFiles []string) ([]string, error) {
+	allowed := workspace.VarFiles(m.root)
+	if len(varFiles) > 8 {
+		return nil, ErrVarFiles
+	}
+	selected := []string{}
+	for _, name := range varFiles {
+		if !slices.Contains(allowed, name) || slices.Contains(selected, name) {
+			return nil, ErrVarFiles
+		}
+		selected = append(selected, name)
+	}
+	return selected, nil
+}
+
+// startPlanLocked starts a validated plan operation. Caller holds mu.
+func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation) Operation {
 	command := []string{snap.Info.Engine, "plan", "-input=false", "-json", "-out=<private temporary file>"}
-	for _, name := range selected {
+	for _, name := range op.VarFiles {
 		command = append(command, "-var-file="+name)
 	}
-	for _, address := range replace {
+	for _, address := range op.Replace {
 		command = append(command, "-replace="+address)
 	}
-	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
-	e := &entry{
-		op:     Operation{ID: m.NewID(), Kind: "plan", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: command, VarFiles: selected, Replace: replace, Diagnostics: []EngineDiagnostic{}, LogRetained: true},
-		log:    NewLog(logEvents, logBytes),
-		cancel: cancel,
-		start:  time.Now(),
+	if op.Import != nil && op.Import.GeneratedFile != "" {
+		command = append(command, "-generate-config-out="+op.Import.GeneratedFile)
 	}
+	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
+	op.ID, op.Kind, op.Status, op.Stage = m.NewID(), "plan", Running, "Starting"
+	op.StartedAt, op.Command, op.Diagnostics, op.LogRetained = time.Now().UTC().Format(time.RFC3339), command, []EngineDiagnostic{}, true
+	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now()}
 	m.entries = append(m.entries, e)
 	m.trim()
 	m.running = e
 	m.wg.Add(1)
 	go m.run(ctx, e, snap)
-	return m.snapshot(e), nil
+	return m.snapshot(e)
 }
 
 // trim keeps bounded history; logs are dropped first, metadata later. Caller holds mu.
@@ -345,12 +367,17 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	_ = os.Chmod(dir, 0o700)
 	out := filepath.Join(dir, "plan.tfplan")
 	// Taken before the engine runs, so edits made while planning count as a context change.
-	fingerprint := m.Fingerprint(snap, e.op.VarFiles)
+	// An engine-generated import configuration file is excluded here and checked below.
+	generated := ""
+	if e.op.Import != nil {
+		generated = e.op.Import.GeneratedFile
+	}
+	fingerprint := m.fingerprintExcept(snap, e.op.VarFiles, generated)
 	m.stage(e, "Planning")
 	label := engineLabel(snap.Info.Engine)
 	inputs := collectKnown(m.root, e.op.VarFiles, os.Environ())
 	undecoded := false
-	err = m.planner.Plan(ctx, engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, Replace: e.op.Replace}, func(line []byte) {
+	err = m.planner.Plan(ctx, engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, Replace: e.op.Replace, GenerateConfigOut: generated}, func(line []byte) {
 		level, text, diag, ok := translate(line, "plan", label, inputs)
 		if !ok {
 			if !undecoded {
@@ -406,9 +433,27 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		kind = "replace"
 		review.Warnings = append(review.Warnings, replaceWarnings(review, e.op.Replace)...)
 	}
+	var generatedConfig string
+	var generatedTruncated bool
+	if e.op.Import != nil {
+		kind = "import"
+		review.Warnings = append(review.Warnings, importWarnings(review, e.op.Import.Address)...)
+		if generated != "" {
+			// The generated file is new; any other edit made while planning still counts.
+			if m.fingerprintExcept(snap, e.op.VarFiles, generated) == fingerprint {
+				fingerprint = m.Fingerprint(snap, e.op.VarFiles)
+			}
+			text, truncated, err := imports.ReadGenerated(m.root, generated)
+			if err != nil {
+				review.Warnings = append(review.Warnings, fmt.Sprintf("The engine did not write %s, or it could not be read. Check the plan diagnostics.", generated))
+			}
+			generatedConfig, generatedTruncated = imports.RedactGenerated(inputs.scrub(text)), truncated
+		}
+	}
 	result = &Plan{
 		Review: review, ID: m.NewID(), OperationID: e.op.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
+		Import: e.op.Import, GeneratedConfig: generatedConfig, GeneratedConfigTruncated: generatedTruncated,
 		ArtifactSHA256: digest, Fingerprint: fingerprint,
 		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Summary[plan.Unknown] > 0,
 	}
@@ -440,7 +485,11 @@ func (m *Manager) classify(e *entry, hint string) string {
 // Fingerprint identifies the plan context: engine, version, workspace, variable file
 // selection, configuration files, engine data directory and planning environment.
 func (m *Manager) Fingerprint(snap workspace.Snapshot, varFiles []string) string {
-	return workspace.Fingerprint(m.root, os.Environ(), append([]string{snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}, varFiles...)...)
+	return m.fingerprintExcept(snap, varFiles, "")
+}
+
+func (m *Manager) fingerprintExcept(snap workspace.Snapshot, varFiles []string, skip string) string {
+	return workspace.FingerprintExcept(m.root, os.Environ(), map[string]bool{skip: skip != ""}, append([]string{snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}, varFiles...)...)
 }
 
 func sha256File(path string) (string, error) {
@@ -504,6 +553,10 @@ func (m *Manager) snapshot(e *entry) Operation {
 	op.Command = slices.Clone(op.Command)
 	op.VarFiles = slices.Clone(op.VarFiles)
 	op.Replace = slices.Clone(op.Replace)
+	if op.Import != nil {
+		target := *op.Import
+		op.Import = &target
+	}
 	op.Diagnostics = slices.Clone(op.Diagnostics)
 	if op.Status == Running {
 		op.DurationMs = time.Since(e.start).Milliseconds()

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -31,10 +32,13 @@ type Applier interface {
 // PlanRequest holds validated inputs. Out is an absolute path in a private temp directory;
 // VarFiles are bare file names inside the project root. Replace holds exact managed
 // resource instance addresses taken from parsed state, one -replace argument each.
+// GenerateConfigOut, for import plans, is a bare new file name in the project root where the
+// engine writes configuration for import targets that have no resource block.
 type PlanRequest struct {
-	Out      string
-	VarFiles []string
-	Replace  []string
+	Out               string
+	VarFiles          []string
+	Replace           []string
+	GenerateConfigOut string
 }
 
 // ExitError reports a failed engine command without its output. Hint is a classification
@@ -80,8 +84,17 @@ func planArgs(request PlanRequest) ([]string, error) {
 		seen[address] = true
 		args = append(args, "-replace="+address)
 	}
+	if name := request.GenerateConfigOut; name != "" {
+		if !generatedName.MatchString(name) || len(request.Replace) > 0 {
+			return nil, errors.New("invalid generated configuration file name")
+		}
+		args = append(args, "-generate-config-out="+name)
+	}
 	return args, nil
 }
+
+// generatedName is a bare .tf file name; the engine runs in the project root.
+var generatedName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,80}\.tf$`)
 
 func validAddress(address string) bool {
 	if address == "" || len(address) > 1024 || strings.HasPrefix(address, "-") || strings.HasPrefix(address, "data.") {
@@ -237,6 +250,10 @@ type Fake struct {
 	ShowErr        error
 	ApplyLines     [][]byte
 	ApplyErr       error
+	// Root and GeneratedConfig emulate -generate-config-out: the content is written to the
+	// requested file name inside Root.
+	Root            string
+	GeneratedConfig []byte
 	// Block makes Plan wait for cancellation, to exercise cancel paths.
 	Block bool
 	// BlockApply makes Apply wait for cancellation.
@@ -316,6 +333,13 @@ func (m *Fake) Plan(ctx context.Context, request PlanRequest, line func([]byte))
 	if m.Block {
 		<-ctx.Done()
 		return ErrCancelled
+	}
+	if request.GenerateConfigOut != "" && m.Root != "" {
+		path := filepath.Join(m.Root, request.GenerateConfigOut)
+		if f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644); err == nil {
+			_, _ = f.Write(m.GeneratedConfig)
+			_ = f.Close()
+		}
 	}
 	if m.PlanErr != nil {
 		return m.PlanErr

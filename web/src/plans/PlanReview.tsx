@@ -50,6 +50,7 @@ export function PlanReview({ plan, copy, onApply, busy }: { plan: Plan; copy: (v
     <div><span className="muted">Saved plan SHA-256</span><button className="hash" onClick={() => void copy(plan.artifactSha256, 'Plan digest')} title={plan.artifactSha256} aria-label="Copy saved plan SHA-256"><Fingerprint size={12} />{plan.artifactSha256.slice(0, 12)}<Copy size={11} /></button></div>
    </div>
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} />}
+   {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
    {plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={15} /><div><strong>Ready to apply.</strong> Applying uses exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}. You confirm on the next screen.</div>{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}><Rocket size={14} />Review and apply…</Button>}</div> : <div className="apply-banner" role="note"><LockKeyhole size={15} /><div><strong>Review only.</strong> {plan.apply.reason}</div></div>}
    {plan.contextChanged && <div className="plan-warning" role="alert"><TriangleAlert size={15} />Configuration, variable files or the engine changed since this plan was created. Run a new plan to review current changes.</div>}
    {plan.warnings.map(w => <div className="plan-warning" key={w} role="alert"><TriangleAlert size={15} />{w}</div>)}
@@ -58,7 +59,7 @@ export function PlanReview({ plan, copy, onApply, busy }: { plan: Plan; copy: (v
     const count = plan.summary[a] || 0;
     return <button key={a} className={`summary-card tone-${tone} ${actions.includes(a) ? 'chosen' : ''}`} aria-pressed={actions.includes(a)} disabled={!count} onClick={() => toggle(a)}><span><Icon size={14} aria-hidden="true" />{label}</span><strong>{count}</strong></button>;
    })}</div>
-   <p className="plan-headline">{total === 0 && outputChanges === 0 ? 'No changes. Infrastructure matches the configuration.' : `${total} resource change${total === 1 ? '' : 's'} and ${outputChanges} output change${outputChanges === 1 ? '' : 's'}, including every dependent and collateral change reported by the engine.`}</p>
+   <p className="plan-headline">{total === 0 && outputChanges === 0 && !plan.imports ? 'No changes. Infrastructure matches the configuration.' : `${plan.imports ? `${plan.imports} import${plan.imports === 1 ? '' : 's'}, ` : ''}${total} resource change${total === 1 ? '' : 's'} and ${outputChanges} output change${outputChanges === 1 ? '' : 's'}, including every dependent and collateral change reported by the engine.`}</p>
    <div className="segmented plan-tabs" role="tablist" aria-label="Plan sections">
     <button role="tab" aria-selected={tab === 'changes'} onClick={() => { setTab('changes'); setSelected(undefined); }}>Resource changes <span>{plan.changes.length}</span></button>
     <button role="tab" aria-selected={tab === 'outputs'} onClick={() => { setTab('outputs'); setSelected(undefined); }}>Outputs <span>{plan.outputs.length}</span></button>
@@ -92,6 +93,29 @@ function ReplaceSummary({ plan }: { plan: Plan }) {
    })}</ul>
    {collateral.length > 0 && <p className={destructiveCollateral.length ? 'plan-warning' : 'info-line'} role={destructiveCollateral.length ? 'alert' : undefined}><TriangleAlert size={14} />{collateral.length} other change{collateral.length === 1 ? ' is' : 's are'} part of this plan{destructiveCollateral.length > 0 && `, including ${destructiveCollateral.length} deletion${destructiveCollateral.length === 1 ? '' : 's'} or replacement${destructiveCollateral.length === 1 ? '' : 's'} you did not select`}. Review them below; they are applied together.</p>}
    <p className="muted">Replacing destroys and recreates objects. Unless the provider creates the new object first, expect downtime, and data stored in the old object can be lost. The plan shows the order for each change; it cannot prove what depends on these objects outside {engineLabel(plan.engine)}.</p>
+  </section>;
+}
+
+// An import is never only the import: show the requested target next to every other change,
+// and the configuration the engine generated, before anything can be applied.
+function ImportSummary({ plan, copy }: { plan: Plan; copy: (value: string, label: string) => Promise<void> }) {
+  const target = plan.import!;
+  const change = plan.changes.find(c => c.address === target.address && !c.deposed);
+  const others = plan.changes.filter(c => c !== change && c.action !== 'no-op' && c.action !== 'read');
+  const destructive = others.filter(c => c.action === 'delete' || c.action === 'replace' || c.action === 'unknown');
+  const targetChanges = change && change.action !== 'no-op';
+  return <section className="replace-summary import-summary" aria-label="Requested import">
+   <h2><Import size={15} />Import requested</h2>
+   <ul><li><code>{target.address}</code>{change?.importing ? <><span className="flag"><Import size={11} />import</span>{targetChanges && <ActionBadge action={change.action} />}</> : <span className="flag destroy">not imported by this plan</span>}</li></ul>
+   {targetChanges && <p className={change.action === 'replace' || change.action === 'delete' ? 'plan-warning' : 'info-line'} role={change.action === 'replace' ? 'alert' : undefined}><TriangleAlert size={14} />After importing, the plan also {change.action === 'update' ? 'updates the object to match your configuration' : change.action === 'replace' ? 'destroys and recreates the object, because the configuration differs in an attribute that cannot change in place' : `plans to ${change.action} it`}. Adjust the configuration first if that is not intended.</p>}
+   {others.length > 0 && <p className={destructive.length ? 'plan-warning' : 'info-line'} role={destructive.length ? 'alert' : undefined}><TriangleAlert size={14} />{others.length} other change{others.length === 1 ? ' is' : 's are'} part of this plan{destructive.length > 0 && `, including ${destructive.length} deletion${destructive.length === 1 ? '' : 's'} or replacement${destructive.length === 1 ? '' : 's'}`}. They are applied together with the import.</p>}
+   <p className="muted">The import block is in <code>{target.file}</code>{target.generatedFile && <> and the generated configuration in <code>{target.generatedFile}</code></>}. Applying records the existing object in state; it does not create it. To back out before applying, delete {target.generatedFile ? 'these files' : 'the file'}; nothing in state has changed.</p>
+   {target.generatedFile && <details className="generated-config" open>
+    <summary>Generated configuration <code>{target.generatedFile}</code></summary>
+    <p className="redaction-note"><LockKeyhole size={12} />Shown with secret-like values hidden. The file on disk contains the values {engineLabel(plan.engine)} read from the object: review it in your editor before committing it.</p>
+    {plan.generatedConfig ? <><div className="file-diff-header"><span className="muted">Redacted copy</span><Button variant="ghost" size="icon" aria-label="Copy generated configuration" onClick={() => void copy(plan.generatedConfig!, 'Generated configuration')}><Copy size={13} /></Button></div><pre>{plan.generatedConfig}</pre></> : <p className="muted">No generated configuration was found.</p>}
+    {plan.generatedConfigTruncated && <p className="muted">Only the first 1 MiB is shown.</p>}
+   </details>}
   </section>;
 }
 

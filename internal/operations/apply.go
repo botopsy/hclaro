@@ -49,6 +49,8 @@ type Approval struct {
 	Workspace      string         `json:"workspace"`
 	Summary        map[string]int `json:"summary"`
 	Replace        []string       `json:"replace"`
+	Import         *ImportTarget  `json:"import,omitempty"`
+	Imports        int            `json:"imports"`
 	Destructive    bool           `json:"destructive"`
 	Phrase         string         `json:"phrase,omitempty"`
 	Command        []string       `json:"command"`
@@ -77,6 +79,8 @@ func ineligible(p *Plan) string {
 			changes++
 		}
 	}
+	// An import with no attribute change is a no-op action that still writes state.
+	changes += p.Imports
 	switch {
 	case p.Errored:
 		return "The engine reported this plan as errored. It is incomplete and cannot be applied."
@@ -108,8 +112,9 @@ func replaceWarnings(review plan.Review, requested []string) []string {
 	return warnings
 }
 
+// phrase is required for destructive plans and for imports, which write state.
 func phrase(p *Plan) string {
-	if !p.Destructive {
+	if !p.Destructive && p.Imports == 0 {
 		return ""
 	}
 	return "apply " + p.Workspace
@@ -229,7 +234,7 @@ func (m *Manager) Approve(id string) (Approval, error) {
 	return Approval{
 		Token: a.approval.token, ExpiresAt: a.approval.expires.UTC().Format(time.RFC3339), PlanID: p.ID,
 		ArtifactSHA256: a.digest, Engine: a.engine, Workspace: a.workspace, Summary: summary,
-		Replace: slices.Clone(p.Replace), Destructive: p.Destructive, Phrase: phrase(p), Command: applyCommand(a),
+		Replace: slices.Clone(p.Replace), Import: p.Import, Imports: p.Imports, Destructive: p.Destructive, Phrase: phrase(p), Command: applyCommand(a),
 	}, nil
 }
 
@@ -261,7 +266,7 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	a.applying = true
 	ctx, cancel := context.WithTimeout(m.base, m.ApplyTimeout)
 	e := &entry{
-		op:     Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true},
+		op:     Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), Import: p.Import, PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true},
 		log:    NewLog(logEvents, logBytes),
 		cancel: cancel,
 		start:  time.Now(),

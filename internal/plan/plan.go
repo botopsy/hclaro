@@ -104,6 +104,8 @@ type Review struct {
 	Applyable bool `json:"-"`
 	// Deferred counts changes the engine postponed; such a plan is incomplete.
 	Deferred int `json:"-"`
+	// Imports counts resource changes that import an existing object, whatever their action.
+	Imports int `json:"imports"`
 }
 
 type rawChange struct {
@@ -227,6 +229,9 @@ func Parse(input []byte) (Review, error) {
 		review.Changes = append(review.Changes, detail.Change)
 		review.Details[detail.ID] = detail
 		review.Summary[detail.Action]++
+		if detail.Importing {
+			review.Imports++
+		}
 	}
 	for _, raw := range doc.Drift {
 		detail, err := normalize(raw, true)

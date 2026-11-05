@@ -37,7 +37,10 @@ const workspace: Workspace = {
     capabilities: {
       canReadState: true,
       canPlan: false,
-      canApplySavedPlan: false
+      canApplySavedPlan: false,
+      supportsImportBlocks: true,
+      supportsGeneratedConfig: true,
+      canImport: false
     },
     warnings: []
   },

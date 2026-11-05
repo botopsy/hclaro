@@ -121,6 +121,20 @@ try{
  await page.getByRole('button',{name:/terraform plan/}).click()
  await page.getByText(/Plan ready for review/).waitFor()
  assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in operation log')
+ // Import wizard: preview against the real Go checks; nothing is written before consent.
+ await page.getByRole('button',{name:'Import',exact:true}).click()
+ await page.getByLabel('Resource instance address',{exact:true}).fill('aws_s3_bucket.artifacts')
+ await page.getByLabel('Import ID',{exact:true}).fill('new-bucket')
+ await page.getByRole('button',{name:'Check and preview'}).click()
+ await page.getByText(/is already in state/).waitFor()
+ assert.equal(await page.getByRole('button',{name:'Write file and plan import'}).count(),0,'blocked import offered a write')
+ await page.getByLabel('Resource instance address',{exact:true}).fill('aws_s3_bucket.legacy_logs')
+ await page.getByLabel('Import ID',{exact:true}).fill('hclaro-legacy-logs')
+ await page.getByRole('button',{name:'Check and preview'}).click()
+ await page.getByLabel('Contents of imports.tf').waitFor()
+ await page.getByText(/Resource block found in/).waitFor()
+ assert(await page.getByRole('button',{name:'Write file and plan import'}).isDisabled(),'write enabled before consent')
+ await page.screenshot({path:'docs/screenshots/import-wizard-dark.png',fullPage:true})
  // Exercise 1,000 resources through the same handler; rendering stays bounded to 50 rows.
  large=true
  await page.reload()
@@ -133,6 +147,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply confirmation gating, preflight, operation log replay, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply confirmation gating, preflight, operation log replay, import collision and preview gating, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

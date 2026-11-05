@@ -281,6 +281,7 @@
   "warnings": [
     "1 change(s) use an action combination Hclaro does not recognize. Treat them as potentially destructive and inspect them with the CLI."
   ],
+  "imports": 1,
   "details": {
     "03d23d8725766af238491b5683e6172a": {
       "id": "03d23d8725766af238491b5683e6172a",

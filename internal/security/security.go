@@ -22,8 +22,10 @@ func Token() (string, error) {
 }
 
 // mutating lists the only routes that accept POST: start a plan, approve a reviewed plan,
-// apply it with that one-time approval, and cancel a running operation.
-var mutating = regexp.MustCompile(`^/api/v1/(plans|plans/[0-9a-f]{32}/(approval|apply)|operations/[0-9a-f]{32}/cancel)$`)
+// apply it with that one-time approval, cancel a running operation, preview an import and
+// start one. The import preview has no side effects; it is a POST so the import ID never
+// appears in a URL.
+var mutating = regexp.MustCompile(`^/api/v1/(plans|plans/[0-9a-f]{32}/(approval|apply)|operations/[0-9a-f]{32}/cancel|imports|imports/preview)$`)
 
 func equal(got, want string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1

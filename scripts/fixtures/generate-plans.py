@@ -99,7 +99,15 @@ no_changes = doc([rc("aws_vpc.main", ["no-op"], {"id": "vpc-1"}, {"id": "vpc-1"}
 
 errored = doc([rc("aws_vpc.main", ["update"], {"id": "vpc-1", "cidr_block": "10.0.0.0/16"}, {"id": "vpc-1", "cidr_block": "10.1.0.0/16"})], errored=True)
 
-for name, d in [("all-actions", all_actions), ("collateral", collateral), ("no-changes", no_changes), ("errored", errored)]:
+# M4: an import with one unrelated update in the same plan.
+import_plan = doc([
+    rc("aws_s3_bucket.legacy_logs", ["no-op"], {"id": "hclaro-legacy-logs", "bucket": "hclaro-legacy-logs"},
+       {"id": "hclaro-legacy-logs", "bucket": "hclaro-legacy-logs"}, importing={"id": "hclaro-legacy-logs"}),
+    rc("aws_s3_bucket.artifacts", ["update"], {"id": "hclaro-demo-artifacts", "tags": {"env": "demo"}},
+       {"id": "hclaro-demo-artifacts", "tags": {"env": "demo", "owner": "platform"}}),
+], outputs={})
+
+for name, d in [("all-actions", all_actions), ("collateral", collateral), ("no-changes", no_changes), ("errored", errored), ("import", import_plan)]:
     with open(os.path.join(out, name + ".json"), "w") as f:
         json.dump(d, f, indent=2); f.write("\n")
 
@@ -128,3 +136,24 @@ lock_log = [
 ]
 with open(os.path.join(out, "plan-log-locked.jsonl"), "w") as f:
     for line in lock_log: f.write(json.dumps(line) + "\n")
+
+# Configuration a real engine would write with -generate-config-out, including a planted
+# canary that the display copy must redact.
+generated = """# __generated__ by Terraform
+# Please review these resources and move them into your main configuration files.
+
+# __generated__ by Terraform from "hclaro-legacy-logs"
+resource "aws_s3_bucket" "legacy_logs" {
+  bucket        = "hclaro-legacy-logs"
+  force_destroy = false
+  tags = {
+    env = "demo"
+  }
+  replication_token = "%s"
+  policy = <<EOT
+{"Statement":[{"Sid":"%s"}]}
+EOT
+}
+""" % (C, C)
+with open(os.path.join(out, "import-generated.tf"), "w") as f:
+    f.write(generated)

@@ -25,4 +25,8 @@ var (
 	PlanLogLocked []byte
 	//go:embed plan/apply-log.jsonl
 	ApplyLog []byte
+	//go:embed plan/import.json
+	PlanImport []byte
+	//go:embed plan/import-generated.tf
+	ImportGenerated []byte
 )

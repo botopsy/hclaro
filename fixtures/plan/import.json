@@ -1,0 +1,71 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_changes": [
+    {
+      "address": "aws_s3_bucket.legacy_logs",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "legacy_logs",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "hclaro-legacy-logs",
+          "bucket": "hclaro-legacy-logs"
+        },
+        "after": {
+          "id": "hclaro-legacy-logs",
+          "bucket": "hclaro-legacy-logs"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {},
+        "importing": {
+          "id": "hclaro-legacy-logs"
+        }
+      }
+    },
+    {
+      "address": "aws_s3_bucket.artifacts",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "artifacts",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "hclaro-demo-artifacts",
+          "tags": {
+            "env": "demo"
+          }
+        },
+        "after": {
+          "id": "hclaro-demo-artifacts",
+          "tags": {
+            "env": "demo",
+            "owner": "platform"
+          }
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-05T09:00:00Z",
+  "applyable": true,
+  "complete": true,
+  "errored": false,
+  "output_changes": {}
+}

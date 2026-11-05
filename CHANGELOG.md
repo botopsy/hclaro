@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased — M3 replace and apply (draft)
+## Unreleased — M4 import wizard (draft)
+
+### Import
+
+- New **Import** view: enter an address, import ID, optional provider and a new file name; **Check and preview** validates without writing or running anything and shows the exact import block.
+- Detects an address already in state, an object with the same `id` already managed, a missing resource block, count/for_each key mismatches, an existing import/moved block for the address, existing destination files and credential-shaped IDs.
+- After explicit consent, writes the block to a new root-module file (never overwrites; symlinks refused) and runs a full plan. Optional `-generate-config-out` for root, unindexed addresses writes `<name>_generated.tf`; the review shows a redacted copy.
+- Import plans count imports separately, are applicable even when the import is the only (no-op) change, and always require the typed `apply <workspace>` phrase.
+- Unavailable workspaces (for example remote execution) get a manual recipe; `terraform import` is never run.
+- Capabilities gain `supportsImportBlocks`, `supportsGeneratedConfig`, `canImport` and `importReason`. New routes: `GET /api/v1/imports/options`, `POST /api/v1/imports/preview`, `POST /api/v1/imports`.
+
+## M3 replace and apply (draft)
 
 ### Replace
 
