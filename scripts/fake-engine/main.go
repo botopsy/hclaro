@@ -4,7 +4,15 @@
 // the generated configuration fixture.
 // HCLARO_FAKE_APPLY selects apply behavior: unset (success), "stale" or "fail".
 // HCLARO_FAKE_SPY, when set, names a file that receives each invocation's argv, one
-// NUL-separated line per call, so tests can assert exact flags.
+// NUL-separated line per call, so tests can assert exact flags. With HCLARO_FAKE_SPY_ENV
+// also set, the line is prefixed with "TF_WORKSPACE=<value or unset>" and a NUL.
+//
+// Workspaces: a ".fake-workspaces" file in the working directory holds the exact
+// `workspace list` output (the "* " line is the CLI default); without one the list is
+// "default" and "demo" with "demo" selected. TF_WORKSPACE overrides the selection for every
+// command, like the real engines, and `show -json` prints ".fake-state/<workspace>.json"
+// when that file exists. `workspace select`, `new` and `delete` are refused.
+// Invoked as "tofu", it reports an OpenTofu version.
 package main
 
 import (
@@ -13,6 +21,7 @@ import (
 	"hclaro/fixtures"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -21,17 +30,36 @@ func main() {
 	args := os.Args[1:]
 	if spy := os.Getenv("HCLARO_FAKE_SPY"); spy != "" {
 		if f, err := os.OpenFile(spy, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
-			_, _ = f.WriteString(strings.Join(args, "\x00") + "\n")
+			line := strings.Join(args, "\x00")
+			if os.Getenv("HCLARO_FAKE_SPY_ENV") != "" {
+				ws, ok := os.LookupEnv("TF_WORKSPACE")
+				if !ok {
+					ws = "<unset>"
+				}
+				line = "TF_WORKSPACE=" + ws + "\x00" + line
+			}
+			_, _ = f.WriteString(line + "\n")
 			_ = f.Close()
 		}
 	}
 	switch {
 	case strings.Join(args, " ") == "version -json":
-		fmt.Println(`{"terraform_version":"1.9.8"}`)
+		if strings.HasPrefix(filepath.Base(os.Args[0]), "tofu") {
+			fmt.Println(`{"terraform_version":"1.8.3"}`)
+		} else {
+			fmt.Println(`{"terraform_version":"1.9.8"}`)
+		}
+	case strings.Join(args, " ") == "workspace list":
+		_, _ = os.Stdout.Write(workspaceList())
 	case strings.Join(args, " ") == "workspace show":
-		fmt.Println("demo")
+		fmt.Println(selectedWorkspace())
 	case strings.Join(args, " ") == "show -json":
-		_, _ = os.Stdout.Write(fixtures.State)
+		ws := selectedWorkspace()
+		if b, err := os.ReadFile(filepath.Join(".fake-state", filepath.Base(ws)+".json")); err == nil {
+			_, _ = os.Stdout.Write(b)
+		} else {
+			_, _ = os.Stdout.Write(fixtures.State)
+		}
 	case len(args) == 3 && args[0] == "show" && args[1] == "-json":
 		b, err := os.ReadFile(args[2])
 		if err != nil || !bytes.HasPrefix(b, []byte("{")) {
@@ -54,6 +82,26 @@ func main() {
 	default:
 		refuse()
 	}
+}
+
+func workspaceList() []byte {
+	if b, err := os.ReadFile(".fake-workspaces"); err == nil {
+		return b
+	}
+	return []byte("  default\n* demo\n")
+}
+
+// selectedWorkspace is TF_WORKSPACE when set, otherwise the CLI default from the list.
+func selectedWorkspace() string {
+	if ws := os.Getenv("TF_WORKSPACE"); ws != "" {
+		return ws
+	}
+	for _, line := range strings.Split(string(workspaceList()), "\n") {
+		if strings.HasPrefix(line, "* ") {
+			return strings.TrimSpace(line[2:])
+		}
+	}
+	return "default"
 }
 
 func refuse() {

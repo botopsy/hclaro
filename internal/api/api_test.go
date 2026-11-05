@@ -18,7 +18,7 @@ import (
 func setup() http.Handler {
 	s := workspace.New(workspace.Info{Project: "demo", Initialized: true})
 	s.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo", JSON: fixtures.State}, "terraform")
-	return Handler(s, operations.NewManager(s, nil, ""), fstest.MapFS{"index.html": {Data: []byte("app")}}, "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
+	return Handler(s, operations.NewManager(s, nil, ""), nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
 }
 func request(handler http.Handler, path, host, origin, token, method string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "http://127.0.0.1:9273"+path, nil)

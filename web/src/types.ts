@@ -43,6 +43,7 @@ export type Workspace = {
       importReason?: string;
     };
   };
+  context?: ContextInfo;
   managed: number;
   data: number;
   modules: Module[];
@@ -266,4 +267,72 @@ export type ImportPreview = {
     commands: string[];
     legacy: string;
   };
+};
+
+// Workspace Hub
+export type Diagnostic = {
+  code: string;
+  message: string;
+};
+export type Inspection = {
+  engine?: string;
+  version?: string;
+  workspaces: string[];
+  cliDefault?: string;
+  hiddenWorkspaces: number;
+  inspectedAt: string;
+  diagnostic?: Diagnostic;
+};
+export type ProjectStatus = 'ready' | 'missing' | 'unreadable' | 'not_project' | 'path_changed';
+export type Project = {
+  id: string;
+  alias: string;
+  rootPath: string;
+  enginePreference: '' | 'terraform' | 'tofu';
+  pinned: boolean;
+  addedAt: string;
+  lastOpenedAt?: string;
+  lastWorkspace?: string;
+  status: ProjectStatus;
+  problem?: string;
+  initialized: boolean;
+  backend: string;
+  executionMode: string;
+  providerLock: boolean;
+  launch: boolean;
+  inspection?: Inspection;
+};
+export type ProjectList = {
+  projects: Project[];
+  registry: {
+    status: 'ready' | 'unavailable';
+    notice: string;
+    path: string;
+  };
+  launchRoot?: string;
+  environment: {
+    dataDir: string;
+    dataDirShared: boolean;
+    inheritedWorkspace?: string;
+    workspaceInherited: boolean;
+    cliArgsInherited: boolean;
+  };
+};
+export type ContextInfo = {
+  id: string;
+  projectId: string;
+  alias: string;
+  rootPath: string;
+  engine: string;
+  workspace: string;
+  dataDir: string;
+  createdAt: string;
+};
+export type FolderListing = {
+  path: string;
+  parent?: string;
+  home?: string;
+  project: boolean;
+  entries: string[];
+  truncated: boolean;
 };

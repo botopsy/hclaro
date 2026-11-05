@@ -21,11 +21,18 @@ func Token() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// mutating lists the only routes that accept POST: start a plan, approve a reviewed plan,
-// apply it with that one-time approval, cancel a running operation, preview an import and
-// start one. The import preview has no side effects; it is a POST so the import ID never
-// appears in a URL.
-var mutating = regexp.MustCompile(`^/api/v1/(plans|plans/[0-9a-f]{32}/(approval|apply)|operations/[0-9a-f]{32}/cancel|imports|imports/preview)$`)
+// mutating lists the only routes that accept a body, per method. POST: start a plan,
+// approve a reviewed plan, apply it with that one-time approval, cancel a running
+// operation, preview an import and start one; register, order, inspect and browse Hub
+// projects; open a read context. PATCH and DELETE edit or unregister one Hub project.
+// The import preview and folder browse have no side effects; they are POSTs so the import
+// ID or a local path never appears in a URL. Project inspection and opening a context run
+// read-only engine commands, which GET routes never do.
+var mutating = map[string]*regexp.Regexp{
+	http.MethodPost:   regexp.MustCompile(`^/api/v1/(plans|plans/[0-9a-f]{32}/(approval|apply)|operations/[0-9a-f]{32}/cancel|imports|imports/preview|projects|projects/(order|browse)|projects/[0-9a-f]{32}/inspect|contexts)$`),
+	http.MethodPatch:  regexp.MustCompile(`^/api/v1/projects/[0-9a-f]{32}$`),
+	http.MethodDelete: regexp.MustCompile(`^/api/v1/projects/[0-9a-f]{32}$`),
+}
 
 func equal(got, want string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
@@ -57,7 +64,7 @@ func Guard(host, token, csrf string, next http.Handler) http.Handler {
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
-		case r.Method == http.MethodPost && mutating.MatchString(r.URL.Path):
+		case mutating[r.Method] != nil && mutating[r.Method].MatchString(r.URL.Path):
 			fetchSite := r.Header.Get("Sec-Fetch-Site")
 			if r.Header.Get("Origin") != origin || fetchSite != "" && fetchSite != "same-origin" {
 				http.Error(w, "forbidden local origin", http.StatusForbidden)

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownAZ, Import, ArrowLeft, ArrowRight, Box, RefreshCcw, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Command, Copy, Database, FileCode2, Folder, FolderTree, Layers3, LayoutDashboard, LoaderCircle, LockKeyhole, Monitor, Moon, Network, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Workflow, X } from 'lucide-react';
-import { api } from './api';
-import type { Module, Operation, ReplaceTarget, Resource, ResourcePage, Workspace } from './types';
+import { ArrowDownAZ, Import, ArrowLeft, ArrowRight, Box, RefreshCcw, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Command, Copy, Database, ExternalLink, FileCode2, Folder, FolderKanban, FolderTree, Layers3, LayoutDashboard, LoaderCircle, LockKeyhole, Monitor, Moon, Network, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Workflow, X } from 'lucide-react';
+import { api, ApiError, openInNewTab, post } from './api';
+import type { ContextInfo, Module, Operation, ReplaceTarget, Resource, ResourcePage, Workspace } from './types';
+import { contextPath, isExplorerView, navigate, productionLike, projectPath, useRoute, type Route } from './router';
+import { HubView, ProductionBadge, ProjectView, projectsQuery } from './hub/HubView';
 import { Button } from './components/ui/button';
 import { Drawer } from './components/Drawer';
 import { JsonTree } from './components/JsonTree';
@@ -60,8 +62,22 @@ const navigation = [{
   name: 'Settings',
   icon: Settings2
 }] as const;
+// Each project workspace gets its own Workbench instance (keyed below), so filters,
+// selections and cached queries can never carry over from another context.
 export default function App() {
-  const [view, setView] = useState<View>('Resources');
+  const route = useRoute();
+  return <Workbench key={route.kind === 'context' ? `${route.projectId}/${route.workspace}` : 'launch'} route={route} />;
+}
+function Workbench({
+  route
+}: {
+  route: Route;
+}) {
+  const scoped = route.kind === 'context' ? route : undefined;
+  const onHub = route.kind === 'hub' || route.kind === 'project';
+  const [localView, setViewState] = useState<View>(scoped ? scoped.view : 'Resources');
+  // In a Hub workspace the URL holds the explorer view, so back and forward work.
+  const view: View = scoped && localView !== 'Settings' ? scoped.view : localView;
   const [preferences, setPreferences] = useState(readPreferences);
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -80,12 +96,43 @@ export default function App() {
   const [pendingReplace, setPendingReplace] = useState<ReplaceTarget[]>();
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLElement>(null);
+  // A Hub workspace is opened explicitly (it runs CLI reads); "Read again" opens a fresh one.
+  const [generation, setGeneration] = useState(0);
+  const opened = useQuery({
+    queryKey: ['context-open', scoped?.projectId, scoped?.workspace, generation],
+    queryFn: () => post<ContextInfo>('contexts', {
+      projectId: scoped!.projectId,
+      workspace: scoped!.workspace,
+      reload: generation > 0
+    }),
+    enabled: !!scoped
+  });
+  const projects = useQuery({
+    ...projectsQuery,
+    enabled: !!scoped
+  });
+  const project = projects.data?.projects.find(p => p.id === scoped?.projectId);
+  // Launch routes keep their original paths; a Hub context reads only through its own ID.
+  const base = scoped ? opened.data ? `contexts/${opened.data.id}` : undefined : '';
   const workspace = useQuery({
-    queryKey: ['workspace'],
-    queryFn: () => api<Workspace>('workspace'),
+    queryKey: ['workspace', base],
+    queryFn: () => api<Workspace>(base || 'workspace'),
+    enabled: base !== undefined,
     refetchInterval: q => q.state.data?.status === 'loading' ? 700 : false
   });
   const w = workspace.data;
+  const noLaunch = !scoped && w?.diagnostic?.code === 'no_launch_project';
+  const closed = workspace.error instanceof ApiError && workspace.error.code === 'context_closed';
+  function setView(next: View) {
+    setViewState(next);
+    if (scoped && isExplorerView(next)) navigate(contextPath(scoped.projectId, scoped.workspace, next), true);
+    else if (onHub) navigate('/');
+  }
+  useEffect(() => {
+    // Started from the Hub, there is no launch project to show: go to the Hub instead.
+    if (noLaunch && route.kind === 'launch' && view !== 'Settings') navigate('/projects', true);
+  }, [noLaunch, route.kind, view]);
+  const reread = () => setGeneration(g => g + 1);
   const operations = useQuery({
     queryKey: ['operations'],
     queryFn: () => api<{ operations: Operation[] }>('operations'),
@@ -104,14 +151,14 @@ export default function App() {
   });
   if (module !== undefined) parameters.set('module', module);
   const resources = useQuery({
-    queryKey: ['resources', parameters.toString()],
-    queryFn: () => api<ResourcePage>(`resources?${parameters}`),
-    enabled: ready
+    queryKey: ['resources', base, parameters.toString()],
+    queryFn: () => api<ResourcePage>(`${base ? `${base}/` : ''}resources?${parameters}`),
+    enabled: ready && base !== undefined
   });
   const detail = useQuery({
-    queryKey: ['resource', selected],
-    queryFn: () => api<Resource>(`resources/${selected}`),
-    enabled: !!selected
+    queryKey: ['resource', base, selected],
+    queryFn: () => api<Resource>(`${base ? `${base}/` : ''}resources/${selected}`),
+    enabled: !!selected && base !== undefined
   });
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -133,6 +180,7 @@ export default function App() {
     return () => media.removeEventListener('change', apply);
   }, [preferences]);
   useEffect(() => {
+    if (onHub) return;
     function keyboard(event: globalThis.KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -146,7 +194,7 @@ export default function App() {
     }
     window.addEventListener('keydown', keyboard);
     return () => window.removeEventListener('keydown', keyboard);
-  }, []);
+  }, [onHub]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [page, query, provider, type, mode, module, sort]);
@@ -189,36 +237,48 @@ export default function App() {
         e.preventDefault();
         setView('Overview');
       }} aria-label="Hclaro overview"><span className="brand-mark"><span /><span /><span /></span><span>hclaro<span className="alpha">ALPHA</span></span></a>
-   <div className="project-tile"><span className="project-icon"><FileCode2 size={19} /></span><div><strong>{w?.info.project || 'Local workspace'}</strong><span>Infrastructure workspace</span></div></div>
+   <button className={`nav-item ${onHub ? 'active' : ''}`} aria-label="Projects" aria-current={route.kind === 'hub' ? 'page' : undefined} onClick={() => navigate('/projects')}><FolderKanban size={17} /><span>Projects</span></button>
+   <div className="project-tile"><span className="project-icon"><FileCode2 size={19} /></span><div><strong>{scoped ? project?.alias || opened.data?.alias || 'Hub project' : noLaunch ? 'No project open' : w?.info.project || 'Local workspace'}</strong><span>{scoped ? `Hub workspace · ${scoped.workspace}` : noLaunch ? 'Choose one in Projects' : 'Opened from terminal'}</span></div></div>
    <div className="nav-label">WORKSPACE</div>
    <nav>{navigation.map(({
           name,
           icon: Icon
-        }) => <button key={name} aria-label={name} className={`nav-item ${view === name ? 'active' : ''}`} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>)}</nav>
+        }) => {
+          const unavailable = noLaunch && name !== 'Settings';
+          const active = !onHub && view === name;
+          return <button key={name} aria-label={name} disabled={unavailable} title={unavailable ? 'Open a project from Projects first.' : undefined} className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>;
+        })}</nav>
    <div className="nav-label future-label">WORKFLOWS</div>
-   {([['Plans', Workflow], ['Import', Import], ['Operations', Terminal]] as const).map(([name, Icon]) => <button key={name} aria-label={name} className={`nav-item ${view === name ? 'active' : ''}`} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Operations' && runningOperation && <span className="nav-count running-dot" aria-label="Operation running"><LoaderCircle className="spin" size={11} /></span>}</button>)}
+   {([['Plans', Workflow], ['Import', Import], ['Operations', Terminal]] as const).map(([name, Icon]) => {
+        // Plans, applies and imports belong to the project Hclaro was launched with.
+        const unavailable = !!scoped || noLaunch;
+        const active = !onHub && view === name;
+        return <button key={name} aria-label={name} disabled={unavailable} title={scoped ? 'Hub workspaces are read-only. Plans, applies and imports run only for the project opened from the terminal.' : noLaunch ? 'Available for a project opened from the terminal.' : undefined} className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Operations' && runningOperation && <span className="nav-count running-dot" aria-label="Operation running"><LoaderCircle className="spin" size={11} /></span>}</button>;
+      })}
    <div className="sidebar-bottom"><div className="local-note"><ShieldCheck size={18} /><div><strong>Local by design</strong><span>Your state stays on your machine.</span></div></div><div className="sidebar-foot"><span><span className="dot" />Alpha</span><span>v0.1</span></div></div>
   </aside>
   <div className="workspace-shell">
-   <header className="topbar"><div className="breadcrumbs"><Folder size={15} /><span>{w?.info.project || 'Workspace'}</span><ChevronRight size={13} /><strong>{view}</strong></div><div className="topbar-actions"><Button variant="ghost" size="small" aria-label="Find a resource" onClick={() => {
+   <header className="topbar"><nav className="breadcrumbs" aria-label="Breadcrumb"><Folder size={15} />{onHub || scoped ? <><button className="crumb" onClick={() => navigate('/projects')}>Projects</button>{route.kind !== 'hub' && <><ChevronRight size={13} />{scoped ? <button className="crumb" onClick={() => navigate(projectPath(scoped.projectId))}>{project?.alias || opened.data?.alias || 'Project'}</button> : <strong>{projects.data?.projects.find(p => p.id === (route.kind === 'project' ? route.projectId : ''))?.alias || 'Project'}</strong>}</>}{scoped && <><ChevronRight size={13} /><span>{scoped.workspace}</span><ChevronRight size={13} /><strong>{view}</strong></>}</> : <><span>{w?.info.project || 'Workspace'}</span><ChevronRight size={13} /><strong>{view}</strong></>}</nav><div className="topbar-actions">{!onHub && !noLaunch && <Button variant="ghost" size="small" aria-label="Find a resource" onClick={() => {
             setView('Resources');
             requestAnimationFrame(() => searchRef.current?.focus());
-          }}><Search size={14} /><span className="hide-small">Search</span></Button><span className="session-label"><LockKeyhole size={12} />Private local session</span><Button variant="ghost" size="icon" aria-label="Toggle light and dark theme" onClick={() => changePreference({
+          }}><Search size={14} /><span className="hide-small">Search</span></Button>}<span className="session-label"><LockKeyhole size={12} />Private local session</span><Button variant="ghost" size="icon" aria-label="Toggle light and dark theme" onClick={() => changePreference({
             theme: document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
           })}><Sun className="theme-to-light" size={17} /><Moon className="theme-to-dark" size={17} /></Button></div></header>
-   <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" /><div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div><span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div><span className="context-spacer" />{runningOperation && <button className="context-running" onClick={() => setView('Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>
+   {!onHub && !noLaunch && <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" />{scoped ? <div className="context-item"><Layers3 size={13} /><label htmlFor="workspace-switch">Workspace</label><select id="workspace-switch" className="workspace-switch" value={scoped.workspace} onChange={e => navigate(contextPath(scoped.projectId, e.target.value, isExplorerView(view) ? view : 'Resources'))}>{Array.from(new Set([scoped.workspace, ...(project?.inspection?.workspaces || [])])).map(ws => <option key={ws} value={ws}>{ws}{ws === project?.inspection?.cliDefault ? ' (CLI default)' : ''}</option>)}</select>{productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}</div> : <div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div>}<span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div><span className="context-spacer" />{scoped && <><Button variant="ghost" size="small" onClick={reread} disabled={w?.status === 'loading'} title="Read this workspace's recorded state again. No refresh is run."><RefreshCcw size={12} />Read again</Button><Button variant="ghost" size="small" onClick={() => openInNewTab(contextPath(scoped.projectId, scoped.workspace, isExplorerView(view) ? view : 'Resources'))} title="Open this workspace in a new browser tab"><ExternalLink size={12} />New tab</Button></>}{!scoped && runningOperation && <button className="context-running" onClick={() => setView('Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>}
    <main id="main-content" tabIndex={-1} className="main-content">
-    <div className="page-heading"><div><div className="eyebrow">YOUR INFRASTRUCTURE, IN FOCUS</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : 'Read-only'}</span></div>
-    {view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : view === 'Plans' ? <PlansView project={w?.info.project || 'this project'} workspaceStatus={w?.status} planId={planId} choosePlan={setPlanId} replace={pendingReplace} clearReplace={() => setPendingReplace(undefined)} copy={copy} /> : view === 'Import' ? <ImportView workspaceStatus={w?.status} copy={copy} onStarted={() => {
+    {onHub ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>{route.kind === 'hub' ? 'Projects' : 'Project workspaces'}</h1><p>{route.kind === 'hub' ? 'Every Terraform and OpenTofu root you work with, in one place.' : 'Open a CLI workspace to read its recorded state in this tab.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />Read-only</span></div> : <div className="page-heading"><div><div className="eyebrow">{scoped ? `HUB WORKSPACE · ${scoped.workspace.toUpperCase()}` : 'YOUR INFRASTRUCTURE, IN FOCUS'}</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : 'Read-only'}</span></div>}
+    {route.kind === 'hub' ? <HubView notify={setNotice} /> : route.kind === 'project' ? <ProjectView id={route.projectId} /> : view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : view === 'Plans' ? <PlansView project={w?.info.project || 'this project'} workspaceStatus={w?.status} planId={planId} choosePlan={setPlanId} replace={pendingReplace} clearReplace={() => setPendingReplace(undefined)} copy={copy} /> : view === 'Import' ? <ImportView workspaceStatus={w?.status} copy={copy} onStarted={() => {
           setPlanId(undefined);
           setView('Plans');
           void operations.refetch();
         }} /> : view === 'Operations' ? <OperationsView openPlan={id => {
           setPlanId(id);
           setView('Plans');
-        }} /> : workspace.isPending || w?.status === 'loading' ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Reading your workspace</h2><p>Inspecting recorded state through the local CLI. No plan or refresh is run.</p></div> : workspace.error ? <ErrorState message={workspace.error.message} retry={() => {
+        }} /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
+          void opened.refetch();
+        }} retryLabel="Try again" /> : opened.isPending && scoped || workspace.isPending || w?.status === 'loading' ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Reading your workspace</h2><p>{scoped ? <>Reading the recorded state of <strong>{scoped.workspace}</strong> through the local CLI with a per-command <code>TF_WORKSPACE</code>. No plan, refresh or workspace selection is run.</> : 'Inspecting recorded state through the local CLI. No plan or refresh is run.'}</p></div> : workspace.error ? <ErrorState message={workspace.error.message} retry={closed ? reread : () => {
           void workspace.refetch();
-        }} /> : w?.diagnostic ? <ErrorState title={w.diagnostic.code === 'uninitialized' ? 'Initialize this workspace first' : w.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspace needs attention'} message={w.diagnostic.message} /> : w && <>
+        }} retryLabel={closed ? 'Open again' : undefined} /> : w?.diagnostic ? <ErrorState title={w.diagnostic.code === 'uninitialized' ? 'Initialize this workspace first' : w.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspace needs attention'} message={w.diagnostic.message} retry={scoped ? reread : undefined} retryLabel="Read again" /> : w && <>
      {view === 'Resources' && <>
       <div className="explorer-toolbar"><div className="search-field"><Search size={16} /><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search resources, addresses, providers…" aria-label="Search resources" /><kbd><Command size={10} />K</kbd>{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div><Button variant="outline" aria-label="Toggle module tree" aria-pressed={treeVisible} onClick={() => setTreeVisible(!treeVisible)}><FolderTree size={15} /><span className="hide-small">Modules</span></Button><Button variant="outline" aria-label={sort === 'asc' ? 'Sort descending' : 'Sort ascending'} onClick={() => {
                 setSort(sort === 'asc' ? 'desc' : 'asc');
@@ -242,7 +302,7 @@ export default function App() {
                 }} /> : resources.data?.total === 0 ? <div className="empty-state"><Box size={28} /><h2>{filtered ? 'No matching resources' : 'A clean slate'}</h2><p>{filtered ? 'Try a different search or clear your filters.' : 'The state contains no resource instances. Hclaro reads state without creating resources.'}</p>{filtered && <Button variant="outline" onClick={resetFilters}>Clear filters</Button>}</div> : <>{replaceSelection.length > 0 && <div className="selection-bar" role="region" aria-label="Replacement selection"><RefreshCcw size={14} /><span><strong>{replaceSelection.length}</strong> instance{replaceSelection.length === 1 ? '' : 's'} selected for replacement{replaceSelection.length >= maxReplace && ` (maximum ${maxReplace})`}</span><Button size="small" disabled={!w.info.capabilities.canPlan || !!runningOperation} title={w.info.capabilities.canPlan ? undefined : w.info.capabilities.planReason} onClick={() => {
                   setPendingReplace(replaceSelection);
                   setView('Plans');
-                }}>Plan replacement…</Button><Button variant="ghost" size="small" onClick={() => setReplaceSelection([])}><X size={12} />Clear</Button></div>}<table className="resources-table"><thead><tr><th scope="col" className="select-column"><span className="sr-only">Select for replacement</span></th><th scope="col">Resource</th><th scope="col" className="provider-column">Provider</th><th scope="col">Mode</th></tr></thead><tbody>{resources.data?.resources.map(r => <ResourceRow key={r.id} resource={r} selected={selected === r.id} onSelect={() => setSelected(r.id)} chosen={replaceSelection.some(c => c.id === r.id)} onChoose={() => toggleReplace(r)} />)}</tbody></table><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
+                }}>Plan replacement…</Button><Button variant="ghost" size="small" onClick={() => setReplaceSelection([])}><X size={12} />Clear</Button></div>}<table className="resources-table"><thead><tr><th scope="col" className="select-column"><span className="sr-only">Select for replacement</span></th><th scope="col">Resource</th><th scope="col" className="provider-column">Provider</th><th scope="col">Mode</th></tr></thead><tbody>{resources.data?.resources.map(r => <ResourceRow key={r.id} resource={r} selected={selected === r.id} onSelect={() => setSelected(r.id)} selectable={!scoped} chosen={replaceSelection.some(c => c.id === r.id)} onChoose={() => toggleReplace(r)} />)}</tbody></table><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
        </section>
        {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} />}
       </div>
@@ -261,7 +321,7 @@ export default function App() {
      
     </>}
    </main>
-   <footer className="statusbar"><span><ShieldCheck size={12} />{w?.info.capabilities.canApplySavedPlan ? 'Changes only from a reviewed, confirmed plan' : 'Read-only · No infrastructure changes'}</span><span>{ready ? `${total} instances in state` : 'Waiting for workspace'}<span className="footer-divider">/</span>127.0.0.1</span></footer>
+   <footer className="statusbar"><span><ShieldCheck size={12} />{!onHub && w?.info.capabilities.canApplySavedPlan ? 'Changes only from a reviewed, confirmed plan' : 'Read-only · No infrastructure changes'}</span><span>{onHub ? 'Workspace Hub' : ready ? `${total} instances in state` : 'Waiting for workspace'}<span className="footer-divider">/</span>127.0.0.1</span></footer>
   </div>
   {notice && <div role="status" className="toast"><Check size={15} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={13} /></button></div>}
  </div>;
@@ -269,24 +329,28 @@ export default function App() {
 function ErrorState({
   title = 'Unable to read workspace',
   message,
-  retry
+  retry,
+  retryLabel = 'Retry connection'
 }: {
   title?: string;
   message: string;
   retry?: () => void;
+  retryLabel?: string;
 }) {
-  return <div className="empty-state error-state" role="alert"><CircleHelp size={28} /><h2>{title}</h2><p>{message}</p>{retry && <Button variant="outline" onClick={retry}>Retry connection</Button>}<span className="safe-note"><ShieldCheck size={13} />No infrastructure was changed.</span></div>;
+  return <div className="empty-state error-state" role="alert"><CircleHelp size={28} /><h2>{title}</h2><p>{message}</p>{retry && <Button variant="outline" onClick={retry}>{retryLabel}</Button>}<span className="safe-note"><ShieldCheck size={13} />No infrastructure was changed.</span></div>;
 }
 function ResourceRow({
   resource: r,
   selected,
   onSelect,
+  selectable,
   chosen,
   onChoose
 }: {
   resource: Resource;
   selected: boolean;
   onSelect: () => void;
+  selectable: boolean;
   chosen: boolean;
   onChoose: () => void;
 }) {
@@ -298,7 +362,7 @@ function ResourceRow({
     buttons[Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus();
   }
   // Only managed instances can be replaced; data sources and whole modules cannot.
-  return <tr className={selected ? 'selected' : ''}><td className="select-column">{r.mode === 'managed' && <input type="checkbox" checked={chosen} onChange={onChoose} aria-label={`Select ${r.address} for replacement`} />}</td><td><button className="resource-button" data-resource-id={r.id} aria-pressed={selected} onClick={onSelect} onKeyDown={key}><span className={`resource-icon ${r.mode === 'data' ? 'data-icon' : ''}`}>{r.mode === 'data' ? <Database size={17} /> : <Box size={17} />}</span><span className="resource-text"><strong>{r.name}{r.index !== undefined && <span className="instance-key">[{typeof r.index === 'string' ? JSON.stringify(r.index) : String(r.index)}]</span>}</strong><span className="resource-type">{r.type}</span><span className="resource-address mono" title={r.address}>{r.address}</span></span></button></td><td className="provider-column"><span className="provider-label"><span className="provider-dot" />{providerName(r.provider)}</span></td><td><span className={`mode-badge ${r.mode}`}>{r.mode === 'data' ? 'Data' : 'Managed'}</span></td></tr>;
+  return <tr className={selected ? 'selected' : ''}><td className="select-column">{selectable && r.mode === 'managed' && <input type="checkbox" checked={chosen} onChange={onChoose} aria-label={`Select ${r.address} for replacement`} />}</td><td><button className="resource-button" data-resource-id={r.id} aria-pressed={selected} onClick={onSelect} onKeyDown={key}><span className={`resource-icon ${r.mode === 'data' ? 'data-icon' : ''}`}>{r.mode === 'data' ? <Database size={17} /> : <Box size={17} />}</span><span className="resource-text"><strong>{r.name}{r.index !== undefined && <span className="instance-key">[{typeof r.index === 'string' ? JSON.stringify(r.index) : String(r.index)}]</span>}</strong><span className="resource-type">{r.type}</span><span className="resource-address mono" title={r.address}>{r.address}</span></span></button></td><td className="provider-column"><span className="provider-label"><span className="provider-dot" />{providerName(r.provider)}</span></td><td><span className={`mode-badge ${r.mode}`}>{r.mode === 'data' ? 'Data' : 'Managed'}</span></td></tr>;
 }
 function ModuleTree({
   modules,
@@ -373,7 +437,7 @@ function Overview({
         label,
         value,
         icon: Icon
-      }) => <div key={label} className="stat"><span>{label}<Icon size={16} /></span><strong>{value.toLocaleString()}</strong><small>Recorded in state</small></div>)}</div><div className="overview-columns"><section className="surface distribution"><div className="surface-heading"><div><h2>Resource distribution</h2><p>Instances by resource type</p></div><Braces size={18} /></div>{Object.entries(w.types).sort((a, b) => b[1] - a[1]).map(([type, count]) => <button className="distribution-row" key={type} onClick={() => chooseType(type)}><span><span className="mono">{type}</span><strong>{count}</strong></span><progress value={count} max={w.managed + w.data} aria-label={`${type}: ${count} instances`} /></button>)}{w.managed + w.data === 0 && <p className="empty-description">No resource instances in this snapshot.</p>}</section><section className="surface workspace-info"><div className="surface-heading"><div><h2>Workspace context</h2><p>Connected through your local CLI</p></div><Terminal size={18} /></div><dl className="metadata"><div><dt>Project</dt><dd>{w.info.project}</dd></div><div><dt>Workspace</dt><dd>{w.info.workspace}</dd></div><div><dt>Engine</dt><dd>{w.info.engine} {w.info.version}</dd></div><div><dt>Backend type</dt><dd>{w.info.backend}</dd></div><div><dt>Execution mode</dt><dd>{w.info.executionMode}</dd></div><div><dt>Provider lockfile</dt><dd>{w.info.providerLock ? 'Present' : 'Not detected'}</dd></div><div><dt>Snapshot</dt><dd>{timeLabel(w.capturedAt)}</dd></div></dl><Button variant="outline" onClick={browse}>Explore resources<ArrowRight size={14} /></Button></section></div><div className="workspace-warnings">{w.info.warnings.map(warning => <div className="info-note" key={warning}><CircleHelp size={15} /><span>{warning}</span></div>)}</div></div>;
+      }) => <div key={label} className="stat"><span>{label}<Icon size={16} /></span><strong>{value.toLocaleString()}</strong><small>Recorded in state</small></div>)}</div><div className="overview-columns"><section className="surface distribution"><div className="surface-heading"><div><h2>Resource distribution</h2><p>Instances by resource type</p></div><Braces size={18} /></div>{Object.entries(w.types).sort((a, b) => b[1] - a[1]).map(([type, count]) => <button className="distribution-row" key={type} onClick={() => chooseType(type)}><span><span className="mono">{type}</span><strong>{count}</strong></span><progress value={count} max={w.managed + w.data} aria-label={`${type}: ${count} instances`} /></button>)}{w.managed + w.data === 0 && <p className="empty-description">No resource instances in this snapshot.</p>}</section><section className="surface workspace-info"><div className="surface-heading"><div><h2>Workspace context</h2><p>Connected through your local CLI</p></div><Terminal size={18} /></div><dl className="metadata"><div><dt>Project</dt><dd>{w.info.project}</dd></div>{w.context && <div><dt>Root folder</dt><dd className="mono">{w.context.rootPath}</dd></div>}<div><dt>Workspace</dt><dd>{w.info.workspace}{w.context && ' (this tab only)'}</dd></div>{w.context && <div><dt>Data directory</dt><dd className="mono">{w.context.dataDir}</dd></div>}<div><dt>Engine</dt><dd>{w.info.engine} {w.info.version}</dd></div><div><dt>Backend type</dt><dd>{w.info.backend}</dd></div><div><dt>Execution mode</dt><dd>{w.info.executionMode}</dd></div><div><dt>Provider lockfile</dt><dd>{w.info.providerLock ? 'Present' : 'Not detected'}</dd></div><div><dt>Snapshot</dt><dd>{timeLabel(w.capturedAt)}</dd></div></dl><Button variant="outline" onClick={browse}>Explore resources<ArrowRight size={14} /></Button></section></div><div className="workspace-warnings">{w.info.warnings.map(warning => <div className="info-note" key={warning}><CircleHelp size={15} /><span>{warning}</span></div>)}</div></div>;
 }
 function SettingsPanel({
   preferences,
@@ -391,5 +455,5 @@ function SettingsPanel({
         density: e.target.value as Preferences['density']
       })}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div className="setting-row"><div><h2>Default grouping</h2><p>Browse by module or use a flat resource list.</p></div><select aria-label="Default grouping" value={preferences.grouping} onChange={e => changePreference({
         grouping: e.target.value as Preferences['grouping']
-      })}><option value="module">Module tree</option><option value="flat">Flat list</option></select></div><div className="settings-security"><ShieldCheck size={23} /><div><h2>Your machine. Your infrastructure.</h2><p>No telemetry, cloud accounts, or external services. Only display preferences are saved locally. To change engines, restart with <code>--engine terraform</code> or <code>--engine tofu</code>.</p></div></div></div>;
+      })}><option value="module">Module tree</option><option value="flat">Flat list</option></select></div><div className="settings-security"><ShieldCheck size={23} /><div><h2>Your machine. Your infrastructure.</h2><p>No telemetry, cloud accounts, or external services. Only display preferences are saved in this browser. Hub projects are saved as paths and names in your user configuration directory. To change engines, restart with <code>--engine terraform</code> or <code>--engine tofu</code>.</p></div></div></div>;
 }

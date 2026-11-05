@@ -23,3 +23,16 @@ func TestArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestHubArguments(t *testing.T) {
+	o, err := Parse(nil, io.Discard)
+	if err != nil || o.Hub || o.PathSet || o.Path != "." {
+		t.Fatalf("%+v %v", o, err)
+	}
+	if o, _ := Parse([]string{"--hub"}, io.Discard); !o.Hub || o.PathSet {
+		t.Fatalf("%+v", o)
+	}
+	if o, _ := Parse([]string{"--hub", "--path", "."}, io.Discard); !o.Hub || !o.PathSet {
+		t.Fatalf("%+v", o)
+	}
+}

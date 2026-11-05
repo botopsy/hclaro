@@ -54,10 +54,37 @@ type Snapshot struct {
 type Store struct {
 	mu       sync.RWMutex
 	snapshot Snapshot
+	// scope is set for Hub contexts; see NewScoped.
+	scope *Scope
+}
+
+// Scope pins a Hub context: the engine must report Workspace (proving the per-child
+// TF_WORKSPACE was honored) before anything is published, and plan, apply and import
+// capabilities stay off with ReadOnlyReason.
+type Scope struct {
+	Workspace      string
+	ReadOnlyReason string
+	// Check runs after the version and initialization checks and before the workspace is
+	// read, for example to confirm the workspace exists. Verify runs just before a snapshot
+	// is published, for example to confirm the project directory did not change.
+	Check  func(context.Context) *Diagnostic
+	Verify func() *Diagnostic
 }
 
 func New(info Info) *Store {
 	return &Store{snapshot: Snapshot{Status: "loading", Info: info, Index: state.Empty()}}
+}
+
+// NoProject is the launch store when Hclaro starts with only the Workspace Hub.
+func NoProject() *Store {
+	return &Store{snapshot: Snapshot{Status: "error", Info: Info{Backend: "unknown", ExecutionMode: "unsupported", Warnings: []string{}}, Index: state.Empty(), Diagnostic: &Diagnostic{"no_launch_project", "Hclaro was started without a project. Open one from the Workspace Hub."}}}
+}
+
+// NewScoped creates a read-only store for one Hub project and workspace.
+func NewScoped(info Info, scope Scope) *Store {
+	s := New(info)
+	s.scope = &scope
+	return s
 }
 func (s *Store) Get() Snapshot         { s.mu.RLock(); defer s.mu.RUnlock(); return s.snapshot }
 func (s *Store) set(snapshot Snapshot) { s.mu.Lock(); defer s.mu.Unlock(); s.snapshot = snapshot }
@@ -161,12 +188,20 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	snap.Index = state.Empty()
 	snap.Info.Capabilities = Capabilities{}
 	s.set(snap)
+	// The launch project is re-read by restarting; Hub contexts can be read again in the UI.
+	again := "restart Hclaro"
+	if s.scope != nil {
+		again = "read this workspace again"
+	}
 	fail := func(code, message string) {
 		snap.Status = "error"
 		snap.Index = state.Empty()
 		// A project without recorded state can still be planned; other failures cannot.
 		planning := snap.Info.Capabilities
 		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above and restart Hclaro.", ApplyReason: "Applying needs a readable workspace.", ImportReason: "Importing needs a readable workspace. Resolve the issue above and restart Hclaro."}
+		if s.scope != nil {
+			snap.Info.Capabilities = s.readOnly()
+		}
 		if code == "state_absent" {
 			snap.Info.Capabilities = planning
 		}
@@ -174,13 +209,13 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		s.set(snap)
 	}
 	if adapter == nil {
-		fail("missing_cli", "Terraform/OpenTofu was not found. Install a supported CLI on PATH and restart, or choose --engine terraform / --engine tofu.")
+		fail("missing_cli", "Terraform/OpenTofu was not found. Install a supported CLI on PATH and "+again+", or choose --engine terraform / --engine tofu.")
 		return
 	}
 	version, err := adapter.Version(ctx)
 	if err != nil {
 		if errors.Is(err, engine.ErrUnsafeArgs) {
-			fail("unsafe_cli_args", "Inherited TF_CLI_ARGS settings contain unsupported flags. Only -no-color is accepted. Remove the injected flags for version/workspace/show and restart. No values or flags were logged.")
+			fail("unsafe_cli_args", "Inherited TF_CLI_ARGS settings contain unsupported flags. Only -no-color is accepted. Remove the injected flags for version/workspace/show and restart Hclaro. No values or flags were logged.")
 			return
 		}
 		fail("engine_version", "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13 and check the executable on PATH.")
@@ -189,8 +224,14 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	snap.Info.Version = version
 	s.set(snap)
 	if !snap.Info.Initialized {
-		fail("uninitialized", "Backend initialization was not detected. Run the selected engine’s init command yourself in this project, then restart Hclaro. Nothing was initialized automatically.")
+		fail("uninitialized", "Backend initialization was not detected. Run the selected engine’s init command yourself in this project, then "+again+". Nothing was initialized automatically.")
 		return
+	}
+	if s.scope != nil && s.scope.Check != nil {
+		if d := s.scope.Check(ctx); d != nil {
+			fail(d.Code, d.Message)
+			return
+		}
 	}
 	name, err := adapter.Workspace(ctx)
 	if err != nil {
@@ -198,7 +239,11 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace settings and restart. Only -no-color is accepted.")
 			return
 		}
-		fail("workspace_error", "Unable to determine the active workspace. Check backend initialization and workspace selection with the CLI, then restart Hclaro.")
+		fail("workspace_error", "Unable to determine the active workspace. Check backend initialization and workspace selection with the CLI, then "+again+".")
+		return
+	}
+	if s.scope != nil && name != s.scope.Workspace {
+		fail("workspace_mismatch", "The engine reported a different workspace than the one selected, so nothing was read. TF_WORKSPACE may be ignored by this engine or backend; check the workspace with the CLI.")
 		return
 	}
 	snap.Info.Workspace = name
@@ -235,6 +280,11 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	default:
 		caps.CanImport = true
 	}
+	if s.scope != nil {
+		keep := caps.SupportsImportBlocks
+		*caps = s.readOnly()
+		caps.SupportsImportBlocks, caps.SupportsGeneratedConfig = keep, keep
+	}
 	s.set(snap)
 	input, err := adapter.State(ctx)
 	if err != nil {
@@ -242,17 +292,23 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_show settings and restart. Only -no-color is accepted; output-file overrides could persist raw secrets.")
 			return
 		}
-		fail("state_unavailable", "State is unavailable. Check backend access, credentials, SSO/VPN, and installed provider schemas with the CLI, then restart. No refresh was run.")
+		fail("state_unavailable", "State is unavailable. Check backend access, credentials, SSO/VPN, and installed provider schemas with the CLI, then "+again+". No refresh was run.")
 		return
 	}
 	idx, err := state.Parse(input)
 	if errors.Is(err, state.ErrNoState) {
-		fail("state_absent", "No state snapshot has been recorded. This is different from an empty snapshot. Hclaro does not create or refresh state; use your normal CLI workflow, then restart.")
+		fail("state_absent", "No state snapshot has been recorded. This is different from an empty snapshot. Hclaro does not create or refresh state; use your normal CLI workflow, then "+again+".")
 		return
 	}
 	if err != nil {
 		fail("state_format", "State output could not be safely decoded. The format may be unsupported, oversized, or contain invalid records. No state data was returned.")
 		return
+	}
+	if s.scope != nil && s.scope.Verify != nil {
+		if d := s.scope.Verify(); d != nil {
+			fail(d.Code, d.Message)
+			return
+		}
 	}
 	snap.Info.Capabilities.CanReadState = true
 	snap.Status = "ready"
@@ -262,6 +318,11 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	snap.CapturedAt = time.Now().UTC().Format(time.RFC3339)
 	snap.Index = idx
 	s.set(snap)
+}
+
+func (s *Store) readOnly() Capabilities {
+	r := s.scope.ReadOnlyReason
+	return Capabilities{PlanReason: r, ApplyReason: r, ImportReason: r}
 }
 
 var (

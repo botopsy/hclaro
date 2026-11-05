@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Workspace Hub (M5, draft)
+
+- New **Projects** view, reachable from every screen: register Terraform/OpenTofu root folders by typed path or with a one-folder-at-a-time folder chooser; rename, pin, reorder and remove them; see status, initialization, backend type, engine version, workspace count and last-opened time. Removing forgets the entry only. Moved or deleted folders stay listed with **Repair path**.
+- The registry is a versioned `projects.json` in the per-user configuration directory (`HCLARO_CONFIG_DIR` overrides it), written atomically. Corrupt files are moved aside; newer or unreadable files are never overwritten.
+- Opening a project lists its CLI workspaces with `workspace list` and marks the CLI default. Opening a workspace reads its recorded state read-only with a per-command `TF_WORKSPACE`; `workspace select` never runs and the terminal's workspace is unchanged. Each browser tab holds its own project and workspace (`/projects/<id>/workspaces/<name>/resources`), with a workspace switcher, **New tab** and **Read again**.
+- Hub workspaces are read-only. Plans, applies and imports remain for the project Hclaro was launched with.
+- `hclaro --hub` opens the Hub; `hclaro` outside a project opens the Hub instead of failing. `--path` keeps its behavior, including failing for an explicit path that is not a project.
+- An absolute `TF_DATA_DIR` disables Hub reads (it would be shared by every project); an inherited `TF_WORKSPACE` is reported and replaced only in Hub children.
+- New routes: `GET/POST /api/v1/projects`, `PATCH/DELETE /api/v1/projects/{id}`, `POST /api/v1/projects/order`, `POST /api/v1/projects/{id}/inspect`, `POST /api/v1/projects/browse`, `POST /api/v1/contexts`, `GET /api/v1/contexts/{id}[/resources[/{id}]]`.
+- `make demo-hub` runs the Hub with synthetic projects and a throwaway registry.
+
 ## 0.1.0-alpha.4 — 2026-11-05
 
 Replace, saved-plan apply and import are new in this release. They have been tested only against synthetic engine output, not a real Terraform/OpenTofu engine; treat them as drafts and use them only on disposable workspaces.
