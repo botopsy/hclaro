@@ -1008,12 +1008,50 @@ kbd {
   display: flex;
 }
 
+/* Details drawer: docked to the window's right edge over the list, which stays usable.
+   Width is set inline by Drawer (resizable, remembered). */
 .inspector {
+  background: var(--surface);
   border-left: 1px solid var(--border);
-  flex-shrink: 0;
-  width: 345px;
-  animation: .15s reveal;
+  box-shadow: -18px 0 40px -12px rgb(0 0 0 / .35);
+  z-index: 40;
+  max-width: calc(100vw - 24px);
+  animation: .18s drawer-in;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
   overflow: auto;
+}
+
+@keyframes drawer-in {
+  from {
+    opacity: .4;
+    transform: translateX(32px);
+  }
+}
+
+.drawer-resize {
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+  width: 8px;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  margin-left: -4px;
+}
+
+.drawer-resize:hover, .drawer-resize:focus-visible {
+  background: color-mix(in srgb, var(--accent-text), transparent 70%);
+  outline: none;
+}
+
+.inspector-header {
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .inspector-header {
@@ -1628,9 +1666,6 @@ kbd {
     max-height: calc(100vh - 340px);
   }
 
-  .inspector {
-    width: 390px;
-  }
 
   .module-panel {
     width: 220px;
@@ -1643,17 +1678,8 @@ kbd {
 }
 
 @media (width <= 1350px) {
-  .with-inspector .module-panel {
-    display: none;
-  }
 
-  .inspector {
-    width: 320px;
-  }
 
-  .with-inspector .provider-column {
-    display: none;
-  }
 
   .main-content, .topbar, .context-bar, .statusbar {
     padding-left: 24px;
@@ -1763,13 +1789,7 @@ kbd {
     padding-right: 5px;
   }
 
-  .inspector {
-    width: 285px;
-  }
 
-  .with-inspector .resource-icon {
-    display: none;
-  }
 
   .inspector-title .resource-icon {
     display: flex;
@@ -1859,9 +1879,6 @@ kbd {
     width: 160px;
   }
 
-  .with-inspector .resource-type {
-    font-size: 11px;
-  }
 
   .context-bar {
     height: 42px;
@@ -1871,9 +1888,6 @@ kbd {
     max-width: 155px;
   }
 
-  .inspector {
-    width: 285px;
-  }
 
   .page-heading {
     margin-bottom: 25px;
@@ -2219,9 +2233,6 @@ kbd {
   min-height: 420px;
 }
 
-.plan-explorer .inspector {
-  width: 440px;
-}
 
 .order-note {
   color: var(--destroy);
