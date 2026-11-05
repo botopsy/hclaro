@@ -22,7 +22,17 @@ type Adapter interface {
 	State(context.Context) ([]byte, error)
 }
 
-type CLI struct{ Name, Executable, Root string }
+// CLI runs the official executable in Root. An empty SelectedWorkspace keeps the inherited CLI
+// workspace selection (the launch project). A non-empty SelectedWorkspace is a Hub context: every
+// child gets TF_WORKSPACE=<SelectedWorkspace> in its own environment, replacing any inherited
+// value. Hclaro's process environment is never changed and `workspace select` never runs.
+type CLI struct {
+	Name, Executable, Root string
+	SelectedWorkspace      string
+	// IgnoreInheritedWorkspace drops an inherited TF_WORKSPACE even without a selection, so
+	// Hub inspections never depend on how Hclaro was started.
+	IgnoreInheritedWorkspace bool
+}
 
 var ErrUnsafeArgs = errors.New("inherited TF_CLI_ARGS contains unsupported arguments; only -no-color is accepted")
 
@@ -61,6 +71,12 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 // command applies the shared subprocess policy: argv only, the project root as working
 // directory, no inherited logging and only -no-color from TF_CLI_ARGS.
 func (c *CLI) command(ctx context.Context, args ...string) (*exec.Cmd, error) {
+	return c.commandEnv(ctx, c.SelectedWorkspace != "" || c.IgnoreInheritedWorkspace, c.SelectedWorkspace, args...)
+}
+
+// commandEnv builds the command. dropWorkspace removes an inherited TF_WORKSPACE; a
+// non-empty selected is then passed as the child's TF_WORKSPACE.
+func (c *CLI) commandEnv(ctx context.Context, dropWorkspace bool, selected string, args ...string) (*exec.Cmd, error) {
 	cmd := exec.CommandContext(ctx, c.Executable, args...)
 	cmd.Dir = c.Root
 	cmd.WaitDelay = time.Second
@@ -75,19 +91,29 @@ func (c *CLI) command(ctx context.Context, args ...string) (*exec.Cmd, error) {
 				}
 			}
 		}
-		if strings.HasPrefix(key, "TF_LOG") || key == "TF_IN_AUTOMATION" || key == "CHECKPOINT_DISABLE" {
+		if strings.HasPrefix(key, "TF_LOG") || key == "TF_IN_AUTOMATION" || key == "CHECKPOINT_DISABLE" || dropWorkspace && key == "TF_WORKSPACE" {
 			continue
 		}
 		cmd.Env = append(cmd.Env, item)
 	}
 	cmd.Env = append(cmd.Env, "TF_IN_AUTOMATION=1", "CHECKPOINT_DISABLE=1", "TF_LOG=OFF")
+	if selected != "" {
+		if !ValidWorkspace(selected) {
+			return nil, errors.New("invalid workspace name")
+		}
+		cmd.Env = append(cmd.Env, "TF_WORKSPACE="+selected)
+	}
 	return cmd, nil
 }
 
 func (c *CLI) run(ctx context.Context, timeout time.Duration, args ...string) ([]byte, error) {
+	return c.runEnv(ctx, timeout, c.SelectedWorkspace != "" || c.IgnoreInheritedWorkspace, c.SelectedWorkspace, args...)
+}
+
+func (c *CLI) runEnv(ctx context.Context, timeout time.Duration, dropWorkspace bool, selected string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd, err := c.command(ctx, args...)
+	cmd, err := c.commandEnv(ctx, dropWorkspace, selected, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -149,16 +175,77 @@ func (c *CLI) Version(ctx context.Context) (string, error) {
 	}
 	return v.Terraform, nil
 }
+
+var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,90}$`)
+
+// ValidWorkspace accepts the conservative workspace name subset Hclaro displays and passes
+// to TF_WORKSPACE.
+func ValidWorkspace(name string) bool {
+	return workspaceName.MatchString(name) && !state.Suspicious(name)
+}
+
 func (c *CLI) Workspace(ctx context.Context) (string, error) {
 	b, err := c.run(ctx, readTimeout, "workspace", "show")
 	if err != nil {
 		return "", err
 	}
 	name := strings.TrimSpace(string(b))
-	if len(name) == 0 || len(name) > 90 || !regexp.MustCompile(`^[A-Za-z0-9_-]+$`).MatchString(name) || state.Suspicious(name) {
+	if !ValidWorkspace(name) {
 		return "", errors.New("engine returned an invalid workspace name")
 	}
 	return name, nil
+}
+
+// MaxWorkspaces bounds a workspace listing.
+const MaxWorkspaces = 1000
+
+// WorkspaceList is the parsed `workspace list` output. Current is the CLI-default workspace
+// recorded in the project's data directory; Hidden counts names Hclaro does not display.
+type WorkspaceList struct {
+	Names   []string
+	Current string
+	Hidden  int
+}
+
+// ListWorkspaces runs `workspace list` without any TF_WORKSPACE, so the marked entry is the
+// persisted CLI default rather than an inherited or Hub selection.
+func (c *CLI) ListWorkspaces(ctx context.Context) (WorkspaceList, error) {
+	b, err := c.runEnv(ctx, readTimeout, true, "", "workspace", "list")
+	if err != nil {
+		return WorkspaceList{}, err
+	}
+	return ParseWorkspaceList(b)
+}
+
+// ParseWorkspaceList reads the text format shared by Terraform and OpenTofu: one name per
+// line, the selected one prefixed by "* ". Unusual names are counted, never returned.
+func ParseWorkspaceList(b []byte) (WorkspaceList, error) {
+	list := WorkspaceList{Names: []string{}}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimRight(line, "\r")
+		current := strings.HasPrefix(line, "* ")
+		name := strings.TrimSpace(strings.TrimPrefix(line, "* "))
+		if name == "" {
+			continue
+		}
+		if !ValidWorkspace(name) || seen[name] {
+			list.Hidden++
+			continue
+		}
+		if len(list.Names) == MaxWorkspaces {
+			return WorkspaceList{}, errors.New("too many workspaces")
+		}
+		seen[name] = true
+		list.Names = append(list.Names, name)
+		if current {
+			list.Current = name
+		}
+	}
+	if len(list.Names) == 0 {
+		return WorkspaceList{}, errors.New("engine returned no workspaces")
+	}
+	return list, nil
 }
 func (c *CLI) State(ctx context.Context) ([]byte, error) {
 	return c.run(ctx, readTimeout, "show", "-json")

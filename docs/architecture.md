@@ -1,4 +1,4 @@
-# Architecture (M1 explorer, M2 plans, M3 replace and apply, M4 import)
+# Architecture (M1 explorer, M2 plans, M3 replace and apply, M4 import, M5 Workspace Hub)
 
 ## Runtime and trust boundaries
 
@@ -6,7 +6,9 @@
 
 Launch uses only the read interface: `Version`, `Workspace`, and `State`. A separate `Planner` interface adds `Plan` and `ShowPlan`, and a separate `Applier` interface has one method, `Apply(path)`, which applies a saved plan file and accepts no options. Both are used only by the operation manager after explicit, CSRF-protected requests (see [Plans and operations](#plans-and-operations) and [Saved-plan apply](#saved-plan-apply)). No interface has an import or state-mutation method: imports are import blocks planned through `Plan`, whose only addition is an optional `-generate-config-out` file name. `internal/engine.CLI` is the shared official-CLI adapter for the common Terraform/OpenTofu dialect. Its explicit engine name selects compatibility policy and version fields. It uses `exec.CommandContext` and argv, never a shell. Selection prefers Terraform, then OpenTofu, unless `--engine` forces one. A mock adapter and a compiled fake CLI keep tests independent of installed engines and credentials.
 
-The HTTP layer has no direct reference to an engine or filesystem root. It reads the snapshot store and embedded assets, and it can ask the operation manager to start one plan, approve or apply a reviewed plan, or cancel a running operation. Every GET route is side-effect free; browsing can never invoke a command. It can also ask the manager to preview an import (no side effects) or to write a reviewed import block and plan it.
+Without `--hub`, the current directory (or `--path`) is the **launch project**, exactly as before. With `--hub`, or when an implicit current directory is not a project, there is no launch project: the launch store reports `no_launch_project` and the operation manager has no planner. An explicit `--path` that is not a project still fails. See [Workspace Hub](#workspace-hub) for registered projects.
+
+The HTTP layer has no direct reference to an engine or filesystem root. It reads the snapshot store and embedded assets, and it can ask the operation manager to start one plan, approve or apply a reviewed plan, or cancel a running operation. Every GET route is side-effect free; browsing can never invoke a command. Hub inspection and opening a Hub workspace run read-only engine commands, so they are CSRF-protected POSTs. It can also ask the manager to preview an import (no side effects) or to write a reviewed import block and plan it.
 
 ## Packages
 
@@ -18,12 +20,13 @@ The HTTP layer has no direct reference to an engine or filesystem root. It reads
 | `internal/state` | Official JSON decoding, module traversal, normalization, redaction, indexes |
 | `internal/plan` | `show -json` plan decoding, action classification, attribute diffs, redaction, outputs and drift |
 | `internal/imports` | Import target address parsing, HCL rendering, collision and configuration checks, no-overwrite file writes, generated-configuration display redaction; never runs an engine |
+| `internal/projects` | Workspace Hub: versioned project registry with atomic writes, path canonicalization, filesystem-only status, explicit inspection (`version`, `workspace list`) and immutable read-only contexts |
 | `internal/operations` | One-at-a-time plan and apply runner, private temp artifacts, approval tokens, bounded sanitized logs, cancellation, history |
 | `internal/security` | Random session and CSRF tokens; exact Host/Origin, method, content-type and body policy |
 | `internal/api` | Authenticated typed snapshot, resources, plans, operations and SSE responses |
 | `internal/ui` | Go embedding of `dist/`; no frontend runtime server required |
 | `web/src` | React UI, TanStack Query reads, accessible native disclosures, shadcn-style Radix Button, local appearance preferences |
-| `fixtures`, `scripts/fake-engine` | Explicit synthetic state, plans, plan logs and executable; `scripts/fixtures/generate-plans.py` regenerates plan fixtures |
+| `fixtures`, `scripts/fake-engine` | Explicit synthetic state, plans, plan logs and executable; `scripts/fixtures/generate-plans.py` regenerates plan fixtures. `fixtures.WriteHubProjects` writes synthetic Hub projects with per-workspace state; `scripts/hub-demo` seeds them into a throwaway registry |
 | `scripts/fixture-http`, `scripts/browser-smoke.mjs` | Browser requests bridged to the real Go handler without a real engine or TCP backend |
 
 ## Discovery and compatibility
@@ -106,6 +109,50 @@ A stored plan records the engine, workspace, variable files, requested replaceme
 
 The plan detail response recomputes it and reports `contextChanged`; approval and apply refuse any mismatch. Hclaro's environment is fixed for its lifetime, so the environment part matters only once fingerprints are compared across launches. Provider plugin binaries are covered only through the lock file's checksums. The fingerprint does not detect provider-side or state changes; the engine's stale-plan check covers state.
 
+## Workspace Hub
+
+### Vocabulary
+
+A **project** is one canonical root folder, an optional engine preference and display metadata. A **CLI workspace** is a state namespace inside a project. The **CLI-default** workspace is the one recorded in the project's data directory (`environment`), which `workspace list` marks. A **UI-selected** workspace exists only in a browser tab's URL and in the read context it opens. A profile, account, backend or `terraform.workspace` value is none of these, and nothing is inferred from names except a visible "production-like name" hint (`prod`, `production`, `prd`, `live` as words), which never implies criticality.
+
+### Registry
+
+`projects.json` lives in `os.UserConfigDir()/hclaro` (or `HCLARO_CONFIG_DIR`, absolute only). It is `{"version":1,"projects":[{id, alias, root_path, engine_preference, pinned, added_at, last_opened_at, last_workspace}]}`; array order is the user's order. IDs are 128 random bits. Nothing else is stored: no environment values, credentials, backend configuration, engine paths or state.
+
+Writes go to a `0600` temporary file in the same directory, are synced and renamed over the old file. Every change re-reads the file first, so another Hclaro process's edits survive unless both write at the same instant (last writer wins; the file is never torn). On startup, a file that cannot be decoded (invalid JSON, unknown fields, invalid entries, over 1 MiB) is renamed to `projects.json.corrupt-<UTC time>` and the registry starts empty, with a notice. A file from a newer schema, an unreadable file, or a file that becomes undecodable during the session is never overwritten: the registry is read-only until restart. Up to 200 projects.
+
+Adding a project requires an absolute path (no `~`), cleaned and resolved with `EvalSymlinks`, that is a readable directory with a recognized file (`workspace.Root`). Duplicates are refused by canonical path and by `os.SameFile`, so a symlink or case variant of a registered folder is rejected with the existing ID. Aliases are 1–80 characters with no control or format characters (bidi overrides included) and no surrounding spaces; the default is the folder name. Repairing a path validates the new one the same way. Removing an entry deletes only the entry.
+
+The folder chooser (`POST /projects/browse`) lists the subdirectory names of one folder, default the home directory: hidden names and `node_modules` skipped, no files, at most 500 entries, and only the listed folder itself is checked for project files. It never recurses.
+
+### Status and inspection
+
+`GET /projects` runs no command. Each card's status comes from the file system: `missing`, `unreadable`, `path_changed` (the stored canonical path now resolves elsewhere, for example a parent replaced by a symlink), `not_project` or `ready`; ready projects add `workspace.Inspect` (initialized, backend type, lockfile).
+
+`POST /projects/{id}/inspect`, which the UI sends when a project page opens, resolves the engine (preference, else Terraform then OpenTofu) and runs `version -json` and, for initialized projects, `workspace list`. Both drop any inherited `TF_WORKSPACE`; for `workspace list` this makes the marked entry the persisted CLI default. The list parser accepts the shared text format (`* ` marks the selected one), returns at most 1,000 names matching `^[A-Za-z0-9_-]{1,90}$` that do not look like credentials, and counts the rest as hidden. The result is cached in memory for the session.
+
+### Read contexts
+
+`POST /contexts {projectId, workspace}` returns an immutable context: project ID, canonical root, engine name and executable, workspace and `TF_DATA_DIR`, plus its own `workspace.Store`. The same tuple returns the same context (`reused: true`) unless `reload: true`, which closes it and starts a fresh read. At most eight contexts are kept; the oldest is closed first. Reads run in the background, three at a time, under a context cancelled on shutdown.
+
+A context's engine is an `engine.CLI` with `SelectedWorkspace` set: each child's environment drops the inherited `TF_WORKSPACE` and gets `TF_WORKSPACE=<workspace>`. Hclaro's process environment is never modified, and no route runs `workspace select`, `new` or `delete`. The store is created with `workspace.NewScoped`; its read is:
+
+1. `version -json`; then the usual initialization check.
+2. `workspace list` (no `TF_WORKSPACE`): the workspace must exist, otherwise `workspace_missing` and nothing else runs.
+3. `workspace show` must print the selected workspace. This proves the engine honored `TF_WORKSPACE`; otherwise `workspace_mismatch` and no state is read.
+4. `show -json`, parsed and redacted exactly like the launch project.
+5. Before publishing, the read must not have been cancelled and the root must still be the same directory (`os.SameFile` and `EvalSymlinks`); otherwise `path_changed` and the snapshot is discarded.
+
+The engine is wrapped so only `Version`, `Workspace` and `State` are reachable; scoped capabilities are always `canPlan`, `canApplySavedPlan` and `canImport` false with one reason. Plans, applies and imports stay bound to the launch store and its CLI-selected workspace.
+
+An absolute `TF_DATA_DIR` applies to every project at once, so a shared data directory could pair one project's configuration with another's backend initialization: inspection reports `shared_data_dir` and contexts are refused. A relative value resolves inside each root and is shown read-only. `TF_CLI_ARGS*` keeps the M1 rule (only `-no-color`).
+
+Unregistering a project, repairing its path or changing its engine closes its contexts at once and cancels reads in progress; their IDs answer `404 context_closed` with the reason (`project_removed`, `project_changed`, `reloaded`, `evicted`). A context ID only ever reads its own store, so a resource ID from one context is never found through another. Context responses carry no executable path or environment values.
+
+### Client
+
+The UI routes are `/projects`, `/projects/<id>` and `/projects/<id>/workspaces/<name>/<resources|overview|modules|providers>`; the server serves the app shell only for paths matching exactly that shape (32-hex ID, workspace-name pattern) and 404s everything else as before. The client parses the same shape, percent-encodes segments and never sends a path from the URL; it sends the project ID and workspace name in a POST body, and the server resolves both. Each project/workspace gets its own `Workbench` instance (React `key`) and query keys that include the context ID, so filters, selections and cached resources cannot carry over. A new tab receives the session credential in its URL fragment, like the launch URL, because sessionStorage is per tab.
+
 ## HTTP contract
 
 Every API endpoint requires `Authorization: Bearer <launch-token>`:
@@ -128,11 +175,20 @@ Every API endpoint requires `Authorization: Bearer <launch-token>`:
 | `POST /api/v1/operations/{id}/cancel` | Request cancellation (`{}` body) → 202; 409 if not running |
 | `GET /api/v1/imports/options` | Import availability and reason, import-block and generation support, apply availability, engine, workspace, backend, variable files |
 | `POST /api/v1/imports/preview` | `{address, id, provider, file, generateConfig}` → 200 preview: issues (error/warning), `blocked`, config status, exact content, `sha256`, recipe. No side effects |
+| `GET /api/v1/projects` | Registry status and notice, launch root, inherited environment flags (`TF_WORKSPACE` name when valid, `TF_DATA_DIR`, whether `TF_CLI_ARGS*` is set) and project summaries. Runs no command |
+| `POST /api/v1/projects` | `{path, alias?, engine?}` → 201 summary; 400 `invalid_path`/`invalid_alias`/`invalid_engine` with reason; 409 `duplicate_project` with `existingId`, `registry_unavailable`, `too_many_projects` |
+| `PATCH /api/v1/projects/{id}` | `{alias?, pinned?, engine?, rootPath?}` → 200 summary; same errors, 404 `project_not_found` |
+| `DELETE /api/v1/projects/{id}` | `{}` → 200; unregisters only |
+| `POST /api/v1/projects/order` | `{ids}` (a permutation) → 200; 400 `invalid_order` |
+| `POST /api/v1/projects/{id}/inspect` | `{}` → 200 summary with `inspection` (engine, version, workspaces, `cliDefault`, hidden count, diagnostic) |
+| `POST /api/v1/projects/browse` | `{path}` (empty for home) → 200 folder listing; 400 `browse_failed` |
+| `POST /api/v1/contexts` | `{projectId, workspace, reload?}` → 200 context with `reused`; 400 `invalid_workspace`; 404 `project_not_found`; 409 `project_unavailable`, `shared_data_dir` |
+| `GET /api/v1/contexts/{cid}`, `…/resources`, `…/resources/{id}` | Same shapes as `/workspace` (plus `context`), `/resources` and `/resources/{id}`, scoped to the context; 404 `context_closed` with reason |
 | `POST /api/v1/imports` | Preview fields plus `previewSha256`, `varFiles`, `acknowledgeWrite`, `acknowledgeBackendAccess` → 202 plan operation; 400 `acknowledgement_required`; 409 `{error, reason}` (`import_blocked`, `preview_changed`, `import_unavailable`, `file_exists`, `write_failed`, `operation_running`) |
 
 List parameters: `query`, exact `module`, `provider`, `type`, `mode`, `sort=asc|desc`, `offset`, `limit`. An absent module filter means all modules; `module=` selects root resources. Queries search full address, name, provider, type and module. Details use an ID map; no raw address becomes a command argument.
 
-The guard accepts only the exact bound authority and, when present, the exact matching Origin. Cross-site fetch metadata is refused, no CORS headers are emitted and queries are bounded. GET/HEAD requests may not carry bodies. POST is accepted only on the six routes above and additionally requires: an `Origin` header equal to the bound origin, `Sec-Fetch-Site` absent or `same-origin`, `Content-Type: application/json`, an `X-Hclaro-CSRF` header matching the per-launch CSRF token (constant-time compare), a non-empty body of at most 16 KiB, and strict JSON decoding with unknown fields rejected. Every other method/path combination returns 405. Unknown API paths cannot fall back to SPA HTML. HTTP header/body/idle/write limits bound requests. Assets cannot be directory-listed. CSP permits only local scripts/styles/fonts/connections and denies framing/forms; referrers and caching are disabled.
+The guard accepts only the exact bound authority and, when present, the exact matching Origin. Cross-site fetch metadata is refused, no CORS headers are emitted and queries are bounded. GET/HEAD requests may not carry bodies. POST is accepted only on the plan, apply, cancel, import, project, browse, inspect and context routes above, and PATCH and DELETE only on `/api/v1/projects/{id}`; each additionally requires: an `Origin` header equal to the bound origin, `Sec-Fetch-Site` absent or `same-origin`, `Content-Type: application/json`, an `X-Hclaro-CSRF` header matching the per-launch CSRF token (constant-time compare), a non-empty body of at most 16 KiB, and strict JSON decoding with unknown fields rejected. Every other method/path combination returns 405. Unknown API paths cannot fall back to SPA HTML. HTTP header/body/idle/write limits bound requests. Assets cannot be directory-listed. CSP permits only local scripts/styles/fonts/connections and denies framing/forms; referrers and caching are disabled.
 
 A private launch fragment bootstraps bearer authorization. The UI removes it from history immediately, keeps the token in sessionStorage for reload, and sends it only in headers. The token expires when the process stops; new launches use independent tokens. No cookies are used. Because the bearer token is never sent automatically by a browser, cross-site requests cannot authenticate; the CSRF header and Origin checks are additional, independent defenses for the mutating routes.
 

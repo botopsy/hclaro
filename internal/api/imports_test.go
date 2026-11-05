@@ -33,7 +33,7 @@ func newImportServer(t *testing.T, fake *engine.Fake) (*planServer, string) {
 	manager := operations.NewManager(store, fake, root)
 	manager.TempDir = t.TempDir()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
-	return &planServer{t, Handler(store, manager, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}, root
+	return &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}, root
 }
 
 func TestImportFlowOverHTTP(t *testing.T) {

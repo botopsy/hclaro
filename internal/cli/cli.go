@@ -17,6 +17,7 @@ import (
 	"hclaro/internal/api"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
+	"hclaro/internal/projects"
 	"hclaro/internal/security"
 	"hclaro/internal/ui"
 	"hclaro/internal/workspace"
@@ -26,6 +27,8 @@ type Options struct {
 	Path, Engine       string
 	Port               int
 	NoBrowser, Version bool
+	// Hub opens the Workspace Hub. PathSet records an explicit --path.
+	Hub, PathSet bool
 }
 
 func Parse(args []string, output io.Writer) (Options, error) {
@@ -37,14 +40,20 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.IntVar(&o.Port, "port", 0, "Loopback port (default: available port)")
 	flags.BoolVar(&o.NoBrowser, "no-browser", false, "Print URL without opening a browser")
 	flags.BoolVar(&o.Version, "version", false, "Print version and exit")
+	flags.BoolVar(&o.Hub, "hub", false, "Open the Workspace Hub; the current directory is not read unless --path is given")
 	flags.Usage = func() {
-		fmt.Fprintln(output, "Hclaro — local Terraform & OpenTofu explorer\n\nUsage: hclaro [flags]")
+		fmt.Fprintln(output, "Hclaro — local Terraform & OpenTofu explorer\n\nUsage: hclaro [flags]\n\nRun inside a Terraform/OpenTofu root to open it; elsewhere, or with --hub, the Workspace\nHub opens with your registered projects.")
 		flags.PrintDefaults()
 		fmt.Fprintln(output, "\nLaunch is read-only: no init, plan or refresh runs automatically. Plans run only when\nrequested in the UI. A plan is applied only from its reviewed saved file, after explicit\nconfirmation in the UI, and only for locally executed backends.\nExit codes: 0 success, 1 startup failure, 2 invalid arguments.")
 	}
 	if err := flags.Parse(args); err != nil {
 		return o, err
 	}
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "path" {
+			o.PathSet = true
+		}
+	})
 	if flags.NArg() > 0 {
 		return o, errors.New("unexpected positional argument; use --path")
 	}
@@ -75,20 +84,41 @@ func openBrowser(ctx context.Context, url string) error {
 }
 
 func Run(ctx context.Context, o Options, output io.Writer, version string) error {
-	root, err := workspace.Root(o.Path)
-	if err != nil {
-		return err
+	// Without --hub, the current directory (or --path) is the launch project, as before.
+	// Outside a project, an implicit current directory falls back to the Hub; an explicit
+	// --path that is not a project still fails.
+	root := ""
+	if !o.Hub || o.PathSet {
+		r, err := workspace.Root(o.Path)
+		switch {
+		case err == nil:
+			root = r
+		case o.PathSet:
+			return err
+		default:
+			fmt.Fprintln(output, "No Terraform/OpenTofu project in the current directory; opening the Workspace Hub.")
+		}
 	}
-	info := workspace.Inspect(root)
-	store := workspace.New(info)
-	cli, detectErr := engine.Detect(root, o.Engine)
+	store := workspace.NoProject()
 	var adapter engine.Adapter
 	var planner engine.Planner
 	engineName := o.Engine
-	if detectErr == nil {
-		adapter, planner = cli, cli
-		engineName = cli.Name
+	if root != "" {
+		store = workspace.New(workspace.Inspect(root))
+		if cli, detectErr := engine.Detect(root, o.Engine); detectErr == nil {
+			adapter, planner = cli, cli
+			engineName = cli.Name
+		}
 	}
+	registry := projects.Unavailable("The per-user configuration directory is unavailable, so projects cannot be registered.")
+	if dir, err := projects.ConfigDir(); err == nil {
+		registry = projects.Open(dir, time.Now())
+	}
+	if _, notice, _ := registry.Status(); notice != "" {
+		fmt.Fprintln(output, "Workspace Hub:", notice)
+	}
+	hub := projects.NewHub(registry, root)
+	defer hub.Close()
 	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(o.Port)))
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
@@ -117,13 +147,25 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager.Reload = func(ctx context.Context) { store.Load(ctx, adapter, engineName) }
 	// Request contexts derive from runCtx so event streams end promptly on shutdown.
 	// SSE responses extend their own write deadline per event.
-	server := &http.Server{Handler: api.Handler(store, manager, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	server := &http.Server{Handler: api.Handler(store, manager, hub, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	loaded := make(chan struct{})
-	go func() { defer close(loaded); store.Load(runCtx, adapter, engineName) }()
+	go func() {
+		defer close(loaded)
+		if root != "" {
+			store.Load(runCtx, adapter, engineName)
+		}
+	}()
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()
 	url := "http://" + host + "/#session=" + token
-	fmt.Fprintf(output, "Hclaro %s · local Terraform & OpenTofu workspace\nReading recorded state; the CLI may contact the configured backend.\nOpen this private session URL:\n%s\nPress Ctrl+C to stop.\n", version, url)
+	reading := "Reading recorded state; the CLI may contact the configured backend."
+	if root == "" || o.Hub {
+		url = "http://" + host + "/projects#session=" + token
+	}
+	if root == "" {
+		reading = "Workspace Hub: nothing is read until you open a project."
+	}
+	fmt.Fprintf(output, "Hclaro %s · local Terraform & OpenTofu workspace\n%s\nOpen this private session URL:\n%s\nPress Ctrl+C to stop.\n", version, reading, url)
 	if !o.NoBrowser {
 		go func() {
 			browserCtx, done := context.WithTimeout(runCtx, 5*time.Second)

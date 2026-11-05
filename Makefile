@@ -7,7 +7,7 @@ export CGO_ENABLED := 0
 GO_PACKAGES := ./cmd/... ./internal/... ./scripts/...
 GOFLAGS_BUILD := -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build binary frontend install test test-go test-web lint fmt demo dev cross browser-test
+.PHONY: build binary frontend install test test-go test-web lint fmt demo demo-hub dev cross browser-test
 install:
 	npm ci --prefix web
 frontend:
@@ -26,13 +26,22 @@ lint:
 	npm --prefix web run typecheck
 	npm --prefix web run lint
 fmt:
-	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fixture-http
+	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fixture-http scripts/hub-demo
 
 bin/mock/terraform$(EXE): scripts/fake-engine/main.go fixtures/state.json
 	go build -trimpath -buildvcs=false -o bin/mock/terraform$(EXE) ./scripts/fake-engine
 
+bin/mock/tofu$(EXE): scripts/fake-engine/main.go fixtures/state.json
+	go build -trimpath -buildvcs=false -o bin/mock/tofu$(EXE) ./scripts/fake-engine
+
 demo: binary bin/mock/terraform$(EXE)
 	PATH="$(CURDIR)/bin/mock:$$PATH" TF_DATA_DIR="$(CURDIR)/fixtures/backend" ./bin/hclaro$(EXE) --engine terraform --path fixtures/project --no-browser
+
+# Synthetic Hub projects and a registry under .cache/hub-demo; the real registry is untouched.
+demo-hub: binary bin/mock/terraform$(EXE) bin/mock/tofu$(EXE)
+	rm -rf .cache/hub-demo
+	go run ./scripts/hub-demo .cache/hub-demo
+	PATH="$(CURDIR)/bin/mock:$$PATH" HCLARO_CONFIG_DIR="$(CURDIR)/.cache/hub-demo/config" ./bin/hclaro$(EXE) --hub --no-browser
 
 dev: binary bin/mock/terraform$(EXE)
 	node scripts/dev.mjs

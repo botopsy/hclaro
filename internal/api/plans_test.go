@@ -40,7 +40,7 @@ func newPlanServer(t *testing.T, fake *engine.Fake) *planServer {
 	manager := operations.NewManager(store, fake, t.TempDir())
 	manager.TempDir = t.TempDir()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
-	return &planServer{t, Handler(store, manager, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}
+	return &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}
 }
 
 // do sends a request with the headers a same-origin browser fetch would send.
@@ -299,7 +299,7 @@ func TestPlanningUnavailable(t *testing.T) {
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "cloud", ExecutionMode: "remote-exec"})
 	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store.Load(context.Background(), fake, "terraform")
-	s := &planServer{t, Handler(store, operations.NewManager(store, fake, t.TempDir()), fstest.MapFS{}, host, session, csrf, "test"), fake, nil}
+	s := &planServer{t, Handler(store, operations.NewManager(store, fake, t.TempDir()), nil, fstest.MapFS{}, host, session, csrf, "test"), fake, nil}
 	options := decode[map[string]any](t, s.do("GET", "/api/v1/plans/options", ""))
 	if options["canPlan"] != false || !strings.Contains(options["reason"].(string), "Remote execution") {
 		t.Fatalf("%v", options)

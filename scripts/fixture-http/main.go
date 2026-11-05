@@ -82,7 +82,7 @@ func main() {
 		}
 	}
 	defer manager.Close(5 * time.Second)
-	handler := api.Handler(store, manager, ui.Assets(), "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
+	handler := api.Handler(store, manager, nil, ui.Assets(), "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
 	var body io.Reader
 	if request.Body != "" {
 		body = strings.NewReader(request.Body)

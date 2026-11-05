@@ -53,15 +53,26 @@ export async function api<T>(path: string): Promise<T> {
   });
   if (!response.ok) {
     if (response.status === 401) throw new Error('This session is locked. Open the private URL printed by the running Hclaro CLI.');
-    throw new Error('Unable to read the local snapshot. Check that Hclaro is still running, then retry.');
+    // Hub routes explain refusals, for example a workspace view that was closed.
+    let code = '';
+    let reason = '';
+    try {
+      const body = await response.json() as { error?: string; reason?: string };
+      code = body.error || '';
+      reason = body.reason || '';
+    } catch {/* Non-JSON errors use the generic message. */}
+    throw new ApiError(code, reason || 'Unable to read the local snapshot. Check that Hclaro is still running, then retry.');
   }
   return response.json() as Promise<T>;
 }
 // Mutating requests carry the per-launch CSRF token in a header; the server also checks Origin.
 export async function post<T>(path: string, body: unknown): Promise<T> {
+  return send<T>('POST', path, body);
+}
+export async function send<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body: unknown): Promise<T> {
   if (!csrf) csrf = (await api<{ csrfToken: string }>('session')).csrfToken;
   const response = await fetch(`/api/v1/${path}`, {
-    method: 'POST',
+    method,
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
@@ -72,6 +83,11 @@ export async function post<T>(path: string, body: unknown): Promise<T> {
   });
   if (!response.ok) return failure(response);
   return response.json() as Promise<T>;
+}
+// A new browser tab has its own sessionStorage, so the session travels in the URL fragment,
+// which is never sent to the server and is removed from history on arrival.
+export function openInNewTab(path: string) {
+  window.open(`${path}#session=${token}`, '_blank', 'noopener');
 }
 export type StreamHandlers = {
   log: (event: OperationEvent) => void;
