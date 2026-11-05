@@ -432,40 +432,65 @@ workflows:
       matches:
         pattern: "^v[0-9].*$"
         value: << pipeline.git.tag >>
+    # Jobs run on a tag push only with their own tag filter; `when` alone is not enough.
     jobs:
       - verify:
+          filters:
+            tags:
+              only: /^v[0-9].*/
           name: release-linux
           os: linux
           static: true
           browser: true
       - verify:
+          filters:
+            tags:
+              only: /^v[0-9].*/
           name: release-windows
           os: windows
           browser: true
       - verify:
+          filters:
+            tags:
+              only: /^v[0-9].*/
           name: release-macos
           os: macos
           browser: true
       - release-build:
+          filters:
+            tags:
+              only: /^v[0-9].*/
           requires: [release-linux, release-windows, release-macos]
       - release-smoke:
+          filters:
+            tags:
+              only: /^v[0-9].*/
           name: smoke-linux
           os: linux
           target: linux_amd64
           ext: tar.gz
           requires: [release-build]
       - release-smoke:
+          filters:
+            tags:
+              only: /^v[0-9].*/
           name: smoke-macos
           os: macos
           target: darwin_arm64
           ext: tar.gz
           requires: [release-build]
       - release-smoke:
+          filters:
+            tags:
+              only: /^v[0-9].*/
           name: smoke-windows
           os: windows
           target: windows_amd64
           ext: zip
           requires: [release-build]
       - release-publish:
+          filters:
+            tags:
+              only: /^v[0-9].*/
           context: hclaro-release
           requires: [smoke-linux, smoke-macos, smoke-windows]
