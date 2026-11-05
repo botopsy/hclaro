@@ -2,7 +2,7 @@
 
 A local, read-only workspace for Terraform and OpenTofu. Browse recorded resource instances, nested modules, and provider sources; search canonical addresses and inspect redacted attributes. No accounts, telemetry, external runtime assets, or infrastructure mutations.
 
-**Milestone 4 alpha (draft).** Browse state, run a plan and review every proposed change, plan the replacement of selected instances, import an existing object through a reviewed import block, and apply a reviewed saved plan after explicit confirmation (local execution only). The **Workspace Hub** (M5, draft) remembers several project roots and opens any of their CLI workspaces read-only, each in its own tab. Start with the synthetic demo. See verification status for [M1](docs/M01-verification.md), [M2](docs/M02-verification.md), [M3](docs/M03-verification.md), [M4](docs/M04-verification.md) and [M5](docs/M05-verification.md). Apply and import have not yet been run against a real engine. Real Terraform/OpenTofu certification is still open, so treat this as an alpha, not a release.
+**Milestone 4 alpha (draft).** Browse state, run a plan and review every proposed change, plan the replacement of selected instances, import an existing object through a reviewed import block, and apply a reviewed saved plan after explicit confirmation (local execution only). The **Workspace Hub** (M5, draft) remembers several project roots and opens any of their CLI workspaces read-only, each in its own tab; a Hub project can be initialized (M6, draft) and its CLI workspaces created, set as CLI default or, when empty, deleted (M7, draft), each after a review and confirmation. Start with the synthetic demo. See verification status for [M1](docs/M01-verification.md), [M2](docs/M02-verification.md), [M3](docs/M03-verification.md), [M4](docs/M04-verification.md), [M5](docs/M05-verification.md), [M6](docs/M06-verification.md) and [M7](docs/M07-verification.md). Apply and import have not yet been run against a real engine. Real Terraform/OpenTofu certification is still open, so treat this as an alpha, not a release.
 
 ## Run the isolated demo
 
@@ -75,7 +75,7 @@ The private URL contains a random launch credential in its **fragment**, which i
 
 Opening a project runs `version -json` and `workspace list` (no `TF_WORKSPACE`, so the marked workspace is the persisted **CLI default**). Opening a workspace reads its recorded state with `version -json`, `workspace list`, `workspace show` and `show -json`, each child getting `TF_WORKSPACE=<workspace>` in its own environment. Hclaro's own environment is not changed and `workspace select` never runs, so your terminal's workspace stays as it was. The engine must report the selected workspace back before anything is shown. Each tab holds its own project and workspace in the URL (`/projects/<id>/workspaces/<name>/resources`); **New tab** opens the same view in another tab, so `dev` and `prod` can be side by side. **Read again** rereads the state. Search, recently opened projects, arrow-key lists and a production-like-name hint (by name only, never a guarantee) are available.
 
-Hub workspaces are **read-only**: plans, applies and imports remain available only for the project Hclaro was launched with, in its CLI-selected workspace. The one write a Hub project offers is a reviewed init (below). With an inherited `TF_WORKSPACE`, the launch project keeps using it while Hub children replace it. An absolute `TF_DATA_DIR` would make every project share one data directory, so Hub reads are refused until Hclaro is restarted without it (a relative `TF_DATA_DIR` resolves inside each project).
+Hub workspaces are **read-only**: plans, applies and imports remain available only for the project Hclaro was launched with, in its CLI-selected workspace. The writes a Hub project offers are a reviewed init and reviewed workspace commands (below). With an inherited `TF_WORKSPACE`, the launch project keeps using it while Hub children replace it. An absolute `TF_DATA_DIR` would make every project share one data directory, so Hub reads are refused until Hclaro is restarted without it (a relative `TF_DATA_DIR` resolves inside each project).
 
 ### Initialize a project
 
@@ -87,6 +87,23 @@ A project page offers **Initialize…** (or **Run init again…** once initializ
 4. The result shows the status (`succeeded`, `failed`, `cancelled` or `unknown`), the engine exit code, whether `.terraform.lock.hcl` was created or changed, and next steps. Success is reported only for exit code 0 *and* an existing data directory. A failure is never retried automatically. When the engine asks to migrate or reconfigure the backend, needs interactive input, needs `-upgrade` for the lock file, or fails on credentials, network, a registry, backend settings, a state lock or the required engine version, Hclaro says which and what to do in a terminal.
 
 Init writes the data directory and lock file in the project and can contact provider/module registries and the backend with your inherited credentials. It is not an offline operation. If the project, its configuration, lock file, engine executable or relevant `TF_*` environment changes between review and confirmation, init is refused and you review again.
+
+### Manage CLI workspaces
+
+Choosing a workspace in Hclaro (a row on the project page, the **Workspace** switcher or **New tab**) changes only that browser tab and never the CLI default. Three separate actions do change workspaces; each first lists workspaces with the CLI, shows the exact command and its effects, and runs only after you confirm:
+
+| Action | Command | Effect | Confirmation |
+| --- | --- | --- | --- |
+| **New workspace…** | `workspace new NAME` | Creates an empty workspace **and makes it the CLI default** (the engines always do) | Checkbox |
+| **Set CLI default…** (Advanced actions) | `workspace select NAME` | Changes the CLI default: terminal commands in this folder now use that workspace's state | Checkbox |
+| **Delete** (Advanced actions) | `workspace delete NAME` | Permanently deletes an empty workspace's state; no cloud resources | Type the exact name |
+
+- Names use letters, digits, `-` and `_`, start with a letter or digit, and are at most 90 characters, so a name can never be read as a flag. No other flag is added: no `-force`, `-or-create`, `-lock=false` or `-state`.
+- Inherited `TF_WORKSPACE` is not passed to these commands (the engines refuse to create or select a workspace while it is set). A terminal that sets `TF_WORKSPACE` keeps using it whatever the CLI default is. `TF_CLI_ARGS`/`TF_CLI_ARGS_workspace` with anything but `-no-color` makes the actions unavailable.
+- Delete is offered only for a workspace that is not `default`, not the CLI default and whose recorded state has no resources or outputs, checked when you review and again just before running; the engine also refuses non-empty state without `-force`. In this release delete is limited to the `local` backend.
+- `remote`/`cloud` backends, backends without multiple-workspace support, unknown backends and uninitialized projects cannot change workspaces here; the project page says why.
+- If the workspace list or CLI default changes between review and confirmation (for example in a terminal), nothing runs and you review again. One command at a time per project folder, shared with init and plans.
+- The result shows the exit code and the CLI default before and after. If the engine succeeded but workspaces cannot be listed afterwards, the result is **not confirmed**: list workspaces again before repeating anything. Nothing is retried or undone automatically.
 
 ## Explorer
 

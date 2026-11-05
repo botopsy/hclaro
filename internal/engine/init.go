@@ -49,12 +49,20 @@ func InitJSON(name, version string) bool {
 const initLimit = 30 * time.Minute
 
 // Init runs init in Root and passes each output line to line with its stream ("stdout" or
-// "stderr"). The callback is never called concurrently. The engine runs in its own process
-// group: cancellation interrupts the group, then kills it after the grace period.
+// "stderr"); see streamLines.
 func (c *CLI) Init(ctx context.Context, request InitRequest, line func(stream string, b []byte)) error {
-	ctx, cancel := context.WithTimeout(ctx, initLimit)
+	return c.streamLines(ctx, initLimit, c.SelectedWorkspace != "" || c.IgnoreInheritedWorkspace, c.SelectedWorkspace, InitArgs(request.JSON), ClassifyInit, line)
+}
+
+// streamLines runs one long-running command and passes each output line to line with its stream
+// ("stdout" or "stderr"). The callback is never called concurrently. The engine runs in its
+// own process group: cancellation interrupts the group, then kills it after the grace
+// period. A non-zero exit becomes an *ExitError whose hint comes from classify, applied to a
+// bounded tail of the output that is never returned.
+func (c *CLI) streamLines(ctx context.Context, limit time.Duration, dropWorkspace bool, selected string, args []string, classify func(string) string, line func(stream string, b []byte)) error {
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	cmd, err := c.command(ctx, InitArgs(request.JSON)...)
+	cmd, err := c.commandEnv(ctx, dropWorkspace, selected, args...)
 	if err != nil {
 		return err
 	}
@@ -123,7 +131,7 @@ func (c *CLI) Init(ctx context.Context, request InitRequest, line func(stream st
 		if errors.As(err, &exit) {
 			code = exit.ExitCode()
 		}
-		return &ExitError{Code: code, Hint: ClassifyInit(tail.String())}
+		return &ExitError{Code: code, Hint: classify(tail.String())}
 	}
 	return nil
 }

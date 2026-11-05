@@ -24,12 +24,13 @@ func Token() (string, error) {
 // mutating lists the only routes that accept a body, per method. POST: start a plan,
 // approve a reviewed plan, apply it with that one-time approval, cancel a running
 // operation, preview an import and start one; register, order, inspect and browse Hub
-// projects; open a read context; start a standard init of a Hub project. PATCH and DELETE edit or unregister one Hub project.
+// projects; open a read context; start a standard init of a Hub project; review and start a
+// reviewed workspace command. PATCH and DELETE edit or unregister one Hub project.
 // The import preview and folder browse have no side effects; they are POSTs so the import
-// ID or a local path never appears in a URL. Project inspection and opening a context run
-// read-only engine commands, which GET routes never do.
+// ID or a local path never appears in a URL. Project inspection, workspace review and
+// opening a context run read-only engine commands, which GET routes never do.
 var mutating = map[string]*regexp.Regexp{
-	http.MethodPost:   regexp.MustCompile(`^/api/v1/(plans|plans/[0-9a-f]{32}/(approval|apply)|operations/[0-9a-f]{32}/cancel|imports|imports/preview|projects|projects/(order|browse)|projects/[0-9a-f]{32}/(inspect|operations/init)|contexts)$`),
+	http.MethodPost:   regexp.MustCompile(`^/api/v1/(plans|plans/[0-9a-f]{32}/(approval|apply)|operations/[0-9a-f]{32}/cancel|imports|imports/preview|projects|projects/(order|browse)|projects/[0-9a-f]{32}/(inspect|operations/(init|workspace)|workspaces/review)|contexts)$`),
 	http.MethodPatch:  regexp.MustCompile(`^/api/v1/projects/[0-9a-f]{32}$`),
 	http.MethodDelete: regexp.MustCompile(`^/api/v1/projects/[0-9a-f]{32}$`),
 }

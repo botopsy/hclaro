@@ -15,7 +15,15 @@
 // `workspace list` output (the "* " line is the CLI default); without one the list is
 // "default" and "demo" with "demo" selected. TF_WORKSPACE overrides the selection for every
 // command, like the real engines, and `show -json` prints ".fake-state/<workspace>.json"
-// when that file exists. `workspace select`, `new` and `delete` are refused.
+// when that file exists. `workspace new NAME`, `workspace select NAME` and
+// `workspace delete NAME` behave like the real engines: new and select refuse to run while
+// TF_WORKSPACE is set, new creates an empty state and selects it, delete refuses the default,
+// the selected and a non-empty workspace. New and select also write "environment" in the data
+// directory. Any extra flag, including -force, is refused.
+// HCLARO_FAKE_WORKSPACE selects failures: "unsupported" (backend without workspaces),
+// "locked", "credentials", "slow" (waits for an interrupt after printing a line), "leak"
+// (echoes a canary and AWS_SECRET_ACCESS_KEY, then succeeds) and "list-fails-after" (succeeds,
+// then every later `workspace list` fails).
 // Invoked as "tofu", it reports an OpenTofu version.
 package main
 
@@ -54,7 +62,13 @@ func main() {
 			fmt.Println(`{"terraform_version":"1.9.8"}`)
 		}
 	case strings.Join(args, " ") == "workspace list":
+		if _, err := os.Stat(".fake-list-broken"); err == nil {
+			fmt.Fprintln(os.Stderr, "Error: failed to list workspaces")
+			os.Exit(1)
+		}
 		_, _ = os.Stdout.Write(workspaceList())
+	case len(args) == 3 && args[0] == "workspace" && (args[1] == "new" || args[1] == "select" || args[1] == "delete"):
+		changeWorkspace(args[1], args[2])
 	case strings.Join(args, " ") == "workspace show":
 		fmt.Println(selectedWorkspace())
 	case strings.Join(args, " ") == "show -json":
@@ -259,4 +273,112 @@ func initialize(json bool) {
 		say("Terraform has created a lock file .terraform.lock.hcl.")
 	}
 	say("Terraform has been successfully initialized!")
+}
+
+// changeWorkspace emulates `workspace new|select|delete NAME`.
+func changeWorkspace(action, name string) {
+	fail := func(text string) {
+		fmt.Fprintf(os.Stderr, "\u2577\n\u2502 Error: %s\n\u2575\n", text)
+		os.Exit(1)
+	}
+	if strings.HasPrefix(name, "-") || strings.ContainsAny(name, "/\\. ") {
+		refuse()
+	}
+	if os.Getenv("TF_WORKSPACE") != "" && action != "delete" {
+		fail("Workspace overridden: the selected workspace is overridden using the TF_WORKSPACE environment variable.")
+	}
+	switch os.Getenv("HCLARO_FAKE_WORKSPACE") {
+	case "unsupported":
+		fail("workspaces not supported")
+	case "locked":
+		fail("Error acquiring the state lock")
+	case "credentials":
+		fail("No valid credential sources found")
+	case "leak":
+		fmt.Println("Backend password=DO_NOT_LEAK_HCLARO_TEST_SECRET")
+		fmt.Println("Using key " + os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	case "slow":
+		interrupted := make(chan os.Signal, 1)
+		signal.Notify(interrupted, os.Interrupt)
+		fmt.Println("Acquiring state lock. This may take a few moments...")
+		select {
+		case <-interrupted:
+			fail("Interrupted")
+		case <-time.After(time.Minute):
+		}
+	}
+	names, current := []string{}, ""
+	for _, line := range strings.Split(string(workspaceList()), "\n") {
+		n := strings.TrimSpace(strings.TrimPrefix(line, "* "))
+		if n == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "* ") {
+			current = n
+		}
+		names = append(names, n)
+	}
+	exists := false
+	for _, n := range names {
+		exists = exists || n == name
+	}
+	switch action {
+	case "new":
+		if exists {
+			fail(fmt.Sprintf("Workspace %q already exists", name))
+		}
+		names, current = append(names, name), name
+		_ = os.MkdirAll(".fake-state", 0o755)
+		_ = os.WriteFile(filepath.Join(".fake-state", name+".json"), []byte(`{"format_version":"1.0"}`+"\n"), 0o644)
+		fmt.Printf("Created and switched to workspace %q!\n\nYou're now on a new, empty workspace.\n", name)
+	case "select":
+		if !exists {
+			fail(fmt.Sprintf("Workspace %q doesn't exist.", name))
+		}
+		current = name
+		fmt.Printf("Switched to workspace %q.\n", name)
+	case "delete":
+		switch {
+		case !exists:
+			fail(fmt.Sprintf("Workspace %q doesn't exist.", name))
+		case name == "default":
+			fail("Cannot delete the default workspace")
+		case name == current:
+			fail(fmt.Sprintf("Workspace %q is your active workspace.", name))
+		}
+		if b, err := os.ReadFile(filepath.Join(".fake-state", name+".json")); err == nil && bytes.Contains(b, []byte(`"resources"`)) {
+			fail(fmt.Sprintf("Workspace %q is currently tracking the following resource instances", name))
+		}
+		kept := []string{}
+		for _, n := range names {
+			if n != name {
+				kept = append(kept, n)
+			}
+		}
+		names = kept
+		_ = os.Remove(filepath.Join(".fake-state", name+".json"))
+		fmt.Printf("Deleted workspace %q!\n", name)
+	}
+	list := ""
+	for _, n := range names {
+		mark := "  "
+		if n == current {
+			mark = "* "
+		}
+		list += mark + n + "\n"
+	}
+	if err := os.WriteFile(".fake-workspaces", []byte(list), 0o644); err != nil {
+		fail("could not write workspaces")
+	}
+	if action != "delete" {
+		data := os.Getenv("TF_DATA_DIR")
+		if data == "" {
+			data = ".terraform"
+		}
+		_ = os.MkdirAll(data, 0o755)
+		_ = os.WriteFile(filepath.Join(data, "environment"), []byte(current), 0o644)
+	}
+	if os.Getenv("HCLARO_FAKE_WORKSPACE") == "list-fails-after" {
+		_ = os.WriteFile(".fake-list-broken", nil, 0o644)
+	}
 }

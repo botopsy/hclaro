@@ -75,6 +75,8 @@ type Operation struct {
 	ProjectID       string   `json:"projectId,omitempty"`
 	Notices         []string `json:"notices,omitempty"`
 	LockfileChanged *bool    `json:"lockfileChanged,omitempty"`
+	// Workspace is set for Hub workspace commands.
+	Workspace *WorkspaceResult `json:"workspace,omitempty"`
 }
 
 // Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved

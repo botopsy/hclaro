@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"time"
 
+	"hclaro/internal/engine"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 )
@@ -45,7 +46,9 @@ func projectError(w http.ResponseWriter, hub *projects.Hub, err error) {
 	case errors.Is(err, projects.ErrBusy):
 		reasonJSON(w, 409, "project_busy", "Initialization or another operation is running in this project. Wait for it to finish, then try again.")
 	case errors.Is(err, projects.ErrInvalidWorkspace):
-		reasonJSON(w, 400, "invalid_workspace", "That is not a workspace name Hclaro can read.")
+		reasonJSON(w, 400, "invalid_workspace", "Use 1–90 letters, digits, - or _, starting with a letter or digit.")
+	case errors.Is(err, projects.ErrInvalidAction):
+		reasonJSON(w, 400, "invalid_action", "Choose new, select or delete.")
 	default:
 		reasonJSON(w, 500, "registry_write_failed", "The project registry could not be saved. Check the configuration directory permissions.")
 	}
@@ -194,11 +197,12 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		c, reason, err := hub.Context(r.PathValue("cid"))
 		if err != nil {
 			message := map[string]string{
-				"project_removed": "This project was removed from the Hub.",
-				"project_changed": "This project's folder or engine changed. Open the workspace again.",
-				"reloaded":        "A newer read of this workspace replaced this one.",
-				"evicted":         "This snapshot was released to save memory. Open the workspace again.",
-				"initialized":     "This project was initialized after this snapshot was read. Open the workspace again.",
+				"project_removed":   "This project was removed from the Hub.",
+				"project_changed":   "This project's folder or engine changed. Open the workspace again.",
+				"reloaded":          "A newer read of this workspace replaced this one.",
+				"evicted":           "This snapshot was released to save memory. Open the workspace again.",
+				"initialized":       "This project was initialized after this snapshot was read. Open the workspace again.",
+				"workspace_deleted": "This workspace was deleted from the project.",
 			}[reason]
 			if message == "" {
 				message = "This workspace view is no longer open. Open the workspace again."
@@ -209,6 +213,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		return c
 	}
 	initRoutes(mux, hub)
+	workspaceRoutes(mux, hub)
 	mux.HandleFunc("GET /api/v1/contexts/{cid}", func(w http.ResponseWriter, r *http.Request) {
 		if c := contextOf(w, r); c != nil {
 			writeJSON(w, 200, workspaceBody(c.Snapshot(), c))
@@ -263,6 +268,63 @@ func initRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			reasonJSON(w, 409, refusal.Code, refusal.Message)
 		case errors.Is(err, projects.ErrContextChanged):
 			reasonJSON(w, 409, "context_changed", "The project, its engine or the environment changed since you reviewed it. Nothing was run. Review it again.")
+		case errors.Is(err, operations.ErrClosed):
+			reasonJSON(w, 503, "shutting_down", "Hclaro is shutting down.")
+		case err != nil:
+			projectError(w, hub, err)
+		default:
+			writeJSON(w, 202, op)
+		}
+	})
+}
+
+// workspaceRoutes serve the review of a workspace command, which runs read-only engine
+// commands, and its explicit, CSRF-protected start. The server builds the argv from the
+// action and a validated name; the start must name an unexpired, unused review.
+func workspaceRoutes(mux *http.ServeMux, hub *projects.Hub) {
+	mux.HandleFunc("POST /api/v1/projects/{id}/workspaces/review", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Action engine.WorkspaceAction `json:"action"`
+			Name   string                 `json:"name"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(inspectTimeout + 10*time.Second))
+		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		defer cancel()
+		review, err := hub.ReviewWorkspace(ctx, r.PathValue("id"), body.Action, body.Name)
+		if err != nil {
+			projectError(w, hub, err)
+			return
+		}
+		writeJSON(w, 200, review)
+	})
+	mux.HandleFunc("POST /api/v1/projects/{id}/operations/workspace", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Action            engine.WorkspaceAction `json:"action"`
+			Name              string                 `json:"name"`
+			ExpectedContextID string                 `json:"expectedContextId"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !engine.ValidAction(body.Action) {
+			projectError(w, hub, projects.ErrInvalidAction)
+			return
+		}
+		if !engine.ValidArgWorkspace(body.Name) {
+			projectError(w, hub, projects.ErrInvalidWorkspace)
+			return
+		}
+		if !contextIDPattern.MatchString(body.ExpectedContextID) {
+			reasonJSON(w, 400, "invalid_context", "Review the workspace command before running it.")
+			return
+		}
+		op, err := hub.StartWorkspace(r.PathValue("id"), body.Action, body.Name, body.ExpectedContextID)
+		switch {
+		case errors.Is(err, projects.ErrContextChanged):
+			reasonJSON(w, 409, "context_changed", "This review expired, was already used, or the project, its engine or the environment changed. Nothing was run. Review it again.")
 		case errors.Is(err, operations.ErrClosed):
 			reasonJSON(w, 503, "shutting_down", "Hclaro is shutting down.")
 		case err != nil:

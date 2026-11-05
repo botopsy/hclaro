@@ -9,7 +9,8 @@ const id = 'a'.repeat(32);
 const contextId = 'f'.repeat(64);
 const legacy: Project = {
   id, alias: 'legacy', rootPath: '/infra/legacy', enginePreference: 'terraform', pinned: false, addedAt: '2026-11-05T10:00:00Z',
-  status: 'ready', initialized: false, backend: 'unknown', executionMode: 'unsupported', providerLock: false, launch: false
+  status: 'ready', initialized: false, backend: 'unknown', executionMode: 'unsupported', providerLock: false, launch: false,
+  workspaceActions: { change: false, reason: 'Initialize the project first.', delete: false, deleteReason: 'Initialize the project first.' }
 };
 const list: ProjectList = {
   projects: [legacy],

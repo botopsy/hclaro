@@ -174,7 +174,7 @@ func (h *Hub) InitStatus(id string) (InitStatus, error) {
 	}
 	h.mu.Unlock()
 	if h.Inits != nil {
-		if op, ok := h.Inits.Latest(p.ID); ok {
+		if op, ok := h.Inits.Latest(p.ID, "init"); ok {
 			s.Operation = &op
 		}
 	}

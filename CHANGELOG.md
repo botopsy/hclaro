@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### CLI workspace lifecycle (M7, draft)
+
+- A Hub project page offers **New workspace…** and, under **Advanced actions**, **Set CLI default…** and **Delete** per workspace. Each lists workspaces with the CLI first, shows the exact command, effects and inherited-setting notices, and runs only after a checkbox (create, set default) or the exact typed name (delete).
+- Commands are fixed: `workspace new NAME`, `workspace select NAME`, `workspace delete NAME`. Names cannot start with `-`; no `-force`, `-or-create`, `-lock=false` or `-state`. `TF_WORKSPACE` is not passed; `TF_CLI_ARGS`/`TF_CLI_ARGS_workspace` with other flags make the actions unavailable.
+- Creating warns that the engine also changes the CLI default; setting the CLI default warns that terminal commands in the folder now target that state. Choosing a workspace in a tab still never runs `workspace select`.
+- Delete only for an empty (no resources or outputs), non-default, non-CLI-default workspace on the local backend, checked at review and again before running. Remote, unknown and non-workspace backends disable the actions with a reason.
+- Reviews are single-use and expire after 10 minutes; a changed workspace list, CLI default, root, engine, configuration or `TF_*` environment refuses the start. One command per project root, shared with init and plans; cancel interrupts the process group.
+- Results show exit code and CLI default before/after; success requires a listing that shows the effect, otherwise `unknown` with advice to list again. Nothing is retried or undone automatically. A deleted workspace's open views close.
+- Hub cards show the CLI default, the workspace last opened in Hclaro and which workspace changes the backend allows.
+- New routes: `POST /api/v1/projects/{id}/workspaces/review`, `POST /api/v1/projects/{id}/operations/workspace`; operations use `kind: "workspace"` and the shared `/api/v1/operations/{id}` routes.
+
 ### Guided init (M6, draft)
 
 - A Hub project page offers **Initialize…** / **Run init again…**. A read-only review shows the folder, engine, backend, workspace context, data directory, lock file, the exact command and its effects; init runs only after an explicit acknowledgement and click.

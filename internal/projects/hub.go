@@ -95,8 +95,10 @@ type Summary struct {
 	ProviderLock     bool        `json:"providerLock"`
 	Launch           bool        `json:"launch"`
 	Inspection       *Inspection `json:"inspection,omitempty"`
-	// Busy names the operation that holds the project root, such as "init".
+	// Busy names the operation that holds the project root: "init", "workspace" or "plan".
 	Busy string `json:"busy,omitempty"`
+	// WorkspaceActions says which workspace commands this project's backend allows.
+	WorkspaceActions WorkspaceSupport `json:"workspaceActions"`
 }
 
 // Environment describes inherited settings that affect every project. Values that could
@@ -136,6 +138,9 @@ type Hub struct {
 	// Initers resolves engines for initialization; Inits runs them. Either nil disables init.
 	Initers IniterFactory
 	Inits   *operations.Inits
+	// WorkspaceManagers resolves engines for workspace commands, which also run through Inits.
+	// Nil disables them.
+	WorkspaceManagers WorkspaceManagerFactory
 	// Locks is shared with the launch project's operation manager: one operation per root.
 	Locks *rootlock.Set
 	// Launch is the canonical root Hclaro was started with, or "".
@@ -151,14 +156,16 @@ type Hub struct {
 	order       []string
 	// closed remembers why recent contexts were closed, so the UI can say so.
 	closed map[string]string
-	loads  chan struct{}
-	wg     sync.WaitGroup
+	// reviews holds reviewed workspace commands by context ID until they start or expire.
+	reviews map[string]*pendingReview
+	loads   chan struct{}
+	wg      sync.WaitGroup
 }
 
 // NewHub creates a Hub. Close cancels running reads.
 func NewHub(registry *Registry, launch string) *Hub {
 	base, stop := context.WithCancel(context.Background())
-	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, loads: make(chan struct{}, 3)}
+	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), WorkspaceManagers: DefaultWorkspaceManagers, Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, reviews: map[string]*pendingReview{}, loads: make(chan struct{}, 3)}
 }
 
 // Close cancels context reads and initializations and waits for them to stop.
@@ -261,6 +268,9 @@ func (h *Hub) summary(p Record) Summary {
 	if s.Status == StatusReady {
 		info := workspace.Inspect(p.RootPath)
 		s.Initialized, s.Backend, s.ExecutionMode, s.ProviderLock = info.Initialized, info.Backend, info.ExecutionMode, info.ProviderLock
+		s.WorkspaceActions = workspaceSupport(info)
+	} else {
+		s.WorkspaceActions = WorkspaceSupport{Reason: s.Problem, DeleteReason: s.Problem}
 	}
 	h.mu.Lock()
 	if in, ok := h.inspections[p.ID]; ok {
@@ -490,7 +500,7 @@ func (h *Hub) Open(projectID, ws string, reload bool) (*Context, bool, error) {
 			return diag("workspace_list", "Unable to list workspaces. Check backend access, credentials and SSO/VPN with the CLI, then read this workspace again.")
 		}
 		if !slices.Contains(list.Names, ws) {
-			return diag("workspace_missing", "This workspace does not exist in the project. Hclaro does not create workspaces; choose another one.")
+			return diag("workspace_missing", "This workspace does not exist in the project. Choose another one, or create it from the project page.")
 		}
 		return nil
 	}

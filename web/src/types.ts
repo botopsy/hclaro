@@ -74,8 +74,8 @@ export type EngineDiagnostic = {
 };
 export type Operation = {
   id: string;
-  kind: 'plan' | 'apply' | 'init';
-  // queued, cancelling and unknown are used by Hub initialization only.
+  kind: 'plan' | 'apply' | 'init' | 'workspace';
+  // queued, cancelling and unknown are used by Hub initialization and workspace commands only.
   status: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
   stage: string;
   startedAt: string;
@@ -103,6 +103,8 @@ export type Operation = {
   projectId?: string;
   notices?: string[];
   lockfileChanged?: boolean;
+  // Hub workspace commands only.
+  workspace?: WorkspaceResult;
 };
 export function operationActive(op: Pick<Operation, 'status'>) {
   return op.status === 'queued' || op.status === 'running' || op.status === 'cancelling';
@@ -309,8 +311,53 @@ export type Project = {
   providerLock: boolean;
   launch: boolean;
   inspection?: Inspection;
-  // The operation holding the project root, such as "init".
+  // The operation holding the project root: "init", "workspace" or "plan".
   busy?: string;
+  workspaceActions: WorkspaceSupport;
+};
+export type WorkspaceAction = 'new' | 'select' | 'delete';
+// Which workspace commands the project's backend allows in Hclaro.
+export type WorkspaceSupport = {
+  change: boolean;
+  reason?: string;
+  delete: boolean;
+  deleteReason?: string;
+};
+export type WorkspaceResult = {
+  action: WorkspaceAction;
+  name: string;
+  cliDefaultBefore?: string;
+  cliDefaultAfter?: string;
+  workspaces?: string[];
+  ran: boolean;
+  verified: boolean;
+};
+// The reviewed preflight of one workspace command. Producing it lists workspaces (and, for
+// delete, reads that workspace's state); it never changes anything.
+export type WorkspaceReview = {
+  projectId: string;
+  alias: string;
+  rootPath: string;
+  action: WorkspaceAction;
+  name: string;
+  engine?: string;
+  engineVersion?: string;
+  backend: string;
+  executionMode: string;
+  dataDir: string;
+  workspaces: string[];
+  cliDefault?: string;
+  command: string[];
+  notices: string[];
+  empty?: boolean;
+  support: WorkspaceSupport;
+  launch: boolean;
+  canRun: boolean;
+  reason?: string;
+  reasonCode?: string;
+  busy?: string;
+  expiresAt?: string;
+  contextId?: string;
 };
 // Read-only init preflight; no engine command runs to produce it.
 export type InitStatus = {

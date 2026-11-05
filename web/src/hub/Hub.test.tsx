@@ -21,6 +21,7 @@ const project = (id: string, alias: string, extra: Partial<Project> = {}): Proje
   executionMode: 'local-cli',
   providerLock: false,
   launch: false,
+  workspaceActions: { change: true, delete: true },
   ...extra
 });
 function listing(projects: Project[]): ProjectList {
