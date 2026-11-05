@@ -1,11 +1,15 @@
 # Changelog
 
-## Unreleased — release packaging
+## 0.1.0-alpha.2 — 2026-11-05
+
+First release published by the release workflow. Covers everything since 0.1.0-alpha.1.
+
+### Release packaging
 
 - Tag-triggered release workflow: full CI, embed drift check, cross-compiled archives for macOS/Linux (amd64, arm64) and Windows amd64 with checksums, native `--version` smoke tests, and a GitHub release (pre-release for suffixed tags).
 - CI no longer runs twice on tag pushes; the release workflow calls it instead.
 
-## Unreleased — M2 plan visualizer
+### M2 plan visualizer
 
 - Explicit plan runs from the UI with a preflight dialog: `plan -input=false -json -out=<private temp>`, then `show -json`; optional variable files from the project root.
 - Plan review: per-action counts and filters, complete change list (including collateral deletes, reads, moves, imports and deposed objects), attribute diffs with sensitive / known-after-apply / forces-replacement markers, outputs, drift, plan SHA-256 and configuration-change warning.
@@ -18,7 +22,7 @@
 - Verified against real Terraform 1.5.5 on a disposable local project. Fixes found there: the default local backend (no `backend` block) is now recognized for planning; partly unknown outputs show "known after apply" per element; a blank first line no longer hides the interrupt message.
 
 
-## Unreleased — M1 verification closed locally
+### M1 verification closed locally
 
 - Embedded the production Vite build in place of the offline preview.
 - Verified locally: Go race tests, Vitest, typecheck, ESLint, production and cross builds, live loopback demo with Host/Origin/session checks, full-API canary sweep, Ctrl+C shutdown, and Playwright browser checks.
