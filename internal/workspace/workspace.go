@@ -330,6 +330,10 @@ var (
 	backendJSON  = regexp.MustCompile(`"(backend|cloud)"\s*:`)
 )
 
+// DeclaresBackend reports whether a root module file may declare a backend or cloud block,
+// erring towards true.
+func DeclaresBackend(root string) bool { return declaresBackend(root) }
+
 // declaresBackend reports whether a root module file may declare a backend or cloud block.
 // The scan is textual and errs towards true, for example for a commented-out block or a
 // file that cannot be read.

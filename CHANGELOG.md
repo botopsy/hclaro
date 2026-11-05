@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Guided init (M6, draft)
+
+- A Hub project page offers **Initialize…** / **Run init again…**. A read-only review shows the folder, engine, backend, workspace context, data directory, lock file, the exact command and its effects; init runs only after an explicit acknowledgement and click.
+- The command is fixed: `init -input=false -no-color`, or `init -input=false -json` for Terraform 1.9+. No upgrade, migration, force-copy, reconfigure or backend values; inherited `TF_CLI_ARGS`/`TF_CLI_ARGS_init` with other flags make init unavailable; `TF_WORKSPACE` is not passed.
+- The reviewed context (root, engine executable, configuration and lock file fingerprint, `TF_*` environment) must be unchanged at request time and again just before the engine starts.
+- Sanitized streaming log with cancel (interrupts the engine's process group), honest status (`succeeded` only with exit 0 and a data directory; `unknown` otherwise), exit code, lock-file change notice and classified remediation for backend migration, interactive input, lock-file upgrade, credentials, network, registry, backend settings, state lock and version mismatch. Never retried automatically.
+- One operation per project root: init, and the launch project's plan/apply/import, exclude each other for the same folder; listing or reading that project's workspaces waits. Other projects initialize independently.
+- New routes: `GET /api/v1/projects/{id}/init-status`, `POST /api/v1/projects/{id}/operations/init`; init operations use the existing `/api/v1/operations/{id}`, `/events` and `/cancel`. Operation statuses add `queued`, `cancelling` and `unknown`.
+
 ### Workspace Hub (M5, draft)
 
 - New **Projects** view, reachable from every screen: register Terraform/OpenTofu root folders by typed path or with a one-folder-at-a-time folder chooser; rename, pin, reorder and remove them; see status, initialization, backend type, engine version, workspace count and last-opened time. Removing forgets the entry only. Moved or deleted folders stay listed with **Repair path**.

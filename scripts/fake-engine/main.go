@@ -3,6 +3,10 @@
 // that declares an import block gets the import plan fixture; -generate-config-out writes
 // the generated configuration fixture.
 // HCLARO_FAKE_APPLY selects apply behavior: unset (success), "stale" or "fail".
+// HCLARO_FAKE_INIT selects init behavior: unset (success: creates the data directory and a
+// lock file), "migrate", "prompt", "credentials", "registry", "slow" (waits for an
+// interrupt) or "leak" (echoes a canary and AWS_SECRET_ACCESS_KEY, then succeeds). Only
+// `init -input=false -no-color` and `init -input=false -json` are accepted.
 // HCLARO_FAKE_SPY, when set, names a file that receives each invocation's argv, one
 // NUL-separated line per call, so tests can assert exact flags. With HCLARO_FAKE_SPY_ENV
 // also set, the line is prefixed with "TF_WORKSPACE=<value or unset>" and a NUL.
@@ -79,6 +83,10 @@ func main() {
 		plan(strings.TrimPrefix(args[3], "-out="), generate)
 	case len(args) == 4 && strings.Join(args[:3], " ") == "apply -input=false -json":
 		apply(args[3])
+	case strings.Join(args, " ") == "init -input=false -no-color":
+		initialize(false)
+	case strings.Join(args, " ") == "init -input=false -json":
+		initialize(true)
 	default:
 		refuse()
 	}
@@ -191,4 +199,64 @@ func declaresImport() bool {
 		}
 	}
 	return false
+}
+
+// initialize emulates a standard init. Human output goes to stdout and errors to stderr, as
+// with the real engines; with -json every line is a machine-readable UI message.
+func initialize(json bool) {
+	say := func(text string) {
+		if json {
+			fmt.Printf("{\"type\":\"init_output\",\"@level\":\"info\",\"@message\":%q}\n", text)
+		} else {
+			fmt.Println(text)
+		}
+	}
+	fail := func(summary, detail string) {
+		if json {
+			fmt.Printf("{\"type\":\"diagnostic\",\"@level\":\"error\",\"diagnostic\":{\"severity\":\"error\",\"summary\":%q,\"detail\":%q}}\n", summary, detail)
+		} else {
+			fmt.Fprintf(os.Stderr, "\u2577\n\u2502 Error: %s\n\u2502 \n\u2502 %s\n\u2575\n", summary, detail)
+		}
+		os.Exit(1)
+	}
+	if json {
+		fmt.Println(`{"type":"version","@level":"info","terraform":"1.9.8","ui":"1.2"}`)
+	}
+	say("Initializing the backend...")
+	switch os.Getenv("HCLARO_FAKE_INIT") {
+	case "migrate":
+		fail("Backend configuration changed", "A change in the backend configuration has been detected, which may require migrating existing state. If you wish to attempt automatic migration of the state, use \"init -migrate-state\". If you wish to store the current configuration with no changes to the state, use \"init -reconfigure\".")
+	case "prompt":
+		fail("No value for required variable", "The root module input variable \"region\" is not set, and input is disabled.")
+	case "credentials":
+		fail("No valid credential sources found", "Please see the provider documentation for authentication.")
+	case "registry":
+		fail("Failed to query available provider packages", "Could not retrieve the list of available versions for provider hashicorp/null.")
+	case "leak":
+		say("Backend password=DO_NOT_LEAK_HCLARO_TEST_SECRET")
+		say("Using key " + os.Getenv("AWS_SECRET_ACCESS_KEY") + " for the backend")
+	case "slow":
+		interrupted := make(chan os.Signal, 1)
+		signal.Notify(interrupted, os.Interrupt)
+		say("Initializing provider plugins...")
+		select {
+		case <-interrupted:
+			fail("Interrupted", "Init was interrupted.")
+		case <-time.After(time.Minute):
+		}
+	}
+	say("Initializing provider plugins...")
+	say("- Installing hashicorp/null v3.2.2...")
+	data := os.Getenv("TF_DATA_DIR")
+	if data == "" {
+		data = ".terraform"
+	}
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		fail("Failed to create the data directory", "")
+	}
+	if _, err := os.Stat(".terraform.lock.hcl"); err != nil {
+		_ = os.WriteFile(".terraform.lock.hcl", []byte("# Synthetic lock file written by the fake engine.\n"), 0o644)
+		say("Terraform has created a lock file .terraform.lock.hcl.")
+	}
+	say("Terraform has been successfully initialized!")
 }

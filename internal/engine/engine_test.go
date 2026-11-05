@@ -16,6 +16,9 @@ func TestHelperProcess(t *testing.T) {
 	if os.Getenv("HCLARO_PLAN_HELPER") == "1" {
 		planHelper()
 	}
+	if os.Getenv("HCLARO_INIT_HELPER") == "1" {
+		initHelper()
+	}
 	if os.Getenv("HCLARO_TEST_HELPER") != "1" {
 		return
 	}

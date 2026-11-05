@@ -20,6 +20,7 @@ import (
 	"hclaro/internal/engine"
 	"hclaro/internal/imports"
 	"hclaro/internal/plan"
+	"hclaro/internal/rootlock"
 	"hclaro/internal/workspace"
 )
 
@@ -69,6 +70,11 @@ type Operation struct {
 	CancelRequested bool               `json:"cancelRequested"`
 	LogDropped      int64              `json:"logDropped"`
 	LogRetained     bool               `json:"logRetained"`
+	// ProjectID, Notices and LockfileChanged are set for Hub initializations. Notices disclose
+	// inherited settings that were ignored; LockfileChanged is set once the engine has run.
+	ProjectID       string   `json:"projectId,omitempty"`
+	Notices         []string `json:"notices,omitempty"`
+	LockfileChanged *bool    `json:"lockfileChanged,omitempty"`
 }
 
 // Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved
@@ -100,6 +106,8 @@ type entry struct {
 	log    *Log
 	cancel context.CancelFunc
 	start  time.Time
+	// release gives up the project root claim; it is called once the operation ends.
+	release func()
 }
 
 type Manager struct {
@@ -116,7 +124,10 @@ type Manager struct {
 	PlanMaxAge   time.Duration
 	ApprovalTTL  time.Duration
 	// Reload re-reads state after an apply. It is nil in tests that do not need it.
-	Reload   func(context.Context)
+	Reload func(context.Context)
+	// Locks, when set, is shared with Hub initialization so a plan, import or apply never
+	// runs in a root that is being initialized, and the other way around.
+	Locks    *rootlock.Set
 	entries  []*entry
 	plans    []*Plan
 	running  *entry
@@ -195,7 +206,11 @@ func (m *Manager) StartPlan(varFiles, replaceIDs []string) (Operation, error) {
 		}
 		replace = append(replace, resource.Address)
 	}
-	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: replace}), nil
+	release, ok := m.Locks.Acquire(m.root, "plan")
+	if !ok {
+		return Operation{}, ErrBusy
+	}
+	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: replace}, release), nil
 }
 
 // selectVarFiles validates a variable file selection against the files in the root.
@@ -215,7 +230,7 @@ func (m *Manager) selectVarFiles(varFiles []string) ([]string, error) {
 }
 
 // startPlanLocked starts a validated plan operation. Caller holds mu.
-func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation) Operation {
+func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation, release func()) Operation {
 	command := []string{snap.Info.Engine, "plan", "-input=false", "-json", "-out=<private temporary file>"}
 	for _, name := range op.VarFiles {
 		command = append(command, "-var-file="+name)
@@ -229,7 +244,7 @@ func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation) Operati
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
 	op.ID, op.Kind, op.Status, op.Stage = m.NewID(), "plan", Running, "Starting"
 	op.StartedAt, op.Command, op.Diagnostics, op.LogRetained = time.Now().UTC().Format(time.RFC3339), command, []EngineDiagnostic{}, true
-	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now()}
+	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release}
 	m.entries = append(m.entries, e)
 	m.trim()
 	m.running = e
@@ -313,6 +328,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 	}
 	o.LogDropped = e.log.Dropped()
 	m.running = nil
+	e.release()
 	m.mu.Unlock()
 	switch {
 	case result != nil:

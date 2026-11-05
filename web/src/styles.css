@@ -3434,3 +3434,122 @@ kbd {
     flex-direction: column;
   }
 }
+
+/* Init wizard (M06) */
+.init-dialog {
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.init-facts {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 2px 12px;
+}
+
+.init-command {
+  border: 1px solid var(--border);
+  background: var(--inset);
+  border-radius: 7px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  display: flex;
+}
+
+.init-command > code {
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.init-notices {
+  color: var(--warn);
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  list-style: none;
+  display: flex;
+}
+
+.init-notices li {
+  align-items: flex-start;
+  gap: 8px;
+  display: flex;
+}
+
+.init-notices svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.init-ack {
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  display: flex;
+}
+
+.init-ack input {
+  margin-top: 4px;
+}
+
+.init-result {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.init-result h3 {
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 15px;
+  display: flex;
+}
+
+.init-result p {
+  margin: 4px 0;
+}
+
+.init-result-ok h3 {
+  color: var(--create);
+}
+
+.init-result-problem {
+  border-color: color-mix(in srgb, var(--destroy), transparent 60%);
+}
+
+.init-result-problem h3 {
+  color: var(--destroy);
+}
+
+.init-diagnostics {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.hub-tag-warn {
+  color: var(--warn);
+}
+
+.hub-tag-busy {
+  color: var(--accent-text);
+  align-items: center;
+  gap: 4px;
+  display: inline-flex;
+}
+
+.status-queued,
+.status-cancelling {
+  color: var(--accent-text);
+}
+
+.status-unknown {
+  color: var(--warn);
+}

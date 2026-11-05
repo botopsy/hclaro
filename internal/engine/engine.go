@@ -32,6 +32,9 @@ type CLI struct {
 	// IgnoreInheritedWorkspace drops an inherited TF_WORKSPACE even without a selection, so
 	// Hub inspections never depend on how Hclaro was started.
 	IgnoreInheritedWorkspace bool
+	// Environ, when non-nil, replaces Hclaro's environment as the base for every child, so an
+	// operation runs with the environment pinned when it was reviewed.
+	Environ []string
 }
 
 var ErrUnsafeArgs = errors.New("inherited TF_CLI_ARGS contains unsupported arguments; only -no-color is accepted")
@@ -82,7 +85,11 @@ func (c *CLI) commandEnv(ctx context.Context, dropWorkspace bool, selected strin
 	cmd.WaitDelay = time.Second
 	// Environment values and CLI diagnostics can contain secrets. Inherited
 	// logging is disabled so Terraform cannot persist raw state via TF_LOG_PATH.
-	for _, item := range os.Environ() {
+	environ := c.Environ
+	if environ == nil {
+		environ = os.Environ()
+	}
+	for _, item := range environ {
 		key, value, _ := strings.Cut(item, "=")
 		if key == "TF_CLI_ARGS" || key == "TF_CLI_ARGS_"+args[0] {
 			for _, arg := range strings.Fields(value) {

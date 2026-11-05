@@ -137,6 +137,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	host := listener.Addr().String()
 	manager := operations.NewManager(store, planner, root)
+	// Hub initialization and the launch project's plans share one claim per project root.
+	manager.Locks = hub.Locks
 	// A saved plan can hold secrets; remove any left by an earlier Hclaro that was killed.
 	if n := manager.SweepStale(time.Now()); n > 0 {
 		fmt.Fprintf(output, "Deleted %d saved plan%s left by an earlier session that did not stop cleanly.\n", n, map[bool]string{true: "", false: "s"}[n == 1])
@@ -184,8 +186,9 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		}
 	}
 	cancel()
-	// A running plan is interrupted and its private temp files removed before exit.
+	// A running plan or init is interrupted and its private temp files removed before exit.
 	manager.Close(20 * time.Second)
+	hub.Inits.Close(20 * time.Second)
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()
 	_ = server.Shutdown(shutdownCtx)

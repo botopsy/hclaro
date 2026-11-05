@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/operations"
+	"hclaro/internal/rootlock"
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
 )
@@ -93,6 +95,8 @@ type Summary struct {
 	ProviderLock     bool        `json:"providerLock"`
 	Launch           bool        `json:"launch"`
 	Inspection       *Inspection `json:"inspection,omitempty"`
+	// Busy names the operation that holds the project root, such as "init".
+	Busy string `json:"busy,omitempty"`
 }
 
 // Environment describes inherited settings that affect every project. Values that could
@@ -129,6 +133,11 @@ func (c *Context) Snapshot() workspace.Snapshot { return c.store.Get() }
 type Hub struct {
 	Registry *Registry
 	Engines  EngineFactory
+	// Initers resolves engines for initialization; Inits runs them. Either nil disables init.
+	Initers IniterFactory
+	Inits   *operations.Inits
+	// Locks is shared with the launch project's operation manager: one operation per root.
+	Locks *rootlock.Set
 	// Launch is the canonical root Hclaro was started with, or "".
 	Launch string
 	Now    func() time.Time
@@ -149,12 +158,15 @@ type Hub struct {
 // NewHub creates a Hub. Close cancels running reads.
 func NewHub(registry *Registry, launch string) *Hub {
 	base, stop := context.WithCancel(context.Background())
-	return &Hub{Registry: registry, Engines: DefaultEngines, Launch: launch, Now: time.Now, MaxContexts: 8, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, loads: make(chan struct{}, 3)}
+	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, loads: make(chan struct{}, 3)}
 }
 
-// Close cancels context reads and waits for them to stop.
+// Close cancels context reads and initializations and waits for them to stop.
 func (h *Hub) Close() {
 	h.stop()
+	if h.Inits != nil {
+		h.Inits.Close(20 * time.Second)
+	}
 	h.wg.Wait()
 }
 
@@ -245,6 +257,7 @@ func check(root string) (status, problem string) {
 func (h *Hub) summary(p Record) Summary {
 	s := Summary{ID: p.ID, Alias: p.Alias, RootPath: p.RootPath, EnginePreference: p.EnginePreference, Pinned: p.Pinned, AddedAt: p.AddedAt, LastOpenedAt: p.LastOpenedAt, LastWorkspace: p.LastWorkspace, Backend: "unknown", ExecutionMode: "unsupported", Launch: h.Launch != "" && h.Launch == p.RootPath}
 	s.Status, s.Problem = check(p.RootPath)
+	s.Busy, _ = h.Locks.Holder(p.RootPath)
 	if s.Status == StatusReady {
 		info := workspace.Inspect(p.RootPath)
 		s.Initialized, s.Backend, s.ExecutionMode, s.ProviderLock = info.Initialized, info.Backend, info.ExecutionMode, info.ProviderLock
@@ -374,6 +387,9 @@ func (h *Hub) Inspect(ctx context.Context, id string) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
+	if _, busy := h.Locks.Holder(p.RootPath); busy {
+		return Summary{}, ErrBusy
+	}
 	in := &Inspection{Workspaces: []string{}, InspectedAt: h.Now().UTC().Format(time.RFC3339)}
 	status, problem := check(p.RootPath)
 	switch {
@@ -405,7 +421,7 @@ func (h *Hub) inspect(ctx context.Context, p Record) (name, version string, name
 		return name, version, names, "", 0, diag("shared_data_dir", "TF_DATA_DIR is an absolute path, so every project would share one data directory and backend initialization. Restart Hclaro without it, or with a relative TF_DATA_DIR.")
 	}
 	if !workspace.Inspect(p.RootPath).Initialized {
-		return name, version, names, "", 0, diag("uninitialized", "Backend initialization was not detected. Run init yourself in this project, then inspect it again. Nothing was initialized automatically.")
+		return name, version, names, "", 0, diag("uninitialized", "Backend initialization was not detected. Review and run init from this project's page, or run it yourself, then list workspaces again. Nothing was initialized automatically.")
 	}
 	list, err := adapter.ListWorkspaces(ctx)
 	if err != nil {
@@ -429,6 +445,9 @@ func (h *Hub) Open(projectID, ws string, reload bool) (*Context, bool, error) {
 	}
 	if status, problem := check(p.RootPath); status != StatusReady {
 		return nil, false, &PathError{problem}
+	}
+	if _, busy := h.Locks.Holder(p.RootPath); busy {
+		return nil, false, ErrBusy
 	}
 	data, shared := dataDir()
 	if shared {
