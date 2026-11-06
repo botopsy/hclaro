@@ -216,11 +216,16 @@ func TestPlanProfileOptions(t *testing.T) {
 // A drift scan is a refresh-only plan with the same private output and profile options; it
 // never becomes an apply or a state-writing refresh.
 func TestPlanRefreshOnlyArguments(t *testing.T) {
-	args, err := planArgs(PlanRequest{Out: "/tmp/x/plan.tfplan", RefreshOnly: true, VarFiles: []string{"prod.tfvars"}, LockTimeoutSeconds: 30})
+	// filepath.Abs keeps the path absolute on Windows too, where "/tmp/..." is not.
+	planOut, err := filepath.Abs(filepath.Join("x", "plan.tfplan"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(args, " "); got != "plan -input=false -json -out=/tmp/x/plan.tfplan -refresh-only -var-file=prod.tfvars -lock-timeout=30s" {
+	args, err := planArgs(PlanRequest{Out: planOut, RefreshOnly: true, VarFiles: []string{"prod.tfvars"}, LockTimeoutSeconds: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(args, " "); got != "plan -input=false -json -out="+planOut+" -refresh-only -var-file=prod.tfvars -lock-timeout=30s" {
 		t.Fatalf("argv %q", got)
 	}
 	c := planCLI(t, "ok")
