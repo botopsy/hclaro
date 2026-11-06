@@ -277,6 +277,19 @@ func (h *Hub) StartInit(id, expected string) (operations.Operation, error) {
 		},
 		// Inspections and open snapshots describe the project before init; drop them.
 		Finished: func() { h.forget(p.ID, "initialized") },
-		Release:  release,
+		Release:  h.afterLaunchInit(p.RootPath, release),
 	})
+}
+
+// afterLaunchInit wraps the root claim of an init that runs: when the root is the launch
+// project, its view (read before the init) is read again once the claim is released.
+func (h *Hub) afterLaunchInit(root string, release func()) func() {
+	if root != h.Launch || h.LaunchChanged == nil {
+		return release
+	}
+	changed := h.LaunchChanged
+	return func() {
+		release()
+		changed()
+	}
 }

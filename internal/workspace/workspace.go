@@ -86,6 +86,13 @@ func NewScoped(info Info, scope Scope) *Store {
 	s.scope = &scope
 	return s
 }
+
+// Reset replaces the project metadata with a fresh inspection and marks the store loading,
+// so a following Load reads the project as it is now (for example after an init).
+func (s *Store) Reset(info Info) {
+	s.set(Snapshot{Status: "loading", Info: info, Index: state.Empty()})
+}
+
 func (s *Store) Get() Snapshot         { s.mu.RLock(); defer s.mu.RUnlock(); return s.snapshot }
 func (s *Store) set(snapshot Snapshot) { s.mu.Lock(); defer s.mu.Unlock(); s.snapshot = snapshot }
 
@@ -188,8 +195,8 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	snap.Index = state.Empty()
 	snap.Info.Capabilities = Capabilities{}
 	s.set(snap)
-	// The launch project is re-read by restarting; Hub contexts can be read again in the UI.
-	again := "restart Hclaro"
+	// Both the launch project and Hub contexts can be read again in the UI.
+	again := "read the project again"
 	if s.scope != nil {
 		again = "read this workspace again"
 	}
@@ -198,7 +205,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		snap.Index = state.Empty()
 		// A project without recorded state can still be planned; other failures cannot.
 		planning := snap.Info.Capabilities
-		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above and restart Hclaro.", ApplyReason: "Applying needs a readable workspace.", ImportReason: "Importing needs a readable workspace. Resolve the issue above and restart Hclaro."}
+		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above, then read the project again.", ApplyReason: "Applying needs a readable workspace.", ImportReason: "Importing needs a readable workspace. Resolve the issue above, then read the project again."}
 		if s.scope != nil {
 			snap.Info.Capabilities = s.readOnly()
 		}

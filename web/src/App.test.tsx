@@ -1,4 +1,4 @@
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, within, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -125,6 +125,30 @@ describe('Resource explorer', () => {
     app();
     expect(await screen.findByRole('alert')).toHaveTextContent('Initialize this workspace first');
     expect(screen.queryByText('A clean slate')).not.toBeInTheDocument();
+  });
+  it('reads the terminal-opened project again after it was initialized, without running init or plan', async () => {
+    let initialized = false;
+    const posts: { url: string; body: unknown }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (init.method === 'POST') {
+        posts.push({ url, body: JSON.parse(init.body as string) });
+        initialized = true;
+        return Response.json({ status: 'loading' }, { status: 202 });
+      }
+      if (url.endsWith('/session')) return Response.json({ csrfToken: 'c'.repeat(64) });
+      if (url.endsWith('workspace')) return Response.json(initialized ? workspace : { ...workspace, status: 'error', diagnostic: { code: 'uninitialized', message: 'Backend initialization was not detected. Read the project again after init.' } });
+      if (url.endsWith('operations')) return Response.json({ operations: [] });
+      return Response.json({ resources: [resource], total: 1 });
+    }));
+    app();
+    const user = userEvent.setup();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Initialize this workspace first');
+    // One in the context bar and one on the error screen.
+    expect(screen.getAllByRole('button', { name: 'Read again' })).toHaveLength(2);
+    await user.click(within(alert).getByRole('button', { name: 'Read again' }));
+    expect(await screen.findByRole('button', { name: /main.*aws_subnet/ })).toBeInTheDocument();
+    expect(posts).toEqual([{ url: '/api/v1/workspace/reload', body: {} }]);
   });
   it('shows empty and no-match states without inventing resources', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('workspace') ? {

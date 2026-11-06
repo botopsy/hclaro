@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Read the launch project again
+
+- The project opened from the terminal has a **Read again** button (context bar and its error screen). It inspects the folder and rereads recorded state as at startup; no init, plan or refresh runs. Refused while a plan, apply, import or Hub operation runs in that folder.
+- Initializing that same folder from the Hub rereads it automatically once init ends, so Plans, Import and Operations become available without restarting Hclaro. Previously the view stayed "uninitialized" until a restart.
+- **Tools** in the sidebar now works for the project opened from the terminal: it opens that folder's Hub Tools view in the workspace the launch view reads, or, if the folder is not saved in the Hub, goes to the Hub's **Save to Hub** prompt. Previously it was disabled.
+- New route: `POST /api/v1/workspace/reload` (`{}`) → 202; 409 `operation_running`, `workspace_loading`, `reload_unavailable`.
+
 ## 0.1.0-alpha.5 — 2026-11-06
 
 The Workspace Hub, guided init, CLI workspace lifecycle and project tools are new in this release. They have been tested only against a synthetic engine, not a real Terraform/OpenTofu engine or remote backend; treat them as drafts and use them only on disposable projects.

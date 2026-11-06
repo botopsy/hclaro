@@ -209,10 +209,34 @@ describe('Project tools', () => {
     expect(started()).toHaveLength(0);
   });
 
-  it('is unavailable for the project opened from the terminal', async () => {
-    stub({});
-    app('/');
-    const tools = await screen.findByRole('button', { name: 'Tools' });
-    expect(tools).toBeDisabled();
+  it('opens the Hub tools of the project opened from the terminal, or asks to save it first', async () => {
+    const launchSnapshot = { status: 'ready', capturedAt: '2026-11-05T12:00:00Z', info: { project: 'network', engine: 'terraform', version: '1.9.8', workspace: 'dev', backend: 'local', executionMode: 'local-cli', initialized: true, providerLock: true, capabilities: {}, warnings: [] }, managed: 0, data: 0, modules: [], providers: {}, types: {} };
+    for (const registered of [true, false]) {
+      stub({});
+      const hub = fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.replace('/api/v1/', '').split('?')[0];
+        if (path === 'workspace') return Response.json(launchSnapshot);
+        if (path === 'projects') return Response.json({ ...list, projects: registered ? [{ ...network, launch: true }] : [], launchRoot: '/infra/network' });
+        if (path === 'resources') return Response.json({ resources: [], total: 0 });
+        return hub(url, init);
+      }));
+      const user = userEvent.setup();
+      app('/');
+      const tools = await screen.findByRole('button', { name: 'Tools' });
+      expect(tools).toBeEnabled();
+      await waitFor(() => expect(tools.title).toContain(registered ? 'workspace dev' : 'Save this project to the Hub'));
+      await user.click(tools);
+      if (registered) {
+        expect(window.location.pathname).toBe(`/projects/${id}/workspaces/dev/tools`);
+        expect(await screen.findByRole('heading', { name: 'Project tools' })).toBeInTheDocument();
+      } else {
+        expect(window.location.pathname).toBe('/projects');
+        expect(await screen.findByText(/Save this project to the Hub to run project tools/)).toBeInTheDocument();
+      }
+      expect(started()).toHaveLength(0);
+      cleanup();
+      vi.unstubAllGlobals();
+    }
   });
 });

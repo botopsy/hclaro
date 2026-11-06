@@ -295,3 +295,43 @@ func TestInitClaimsRootExclusivelyAndCancels(t *testing.T) {
 		t.Fatalf("root still claimed: %v", err)
 	}
 }
+
+// An init of the folder Hclaro was launched with rereads the launch project once the root
+// is free; inits of other projects and refused starts do not.
+func TestInitOfTheLaunchProjectRereadsIt(t *testing.T) {
+	hub, ids, _ := initFixture(t)
+	legacy, network := ids["legacy"], ids["network"]
+	hub.Launch = root(t, hub, legacy)
+	calls := make(chan bool, 4)
+	hub.LaunchChanged = func() {
+		_, held := hub.Locks.Holder(hub.Launch)
+		calls <- held
+	}
+	if _, err := hub.StartInit(legacy, strings.Repeat("0", 64)); !errors.Is(err, ErrContextChanged) {
+		t.Fatalf("stale review: %v", err)
+	}
+	status, _ := hub.InitStatus(network)
+	op, err := hub.StartInit(network, status.ContextID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitInit(t, hub, op.ID)
+	status, _ = hub.InitStatus(legacy)
+	if op, err = hub.StartInit(legacy, status.ContextID); err != nil {
+		t.Fatal(err)
+	}
+	if done, _ := waitInit(t, hub, op.ID); done.Status != operations.Succeeded {
+		t.Fatalf("%+v", done)
+	}
+	select {
+	case held := <-calls:
+		if held {
+			t.Fatal("launch reread ran while init still held the root")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("launch project was not reread")
+	}
+	if len(calls) != 0 {
+		t.Fatalf("%d extra rereads", len(calls))
+	}
+}

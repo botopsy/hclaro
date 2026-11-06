@@ -111,11 +111,12 @@ function Workbench({
     }),
     enabled: !!scoped
   });
+  // The launch view also reads the registry (no engine command) to find its own Hub entry.
   const projects = useQuery({
     ...projectsQuery,
-    enabled: !!scoped
+    enabled: !!scoped || route.kind === 'launch'
   });
-  const project = projects.data?.projects.find(p => p.id === scoped?.projectId);
+  const project = projects.data?.projects?.find(p => p.id === scoped?.projectId);
   // Launch routes keep their original paths; a Hub context reads only through its own ID.
   const base = scoped ? opened.data ? `contexts/${opened.data.id}` : undefined : '';
   const workspace = useQuery({
@@ -137,6 +138,33 @@ function Workbench({
     if (noLaunch && route.kind === 'launch' && view !== 'Settings') navigate('/projects', true);
   }, [noLaunch, route.kind, view]);
   const reread = () => setGeneration(g => g + 1);
+  // Project tools run in a Hub workspace context. For the project opened from the terminal,
+  // Tools opens its Hub entry in the workspace this view reads; unsaved projects go to the
+  // Hub, which offers Save to Hub.
+  const launchProject = !scoped ? projects.data?.projects?.find(p => p.launch) : undefined;
+  const launchToolsWorkspace = w?.info.workspace || launchProject?.inspection?.cliDefault || 'default';
+  function openLaunchTools() {
+    if (launchProject) {
+      navigate(contextPath(launchProject.id, launchToolsWorkspace, 'Tools'));
+      return;
+    }
+    setNotice('Save this project to the Hub to run project tools: use Save to Hub below.');
+    navigate('/projects');
+  }
+  // The project opened from the terminal is inspected and read again on the server, as at
+  // startup, for example after it was initialized from the Hub. No init, plan or refresh runs.
+  const [rereading, setRereading] = useState(false);
+  async function rereadLaunch() {
+    setRereading(true);
+    try {
+      await post('workspace/reload', {});
+      await workspace.refetch();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : 'Unable to read the project again.');
+    } finally {
+      setRereading(false);
+    }
+  }
   const operations = useQuery({
     queryKey: ['operations'],
     queryFn: () => api<{ operations: Operation[] }>('operations'),
@@ -249,9 +277,10 @@ function Workbench({
           icon: Icon
         }) => {
           // Project tools run in a Hub workspace context only.
-          const unavailable = noLaunch && name !== 'Settings' || name === 'Tools' && !scoped;
+          const unavailable = noLaunch && name !== 'Settings';
+          const launchTools = name === 'Tools' && !scoped;
           const active = !onHub && view === name;
-          return <button key={name} aria-label={name} disabled={unavailable} title={name === 'Tools' && !scoped ? 'Project tools run in Hub workspaces. Open this project from Projects.' : unavailable ? 'Open a project from Projects first.' : undefined} className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>;
+          return <button key={name} aria-label={name} disabled={unavailable} title={unavailable ? 'Open a project from Projects first.' : launchTools ? launchProject ? `Opens project tools for this folder in a Hub tab, workspace ${launchToolsWorkspace}.` : 'Project tools run in Hub workspaces. Save this project to the Hub first.' : undefined} className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => launchTools ? openLaunchTools() : setView(name)}><Icon size={17} /><span>{name}</span>{name === 'Resources' && ready && <span className="nav-count">{total}</span>}</button>;
         })}</nav>
    <div className="nav-label future-label">WORKFLOWS</div>
    {([['Plans', Workflow], ['Import', Import], ['Operations', Terminal]] as const).map(([name, Icon]) => {
@@ -263,13 +292,13 @@ function Workbench({
    <div className="sidebar-bottom"><div className="local-note"><ShieldCheck size={18} /><div><strong>Local by design</strong><span>Your state stays on your machine.</span></div></div><div className="sidebar-foot"><span><span className="dot" />Alpha</span><span>v0.1</span></div></div>
   </aside>
   <div className="workspace-shell">
-   <header className="topbar"><nav className="breadcrumbs" aria-label="Breadcrumb"><Folder size={15} />{onHub || scoped ? <><button className="crumb" onClick={() => navigate('/projects')}>Projects</button>{route.kind !== 'hub' && <><ChevronRight size={13} />{scoped ? <button className="crumb" onClick={() => navigate(projectPath(scoped.projectId))}>{project?.alias || opened.data?.alias || 'Project'}</button> : <strong>{projects.data?.projects.find(p => p.id === (route.kind === 'project' ? route.projectId : ''))?.alias || 'Project'}</strong>}</>}{scoped && <><ChevronRight size={13} /><span>{scoped.workspace}</span><ChevronRight size={13} /><strong>{view}</strong></>}</> : <><span>{w?.info.project || 'Workspace'}</span><ChevronRight size={13} /><strong>{view}</strong></>}</nav><div className="topbar-actions">{!onHub && !noLaunch && <Button variant="ghost" size="small" aria-label="Find a resource" onClick={() => {
+   <header className="topbar"><nav className="breadcrumbs" aria-label="Breadcrumb"><Folder size={15} />{onHub || scoped ? <><button className="crumb" onClick={() => navigate('/projects')}>Projects</button>{route.kind !== 'hub' && <><ChevronRight size={13} />{scoped ? <button className="crumb" onClick={() => navigate(projectPath(scoped.projectId))}>{project?.alias || opened.data?.alias || 'Project'}</button> : <strong>{projects.data?.projects?.find(p => p.id === (route.kind === 'project' ? route.projectId : ''))?.alias || 'Project'}</strong>}</>}{scoped && <><ChevronRight size={13} /><span>{scoped.workspace}</span><ChevronRight size={13} /><strong>{view}</strong></>}</> : <><span>{w?.info.project || 'Workspace'}</span><ChevronRight size={13} /><strong>{view}</strong></>}</nav><div className="topbar-actions">{!onHub && !noLaunch && <Button variant="ghost" size="small" aria-label="Find a resource" onClick={() => {
             setView('Resources');
             requestAnimationFrame(() => searchRef.current?.focus());
           }}><Search size={14} /><span className="hide-small">Search</span></Button>}<span className="session-label"><LockKeyhole size={12} />Private local session</span><Button variant="ghost" size="icon" aria-label="Toggle light and dark theme" onClick={() => changePreference({
             theme: document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
           })}><Sun className="theme-to-light" size={17} /><Moon className="theme-to-dark" size={17} /></Button></div></header>
-   {!onHub && !noLaunch && <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" />{scoped ? <div className="context-item"><Layers3 size={13} /><label htmlFor="workspace-switch">Workspace</label><select id="workspace-switch" className="workspace-switch" value={scoped.workspace} onChange={e => navigate(contextPath(scoped.projectId, e.target.value, isExplorerView(view) ? view : 'Resources'))}>{Array.from(new Set([scoped.workspace, ...(project?.inspection?.workspaces || [])])).map(ws => <option key={ws} value={ws}>{ws}{ws === project?.inspection?.cliDefault ? ' (CLI default)' : ''}</option>)}</select>{productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}</div> : <div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div>}<span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div><span className="context-spacer" />{scoped && <><Button variant="ghost" size="small" onClick={reread} disabled={w?.status === 'loading'} title="Read this workspace's recorded state again. No refresh is run."><RefreshCcw size={12} />Read again</Button><Button variant="ghost" size="small" onClick={() => openInNewTab(contextPath(scoped.projectId, scoped.workspace, isExplorerView(view) ? view : 'Resources'))} title="Open this workspace in a new browser tab"><ExternalLink size={12} />New tab</Button></>}{!scoped && runningOperation && <button className="context-running" onClick={() => setView('Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>}
+   {!onHub && !noLaunch && <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" />{scoped ? <div className="context-item"><Layers3 size={13} /><label htmlFor="workspace-switch">Workspace</label><select id="workspace-switch" className="workspace-switch" value={scoped.workspace} onChange={e => navigate(contextPath(scoped.projectId, e.target.value, isExplorerView(view) ? view : 'Resources'))}>{Array.from(new Set([scoped.workspace, ...(project?.inspection?.workspaces || [])])).map(ws => <option key={ws} value={ws}>{ws}{ws === project?.inspection?.cliDefault ? ' (CLI default)' : ''}</option>)}</select>{productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}</div> : <div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div>}<span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div><span className="context-spacer" />{scoped && <><Button variant="ghost" size="small" onClick={reread} disabled={w?.status === 'loading'} title="Read this workspace's recorded state again. No refresh is run."><RefreshCcw size={12} />Read again</Button><Button variant="ghost" size="small" onClick={() => openInNewTab(contextPath(scoped.projectId, scoped.workspace, isExplorerView(view) ? view : 'Resources'))} title="Open this workspace in a new browser tab"><ExternalLink size={12} />New tab</Button></>}{!scoped && <Button variant="ghost" size="small" onClick={() => void rereadLaunch()} disabled={rereading || w?.status === 'loading' || !!runningOperation} title="Inspect this folder and read its recorded state again, as at startup. No init, plan or refresh is run."><RefreshCcw size={12} />Read again</Button>}{!scoped && runningOperation && <button className="context-running" onClick={() => setView('Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>}
    <main id="main-content" tabIndex={-1} className="main-content">
     {onHub ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>{route.kind === 'hub' ? 'Projects' : 'Project workspaces'}</h1><p>{route.kind === 'hub' ? 'Every Terraform and OpenTofu root you work with, in one place.' : 'Open a CLI workspace to read its recorded state in this tab.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{route.kind === 'project' ? 'Changes ask first' : 'Read-only'}</span></div> : <div className="page-heading"><div><div className="eyebrow">{scoped ? `HUB WORKSPACE · ${scoped.workspace.toUpperCase()}` : 'YOUR INFRASTRUCTURE, IN FOCUS'}</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view === 'Tools' ? 'Project tools' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Tools' ? 'Validate, check formatting, and list provider requirements and output names. Read-only, and only when you ask.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : 'Read-only'}</span></div>}
     {route.kind === 'hub' ? <HubView notify={setNotice} /> : route.kind === 'project' ? <ProjectView id={route.projectId} /> : view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : view === 'Plans' ? <PlansView project={w?.info.project || 'this project'} workspaceStatus={w?.status} planId={planId} choosePlan={setPlanId} replace={pendingReplace} clearReplace={() => setPendingReplace(undefined)} copy={copy} /> : view === 'Import' ? <ImportView workspaceStatus={w?.status} copy={copy} onStarted={() => {
@@ -285,7 +314,7 @@ function Workbench({
           void opened.refetch();
         }} retryLabel="Try again" /> : opened.isPending && scoped || workspace.isPending || w?.status === 'loading' ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Reading your workspace</h2><p>{scoped ? <>Reading the recorded state of <strong>{scoped.workspace}</strong> through the local CLI with a per-command <code>TF_WORKSPACE</code>. No plan, refresh or workspace selection is run.</> : 'Inspecting recorded state through the local CLI. No plan or refresh is run.'}</p></div> : workspace.error ? <ErrorState message={workspace.error.message} retry={closed ? reread : () => {
           void workspace.refetch();
-        }} retryLabel={closed ? 'Open again' : undefined} /> : w?.diagnostic ? <ErrorState title={w.diagnostic.code === 'uninitialized' ? 'Initialize this workspace first' : w.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspace needs attention'} message={w.diagnostic.message} retry={scoped ? reread : undefined} retryLabel="Read again" /> : w && <>
+        }} retryLabel={closed ? 'Open again' : undefined} /> : w?.diagnostic ? <ErrorState title={w.diagnostic.code === 'uninitialized' ? 'Initialize this workspace first' : w.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspace needs attention'} message={w.diagnostic.message} retry={scoped ? reread : noLaunch ? undefined : () => void rereadLaunch()} retryLabel="Read again" /> : w && <>
      {view === 'Resources' && <>
       <div className="explorer-toolbar"><div className="search-field"><Search size={16} /><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search resources, addresses, providers…" aria-label="Search resources" /><kbd><Command size={10} />K</kbd>{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div><Button variant="outline" aria-label="Toggle module tree" aria-pressed={treeVisible} onClick={() => setTreeVisible(!treeVisible)}><FolderTree size={15} /><span className="hide-small">Modules</span></Button><Button variant="outline" aria-label={sort === 'asc' ? 'Sort descending' : 'Sort ascending'} onClick={() => {
                 setSort(sort === 'asc' ? 'desc' : 'asc');

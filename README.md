@@ -54,7 +54,7 @@ Hclaro inspects only the selected directory; it never searches parent directorie
 
 Launch runs only `version -json`, `workspace show`, and `show -json`. It never runs init (init runs only from a Hub project page after you confirm it; see [Initialize a project](#initialize-a-project)), plan, refresh, apply, destroy, import, replace, or state modifications. A plan runs only when you confirm it in the UI (see [Plans](#plans)). Hclaro never runs `terraform import`/`tofu import`; imports use import blocks and a reviewed plan (see [Import](#import)). Reading state can contact the configured remote backend and load installed provider plugins. Use an initialized project and your existing credentials/environment; Hclaro does not resolve or store credentials itself.
 
-The UI displays **one recorded snapshot**, not live provider inventory or drift detection. Browsing, searching, filtering, sorting, and opening details read process memory. Restart Hclaro to reread state after an external change. Inherited `TF_CLI_ARGS` settings are accepted only when they contain `-no-color`; other injected flags fail explicitly because they can redirect raw output or alter reads. `TF_DATA_DIR`, `TF_WORKSPACE`, CLI configuration, and credential settings are inherited. `TF_LOG*` and update checks are disabled for child reads to prevent secret-bearing log files and update telemetry.
+The UI displays **one recorded snapshot**, not live provider inventory or drift detection. Browsing, searching, filtering, sorting, and opening details read process memory. Use **Read again** in the context bar (or restart Hclaro) to inspect the folder and reread state after an external change, such as running `init` in a terminal; it runs no init, plan or refresh and is unavailable while an operation runs. Inherited `TF_CLI_ARGS` settings are accepted only when they contain `-no-color`; other injected flags fail explicitly because they can redirect raw output or alter reads. `TF_DATA_DIR`, `TF_WORKSPACE`, CLI configuration, and credential settings are inherited. `TF_LOG*` and update checks are disabled for child reads to prevent secret-bearing log files and update telemetry.
 
 The private URL contains a random launch credential in its **fragment**, which is removed by the app before API use. Keep that URL private. The browser stores the credential in sessionStorage for reloads; state is never placed in localStorage. Only theme, density, and grouping preferences use localStorage. A stopped/restarted server requires its new URL.
 
@@ -86,6 +86,8 @@ A project page offers **Initialize…** (or **Run init again…** once initializ
 3. The sanitized log streams in the dialog, with a **Cancel init** button. Closing the dialog does not stop init; reopening the page shows its progress. While init runs, that project's workspaces cannot be listed or read and no other operation can run in the same folder; other projects are unaffected.
 4. The result shows the status (`succeeded`, `failed`, `cancelled` or `unknown`), the engine exit code, whether `.terraform.lock.hcl` was created or changed, and next steps. Success is reported only for exit code 0 *and* an existing data directory. A failure is never retried automatically. When the engine asks to migrate or reconfigure the backend, needs interactive input, needs `-upgrade` for the lock file, or fails on credentials, network, a registry, backend settings, a state lock or the required engine version, Hclaro says which and what to do in a terminal.
 
+If the project is the one Hclaro was opened with from the terminal, its explorer, plans and imports are read again automatically once init ends, so planning becomes available without a restart.
+
 Init writes the data directory and lock file in the project and can contact provider/module registries and the backend with your inherited credentials. It is not an offline operation. If the project, its configuration, lock file, engine executable or relevant `TF_*` environment changes between review and confirmation, init is refused and you review again.
 
 ### Manage CLI workspaces
@@ -107,7 +109,7 @@ Choosing a workspace in Hclaro (a row on the project page, the **Workspace** swi
 
 ### Project tools
 
-Each Hub workspace tab has a **Tools** view (also reachable with **Project tools** on the project page, including for projects that are not initialized yet). Four read-only commands run only when you click them, in that tab's project, engine and workspace:
+Each Hub workspace tab has a **Tools** view (also reachable with **Project tools** on the project page, including for projects that are not initialized yet). For the project opened from the terminal, **Tools** in the sidebar opens the same view for that folder's Hub entry, in the workspace the launch view reads; if the folder is not saved in the Hub yet, it takes you to **Save to Hub** first. Four read-only commands run only when you click them, in that tab's project, engine and workspace:
 
 | Tool | Command | Reads | Shows |
 | --- | --- | --- | --- |
@@ -233,14 +235,14 @@ The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**,
 | --- | --- |
 | Missing CLI | Install a supported engine on PATH or select `--engine`; restart. |
 | Not a project | Use `--path` pointing directly to a root with `.tf`, `.tofu`, or state files. |
-| Uninitialized | For a Hub project, use **Initialize…** on its page; otherwise run the engine's `init` yourself and restart. Hclaro never initializes on its own. |
+| Uninitialized | For a Hub project, use **Initialize…** on its page; otherwise run the engine's `init` yourself, then **Read again**. When the project opened from the terminal is initialized from the Hub, it is read again automatically once init ends. Hclaro never initializes on its own. |
 | Workspace error | Check selection/initialization with the CLI; Hclaro never invents `default`. |
 | State unavailable | Check credentials, SSO/VPN/backend availability and matching provider schemas manually. Raw CLI errors are withheld because they may contain secrets. |
 | No snapshot / empty snapshot | These have separate states. Hclaro does not create or refresh state. |
 | Locked session | Open the latest private URL from the running terminal. |
 | Occupied port | Choose another `--port`, or omit the flag. |
 | Loopback permission denied | Run in an environment permitting listeners on 127.0.0.1. |
-| Plan unavailable | The Plans view states why: remote execution backend, unverified backend type, missing engine or workspace error. An unverified backend usually means a `backend` block that was not initialized: run `init` yourself, then restart. |
+| Plan unavailable | The Plans view states why: remote execution backend, unverified backend type, missing engine or workspace error. An unverified backend usually means a `backend` block that was not initialized: run `init` yourself, then **Read again**. |
 | State locked | Another operation holds the lock. Wait, or investigate with your CLI. Hclaro never force-unlocks. |
 | Plan credentials/network errors | Refresh SSO or credentials in your terminal, check VPN, then run the plan again. |
 | `TF_CLI_ARGS_plan` refused | Remove injected flags other than `-no-color`; they could change what a reviewed plan contains. |
