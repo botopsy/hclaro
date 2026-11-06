@@ -1,0 +1,46 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_drift": [
+    {
+      "address": "module.compute.aws_instance.main[3]",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "main",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "i-0demo3",
+          "instance_type": "t3.small",
+          "availability_zone": "eu-central-1a",
+          "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "tags": {
+            "Name": "compute-3"
+          }
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {
+          "password": true
+        },
+        "after_sensitive": false
+      },
+      "module_address": "module.compute",
+      "index": 3
+    }
+  ],
+  "resource_changes": [],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-06T09:00:00Z",
+  "applyable": false,
+  "complete": true,
+  "errored": false
+}

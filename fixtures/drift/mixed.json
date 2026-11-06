@@ -1,0 +1,202 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_drift": [
+    {
+      "address": "aws_s3_bucket.artifacts",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "artifacts",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "hclaro-demo-artifacts",
+          "bucket": "hclaro-demo-artifacts",
+          "region": "eu-central-1",
+          "secret_access_key": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "tags": {
+            "environment": "demo"
+          }
+        },
+        "after": {
+          "id": "hclaro-demo-artifacts",
+          "bucket": "hclaro-demo-artifacts",
+          "region": "eu-central-1",
+          "secret_access_key": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "tags": {
+            "environment": "demo",
+            "owner": "someone-in-console"
+          }
+        },
+        "after_unknown": {},
+        "before_sensitive": {
+          "secret_access_key": true
+        },
+        "after_sensitive": {
+          "secret_access_key": true
+        }
+      }
+    },
+    {
+      "address": "aws_security_group.web",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "sg-0abc",
+          "name": "web",
+          "description": "web ingress",
+          "ingress": [
+            {
+              "from_port": 443,
+              "to_port": 443,
+              "protocol": "tcp",
+              "cidr_blocks": [
+                "10.0.0.0/16"
+              ],
+              "description": "https"
+            }
+          ],
+          "tags": {
+            "Name": "web"
+          }
+        },
+        "after": {
+          "id": "sg-0abc",
+          "name": "web",
+          "description": "AKIAABCDEFGHIJKLMNOP",
+          "ingress": [
+            {
+              "from_port": 443,
+              "to_port": 443,
+              "protocol": "tcp",
+              "cidr_blocks": [
+                "10.0.0.0/16"
+              ],
+              "description": "https"
+            },
+            {
+              "from_port": 22,
+              "to_port": 22,
+              "protocol": "tcp",
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ],
+              "description": "debug DO_NOT_LEAK_HCLARO_TEST_SECRET"
+            }
+          ],
+          "tags": {
+            "Name": "web"
+          }
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "module.compute.aws_instance.main[3]",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "main",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "i-0demo3",
+          "instance_type": "t3.small",
+          "availability_zone": "eu-central-1a",
+          "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "tags": {
+            "Name": "compute-3"
+          }
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {
+          "password": true
+        },
+        "after_sensitive": false
+      },
+      "module_address": "module.compute",
+      "index": 3
+    },
+    {
+      "address": "module.network.aws_subnet.main[0]",
+      "mode": "managed",
+      "type": "aws_subnet",
+      "name": "main",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "subnet-00",
+          "availability_zone": "eu-central-1a",
+          "tags": {
+            "Name": "net-0"
+          },
+          "map_public_ip_on_launch": false
+        },
+        "after": {
+          "id": "subnet-00",
+          "availability_zone": "eu-central-1a",
+          "tags": {
+            "Name": "net-0"
+          },
+          "map_public_ip_on_launch": null
+        },
+        "after_unknown": {
+          "map_public_ip_on_launch": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {}
+      },
+      "module_address": "module.network",
+      "index": 0
+    },
+    {
+      "address": "data.aws_caller_identity.current",
+      "mode": "data",
+      "type": "aws_caller_identity",
+      "name": "current",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "read"
+        ],
+        "before": {
+          "id": "000000000000"
+        },
+        "after": {
+          "id": "000000000000"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "resource_changes": [],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-06T09:00:00Z",
+  "applyable": false,
+  "complete": true,
+  "errored": false
+}

@@ -1,0 +1,55 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_drift": [
+    {
+      "address": "aws_s3_bucket.artifacts",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "artifacts",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "hclaro-demo-artifacts",
+          "bucket": "hclaro-demo-artifacts",
+          "region": "eu-central-1",
+          "secret_access_key": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "tags": {
+            "environment": "demo"
+          }
+        },
+        "after": {
+          "id": "hclaro-demo-artifacts",
+          "bucket": "hclaro-demo-artifacts",
+          "region": "eu-central-1",
+          "secret_access_key": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+          "tags": {
+            "environment": "demo",
+            "owner": "someone-in-console"
+          }
+        },
+        "after_unknown": {},
+        "before_sensitive": {
+          "secret_access_key": true
+        },
+        "after_sensitive": {
+          "secret_access_key": true
+        }
+      }
+    }
+  ],
+  "resource_changes": [],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-06T09:00:00Z",
+  "applyable": false,
+  "complete": false,
+  "errored": true
+}

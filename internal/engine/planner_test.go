@@ -43,7 +43,7 @@ func planHelper() {
 		os.Exit(2)
 	}
 	for _, a := range args[4:] {
-		if !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") && !strings.HasPrefix(a, "-generate-config-out=") && !strings.HasPrefix(a, "-parallelism=") && !strings.HasPrefix(a, "-lock-timeout=") {
+		if a != "-refresh-only" && !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") && !strings.HasPrefix(a, "-generate-config-out=") && !strings.HasPrefix(a, "-parallelism=") && !strings.HasPrefix(a, "-lock-timeout=") {
 			os.Exit(2)
 		}
 	}
@@ -213,6 +213,39 @@ func TestPlanProfileOptions(t *testing.T) {
 	}
 }
 
+// A drift scan is a refresh-only plan with the same private output and profile options; it
+// never becomes an apply or a state-writing refresh.
+func TestPlanRefreshOnlyArguments(t *testing.T) {
+	// filepath.Abs keeps the path absolute on Windows too, where "/tmp/..." is not.
+	planOut, err := filepath.Abs(filepath.Join("x", "plan.tfplan"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, err := planArgs(PlanRequest{Out: planOut, RefreshOnly: true, VarFiles: []string{"prod.tfvars"}, LockTimeoutSeconds: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(args, " "); got != "plan -input=false -json -out="+planOut+" -refresh-only -var-file=prod.tfvars -lock-timeout=30s" {
+		t.Fatalf("argv %q", got)
+	}
+	c := planCLI(t, "ok")
+	out := filepath.Join(t.TempDir(), "plan.tfplan")
+	if err := c.Plan(context.Background(), PlanRequest{Out: out, RefreshOnly: true}, func([]byte) {}); err != nil {
+		t.Fatal(err)
+	}
+	if written, _ := os.ReadFile(out); string(written) != "-refresh-only" {
+		t.Fatalf("argv %q", written)
+	}
+	for _, v := range []struct {
+		name, version string
+		want          bool
+	}{{"terraform", "1.5.0", true}, {"terraform", "1.17.2", true}, {"tofu", "1.6.0", true}, {"tofu", "1.13.0", true}, {"terraform", "1.4.6", false}, {"tofu", "1.5.0", false}, {"terraform", "1.9.0-beta1", false}, {"terraform", "", false}} {
+		if got := RefreshOnlySupport(v.name, v.version); got != v.want {
+			t.Errorf("%s %s: %v", v.name, v.version, got)
+		}
+	}
+}
+
 func TestPlanRejectsUnsafeInputs(t *testing.T) {
 	c := planCLI(t, "ok")
 	for _, request := range []PlanRequest{
@@ -237,6 +270,8 @@ func TestPlanRejectsUnsafeInputs(t *testing.T) {
 		{Out: filepath.Join(t.TempDir(), "p"), GenerateConfigOut: "-destroy.tf"},
 		{Out: filepath.Join(t.TempDir(), "p"), GenerateConfigOut: "gen.tfvars"},
 		{Out: filepath.Join(t.TempDir(), "p"), GenerateConfigOut: "gen.tf", Replace: []string{"a.b"}},
+		{Out: filepath.Join(t.TempDir(), "p"), RefreshOnly: true, Replace: []string{"a.b"}},
+		{Out: filepath.Join(t.TempDir(), "p"), RefreshOnly: true, GenerateConfigOut: "gen.tf"},
 	} {
 		if err := c.Plan(context.Background(), request, func([]byte) {}); err == nil {
 			t.Fatalf("%+v accepted", request)

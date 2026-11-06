@@ -37,6 +37,9 @@ type Applier interface {
 // engine writes configuration for import targets that have no resource block.
 // Parallelism and LockTimeoutSeconds are the only engine options an execution profile can
 // set; zero keeps the engine default.
+// RefreshOnly makes a drift scan: `plan -refresh-only`, which compares recorded state with
+// remote objects and proposes no configuration changes. It cannot be combined with Replace or
+// GenerateConfigOut. Its saved artifact must never be applied (applying it writes state).
 type PlanRequest struct {
 	Out                string
 	VarFiles           []string
@@ -44,6 +47,7 @@ type PlanRequest struct {
 	GenerateConfigOut  string
 	Parallelism        int
 	LockTimeoutSeconds int
+	RefreshOnly        bool
 }
 
 // Bounds for the profile-selectable plan options.
@@ -98,6 +102,12 @@ func planArgs(request PlanRequest) ([]string, error) {
 		return nil, errors.New("plan output must be an absolute private path")
 	}
 	args := []string{"plan", "-input=false", "-json", "-out=" + request.Out}
+	if request.RefreshOnly {
+		if len(request.Replace) > 0 || request.GenerateConfigOut != "" {
+			return nil, errors.New("a refresh-only plan takes no replace or generated configuration options")
+		}
+		args = append(args, "-refresh-only")
+	}
 	for _, name := range request.VarFiles {
 		if !ValidVarFilePath(name) {
 			return nil, errors.New("invalid variable file name")
@@ -291,9 +301,12 @@ type Fake struct {
 	Lines          [][]byte
 	PlanJSON       []byte
 	PlanErr        error
-	ShowErr        error
-	ApplyLines     [][]byte
-	ApplyErr       error
+	// WriteOnError writes PlanJSON even when PlanErr is returned, like an engine that saves an
+	// errored plan.
+	WriteOnError bool
+	ShowErr      error
+	ApplyLines   [][]byte
+	ApplyErr     error
 	// Root and GeneratedConfig emulate -generate-config-out: the content is written to the
 	// requested file name inside Root.
 	Root            string
@@ -416,6 +429,9 @@ func (m *Fake) Plan(ctx context.Context, request PlanRequest, line func([]byte))
 		}
 	}
 	if m.PlanErr != nil {
+		if m.WriteOnError {
+			_ = os.WriteFile(request.Out, m.PlanJSON, 0o600)
+		}
 		return m.PlanErr
 	}
 	// A real engine writes a binary artifact; the mock writes the JSON it will show.

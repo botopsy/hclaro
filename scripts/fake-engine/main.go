@@ -2,6 +2,7 @@
 // HCLARO_FAKE_PLAN selects plan behavior: unset (success), "lock", "slow" or "fail". A project
 // that declares an import block gets the import plan fixture; -generate-config-out writes
 // the generated configuration fixture.
+// `plan ... -refresh-only` is a drift scan; HCLARO_FAKE_DRIFT selects its result (see driftScan).
 // HCLARO_FAKE_APPLY selects apply behavior: unset (success), "stale" or "fail".
 // HCLARO_FAKE_INIT selects init behavior: unset (success: creates the data directory and a
 // lock file), "migrate", "prompt", "credentials", "registry", "slow" (waits for an
@@ -107,13 +108,28 @@ func main() {
 		_, _ = os.Stdout.Write(b)
 	case len(args) >= 4 && strings.Join(args[:3], " ") == "plan -input=false -json" && strings.HasPrefix(args[3], "-out="):
 		generate := ""
+		refreshOnly := false
 		for _, a := range args[4:] {
 			switch {
+			case a == "-refresh-only":
+				refreshOnly = true
 			case strings.HasPrefix(a, "-generate-config-out="):
 				generate = strings.TrimPrefix(a, "-generate-config-out=")
 			case !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") && !strings.HasPrefix(a, "-parallelism=") && !strings.HasPrefix(a, "-lock-timeout="):
 				refuse()
 			}
+		}
+		if refreshOnly {
+			if generate != "" {
+				refuse()
+			}
+			for _, a := range args[4:] {
+				if strings.HasPrefix(a, "-replace=") {
+					refuse()
+				}
+			}
+			driftScan(strings.TrimPrefix(args[3], "-out="))
+			return
 		}
 		plan(strings.TrimPrefix(args[3], "-out="), generate)
 	case len(args) == 4 && strings.Join(args[:3], " ") == "apply -input=false -json":
@@ -206,6 +222,64 @@ func plan(out, generate string) {
 		}
 		_, _ = f.Write(fixtures.ImportGenerated)
 		_ = f.Close()
+	}
+	if err := os.WriteFile(out, document, 0o600); err != nil {
+		os.Exit(1)
+	}
+}
+
+// driftScan emulates `plan -refresh-only`. HCLARO_FAKE_DRIFT selects the result: unset
+// (mixed drift), "none", "tag", "security-group", "deleted", "unknown", "denied" (partial: one
+// object unreadable, exit 1 with an errored plan saved), "sso" (expired session), "lock",
+// "slow" (waits for an interrupt) or "not-refresh-only". OpenTofu gets the OpenTofu fixture.
+func driftScan(out string) {
+	interrupted := make(chan os.Signal, 1)
+	signal.Notify(interrupted, os.Interrupt)
+	mode := os.Getenv("HCLARO_FAKE_DRIFT")
+	log := fixtures.DriftLog
+	switch mode {
+	case "denied":
+		log = fixtures.DriftLogDenied
+	case "sso":
+		log = fixtures.DriftLogSSO
+	case "lock":
+		log = fixtures.DriftLogLocked
+	}
+	delay := 150 * time.Millisecond
+	if mode == "slow" {
+		delay = 3 * time.Second
+	}
+	for _, line := range bytes.Split(bytes.TrimSpace(log), []byte("\n")) {
+		_, _ = os.Stdout.Write(append(line, '\n'))
+		select {
+		case <-interrupted:
+			fmt.Println(`{"type":"log","@level":"warn","@message":"Interrupt received. Stopping gracefully."}`)
+			os.Exit(1)
+		case <-time.After(delay):
+		}
+	}
+	document := fixtures.DriftMixed
+	if strings.HasPrefix(filepath.Base(os.Args[0]), "tofu") {
+		document = fixtures.DriftMixedTofu
+	}
+	switch mode {
+	case "sso", "lock":
+		os.Exit(1)
+	case "denied":
+		_ = os.WriteFile(out, fixtures.DriftInaccessible, 0o600)
+		os.Exit(1)
+	case "none":
+		document = fixtures.DriftNone
+	case "tag":
+		document = fixtures.DriftChangedTag
+	case "security-group":
+		document = fixtures.DriftSecurityGroup
+	case "deleted":
+		document = fixtures.DriftDeleted
+	case "unknown":
+		document = fixtures.DriftUnknown
+	case "not-refresh-only":
+		document = fixtures.DriftNotRefreshOnly
 	}
 	if err := os.WriteFile(out, document, 0o600); err != nil {
 		os.Exit(1)

@@ -78,7 +78,7 @@ export type EngineDiagnostic = {
 };
 export type Operation = {
   id: string;
-  kind: 'plan' | 'apply' | 'init' | 'workspace' | 'tool';
+  kind: 'plan' | 'apply' | 'init' | 'workspace' | 'tool' | 'drift';
   // queued, cancelling and unknown are used by Hub initialization and workspace commands only.
   status: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
   stage: string;
@@ -113,6 +113,75 @@ export type Operation = {
   tool?: ToolResult;
   // The execution profile context the operation was bound to, if any.
   executionContext?: ExecutionContext;
+  // Drift scans only.
+  driftScanId?: string;
+};
+export type DriftOptions = {
+  canScan: boolean;
+  reason?: string;
+  engine: string;
+  version: string;
+  workspace: string;
+  backend: string;
+  executionMode: string;
+  varFiles: string[];
+  projectId?: string;
+  context?: ExecutionSummary;
+  profileError?: string;
+};
+// changed: values differ from state; missing: the remote object no longer exists;
+// cannot_verify: values were unknown during the scan; unrecognized: never treated as safe.
+export type DriftClassification = 'changed' | 'missing' | 'cannot_verify' | 'unrecognized';
+export type DriftResource = {
+  id: string;
+  address: string;
+  module: string;
+  type: string;
+  name: string;
+  provider: string;
+  deposed?: string;
+  actions: string[];
+  classification: DriftClassification;
+  attributeChanges: number;
+  cannotVerify: number;
+  // The explorer ID of the same address in the current snapshot, when recorded there.
+  resourceId?: string;
+};
+export type AttributeObservation = {
+  path: string;
+  recorded: unknown;
+  observed: unknown;
+  kind: 'changed' | 'added' | 'removed' | 'cannot_verify';
+  sensitive?: boolean;
+};
+export type DriftDetail = DriftResource & {
+  attributes: AttributeObservation[];
+  truncated?: boolean;
+  recorded: unknown;
+  observed: unknown;
+};
+export type DriftScan = {
+  id: string;
+  operationId: string;
+  status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+  outcome?: 'drift_detected' | 'cannot_verify' | 'no_drift';
+  // Only an exhaustive scan can support a no-drift conclusion.
+  exhaustive: boolean;
+  startedAt: string;
+  completedAt?: string;
+  engine: string;
+  engineVersion: string;
+  workspace: string;
+  varFiles: string[];
+  executionContext?: ExecutionContext;
+  summary: { changed: number; missing: number; cannotVerify: number; unrecognized: number; total: number; outputChanges: number };
+  resources: DriftResource[];
+  warnings: string[];
+  diagnostic?: { code: string; message: string };
+  engineDiagnostics: EngineDiagnostic[];
+  current: boolean;
+  staleReason?: string;
+  withheld: boolean;
 };
 export type ToolName = 'validate' | 'fmt-check' | 'providers' | 'outputs-metadata';
 // A tool's sanitized result. outcome is passed, findings (the check ran and found problems)

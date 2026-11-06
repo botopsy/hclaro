@@ -81,6 +81,8 @@ type Operation struct {
 	Tool *ToolResult `json:"tool,omitempty"`
 	// Context is the execution profile context the operation was bound to, if any.
 	Context *ExecutionContext `json:"executionContext,omitempty"`
+	// DriftScanID is set for drift scans (kind "drift").
+	DriftScanID string `json:"driftScanId,omitempty"`
 }
 
 // Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved
@@ -149,6 +151,7 @@ type Manager struct {
 	Bind     func(environ []string, workspace string) engine.Planner
 	entries  []*entry
 	plans    []*Plan
+	scans    []*DriftScan
 	running  *entry
 	artifact *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.

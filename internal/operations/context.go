@@ -125,19 +125,25 @@ func (m *Manager) fingerprintFor(snap workspace.Snapshot, varFiles []string, ski
 // currentFingerprint recomputes a plan's fingerprint now. For a profile-bound plan the
 // profile is resolved again; reason explains a changed or removed profile.
 func (m *Manager) currentFingerprint(p *Plan) (fingerprint, reason string) {
+	return m.contextFingerprint(p.VarFiles, p.Context, "plan", "Run a new plan with the current profile.")
+}
+
+// contextFingerprint recomputes the fingerprint of an operation context now; what names
+// the kind of result ("plan", "scan") in the reason and next says what to do.
+func (m *Manager) contextFingerprint(varFiles []string, c *ExecutionContext, what, next string) (fingerprint, reason string) {
 	snap := m.store.Get()
-	if p.Context == nil {
-		return m.Fingerprint(snap, p.VarFiles), ""
+	if c == nil {
+		return m.Fingerprint(snap, varFiles), ""
 	}
-	changed := "The execution profile " + p.Context.ProfileName + " was changed or removed after this plan was created. Run a new plan with the current profile."
+	changed := "The execution profile " + c.ProfileName + " was changed or removed after this " + what + " was created. " + next
 	if m.Binder == nil {
 		return "", changed
 	}
-	b, err := m.Binder(p.Context.ProfileID)
-	if err != nil || b.Context.Fingerprint != p.Context.Fingerprint {
+	b, err := m.Binder(c.ProfileID)
+	if err != nil || b.Context.Fingerprint != c.Fingerprint {
 		return "", changed
 	}
-	return m.fingerprintFor(snap, p.VarFiles, "", p.Context, b.Environ), ""
+	return m.fingerprintFor(snap, varFiles, "", c, b.Environ), ""
 }
 
 // ContextStatus reports whether a plan's context changed and whether it can be applied now.
