@@ -126,7 +126,7 @@ func TestProfilePlanAndApplyUseTheBoundContext(t *testing.T) {
 	if changed, status := m.ContextStatus(plan); changed || !status.Available {
 		t.Fatalf("fresh plan: changed %v status %+v", changed, status)
 	}
-	approval, err := m.Approve(done.PlanID)
+	approval, err := approve(m, done.PlanID)
 	if err != nil || approval.Context == nil || approval.Context.ProfileID != p.ID {
 		t.Fatalf("approval %+v %v", approval, err)
 	}
@@ -220,7 +220,7 @@ func TestProfileChangeInvalidatesStoredPlanAndToken(t *testing.T) {
 			t.Fatal(err)
 		}
 		done := wait(t, m, op.ID)
-		approval, err := m.Approve(done.PlanID)
+		approval, err := approve(m, done.PlanID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -240,7 +240,7 @@ func TestProfileChangeInvalidatesStoredPlanAndToken(t *testing.T) {
 		if _, err := m.StartApply(done.PlanID, approval.Token, approval.Phrase); rejected(err) != "context_changed" {
 			t.Fatalf("%s: apply with old token: %v", change, err)
 		}
-		if _, err := m.Approve(done.PlanID); rejected(err) != "context_changed" {
+		if _, err := approve(m, done.PlanID); rejected(err) != "context_changed" {
 			t.Fatalf("%s: new approval: %v", change, err)
 		}
 		if applyCalls(fake) != 0 {

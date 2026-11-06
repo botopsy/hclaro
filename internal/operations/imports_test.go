@@ -85,7 +85,7 @@ func TestImportWritesReviewedBlockPlansAndApplies(t *testing.T) {
 	if _, status := m.ContextStatus(p); !status.Available {
 		t.Fatalf("%+v", status)
 	}
-	approval, err := m.Approve(p.ID)
+	approval, err := approve(m, p.ID)
 	if err != nil || approval.Phrase != "apply demo" || approval.Imports != 1 || approval.Import.Address != req.Address {
 		t.Fatalf("%+v %v", approval, err)
 	}
@@ -134,7 +134,7 @@ func TestImportGeneratesConfigurationForReview(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "legacy_generated.tf"), []byte("# edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Approve(p.ID); rejected(err) != "context_changed" {
+	if _, err := approve(m, p.ID); rejected(err) != "context_changed" {
 		t.Fatal(err)
 	}
 }
@@ -151,7 +151,7 @@ func TestImportEditDuringPlanIsAContextChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, _ := m.Plan(wait(t, m, op.ID).PlanID)
-	if _, err := m.Approve(p.ID); rejected(err) != "context_changed" {
+	if _, err := approve(m, p.ID); rejected(err) != "context_changed" {
 		t.Fatal(err)
 	}
 }

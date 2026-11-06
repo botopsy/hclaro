@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Safe apply and preflight checks (M14, draft)
+
+- **Apply preflight** in the apply dialog: context identity at the top (project, workspace, engine and version, backend and execution mode, profile, plan digest, fingerprint), blocking checks with remediation, warnings with one acknowledgement each, passed checks, and the impact of the whole saved plan (counts, high-risk resources, every planned change with requested ones marked). Apply stays disabled while anything blocks.
+- Checks run on the server and again when the apply starts: context, profile and fingerprint, plan eligibility, digest and expiry, engine support, backend execution mode, local operation conflicts and policy validity block; a dirty Git tree and production-like names warn by default; replace/import plans that change other resources warn; destructive plans still need the typed phrase.
+- Optional **Verify AWS identity** (STS GetCallerIdentity) only on request; unverified identity is shown as unknown, never inferred from a profile name.
+- Project policy `.hclaro/policy.json` (version 1): `gitDirty`, `productionLabels`, `destructiveLimit`, `awsAccounts`. Invalid files block; the policy cannot relax built-in checks.
+- New route `POST /api/v1/plans/{id}/preflight`; `POST /api/v1/plans/{id}/approval` now requires `{preflightBinding, acknowledged}`; new refusals `preflight_required`, `preflight_expired`, `acknowledgement_required`, `preflight_blocked`, `preflight_changed`. Apply operations record `preflight` (policy and acknowledged check IDs). New package `internal/preflight`.
+
 ### Plan and execution history (M13, draft)
 
 - **History** in the sidebar: a persistent local record of plans (normal, replace, import), applies, drift scans, graphs, initializations, workspace commands and project tools, for the launch project and Hub projects. Each entry has its times, duration, exit code, status, engine and version, project and workspace, profile, context fingerprint, redacted command, diagnostic, Git commit and branch, a sanitized log excerpt and, for plans, the counts and addresses/actions of up to 300 changes.

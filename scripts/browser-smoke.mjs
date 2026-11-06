@@ -104,6 +104,15 @@ try{
  const applyDialog=page.getByRole('dialog',{name:'Apply this plan'})
  await applyDialog.getByText('apply demo',{exact:true}).waitFor()
  assert(await applyDialog.getByRole('button',{name:'Apply plan'}).isDisabled(),'apply enabled before typed confirmation')
+ // M14: the server preflight shows the context identity, per-warning acknowledgements and the whole plan's impact.
+ await applyDialog.getByRole('region',{name:'Context identity'}).waitFor()
+ await applyDialog.getByRole('list',{name:'High-risk resources'}).waitFor()
+ const acks=applyDialog.getByRole('checkbox')
+ assert((await acks.count())>0,'preflight warnings are not acknowledged individually')
+ await applyDialog.getByLabel('Confirmation phrase').fill('apply demo')
+ assert(await applyDialog.getByRole('button',{name:'Apply plan'}).isDisabled(),'apply enabled before every warning was acknowledged')
+ for(let i=0;i<await acks.count();i++) await acks.nth(i).check()
+ assert(await applyDialog.getByRole('button',{name:'Apply plan'}).isEnabled(),'apply disabled after acknowledgements and phrase')
  await page.screenshot({path:'docs/screenshots/apply-dialog-dark.png'})
  await page.keyboard.press('Escape')
  await applyDialog.waitFor({state:'detached'})
@@ -159,6 +168,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply confirmation gating, preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

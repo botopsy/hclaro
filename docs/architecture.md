@@ -1,4 +1,4 @@
-# Architecture (M1 explorer, M2 plans, M3 replace and apply, M4 import, M5 Workspace Hub, M6 guided init, M7 workspace lifecycle, M8 project tools, M9 execution profiles, M10 drift detection, M11 dependency graph, M12 workspace comparison)
+# Architecture (M1 explorer, M2 plans, M3 replace and apply, M4 import, M5 Workspace Hub, M6 guided init, M7 workspace lifecycle, M8 project tools, M9 execution profiles, M10 drift detection, M11 dependency graph, M12 workspace comparison, M13 operation history, M14 apply preflight)
 
 ## Runtime and trust boundaries
 
@@ -27,6 +27,7 @@ The HTTP layer has no direct reference to an engine or filesystem root. It reads
 | `internal/profiles` | Execution profile store (`profiles.json`, per project ID, revisions), validation, symlink-safe variable file resolution and candidates, the sanitized resolved context and its fingerprint, and child environment composition; never runs an engine |
 | `internal/rootlock` | One exclusive claim per canonical project root, shared by the launch operation manager and Hub init |
 | `internal/operations` | One-at-a-time plan and apply runner, private temp artifacts, approval tokens, bounded sanitized logs, cancellation, in-memory operation list, `Recorder` hook |
+| `internal/preflight` | Apply preflight: typed checks, deterministic evaluation, the versioned local policy schema (`.hclaro/policy.json`), the fixed-argv Git status and AWS STS identity probes |
 | `internal/history` | Persistent redacted operation history: storage, retention, migrations, plan summary comparison, exports, Git identity |
 | `internal/security` | Random session and CSRF tokens; exact Host/Origin, method, content-type and body policy |
 | `internal/api` | Authenticated typed snapshot, resources, plans, operations and SSE responses |
@@ -70,13 +71,60 @@ Cancellation sends an interrupt so the engine can stop providers and release a s
 A plan is **eligible** when the engine reports it applyable, it is not errored, has no deferred changes and has at least one resource (other than read/no-op) or output change, and the workspace capability allows apply. Only the most recent eligible plan keeps its artifact; a newer one supersedes it. An artifact expires after one hour (timer plus a check on every request).
 
 1. **Status.** `GET /api/v1/plans/{id}` includes `apply: {available, reason, artifactRetained, expiresAt}`, computed per request: artifact still held for this plan, not expired, no operation running, workspace not loading, engine/version/workspace unchanged, and the [context fingerprint](#plan-review-model) recomputed and equal.
-2. **Approval.** `POST /plans/{id}/approval` repeats those checks and returns a 256-bit token valid for five minutes, the action counts, the requested replacements, the command preview and, for destructive plans (delete, replace, forget or unknown actions), the phrase `apply <workspace>`. A new approval replaces an unused one.
-3. **Apply.** `POST /plans/{id}/apply {confirmationToken, confirmation}` consumes the token on any use (a mismatch or replay needs a new approval), compares token and phrase in constant time, repeats the checks, then starts an `apply` operation. The run confirms `workspace show` still matches and that the file's SHA-256 equals the reviewed digest, then executes `apply -input=false -json <file>`. `-auto-approve` is not passed: a saved plan never prompts. `TF_CLI_ARGS_apply` may only contain `-no-color`.
-4. **After.** The artifact is deleted after the attempt whatever the result, so a plan is applied at most once; there is no fallback re-plan. If the engine ran, state is re-read through the normal read path. The operation reports `outcome`: `applied`, `not_applied` (refused before the engine ran, or a stale plan/lock refused by the engine) or `uncertain` (failed or interrupted after starting), plus `stateReloaded`.
+2. **Preflight.** `POST /plans/{id}/preflight {verifyIdentity}` evaluates every [preflight check](#apply-preflight) on the server and returns the report. If nothing blocks it also returns an opaque binding (256 bits, ten minutes, never past the plan's expiry) that replaces any earlier binding and unused approval.
+3. **Approval.** `POST /plans/{id}/approval {preflightBinding, acknowledged}` repeats the status checks, requires the current binding and exactly the warning check IDs the preflight asked to acknowledge (no blanket value is accepted), and returns a 256-bit token valid for five minutes, the action counts, the requested replacements, the command preview and, for destructive plans (delete, replace, forget or unknown actions), the phrase `apply <workspace>`. A new approval replaces an unused one.
+4. **Apply.** `POST /plans/{id}/apply {confirmationToken, confirmation}` consumes the token on any use (a mismatch or replay needs a new approval), compares token and phrase in constant time, repeats the checks, evaluates the whole preflight again (a new blocker refuses with `preflight_blocked`, a warning that was not acknowledged with `preflight_changed`, and the binding is dropped), then starts an `apply` operation. The run confirms `workspace show` still matches and that the file's SHA-256 equals the reviewed digest, then executes `apply -input=false -json <file>`. `-auto-approve` is not passed: a saved plan never prompts. `TF_CLI_ARGS_apply` may only contain `-no-color`.
+5. **After.** The artifact is deleted after the attempt whatever the result, so a plan is applied at most once; there is no fallback re-plan. If the engine ran, state is re-read through the normal read path. The operation reports `outcome`: `applied`, `not_applied` (refused before the engine ran, or a stale plan/lock refused by the engine) or `uncertain` (failed or interrupted after starting), plus `stateReloaded`.
 
 On startup Hclaro deletes `hclaro-plan-*` directories in the temp directory that are older than plan expiry plus the apply timeout. They can only be left by a process that was killed; the age limit keeps another running instance's artifact safe, and symlinks are not followed.
 
 The engine's own stale-plan check (state serial/lineage) is the secondary defense for changes Hclaro cannot observe, such as another process writing state; it is classified as `stale_plan`. Cancelling an apply interrupts the engine like a plan; this can leave resources partly changed, which the UI says. Applies time out after two hours.
+
+### Apply preflight
+
+`internal/preflight` turns collected facts into typed checks `{id, title, severity: block|warn|info, status: pass|fail|unknown, evidence, remediation, source}`. Evaluation does no I/O; `operations.Manager.facts` collects the input (it hashes the saved file and runs the Git probe) and the same function runs for the preflight request and again inside `StartApply`. Unknown is never treated as passed: an unknown blocking check blocks, an unknown warning needs an acknowledgement.
+
+| Check | Severity | Fails when |
+| --- | --- | --- |
+| `context.identity` | block | engine, version or workspace differ from the plan's |
+| `context.profile` | block | the execution profile changed or was removed (profile-bound plans only) |
+| `context.fingerprint` | block | the [context fingerprint](#plan-review-model) differs |
+| `plan.eligible` | block | the plan is errored, deferred, not applyable or has no changes |
+| `plan.artifact` | block | the saved file is gone, unreadable (unknown) or its SHA-256 differs from the reviewed digest |
+| `plan.ttl` | block | the plan expired |
+| `engine.supported` | block | engine or version outside the supported range |
+| `backend.execution` | block | remote execution, an unverified backend (unknown) or apply unavailable |
+| `operations.conflict` | block | another operation runs, the root is claimed (for example by a Hub init), the workspace is loading, or Hclaro is stopping. Locks held by other tools are left to the engine |
+| `policy.valid` | block | `.hclaro/policy.json` is refused |
+| `git.worktree` | policy (default warn) | uncommitted or untracked files; unknown when Git is missing or fails; info outside a repository unless the rule blocks |
+| `context.production` | policy (default warn) | workspace, profile or AWS profile name matches a production-like pattern |
+| `plan.destructive` | info, or policy limit | the plan deletes, replaces, forgets or has unrecognized actions; the typed phrase covers it |
+| `plan.scope` | warn | a replace or import plan changes resource instances that were not requested |
+| `cloud.aws.identity` | info, or policy | shown for AWS resources, an AWS profile or an account rule; unknown until verified |
+
+The report also carries the context identity (project folder name, engine and version, workspace, backend and execution mode, profile, digest, short fingerprint) and the impact of the **whole** plan: counts per action, destructive count, requested addresses, the number of other changes, the high-risk list (delete, replace, forget, unknown) and every non-no-op change with a `requested` marker, capped at 5,000 rows with a `truncated` flag.
+
+**Policy.** A project may contain `.hclaro/policy.json`:
+
+```json
+{
+  "version": 1,
+  "rules": {
+    "gitDirty": "warn",
+    "productionLabels": {"severity": "warn", "patterns": ["prod", "*-prod", "production"]},
+    "destructiveLimit": {"severity": "block", "max": 10},
+    "awsAccounts": {"severity": "block", "allowed": ["123456789012"]}
+  }
+}
+```
+
+Severities are `off`, `info`, `warn` and `block`. Decoding is strict (unknown fields, other versions, oversized files over 64 KiB, symlinked files or a linked `.hclaro` are refused) and a refused file blocks with a generic reason; its content is never echoed. Patterns are case-insensitive globs over letters, digits, `.`, `_`, `-` and `*`. The policy has no code, no URL and no way to relax the built-in blocking checks. It lives in a hidden directory, so it is outside the plan fingerprint, but it is read again at apply.
+
+**Git probe.** `git -c core.fsmonitor=false -c core.untrackedCache=false -C <root> status --porcelain=v1 -z --untracked-files=normal` with `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, a 10-second timeout and 1 MiB output bound; stderr is discarded. It runs only if `.git` exists in the root or a parent. The whole repository's status counts, not only the project folder. Up to ten paths are shown; credential-shaped or control-character paths are dropped.
+
+**Identity probe.** Only when the request sets `verifyIdentity` (the **Verify AWS identity** button): `aws sts get-caller-identity --output json` with the plan's environment (a profile-bound plan's composed environment, else Hclaro's), `AWS_PAGER=` and `AWS_CLI_AUTO_PROMPT=off`, empty stdin, a 20-second timeout and stderr discarded. Only the 12-digit account and a validated ARN are kept (the user ID is dropped); the result is kept with the binding so a re-check does not call AWS again. It reports the CLI's identity now; providers that assume other roles can still reach another account, which the evidence says. Hclaro never derives an account from a profile name.
+
+**Recording.** The apply operation records `preflight: {checkedAt, policy, acknowledged, identityVerified}` (check IDs only) and one log line with counts. Evidence, Git paths, account IDs and ARNs are returned only in the preflight response and never logged or written to history.
 
 ### Imports
 
@@ -304,8 +352,9 @@ Every API endpoint requires `Authorization: Bearer <launch-token>`:
 | `GET /api/v1/plans/options` | Plan and apply availability and reasons, engine, workspace, backend, selectable variable files |
 | `POST /api/v1/plans` | Start a plan: `{"acknowledgeBackendAccess":true,"varFiles":[],"replace":[<resource id>…],"profileId"?,"contextFingerprint"?}` → 202 operation; 409 if one is running or planning is unavailable, or a profile refusal (`context_changed`, `profile_workspace`, `profile_engine`, `var_file_*`, `env_missing`, `unsafe_cli_args`, `profile_not_found`, `profiles_unavailable`); 400 `invalid_replace` |
 | `GET /api/v1/plans`, `GET /api/v1/plans/{id}` | Plan summaries; one redacted plan with metadata, `contextChanged` and `apply` status |
-| `POST /api/v1/plans/{id}/approval` | `{}` → 200 one-time approval; 409 `{error, reason}` when the plan cannot be applied |
-| `POST /api/v1/plans/{id}/apply` | `{"confirmationToken":…,"confirmation":…}` → 202 apply operation; 409 `{error, reason}` (`approval_required`, `approval_invalid`, `confirmation_mismatch`, `context_changed`, `plan_expired`, `not_applicable`, `operation_running`) |
+| `POST /api/v1/plans/{id}/preflight` | `{"verifyIdentity"?:bool}` → 200 preflight report (checks, impact, context identity, policy, identity, `binding` only when nothing blocks); 400 `invalid_request` (any other field); 404 `plan_not_found` |
+| `POST /api/v1/plans/{id}/approval` | `{"preflightBinding":…,"acknowledged":[<check id>…]}` → 200 one-time approval; 409 `{error, reason}`: `preflight_required`, `preflight_expired`, `acknowledgement_required`, or a status refusal when the plan cannot be applied |
+| `POST /api/v1/plans/{id}/apply` | `{"confirmationToken":…,"confirmation":…}` → 202 apply operation; 409 `{error, reason}` (`approval_required`, `approval_invalid`, `confirmation_mismatch`, `preflight_expired`, `preflight_blocked`, `preflight_changed`, `context_changed`, `plan_expired`, `not_applicable`, `operation_running`) |
 | `GET /api/v1/plans/{id}/changes/{change-id}` | One change with attribute diff and redacted before/after trees |
 | `GET /api/v1/graphs/options?profileId=` | `canGenerate` and `reason`, engine, version, workspace, backend, execution mode, the exact `command`, execution context summary. Runs nothing |
 | `POST /api/v1/graphs` | `{"acknowledgeEngineRun":true,"profileId"?,"contextFingerprint"?}` → 202 `{operation, graph}`; 400 `acknowledgement_required`, `invalid_request` (any other field); 409 `graph_unsupported` (with `reason`), `operation_running`, `workspace_loading`, or a profile refusal |

@@ -13,6 +13,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
 )
 
@@ -40,7 +41,7 @@ func rejected(err error) string {
 
 func approveAndApply(t *testing.T, m *Manager, id string) Operation {
 	t.Helper()
-	approval, err := m.Approve(id)
+	approval, err := approve(m, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestApplyAppliesReviewedArtifactOnceAndReloads(t *testing.T) {
 	if _, status := m.ContextStatus(p); status.Available || status.ArtifactRetained {
 		t.Fatalf("applied plan still applicable: %+v", status)
 	}
-	if _, err := m.Approve(id); rejected(err) != "not_applicable" {
+	if _, err := approve(m, id); rejected(err) != "not_applicable" {
 		t.Fatalf("second approval: %v", err)
 	}
 }
@@ -99,19 +100,19 @@ func TestApplyRefusedWithoutValidApproval(t *testing.T) {
 	if _, err := m.StartApply(id, "", "apply demo"); rejected(err) != "approval_required" {
 		t.Fatalf("no approval: %v", err)
 	}
-	approval, _ := m.Approve(id)
+	approval, _ := approve(m, id)
 	if approval.Phrase != "apply demo" {
 		t.Fatalf("destructive plan needs a typed phrase: %+v", approval)
 	}
 	// Declining is just not confirming: the token expires unused and nothing runs.
 	m.ApprovalTTL = time.Millisecond
-	approval, _ = m.Approve(id)
+	approval, _ = approve(m, id)
 	time.Sleep(5 * time.Millisecond)
 	if _, err := m.StartApply(id, approval.Token, approval.Phrase); rejected(err) != "approval_invalid" {
 		t.Fatalf("expired token: %v", err)
 	}
 	m.ApprovalTTL = time.Minute
-	approval, _ = m.Approve(id)
+	approval, _ = approve(m, id)
 	if _, err := m.StartApply(id, approval.Token, "APPLY DEMO"); rejected(err) != "confirmation_mismatch" {
 		t.Fatalf("wrong phrase: %v", err)
 	}
@@ -131,14 +132,14 @@ func TestApplyRejectsChangedContext(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
-	approval, _ := m.Approve(id)
+	approval, _ := approve(m, id)
 	if err := os.WriteFile(filepath.Join(root, "main.tf"), []byte(`resource "x" "y" {}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.StartApply(id, approval.Token, approval.Phrase); rejected(err) != "context_changed" {
 		t.Fatalf("edited configuration: %v", err)
 	}
-	if _, err := m.Approve(id); rejected(err) != "context_changed" {
+	if _, err := approve(m, id); rejected(err) != "context_changed" {
 		t.Fatalf("approval after edit: %v", err)
 	}
 	if applyCalls(fake) != 0 {
@@ -158,12 +159,43 @@ func TestApplyRechecksWorkspaceAndArtifact(t *testing.T) {
 	fake.SetWorkspace("demo")
 	assertTempEmpty(t, m)
 
+	// A file changed before the preflight is caught by the preflight: no binding is issued.
 	id = planned(t, m)
 	entries, _ := os.ReadDir(m.TempDir)
-	if err := os.WriteFile(filepath.Join(m.TempDir, entries[0].Name(), "plan.tfplan"), []byte("{}"), 0o600); err != nil {
+	tamper := func() {
+		if err := os.WriteFile(filepath.Join(m.TempDir, entries[0].Name(), "plan.tfplan"), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tamper()
+	if _, err := approve(m, id); rejected(err) != "preflight_required" {
+		t.Fatalf("%v", err)
+	}
+	report, _ := m.Preflight(context.Background(), id, PreflightRequest{})
+	if !report.Blocked || report.Binding != "" || !failed(report, "plan.artifact") {
+		t.Fatalf("%+v", report.Checks)
+	}
+	m.Close(5 * time.Second)
+
+	// A file changed after the last preflight evaluation is still caught by the run itself,
+	// which hashes the file again just before the engine. The Git probe runs after the
+	// evaluation hashed the file, so it is used to tamper at exactly that point.
+	m, _ = setup(t, fake, workspace.Info{})
+	id = planned(t, m)
+	entries, _ = os.ReadDir(m.TempDir)
+	approval, err := approve(m, id)
+	if err != nil {
 		t.Fatal(err)
 	}
-	done = wait(t, m, approveAndApply(t, m, id).ID)
+	m.GitProbe = func(context.Context, string) preflight.GitResult {
+		tamper()
+		return preflight.GitResult{State: preflight.GitUnavailable}
+	}
+	op, err := m.StartApply(id, approval.Token, approval.Phrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done = wait(t, m, op.ID)
 	if done.Status != Failed || done.Diagnostic.Code != "artifact_changed" || done.Outcome != "not_applied" {
 		t.Fatalf("%+v", done)
 	}
@@ -215,7 +247,7 @@ func TestOnlyLatestApplicablePlanIsKept(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	first := planned(t, m)
-	approval, _ := m.Approve(first)
+	approval, _ := approve(m, first)
 	second := planned(t, m)
 	assertArtifactPrivate(t, m)
 	if _, err := m.StartApply(first, approval.Token, approval.Phrase); rejected(err) != "approval_required" {
@@ -229,7 +261,7 @@ func TestOnlyLatestApplicablePlanIsKept(t *testing.T) {
 	m.mu.Lock()
 	m.artifact.created = time.Now().Add(-2 * time.Hour)
 	m.mu.Unlock()
-	if _, err := m.Approve(second); rejected(err) != "plan_expired" {
+	if _, err := approve(m, second); rejected(err) != "plan_expired" {
 		t.Fatalf("expired: %v", err)
 	}
 	m.Close(time.Second)
@@ -258,7 +290,7 @@ func TestIneligiblePlansKeepNoArtifact(t *testing.T) {
 			m, _ := setup(t, &engine.Fake{PlanJSON: document}, workspace.Info{})
 			id := planned(t, m)
 			assertTempEmpty(t, m)
-			if _, err := m.Approve(id); rejected(err) != "not_applicable" {
+			if _, err := approve(m, id); rejected(err) != "not_applicable" {
 				t.Fatal(err)
 			}
 		})
@@ -269,7 +301,7 @@ func TestApplyBlockedWhileBusy(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
-	approval, _ := m.Approve(id)
+	approval, _ := approve(m, id)
 	fake.Block = true
 	running, _ := m.StartPlan(nil, nil)
 	if _, err := m.StartApply(id, approval.Token, approval.Phrase); rejected(err) != "operation_running" {
@@ -376,7 +408,7 @@ func TestSweepStaleKeepsARetainedPlan(t *testing.T) {
 		t.Fatalf("removed %d", n)
 	}
 	p, _ := m.Plan(done.PlanID)
-	if _, err := m.Approve(p.ID); err != nil {
+	if _, err := approve(m, p.ID); err != nil {
 		t.Fatalf("retained plan no longer applicable: %v", err)
 	}
 }

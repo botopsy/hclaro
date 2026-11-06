@@ -193,8 +193,12 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			Apply              operations.ApplyStatus `json:"apply"`
 		}{p, snap.Info.Version, changed, status})
 	})
-	mux.HandleFunc("POST /api/v1/plans/{id}/approval", func(w http.ResponseWriter, r *http.Request) {
-		var body struct{}
+	// Preflight evaluates every apply check on the server. verifyIdentity runs the read-only
+	// AWS STS caller identity probe, which contacts AWS, and is false unless the user asks.
+	mux.HandleFunc("POST /api/v1/plans/{id}/preflight", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			VerifyIdentity bool `json:"verifyIdentity"`
+		}
 		if !decodeBody(w, r, &body) {
 			return
 		}
@@ -202,7 +206,36 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			errorJSON(w, 404, "plan_not_found")
 			return
 		}
-		approval, err := manager.Approve(r.PathValue("id"))
+		report, err := manager.Preflight(r.Context(), r.PathValue("id"), operations.PreflightRequest{VerifyIdentity: body.VerifyIdentity})
+		if err != nil {
+			applyError(w, err)
+			return
+		}
+		writeJSON(w, 200, report)
+	})
+	mux.HandleFunc("POST /api/v1/plans/{id}/approval", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Binding      string   `json:"preflightBinding"`
+			Acknowledged []string `json:"acknowledged"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !idPattern.MatchString(r.PathValue("id")) {
+			errorJSON(w, 404, "plan_not_found")
+			return
+		}
+		if len(body.Binding) > 128 || len(body.Acknowledged) > 32 {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		for _, a := range body.Acknowledged {
+			if len(a) > 64 {
+				errorJSON(w, 400, "invalid_request")
+				return
+			}
+		}
+		approval, err := manager.Approve(r.PathValue("id"), operations.ApprovalRequest{Binding: body.Binding, Acknowledged: body.Acknowledged})
 		if err != nil {
 			applyError(w, err)
 			return

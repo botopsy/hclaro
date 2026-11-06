@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -15,6 +16,7 @@ import (
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
+	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
 )
 
@@ -60,6 +62,23 @@ func (s *planServer) do(method, path, body string) *httptest.ResponseRecorder {
 		s.t.Fatalf("canary in %s %s response", method, path)
 	}
 	return w
+}
+
+// approve runs the preflight over HTTP and requests an approval, acknowledging each
+// warning by ID as the UI does.
+func (s *planServer) approve(planID string) operations.Approval {
+	s.t.Helper()
+	w := s.do("POST", "/api/v1/plans/"+planID+"/preflight", `{}`)
+	report := decode[operations.PreflightReport](s.t, w)
+	if w.Code != 200 || report.Binding == "" {
+		s.t.Fatalf("preflight %d %+v", w.Code, report.Checks)
+	}
+	body, _ := json.Marshal(map[string]any{"preflightBinding": report.Binding, "acknowledged": report.Acknowledge})
+	w = s.do("POST", "/api/v1/plans/"+planID+"/approval", string(body))
+	if w.Code != 200 {
+		s.t.Fatalf("approval %d %s", w.Code, w.Body.String())
+	}
+	return decode[operations.Approval](s.t, w)
 }
 
 func decode[T any](t *testing.T, w *httptest.ResponseRecorder) T {
@@ -193,18 +212,18 @@ func TestPlanFlowOverHTTP(t *testing.T) {
 	refused(s.do("GET", applyPath, ""), 404, "route_not_found")
 	refused(s.do("POST", applyPath, `{"confirmationToken":"x","confirmation":"apply demo"}`), 409, "approval_required")
 	refused(s.do("POST", applyPath, `{"confirmationToken":"x","autoApprove":true}`), 400, "invalid_request")
-	approval := decode[operations.Approval](t, s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{}`))
+	approval := s.approve(op.PlanID)
 	if approval.Phrase != "apply demo" || !approval.Destructive || approval.ArtifactSHA256 != detail.ArtifactSHA256 || len(approval.Token) != 64 || strings.Join(approval.Command[:4], " ") != "terraform apply -input=false -json" {
 		t.Fatalf("approval %+v", approval)
 	}
 	refused(s.do("POST", applyPath, `{"confirmationToken":"`+approval.Token+`","confirmation":"apply"}`), 409, "confirmation_mismatch")
 	refused(s.do("POST", applyPath, `{"confirmationToken":"`+approval.Token+`","confirmation":"apply demo"}`), 409, "approval_required")
-	approval = decode[operations.Approval](t, s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{}`))
+	approval = s.approve(op.PlanID)
 	refused(s.do("POST", applyPath, `{"confirmationToken":"`+strings.Repeat("0", 64)+`","confirmation":"apply demo"}`), 409, "approval_invalid")
 	if strings.Contains(strings.Join(s.fake.Calls(), ","), "apply") {
 		t.Fatal("refused requests reached the engine")
 	}
-	approval = decode[operations.Approval](t, s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{}`))
+	approval = s.approve(op.PlanID)
 	w = s.do("POST", applyPath, `{"confirmationToken":"`+approval.Token+`","confirmation":"apply demo"}`)
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
@@ -222,6 +241,7 @@ func TestPlanFlowOverHTTP(t *testing.T) {
 		t.Fatalf("%+v", detail.Apply)
 	}
 	refused(s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{}`), 409, "not_applicable")
+	refused(s.do("POST", "/api/v1/plans/"+op.PlanID+"/preflight", `{}`), 200, `"blocked":true`)
 	parseSSE(s.do("GET", "/api/v1/operations/"+applied.ID+"/events", "").Body.String())
 }
 
@@ -306,5 +326,51 @@ func TestPlanningUnavailable(t *testing.T) {
 	}
 	if w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`); w.Code != 409 {
 		t.Fatalf("%d", w.Code)
+	}
+}
+
+func TestPreflightOverHTTP(t *testing.T) {
+	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s.manager.GitProbe = func(context.Context, string) preflight.GitResult {
+		return preflight.GitResult{State: preflight.GitDirty, Modified: 1, Paths: []string{"main.tf"}}
+	}
+	w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`)
+	op := s.wait(decode[operations.Operation](t, w).ID)
+	path := "/api/v1/plans/" + op.PlanID
+	refused := func(w *httptest.ResponseRecorder, code int, name string) {
+		t.Helper()
+		if w.Code != code || !strings.Contains(w.Body.String(), name) {
+			t.Fatalf("want %d %s, got %d %s", code, name, w.Code, w.Body.String())
+		}
+	}
+	refused(s.do("GET", path+"/preflight", ""), 404, "route_not_found")
+	refused(s.do("POST", "/api/v1/plans/"+strings.Repeat("0", 32)+"/preflight", `{}`), 404, "plan_not_found")
+	refused(s.do("POST", path+"/preflight", `{"verifyIdentity":true,"command":"aws"}`), 400, "invalid_request")
+	refused(s.do("POST", path+"/preflight", `{"verifyIdentity":"yes"}`), 400, "invalid_request")
+	w = s.do("POST", path+"/preflight", `{}`)
+	report := decode[operations.PreflightReport](t, w)
+	if w.Code != 200 || report.Blocked || report.Binding == "" || !slices.Contains(report.Acknowledge, preflight.CheckGit) || report.Impact.Total == 0 {
+		t.Fatalf("%d %+v", w.Code, report)
+	}
+	// The binding alone is not enough: each warning is acknowledged by ID.
+	refused(s.do("POST", path+"/approval", `{}`), 409, "preflight_required")
+	refused(s.do("POST", path+"/approval", `{"preflightBinding":"`+report.Binding+`"}`), 409, "acknowledgement_required")
+	refused(s.do("POST", path+"/approval", `{"preflightBinding":"`+report.Binding+`","acknowledged":["*"]}`), 409, "acknowledgement_required")
+	refused(s.do("POST", path+"/approval", `{"preflightBinding":"`+strings.Repeat("x", 200)+`"}`), 400, "invalid_request")
+	refused(s.do("POST", path+"/approval", `{"preflightBinding":"`+report.Binding+`","approveAll":true}`), 400, "invalid_request")
+	body, _ := json.Marshal(map[string]any{"preflightBinding": report.Binding, "acknowledged": report.Acknowledge})
+	w = s.do("POST", path+"/approval", string(body))
+	approval := decode[operations.Approval](t, w)
+	if w.Code != 200 || !slices.Equal(approval.Acknowledged, report.Acknowledge) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	w = s.do("POST", path+"/apply", `{"confirmationToken":"`+approval.Token+`","confirmation":"apply demo"}`)
+	applied := s.wait(decode[operations.Operation](t, w).ID)
+	if applied.Outcome != "applied" || applied.Preflight == nil || !slices.Equal(applied.Preflight.Acknowledged, report.Acknowledge) {
+		t.Fatalf("%+v", applied)
+	}
+	// After the apply the plan cannot pass preflight again.
+	if r := decode[operations.PreflightReport](t, s.do("POST", path+"/preflight", `{}`)); !r.Blocked || r.Binding != "" {
+		t.Fatalf("%+v", r)
 	}
 }
