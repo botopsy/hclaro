@@ -84,7 +84,7 @@ func TestApplyAppliesReviewedArtifactOnceAndReloads(t *testing.T) {
 	}
 	assertNoCanary(t, events, done, m.Operations())
 	p, _ := m.Plan(id)
-	if status := m.ApplyStatus(p, m.currentFingerprint(p)); status.Available || status.ArtifactRetained {
+	if _, status := m.ContextStatus(p); status.Available || status.ArtifactRetained {
 		t.Fatalf("applied plan still applicable: %+v", status)
 	}
 	if _, err := m.Approve(id); rejected(err) != "not_applicable" {
@@ -222,7 +222,7 @@ func TestOnlyLatestApplicablePlanIsKept(t *testing.T) {
 		t.Fatalf("superseded plan: %v", err)
 	}
 	p, _ := m.Plan(first)
-	if status := m.ApplyStatus(p, m.currentFingerprint(p)); status.Available || !strings.Contains(status.Reason, "newer plan") {
+	if _, status := m.ContextStatus(p); status.Available || !strings.Contains(status.Reason, "newer plan") {
 		t.Fatalf("%+v", status)
 	}
 	// Expiry deletes the saved plan.

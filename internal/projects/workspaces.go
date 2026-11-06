@@ -103,6 +103,8 @@ type WorkspaceReview struct {
 	Busy      string           `json:"busy,omitempty"`
 	Expires   string           `json:"expiresAt,omitempty"`
 	ContextID string           `json:"contextId,omitempty"`
+	// Execution is the selected execution profile context, if any.
+	Execution *operations.ExecutionContext `json:"executionContext,omitempty"`
 }
 
 // pendingReview is what a confirmed start must match. It is single use.
@@ -114,6 +116,8 @@ type pendingReview struct {
 	listing   engine.WorkspaceList
 	notices   []string
 	expires   time.Time
+	profileID string
+	context   *operations.ExecutionContext
 }
 
 const (
@@ -155,7 +159,7 @@ func unsafeWorkspaceArgs(environ []string) bool {
 // staticContext hashes everything a workspace command depends on that can be checked
 // without running the engine: project, root, engine choice and executable identity, data
 // directory, backend metadata, relevant environment and the configuration fingerprint.
-func staticContext(p Record, name, executable string, environ []string, action engine.WorkspaceAction, target string) string {
+func staticContext(p Record, name, executable string, environ []string, action engine.WorkspaceAction, target, profile string) string {
 	fingerprint := workspace.Fingerprint(p.RootPath, environ, "workspace")
 	if fingerprint == "" {
 		return ""
@@ -170,7 +174,7 @@ func staticContext(p Record, name, executable string, environ []string, action e
 	}
 	sort.Strings(env)
 	h := sha256.New()
-	for _, field := range append([]string{p.ID, p.RootPath, p.EnginePreference, name, executable, fileIdentity(executable), fingerprint, info.Backend, info.ExecutionMode, strconv.FormatBool(info.Initialized), string(action), target}, env...) {
+	for _, field := range append([]string{p.ID, p.RootPath, p.EnginePreference, name, executable, fileIdentity(executable), fingerprint, info.Backend, info.ExecutionMode, strconv.FormatBool(info.Initialized), string(action), target, "profile:" + profile}, env...) {
 		h.Write([]byte(field))
 		h.Write([]byte{0})
 	}
@@ -189,6 +193,12 @@ func listingID(static string, l engine.WorkspaceList) string {
 // ReviewWorkspace checks a workspace command against a fresh listing and returns what it
 // will do. Refusals are returned in the review with CanRun false. Nothing is changed.
 func (h *Hub) ReviewWorkspace(ctx context.Context, id string, action engine.WorkspaceAction, target string) (WorkspaceReview, error) {
+	return h.ReviewWorkspaceWith(ctx, id, action, target, "")
+}
+
+// ReviewWorkspaceWith reviews a workspace command run with an optional execution profile's
+// environment and engine preference.
+func (h *Hub) ReviewWorkspaceWith(ctx context.Context, id string, action engine.WorkspaceAction, target, profileID string) (WorkspaceReview, error) {
 	if !engine.ValidAction(action) {
 		return WorkspaceReview{}, ErrInvalidAction
 	}
@@ -199,11 +209,20 @@ func (h *Hub) ReviewWorkspace(ctx context.Context, id string, action engine.Work
 	if err != nil {
 		return WorkspaceReview{}, err
 	}
-	environ := os.Environ()
+	inherited := os.Environ()
+	environ := inherited
 	data, shared := dataDir()
 	launch := h.Launch != "" && h.Launch == p.RootPath
 	r := WorkspaceReview{ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Action: action, Name: target, Backend: "unknown", ExecutionMode: "unsupported", DataDir: data, Workspaces: []string{}, Notices: workspaceNotices(environ, action, launch), Launch: launch}
-	name := p.EnginePreference
+	preference, composed, execution, profileErr := h.execution(p, profileID)
+	profile := ""
+	if execution != nil {
+		environ, profile, r.Execution = composed, execution.Fingerprint, execution
+		r.Notices = append(r.Notices, execution.Notices...)
+	} else {
+		preference = p.EnginePreference
+	}
+	name := preference
 	if name == "" {
 		name = "terraform"
 	}
@@ -215,6 +234,10 @@ func (h *Hub) ReviewWorkspace(ctx context.Context, id string, action engine.Work
 	status, problem := check(p.RootPath)
 	if status != StatusReady {
 		return refuse(status, problem)
+	}
+	var refusal *ProfileRefusal
+	if errors.As(profileErr, &refusal) {
+		return refuse(refusal.Code, refusal.Message)
 	}
 	info := workspace.Inspect(p.RootPath)
 	r.Backend, r.ExecutionMode, r.Support = info.Backend, info.ExecutionMode, workspaceSupport(info)
@@ -234,10 +257,10 @@ func (h *Hub) ReviewWorkspace(ctx context.Context, id string, action engine.Work
 		return refuse("delete_unsupported", r.Support.DeleteReason)
 	case !engine.ValidArgWorkspace(target):
 		return refuse("unsafe_name", "This name starts with a dash, so it could be read as a command flag. Manage it with the CLI.")
-	case unsafeWorkspaceArgs(environ):
+	case unsafeWorkspaceArgs(inherited):
 		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS, TF_CLI_ARGS_workspace or TF_CLI_ARGS_show adds flags other than -no-color, which would change the reviewed command. Restart Hclaro without them.")
 	}
-	name, executable, manager, err := h.WorkspaceManagers(p.RootPath, p.EnginePreference, environ)
+	name, executable, manager, err := h.WorkspaceManagers(p.RootPath, preference, environ)
 	if err != nil {
 		return refuse("missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine.")
 	}
@@ -269,7 +292,7 @@ func (h *Hub) ReviewWorkspace(ctx context.Context, id string, action engine.Work
 		return refuse("default_unknown", "The CLI default could not be determined, so Hclaro cannot be sure this workspace is not in use.")
 	case action == engine.WorkspaceDelete && list.Current == target:
 		return refuse("workspace_active", target+" is the CLI default. Set another workspace as the CLI default first.")
-	case action == engine.WorkspaceDelete && inheritedWorkspace(environ) == target:
+	case action == engine.WorkspaceDelete && inheritedWorkspace(inherited) == target:
 		return refuse("workspace_active", "Hclaro was started with TF_WORKSPACE set to "+target+". Restart it without that setting first.")
 	}
 	if action == engine.WorkspaceDelete {
@@ -286,7 +309,7 @@ func (h *Hub) ReviewWorkspace(ctx context.Context, id string, action engine.Work
 			return refuse("workspace_not_empty", "This workspace's recorded state still has resources or outputs. Hclaro deletes only empty workspaces and never uses -force.")
 		}
 	}
-	static := staticContext(p, name, executable, environ, action, target)
+	static := staticContext(p, name, executable, environ, action, target, profile)
 	if static == "" {
 		return refuse("too_large", "The project has too many files to fingerprint safely, so Hclaro cannot detect changes made after review. Use the CLI.")
 	}
@@ -299,7 +322,7 @@ func (h *Hub) ReviewWorkspace(ctx context.Context, id string, action engine.Work
 			delete(h.reviews, k)
 		}
 	}
-	h.reviews[r.ContextID] = &pendingReview{projectID: p.ID, action: action, name: target, static: static, listing: list, notices: slices.Clone(r.Notices), expires: expires}
+	h.reviews[r.ContextID] = &pendingReview{projectID: p.ID, action: action, name: target, static: static, listing: list, notices: slices.Clone(r.Notices), expires: expires, profileID: profileID, context: execution}
 	h.mu.Unlock()
 	r.CanRun = true
 	return r, nil
@@ -325,13 +348,19 @@ func (h *Hub) remember(id, name, version string, list engine.WorkspaceList) {
 // claimed until the command ends; the engine, root, data directory and environment must be
 // unchanged, and the runner lists workspaces again before running.
 func (h *Hub) StartWorkspace(id string, action engine.WorkspaceAction, target, expected string) (operations.Operation, error) {
+	return h.StartWorkspaceWith(id, action, target, expected, "")
+}
+
+// StartWorkspaceWith runs a reviewed workspace command; profileID must be the profile the
+// review used.
+func (h *Hub) StartWorkspaceWith(id string, action engine.WorkspaceAction, target, expected, profileID string) (operations.Operation, error) {
 	p, err := h.Registry.Get(id)
 	if err != nil {
 		return operations.Operation{}, err
 	}
 	h.mu.Lock()
 	review, ok := h.reviews[expected]
-	if ok && (review.projectID != id || review.action != action || review.name != target || h.Now().After(review.expires)) {
+	if ok && (review.projectID != id || review.action != action || review.name != target || review.profileID != profileID || h.Now().After(review.expires)) {
 		ok = false
 	}
 	h.mu.Unlock()
@@ -350,26 +379,36 @@ func (h *Hub) StartWorkspace(id string, action engine.WorkspaceAction, target, e
 	}
 	delete(h.reviews, expected)
 	h.mu.Unlock()
-	environ := os.Environ()
-	name, executable, manager, err := h.WorkspaceManagers(p.RootPath, p.EnginePreference, environ)
+	preference, environ, execution, err := h.execution(p, profileID)
+	profile := ""
+	switch {
+	case err != nil:
+		release()
+		return operations.Operation{}, ErrContextChanged
+	case execution != nil:
+		profile = execution.Fingerprint
+	default:
+		environ = os.Environ()
+	}
+	name, executable, manager, err := h.WorkspaceManagers(p.RootPath, preference, environ)
 	if err != nil {
 		release()
 		return operations.Operation{}, ErrContextChanged
 	}
 	rootInfo, statErr := os.Stat(p.RootPath)
 	exeInfo, exeErr := os.Stat(executable)
-	if statErr != nil || exeErr != nil || staticContext(p, name, executable, environ, action, target) != review.static {
+	if statErr != nil || exeErr != nil || staticContext(p, name, executable, environ, action, target, profile) != review.static {
 		release()
 		return operations.Operation{}, ErrContextChanged
 	}
 	return h.Inits.StartWorkspace(operations.WorkspaceRequest{
-		ProjectID: p.ID, Root: p.RootPath, Engine: name, Action: action, Name: target, Manager: manager, Environ: environ,
+		ProjectID: p.ID, Root: p.RootPath, Engine: name, Action: action, Name: target, Manager: manager, Environ: environ, Context: execution,
 		Notices: review.notices, Reviewed: review.listing,
 		Revalidate: func() string {
 			now, err := os.Stat(p.RootPath)
 			resolved, evalErr := filepath.EvalSymlinks(p.RootPath)
 			exe, exeErr := os.Stat(executable)
-			if err != nil || evalErr != nil || exeErr != nil || resolved != p.RootPath || !os.SameFile(rootInfo, now) || !os.SameFile(exeInfo, exe) || staticContext(p, name, executable, environ, action, target) != review.static {
+			if err != nil || evalErr != nil || exeErr != nil || resolved != p.RootPath || !os.SameFile(rootInfo, now) || !os.SameFile(exeInfo, exe) || staticContext(p, name, executable, environ, action, target, profile) != review.static {
 				return "path_changed"
 			}
 			return ""

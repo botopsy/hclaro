@@ -6,6 +6,7 @@ import { operationActive, type InitStatus, type Operation } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { OperationLog } from '../plans/OperationLog';
+import { RecordedContext } from '../profiles/ContextSummary';
 
 function engineLabel(name?: string) {
   return name === 'tofu' ? 'OpenTofu' : 'Terraform';
@@ -23,14 +24,16 @@ const outcomeTitle: Record<string, string> = {
 // Guided init for one Hub project: review the context and effects, confirm, then follow the
 // sanitized log. The review is read-only; init runs only from the confirm button, and a
 // failure is never retried automatically.
-export function InitWizard({ projectId, onClose, onFinished }: {
+export function InitWizard({ projectId, profileId = '', onClose, onFinished }: {
   projectId: string;
+  // The execution profile this tab uses ("" for none); init runs with its environment.
+  profileId?: string;
   onClose: () => void;
   onFinished: () => void;
 }) {
   const status = useQuery({
-    queryKey: ['init-status', projectId],
-    queryFn: () => api<InitStatus>(`projects/${projectId}/init-status`),
+    queryKey: ['init-status', projectId, profileId],
+    queryFn: () => api<InitStatus>(`projects/${projectId}/init-status${profileId ? `?profileId=${profileId}` : ''}`),
     gcTime: 0
   });
   const [acknowledged, setAcknowledged] = useState(false);
@@ -55,7 +58,7 @@ export function InitWizard({ projectId, onClose, onFinished }: {
     setStarting(true);
     setError('');
     try {
-      setStarted(await send<Operation>('POST', `projects/${projectId}/operations/init`, { mode: 'standard', expectedContextId: s.contextId }));
+      setStarted(await send<Operation>('POST', `projects/${projectId}/operations/init`, { mode: 'standard', expectedContextId: s.contextId, ...(profileId ? { profileId } : {}) }));
     } catch (e) {
       setError(message(e));
       void status.refetch();
@@ -102,6 +105,7 @@ export function InitWizard({ projectId, onClose, onFinished }: {
         <li><CloudDownload size={16} /><span><strong>Contacts registries and the backend</strong> with your existing credentials to download providers and modules and to configure state storage. Credentials are never stored or shown.</span></li>
         <li><FileLock2 size={16} /><span><strong>Never upgrades or migrates.</strong> No <code>-upgrade</code>, <code>-migrate-state</code>, <code>-force-copy</code> or <code>-reconfigure</code>. If init needs one of them, or asks a question, it stops and Hclaro explains what to do.</span></li>
        </ul>
+       <p className="context-line"><strong>Execution profile:</strong> <RecordedContext context={s.executionContext} /></p>
        {s.notices.length > 0 && <ul className="init-notices">{s.notices.map(n => <li key={n}><AlertTriangle size={13} />{n}</li>)}</ul>}
        {s.operation && !operationActive(s.operation) && s.operation.status !== 'succeeded' && <p className="muted">Last attempt: {outcomeTitle[s.operation.status] || s.operation.status}{s.operation.diagnostic ? ` · ${s.operation.diagnostic.code.replaceAll('_', ' ')}` : ''}.</p>}
        {!s.canInit ? <p className="dialog-error" role="alert">{s.reason}</p> : <label className="init-ack"><input type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)} />I understand init may contact registries and the backend and writes local files in this folder.</label>}

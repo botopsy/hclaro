@@ -43,7 +43,7 @@ func planHelper() {
 		os.Exit(2)
 	}
 	for _, a := range args[4:] {
-		if !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") && !strings.HasPrefix(a, "-generate-config-out=") {
+		if !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") && !strings.HasPrefix(a, "-generate-config-out=") && !strings.HasPrefix(a, "-parallelism=") && !strings.HasPrefix(a, "-lock-timeout=") {
 			os.Exit(2)
 		}
 	}
@@ -95,7 +95,7 @@ func TestPlanStreamsAndWritesArtifact(t *testing.T) {
 	c := planCLI(t, "ok")
 	out := filepath.Join(t.TempDir(), "plan.tfplan")
 	var got [][]byte
-	err := c.Plan(context.Background(), PlanRequest{Out: out, VarFiles: []string{"prod.tfvars", "a b.tfvars"}}, func(line []byte) { got = append(got, line) })
+	err := c.Plan(context.Background(), PlanRequest{Out: out, VarFiles: []string{"prod.tfvars", "env/eu-west.tfvars"}}, func(line []byte) { got = append(got, line) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +103,8 @@ func TestPlanStreamsAndWritesArtifact(t *testing.T) {
 		t.Fatalf("lines %d / %d", len(got), len(got[1]))
 	}
 	written, _ := os.ReadFile(out)
-	// Names with spaces arrive as one argv element: no shell splitting is involved.
-	if string(written) != "-var-file=prod.tfvars,-var-file=a b.tfvars" {
+	// Root-relative paths in subfolders arrive as one argv element each.
+	if string(written) != "-var-file=prod.tfvars,-var-file=env/eu-west.tfvars" {
 		t.Fatalf("argv %q", written)
 	}
 	if b, err := c.ShowPlan(context.Background(), out); err != nil || string(b) != string(written) {
@@ -202,12 +202,30 @@ func TestPlanGenerateConfigArgument(t *testing.T) {
 	}
 }
 
+func TestPlanProfileOptions(t *testing.T) {
+	c := planCLI(t, "ok")
+	out := filepath.Join(t.TempDir(), "plan.tfplan")
+	if err := c.Plan(context.Background(), PlanRequest{Out: out, VarFiles: []string{"env/prod.tfvars"}, Parallelism: 4, LockTimeoutSeconds: 30}, func([]byte) {}); err != nil {
+		t.Fatal(err)
+	}
+	if written, _ := os.ReadFile(out); string(written) != "-var-file=env/prod.tfvars,-parallelism=4,-lock-timeout=30s" {
+		t.Fatalf("argv %q", written)
+	}
+}
+
 func TestPlanRejectsUnsafeInputs(t *testing.T) {
 	c := planCLI(t, "ok")
 	for _, request := range []PlanRequest{
 		{Out: "relative.tfplan"},
 		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{"../x.tfvars"}},
 		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{"-destroy"}},
+		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{"a b.tfvars"}},
+		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{"/etc/x.tfvars"}},
+		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{"env/.hidden/x.tfvars"}},
+		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{"env/x.tf"}},
+		{Out: filepath.Join(t.TempDir(), "p"), Parallelism: -1},
+		{Out: filepath.Join(t.TempDir(), "p"), Parallelism: 257},
+		{Out: filepath.Join(t.TempDir(), "p"), LockTimeoutSeconds: 3601},
 		{Out: filepath.Join(t.TempDir(), "p"), VarFiles: []string{""}},
 		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{"-destroy"}},
 		{Out: filepath.Join(t.TempDir(), "p"), Replace: []string{"data.aws_caller_identity.current"}},

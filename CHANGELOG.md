@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Execution profiles (M9, draft)
+
+- Hub projects can have named **execution profiles**: engine preference, workspace selector, approved variable files (canonical, symlink-safe, inside the project), `-parallelism`/`-lock-timeout` for plans, an AWS profile alias and region, and the names of expected environment variables. Profiles never store credentials, tokens, variable values or file contents; they are saved in `profiles.json` next to `projects.json` with revisions.
+- A **Profile** selector in the context bar and on the project page chooses the profile for the current browser tab only; **Manage** creates, edits, clones, removes and sets the default.
+- Plan, replace and import dialogs show the full execution context (engine, workspace, root, backend, variable files, AWS names, expected variables, notices) labeled **Identity not verified**, and bind its fingerprint to the operation. Init and workspace commands, Hub read contexts and project tools use the selected profile too.
+- Each command gets the inherited environment with `TF_WORKSPACE`, `TF_LOG*` and `TF_CLI_ARGS*` removed (unsafe `TF_CLI_ARGS*` refuse, in any letter case), inherited static AWS keys removed when an AWS profile is chosen, and only `AWS_PROFILE`/`AWS_REGION`/`AWS_DEFAULT_REGION` added.
+- Editing or deleting a profile makes plans created with it unapplicable and invalidates approvals; running operations keep the context they started with. Without a profile, behavior is unchanged.
+- New routes under `/api/v1/projects/{id}/execution-profiles`, `/var-files` and `/execution-context`; `profileId` (and `contextFingerprint` for plans and imports) on the plan, import, context, init and workspace routes.
+- Variable file paths passed with `-var-file` may now be relative paths in subfolders; names with spaces are refused.
+
 ## 0.1.0-alpha.6 — 2026-11-06
 
 ### Read the launch project again

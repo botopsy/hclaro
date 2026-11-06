@@ -25,6 +25,9 @@ type artifact struct {
 	approval                                                           *approval
 	// applying is set while an apply uses the file; expiry then waits for the apply.
 	applying bool
+	// environ and context pin a profile-bound plan's environment for its apply.
+	environ []string
+	context *ExecutionContext
 }
 
 type approval struct {
@@ -56,6 +59,8 @@ type Approval struct {
 	Destructive    bool           `json:"destructive"`
 	Phrase         string         `json:"phrase,omitempty"`
 	Command        []string       `json:"command"`
+	// Context is the execution profile context the apply will use, if any.
+	Context *ExecutionContext `json:"executionContext,omitempty"`
 }
 
 // RejectError explains why an approval or apply was refused. Nothing ran.
@@ -169,9 +174,13 @@ func (m *Manager) releaseLocked(note string) {
 // ApplyStatus reports whether p can be applied now. currentFingerprint is the context
 // fingerprint recomputed by the caller.
 func (m *Manager) ApplyStatus(p *Plan, currentFingerprint string) ApplyStatus {
+	return m.applyStatus(p, currentFingerprint, "")
+}
+
+func (m *Manager) applyStatus(p *Plan, currentFingerprint, profileReason string) ApplyStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.checkLocked(p, currentFingerprint); err != nil {
+	if err := m.checkLocked(p, currentFingerprint, profileReason); err != nil {
 		retained := m.artifact != nil && m.artifact.planID == p.ID
 		return ApplyStatus{Reason: err.Error(), ArtifactRetained: retained}
 	}
@@ -180,7 +189,7 @@ func (m *Manager) ApplyStatus(p *Plan, currentFingerprint string) ApplyStatus {
 
 // checkLocked verifies everything that can be checked without running the engine.
 // Caller holds mu.
-func (m *Manager) checkLocked(p *Plan, currentFingerprint string) error {
+func (m *Manager) checkLocked(p *Plan, currentFingerprint, profileReason string) error {
 	snap := m.store.Get()
 	a := m.artifact
 	switch {
@@ -198,16 +207,14 @@ func (m *Manager) checkLocked(p *Plan, currentFingerprint string) error {
 		return reject("not_applicable", snap.Info.Capabilities.ApplyReason)
 	case time.Since(a.created) >= m.PlanMaxAge:
 		return reject("plan_expired", "This plan expired. Run a new plan; infrastructure may have changed since.")
+	case profileReason != "":
+		return reject("context_changed", profileReason)
 	case snap.Info.Engine != a.engine || snap.Info.Version != a.version || snap.Info.Workspace != a.workspace:
 		return reject("context_changed", "The engine, its version or the workspace changed since this plan was created. Run a new plan.")
 	case currentFingerprint == "" || currentFingerprint != a.fingerprint:
 		return reject("context_changed", "Configuration, variable files, the lock file or the planning environment changed since this plan was created. Run a new plan.")
 	}
 	return nil
-}
-
-func (m *Manager) currentFingerprint(p *Plan) string {
-	return m.Fingerprint(m.store.Get(), p.VarFiles)
 }
 
 func applyCommand(a *artifact) []string {
@@ -221,10 +228,10 @@ func (m *Manager) Approve(id string) (Approval, error) {
 	if !ok {
 		return Approval{}, ErrNotFound
 	}
-	current := m.currentFingerprint(p)
+	current, reason := m.currentFingerprint(p)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.checkLocked(p, current); err != nil {
+	if err := m.checkLocked(p, current, reason); err != nil {
 		return Approval{}, err
 	}
 	a := m.artifact
@@ -237,6 +244,7 @@ func (m *Manager) Approve(id string) (Approval, error) {
 		Token: a.approval.token, ExpiresAt: a.approval.expires.UTC().Format(time.RFC3339), PlanID: p.ID,
 		ArtifactSHA256: a.digest, Engine: a.engine, Workspace: a.workspace, Summary: summary,
 		Replace: slices.Clone(p.Replace), Import: p.Import, Imports: p.Imports, Destructive: p.Destructive, Phrase: phrase(p), Command: applyCommand(a),
+		Context: a.context.Clone(),
 	}, nil
 }
 
@@ -247,7 +255,7 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	if !ok {
 		return Operation{}, ErrNotFound
 	}
-	current := m.currentFingerprint(p)
+	current, reason := m.currentFingerprint(p)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a := m.artifact
@@ -262,7 +270,7 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	if want := phrase(p); want != "" && subtle.ConstantTimeCompare([]byte(typed), []byte(want)) != 1 {
 		return Operation{}, reject("confirmation_mismatch", "The typed confirmation did not match. Nothing was applied.")
 	}
-	if err := m.checkLocked(p, current); err != nil {
+	if err := m.checkLocked(p, current, reason); err != nil {
 		return Operation{}, err
 	}
 	release, claimed := m.Locks.Acquire(m.root, "apply")
@@ -272,11 +280,12 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	a.applying = true
 	ctx, cancel := context.WithTimeout(m.base, m.ApplyTimeout)
 	e := &entry{
-		op:      Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), Import: p.Import, PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true},
+		op:      Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), Import: p.Import, PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: a.context.Clone()},
 		log:     NewLog(logEvents, logBytes),
 		cancel:  cancel,
 		start:   time.Now(),
 		release: release,
+		environ: slices.Clone(a.environ),
 	}
 	m.entries = append(m.entries, e)
 	m.trim()
@@ -381,7 +390,12 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 		return "apply_timeout"
 	}
 	m.stage(e, "Checking workspace")
-	name, err := m.planner.Workspace(ctx)
+	planner := m.bound(e.environ, a.workspace)
+	applier, _ := planner.(engine.Applier)
+	if applier == nil {
+		return "apply_failed", nil, false
+	}
+	name, err := planner.Workspace(ctx)
 	switch {
 	case ctx.Err() != nil:
 		return stopped(), nil, false
@@ -398,9 +412,13 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	}
 	m.stage(e, "Applying")
 	label := engineLabel(a.engine)
-	inputs := collectKnown(m.root, e.op.VarFiles, os.Environ())
+	environ := e.environ
+	if environ == nil {
+		environ = os.Environ()
+	}
+	inputs := collectKnown(m.root, e.op.VarFiles, environ)
 	undecoded := false
-	err = m.applier.Apply(ctx, a.path, func(line []byte) {
+	err = applier.Apply(ctx, a.path, func(line []byte) {
 		level, text, diag, ok := translate(line, "apply", label, inputs)
 		if !ok {
 			if !undecoded {

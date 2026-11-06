@@ -34,6 +34,8 @@ type WorkspaceRequest struct {
 	// Finished receives the listing read after the command, or nil when it is unknown.
 	Finished func(after *engine.WorkspaceList)
 	Release  func()
+	// Context is the execution profile context, recorded in the operation metadata.
+	Context *ExecutionContext
 }
 
 // WorkspaceResult describes a workspace command and the CLI default before and after it.
@@ -94,7 +96,7 @@ func workspaceSuccess(action engine.WorkspaceAction, name string) string {
 // StartWorkspace records the operation and runs it in the background.
 func (r *Inits) StartWorkspace(req WorkspaceRequest) (Operation, error) {
 	op := Operation{
-		Kind: "workspace", Command: WorkspaceCommand(req.Engine, req.Action, req.Name), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices),
+		Kind: "workspace", Command: WorkspaceCommand(req.Engine, req.Action, req.Name), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 		Workspace: &WorkspaceResult{Action: req.Action, Name: req.Name, CLIDefaultBefore: req.Reviewed.Current},
 	}
 	return r.begin(op, req.Release, nil, func(ctx context.Context, e *initEntry) { r.runWorkspace(ctx, e, req) })

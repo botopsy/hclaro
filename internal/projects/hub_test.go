@@ -44,12 +44,12 @@ func fakeEngines(t *testing.T) (EngineFactory, string) {
 	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_show", "TF_CLI_ARGS_workspace", "TF_DATA_DIR"} {
 		t.Setenv(key, "")
 	}
-	return func(root, preference, selected string) (string, string, Adapter, error) {
+	return func(root, preference, selected string, environ []string) (string, string, Adapter, error) {
 		name := preference
 		if name == "" {
 			name = "terraform"
 		}
-		cli := &engine.CLI{Name: name, Executable: filepath.Join(bin, name+exe), Root: root, SelectedWorkspace: selected, IgnoreInheritedWorkspace: true}
+		cli := &engine.CLI{Name: name, Executable: filepath.Join(bin, name+exe), Root: root, SelectedWorkspace: selected, IgnoreInheritedWorkspace: true, Environ: environ}
 		return name, cli.Executable, cli, nil
 	}, spy
 }
@@ -282,7 +282,9 @@ func TestUnregisterDuringReadDiscardsSnapshot(t *testing.T) {
 	hub := NewHub(Open(t.TempDir(), now), "")
 	t.Cleanup(hub.Close)
 	fake := &blocking{workspace: "dev", started: make(chan struct{})}
-	hub.Engines = func(string, string, string) (string, string, Adapter, error) { return "terraform", "/fake", fake, nil }
+	hub.Engines = func(string, string, string, []string) (string, string, Adapter, error) {
+		return "terraform", "/fake", fake, nil
+	}
 	s, err := hub.Add(initialized(t, "racy"), "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -315,7 +317,7 @@ func TestEngineIgnoringSelectedWorkspaceIsRefused(t *testing.T) {
 	fake := &ignoring{blocking{workspace: "default"}}
 	s, _ := hub.Add(initialized(t, "stubborn"), "", "")
 	// "prod" is listed, but the engine keeps reporting "default".
-	hub.Engines = func(string, string, string) (string, string, Adapter, error) {
+	hub.Engines = func(string, string, string, []string) (string, string, Adapter, error) {
 		return "terraform", "/fake", &listing{fake, []string{"default", "prod"}}, nil
 	}
 	c, _, err := hub.Open(s.ID, "prod", false)
@@ -341,7 +343,7 @@ func TestContextsAreBoundedAndProjectChangesCloseThem(t *testing.T) {
 	hub := NewHub(Open(t.TempDir(), now), "")
 	hub.MaxContexts = 2
 	t.Cleanup(hub.Close)
-	hub.Engines = func(_, _, selected string) (string, string, Adapter, error) {
+	hub.Engines = func(_, _, selected string, _ []string) (string, string, Adapter, error) {
 		return "terraform", "/fake", &listing{&ignoring{blocking{workspace: selected}}, []string{"a", "b", "c"}}, nil
 	}
 	s, _ := hub.Add(initialized(t, "bounded"), "", "")
@@ -393,7 +395,7 @@ func TestMissingOrUnsupportedEngineIsReportedHonestly(t *testing.T) {
 	hub := NewHub(Open(t.TempDir(), now), "")
 	t.Cleanup(hub.Close)
 	s, _ := hub.Add(initialized(t, "engines"), "", "tofu")
-	hub.Engines = func(string, string, string) (string, string, Adapter, error) {
+	hub.Engines = func(string, string, string, []string) (string, string, Adapter, error) {
 		return "", "", nil, errors.New("not on PATH")
 	}
 	got, _ := hub.Inspect(context.Background(), s.ID)
@@ -407,7 +409,7 @@ func TestMissingOrUnsupportedEngineIsReportedHonestly(t *testing.T) {
 	if snap := waitLoaded(t, c); snap.Diagnostic == nil || snap.Diagnostic.Code != "missing_cli" {
 		t.Fatalf("%+v", snap.Diagnostic)
 	}
-	hub.Engines = func(string, string, string) (string, string, Adapter, error) {
+	hub.Engines = func(string, string, string, []string) (string, string, Adapter, error) {
 		return "tofu", "/fake", &unsupported{ignoring{blocking{workspace: "default"}}}, nil
 	}
 	got, _ = hub.Inspect(context.Background(), s.ID)

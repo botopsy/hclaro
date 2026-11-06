@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,11 +35,42 @@ type Applier interface {
 // resource instance addresses taken from parsed state, one -replace argument each.
 // GenerateConfigOut, for import plans, is a bare new file name in the project root where the
 // engine writes configuration for import targets that have no resource block.
+// Parallelism and LockTimeoutSeconds are the only engine options an execution profile can
+// set; zero keeps the engine default.
 type PlanRequest struct {
-	Out               string
-	VarFiles          []string
-	Replace           []string
-	GenerateConfigOut string
+	Out                string
+	VarFiles           []string
+	Replace            []string
+	GenerateConfigOut  string
+	Parallelism        int
+	LockTimeoutSeconds int
+}
+
+// Bounds for the profile-selectable plan options.
+const (
+	MaxParallelism        = 256
+	MaxLockTimeoutSeconds = 3600
+)
+
+var varFileSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+
+// ValidVarFilePath accepts a variable file reference relative to the project root:
+// slash-separated, at most five segments, no hidden or dot segments, no leading dash, and a
+// .tfvars or .tfvars.json name. It never accepts an absolute path or a flag.
+func ValidVarFilePath(path string) bool {
+	if path == "" || len(path) > 512 || strings.Contains(path, `\`) {
+		return false
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) > 5 {
+		return false
+	}
+	for _, part := range parts {
+		if !varFileSegment.MatchString(part) {
+			return false
+		}
+	}
+	return strings.HasSuffix(path, ".tfvars") || strings.HasSuffix(path, ".tfvars.json")
 }
 
 // ExitError reports a failed engine command without its output. Hint is a classification
@@ -67,10 +99,22 @@ func planArgs(request PlanRequest) ([]string, error) {
 	}
 	args := []string{"plan", "-input=false", "-json", "-out=" + request.Out}
 	for _, name := range request.VarFiles {
-		if name == "" || strings.HasPrefix(name, "-") || strings.ContainsAny(name, `/\`) || filepath.Base(name) != name {
+		if !ValidVarFilePath(name) {
 			return nil, errors.New("invalid variable file name")
 		}
 		args = append(args, "-var-file="+name)
+	}
+	if n := request.Parallelism; n != 0 {
+		if n < 1 || n > MaxParallelism {
+			return nil, errors.New("invalid parallelism")
+		}
+		args = append(args, "-parallelism="+strconv.Itoa(n))
+	}
+	if n := request.LockTimeoutSeconds; n != 0 {
+		if n < 1 || n > MaxLockTimeoutSeconds {
+			return nil, errors.New("invalid lock timeout")
+		}
+		args = append(args, "-lock-timeout="+strconv.Itoa(n)+"s")
 	}
 	if len(request.Replace) > MaxReplace {
 		return nil, errors.New("too many replace addresses")

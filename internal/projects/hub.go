@@ -14,6 +14,7 @@ import (
 
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
+	"hclaro/internal/profiles"
 	"hclaro/internal/rootlock"
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
@@ -53,15 +54,17 @@ type Adapter interface {
 
 // EngineFactory resolves an engine for a root and an optional preference. selected is the
 // UI workspace for a context, or "" for an inspection (which never sets TF_WORKSPACE).
-type EngineFactory func(root, preference, selected string) (name, executable string, adapter Adapter, err error)
+// environ, when non-nil, is an execution profile's composed child environment; nil inherits
+// Hclaro's environment.
+type EngineFactory func(root, preference, selected string, environ []string) (name, executable string, adapter Adapter, err error)
 
 // DefaultEngines uses the official CLI found on PATH.
-func DefaultEngines(root, preference, selected string) (string, string, Adapter, error) {
+func DefaultEngines(root, preference, selected string, environ []string) (string, string, Adapter, error) {
 	cli, err := engine.Detect(root, preference)
 	if err != nil {
 		return "", "", nil, err
 	}
-	cli.SelectedWorkspace, cli.IgnoreInheritedWorkspace = selected, true
+	cli.SelectedWorkspace, cli.IgnoreInheritedWorkspace, cli.Environ = selected, true, environ
 	return cli.Name, cli.Executable, cli, nil
 }
 
@@ -123,9 +126,13 @@ type Context struct {
 	Workspace  string `json:"workspace"`
 	DataDir    string `json:"dataDir"`
 	CreatedAt  string `json:"createdAt"`
-	store      *workspace.Store
-	cancel     context.CancelFunc
-	key        string
+	// Execution is the profile context this read was opened with; nil means the inherited
+	// environment.
+	Execution *operations.ExecutionContext `json:"executionContext,omitempty"`
+	store     *workspace.Store
+	cancel    context.CancelFunc
+	key       string
+	profileID string
 }
 
 // Snapshot returns the context's current snapshot.
@@ -146,6 +153,8 @@ type Hub struct {
 	Tools ToolsFactory
 	// Locks is shared with the launch project's operation manager: one operation per root.
 	Locks *rootlock.Set
+	// Profiles holds execution profiles per project; nil disables them.
+	Profiles *profiles.Store
 	// Launch is the canonical root Hclaro was started with, or "".
 	Launch string
 	// LaunchChanged runs after an init of the launch root has ended and released the root,
@@ -360,6 +369,11 @@ func (h *Hub) Remove(id string) error {
 		return err
 	}
 	h.forget(id, "project_removed")
+	// The project's execution profiles are Hclaro settings, not project files; they go too.
+	// A failure leaves orphaned entries that no project can reach.
+	if h.Profiles != nil {
+		_ = h.Profiles.RemoveProject(id)
+	}
 	return nil
 }
 
@@ -422,7 +436,7 @@ func (h *Hub) Inspect(ctx context.Context, id string) (Summary, error) {
 
 func (h *Hub) inspect(ctx context.Context, p Record) (name, version string, names []string, current string, hidden int, d *workspace.Diagnostic) {
 	names = []string{}
-	name, _, adapter, err := h.Engines(p.RootPath, p.EnginePreference, "")
+	name, _, adapter, err := h.Engines(p.RootPath, p.EnginePreference, "", nil)
 	if err != nil {
 		return p.EnginePreference, "", names, "", 0, diag("missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine.")
 	}
@@ -452,6 +466,13 @@ func (h *Hub) inspect(ctx context.Context, p Record) (name, version string, name
 // Open returns the read context for a project workspace, creating one and starting its
 // state read if needed. reload always creates a new context with a fresh read.
 func (h *Hub) Open(projectID, ws string, reload bool) (*Context, bool, error) {
+	return h.OpenWith(projectID, ws, "", reload)
+}
+
+// OpenWith is Open with an optional execution profile. The profile's environment (AWS
+// profile and region, no inherited TF_WORKSPACE) is used for every read of the context, and a
+// profile that selects a workspace can only open that workspace.
+func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, bool, error) {
 	if !engine.ValidWorkspace(ws) {
 		return nil, false, ErrInvalidWorkspace
 	}
@@ -469,11 +490,25 @@ func (h *Hub) Open(projectID, ws string, reload bool) (*Context, bool, error) {
 	if shared {
 		return nil, false, ErrSharedDataDir
 	}
-	name, executable, adapter, err := h.Engines(p.RootPath, p.EnginePreference, ws)
+	preference, environ, execution, err := h.execution(p, profileID)
 	if err != nil {
-		name, executable, adapter = p.EnginePreference, "", nil
+		return nil, false, err
 	}
-	key := strings.Join([]string{p.ID, p.RootPath, name, executable, ws, data}, "\x00")
+	if execution != nil {
+		if execution.Workspace != "" && execution.Workspace != ws {
+			return nil, false, &ProfileRefusal{"profile_workspace", "Profile " + execution.ProfileName + " selects workspace " + execution.Workspace + ". Open that workspace, or choose another profile for " + ws + "."}
+		}
+		execution.Workspace = ws
+	}
+	name, executable, adapter, err := h.Engines(p.RootPath, preference, ws, environ)
+	if err != nil {
+		name, executable, adapter = preference, "", nil
+	}
+	fingerprint := ""
+	if execution != nil {
+		fingerprint = execution.Fingerprint
+	}
+	key := strings.Join([]string{p.ID, p.RootPath, name, executable, ws, data, profileID, fingerprint}, "\x00")
 	h.mu.Lock()
 	if !reload {
 		for _, c := range h.contexts {
@@ -495,7 +530,7 @@ func (h *Hub) Open(projectID, ws string, reload bool) (*Context, bool, error) {
 	ctx, cancel := context.WithCancel(h.base)
 	info := workspace.Inspect(p.RootPath)
 	info.Project = p.Alias
-	c := &Context{ID: NewID(), ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Engine: name, Executable: executable, Workspace: ws, DataDir: data, CreatedAt: h.Now().UTC().Format(time.RFC3339), cancel: cancel, key: key}
+	c := &Context{ID: NewID(), ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Engine: name, Executable: executable, Workspace: ws, DataDir: data, CreatedAt: h.Now().UTC().Format(time.RFC3339), Execution: execution, cancel: cancel, key: key, profileID: profileID}
 	scope := workspace.Scope{Workspace: ws, ReadOnlyReason: ReadOnlyReason}
 	scope.Check = func(ctx context.Context) *workspace.Diagnostic {
 		list, err := adapter.ListWorkspaces(ctx)

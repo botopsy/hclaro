@@ -79,6 +79,8 @@ type Operation struct {
 	Workspace *WorkspaceResult `json:"workspace,omitempty"`
 	// Tool is set for Hub project utilities (validate, fmt -check, providers, outputs).
 	Tool *ToolResult `json:"tool,omitempty"`
+	// Context is the execution profile context the operation was bound to, if any.
+	Context *ExecutionContext `json:"executionContext,omitempty"`
 }
 
 // Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved
@@ -103,6 +105,8 @@ type Plan struct {
 	Fingerprint              string `json:"fingerprint"`
 	// Destructive plans delete, replace or forget objects, or contain unrecognized actions.
 	Destructive bool `json:"destructive"`
+	// Context is the execution profile context the plan was created with, if any.
+	Context *ExecutionContext `json:"executionContext,omitempty"`
 }
 
 type entry struct {
@@ -112,6 +116,9 @@ type entry struct {
 	start  time.Time
 	// release gives up the project root claim; it is called once the operation ends.
 	release func()
+	// environ is the composed child environment of a profile-bound operation; nil inherits
+	// Hclaro's environment. It is never serialized.
+	environ []string
 }
 
 type Manager struct {
@@ -134,7 +141,12 @@ type Manager struct {
 	Reinspect func() workspace.Info
 	// Locks, when set, is shared with Hub initialization so a plan, import or apply never
 	// runs in a root that is being initialized, and the other way around.
-	Locks    *rootlock.Set
+	Locks *rootlock.Set
+	// Binder resolves execution profiles of the launch project; nil disables profiles.
+	// Bind returns the planner for a profile's environment and workspace; nil keeps the
+	// launch planner (tests).
+	Binder   Binder
+	Bind     func(environ []string, workspace string) engine.Planner
 	entries  []*entry
 	plans    []*Plan
 	running  *entry
@@ -183,6 +195,12 @@ func engineLabel(name string) string {
 // opaque resource IDs from the current snapshot; only managed instances are accepted and
 // each becomes one -replace argument with the exact address from state.
 func (m *Manager) StartPlan(varFiles, replaceIDs []string) (Operation, error) {
+	return m.StartPlanWith(PlanStart{VarFiles: varFiles, Replace: replaceIDs})
+}
+
+// StartPlanWith starts a plan, bound to an execution profile when req.ProfileID is set.
+func (m *Manager) StartPlanWith(req PlanStart) (Operation, error) {
+	varFiles, replaceIDs := req.VarFiles, req.Replace
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -198,7 +216,11 @@ func (m *Manager) StartPlan(varFiles, replaceIDs []string) (Operation, error) {
 	if m.planner == nil || !snap.Info.Capabilities.CanPlan {
 		return Operation{}, ErrUnavailable
 	}
-	selected, err := m.selectVarFiles(varFiles)
+	bound, environ, err := m.bind(snap, req.ProfileID, req.ContextFingerprint)
+	if err != nil {
+		return Operation{}, err
+	}
+	selected, err := m.selectVarFiles(varFiles, bound)
 	if err != nil {
 		return Operation{}, err
 	}
@@ -217,30 +239,49 @@ func (m *Manager) StartPlan(varFiles, replaceIDs []string) (Operation, error) {
 	if !ok {
 		return Operation{}, ErrBusy
 	}
-	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: replace}, release), nil
+	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: replace, Context: bound}, release, environ), nil
 }
 
-// selectVarFiles validates a variable file selection against the files in the root.
-func (m *Manager) selectVarFiles(varFiles []string) ([]string, error) {
+// maxVarFiles bounds one plan's variable file selection.
+const maxVarFiles = 16
+
+// selectVarFiles validates a variable file selection against the files in the root and,
+// with a profile, the profile's approved files. A profile reference becomes the canonical
+// root-relative path it resolved to, which is what the engine receives.
+func (m *Manager) selectVarFiles(varFiles []string, c *ExecutionContext) ([]string, error) {
 	allowed := workspace.VarFiles(m.root)
-	if len(varFiles) > 8 {
+	if len(varFiles) > maxVarFiles {
 		return nil, ErrVarFiles
 	}
 	selected := []string{}
 	for _, name := range varFiles {
-		if !slices.Contains(allowed, name) || slices.Contains(selected, name) {
+		path := name
+		if c != nil && c.approved[name] != "" {
+			path = c.approved[name]
+		} else if !slices.Contains(allowed, name) {
 			return nil, ErrVarFiles
 		}
-		selected = append(selected, name)
+		if slices.Contains(selected, path) {
+			return nil, ErrVarFiles
+		}
+		selected = append(selected, path)
 	}
 	return selected, nil
 }
 
 // startPlanLocked starts a validated plan operation. Caller holds mu.
-func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation, release func()) Operation {
+func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation, release func(), environ []string) Operation {
 	command := []string{snap.Info.Engine, "plan", "-input=false", "-json", "-out=<private temporary file>"}
 	for _, name := range op.VarFiles {
 		command = append(command, "-var-file="+name)
+	}
+	if c := op.Context; c != nil {
+		if c.Parallelism > 0 {
+			command = append(command, fmt.Sprintf("-parallelism=%d", c.Parallelism))
+		}
+		if c.LockTimeoutSeconds > 0 {
+			command = append(command, fmt.Sprintf("-lock-timeout=%ds", c.LockTimeoutSeconds))
+		}
 	}
 	for _, address := range op.Replace {
 		command = append(command, "-replace="+address)
@@ -251,7 +292,7 @@ func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation, release
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
 	op.ID, op.Kind, op.Status, op.Stage = m.NewID(), "plan", Running, "Starting"
 	op.StartedAt, op.Command, op.Diagnostics, op.LogRetained = time.Now().UTC().Format(time.RFC3339), command, []EngineDiagnostic{}, true
-	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release}
+	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release, environ: environ}
 	m.entries = append(m.entries, e)
 	m.trim()
 	m.running = e
@@ -364,7 +405,12 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		return "timeout"
 	}
 	m.stage(e, "Checking workspace")
-	name, err := m.planner.Workspace(ctx)
+	bound := e.op.Context
+	planner := m.bound(e.environ, snap.Info.Workspace)
+	if bound != nil {
+		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
+	}
+	name, err := planner.Workspace(ctx)
 	if ctx.Err() != nil {
 		return nil, nil, stopped(), nil
 	}
@@ -395,12 +441,20 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	if e.op.Import != nil {
 		generated = e.op.Import.GeneratedFile
 	}
-	fingerprint := m.fingerprintExcept(snap, e.op.VarFiles, generated)
+	fingerprint := m.fingerprintFor(snap, e.op.VarFiles, generated, bound, e.environ)
 	m.stage(e, "Planning")
 	label := engineLabel(snap.Info.Engine)
-	inputs := collectKnown(m.root, e.op.VarFiles, os.Environ())
+	environ := e.environ
+	if environ == nil {
+		environ = os.Environ()
+	}
+	inputs := collectKnown(m.root, e.op.VarFiles, environ)
 	undecoded := false
-	err = m.planner.Plan(ctx, engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, Replace: e.op.Replace, GenerateConfigOut: generated}, func(line []byte) {
+	request := engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, Replace: e.op.Replace, GenerateConfigOut: generated}
+	if bound != nil {
+		request.Parallelism, request.LockTimeoutSeconds = bound.Parallelism, bound.LockTimeoutSeconds
+	}
+	err = planner.Plan(ctx, request, func(line []byte) {
 		level, text, diag, ok := translate(line, "plan", label, inputs)
 		if !ok {
 			if !undecoded {
@@ -440,7 +494,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	if err != nil {
 		return nil, nil, "plan_read", &zero
 	}
-	document, err := m.planner.ShowPlan(ctx, out)
+	document, err := planner.ShowPlan(ctx, out)
 	if ctx.Err() != nil {
 		return nil, nil, stopped(), &zero
 	}
@@ -463,8 +517,8 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		review.Warnings = append(review.Warnings, importWarnings(review, e.op.Import.Address)...)
 		if generated != "" {
 			// The generated file is new; any other edit made while planning still counts.
-			if m.fingerprintExcept(snap, e.op.VarFiles, generated) == fingerprint {
-				fingerprint = m.Fingerprint(snap, e.op.VarFiles)
+			if m.fingerprintFor(snap, e.op.VarFiles, generated, bound, e.environ) == fingerprint {
+				fingerprint = m.fingerprintFor(snap, e.op.VarFiles, "", bound, e.environ)
 			}
 			text, truncated, err := imports.ReadGenerated(m.root, generated)
 			if err != nil {
@@ -477,13 +531,14 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		Review: review, ID: m.NewID(), OperationID: e.op.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
 		Import: e.op.Import, GeneratedConfig: generatedConfig, GeneratedConfigTruncated: generatedTruncated,
-		ArtifactSHA256: digest, Fingerprint: fingerprint,
+		ArtifactSHA256: digest, Fingerprint: fingerprint, Context: bound.Clone(),
 		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Summary[plan.Unknown] > 0,
 	}
 	// The artifact holds secrets in plaintext. It is kept only when it could be applied;
 	// otherwise the deferred cleanup removes it now.
-	if snap.Info.Capabilities.CanApply && m.applier != nil && ineligible(result) == "" {
-		kept = &artifact{planID: result.ID, dir: dir, path: out, digest: digest, fingerprint: fingerprint, workspace: name, version: snap.Info.Version, engine: snap.Info.Engine, created: time.Now()}
+	_, applies := planner.(engine.Applier)
+	if snap.Info.Capabilities.CanApply && m.applier != nil && applies && ineligible(result) == "" {
+		kept = &artifact{planID: result.ID, dir: dir, path: out, digest: digest, fingerprint: fingerprint, workspace: name, version: snap.Info.Version, engine: snap.Info.Engine, created: time.Now(), environ: slices.Clone(e.environ), context: bound.Clone()}
 	}
 	return result, kept, "", &zero
 }
@@ -581,6 +636,7 @@ func (m *Manager) snapshot(e *entry) Operation {
 		op.Import = &target
 	}
 	op.Diagnostics = slices.Clone(op.Diagnostics)
+	op.Context = op.Context.Clone()
 	if op.Status == Running {
 		op.DurationMs = time.Since(e.start).Milliseconds()
 	}

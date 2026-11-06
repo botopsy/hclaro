@@ -31,7 +31,7 @@ func toolsFixture(t *testing.T) (*Hub, map[string]string, string) {
 	}
 	engines := hub.Engines
 	hub.Tools = func(root, preference string, environ []string, selected string) (string, string, engine.Tools, error) {
-		name, executable, adapter, err := engines(root, preference, selected)
+		name, executable, adapter, err := engines(root, preference, selected, environ)
 		if err != nil {
 			return "", "", nil, err
 		}

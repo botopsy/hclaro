@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, CircleX, FileCheck2, FileCode2, Info, KeyRound, LoaderCircle, Play, ShieldCheck, Terminal } from 'lucide-react';
 import { api, ApiError, post } from '../api';
 import { operationActive, type ContextInfo, type Operation, type ToolName, type ToolResult } from '../types';
+import { RecordedContext } from '../profiles/ContextSummary';
 import { Button } from '../components/ui/button';
 import { OperationLog } from '../plans/OperationLog';
 import { clock, duration } from '../plans/labels';
@@ -97,6 +98,7 @@ export function ToolsView({ context }: { context: ContextInfo }) {
   }
   const engine = context.engine || 'terraform';
   return <div className="tools-view">
+   <p className="context-line"><strong>Execution context:</strong> <RecordedContext context={context.executionContext} /></p>
    <p className="info-note"><ShieldCheck size={15} /><span>These commands are read-only and run only when you click. They never write configuration, change state or contact your infrastructure through a plan. <strong>Validate</strong> and <strong>Format check</strong> read configuration files only. <strong>Providers</strong> and <strong>Outputs</strong> read this tab's workspace, <strong className="mono">{context.workspace}</strong>, through a per-command <code>TF_WORKSPACE</code>; your terminal's CLI default is not changed.</span></p>
    <div className="tool-grid">{tools.map(t => {
        const active = running(t.name);

@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
 import { actionOrder, clock, engineLabel, meta, reasonLabel, replaceOrder } from './labels';
+import { RecordedContext } from '../profiles/ContextSummary';
 
 type Tab = 'changes' | 'outputs' | 'drift';
 const pageSize = 200;
@@ -47,12 +48,13 @@ export function PlanReview({ plan, copy, onApply, busy }: { plan: Plan; copy: (v
     <div><span className="muted">Engine</span><strong>{engineLabel(plan.engine)} {plan.engineVersion || plan.currentEngineVersion}</strong></div>
     <div><span className="muted">Workspace</span><strong>{plan.workspace}</strong></div>
     <div><span className="muted">Variable files</span><strong>{plan.varFiles.length ? plan.varFiles.join(', ') : 'Automatic only'}</strong></div>
+    <div><span className="muted">Execution context</span><strong><RecordedContext context={plan.executionContext} /></strong></div>
     <div><span className="muted">Saved plan SHA-256</span><button className="hash" onClick={() => void copy(plan.artifactSha256, 'Plan digest')} title={plan.artifactSha256} aria-label="Copy saved plan SHA-256"><Fingerprint size={12} />{plan.artifactSha256.slice(0, 12)}<Copy size={11} /></button></div>
    </div>
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
    {plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={15} /><div><strong>Ready to apply.</strong> Applying uses exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}. You confirm on the next screen.</div>{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}><Rocket size={14} />Review and apply…</Button>}</div> : <div className="apply-banner" role="note"><LockKeyhole size={15} /><div><strong>Review only.</strong> {plan.apply.reason}</div></div>}
-   {plan.contextChanged && <div className="plan-warning" role="alert"><TriangleAlert size={15} />Configuration, variable files or the engine changed since this plan was created. Run a new plan to review current changes.</div>}
+   {plan.contextChanged && <div className="plan-warning" role="alert"><TriangleAlert size={15} />Configuration, variable files, the engine or the execution profile changed since this plan was created. Run a new plan to review current changes.</div>}
    {plan.warnings.map(w => <div className="plan-warning" key={w} role="alert"><TriangleAlert size={15} />{w}</div>)}
    <div className="summary-grid" role="group" aria-label="Filter by action">{actionOrder.filter(a => a !== 'no-op' || plan.summary['no-op']).map(a => {
     const { label, icon: Icon, tone } = meta(a);

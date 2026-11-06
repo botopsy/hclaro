@@ -2,7 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CircleCheck, CircleHelp, CloudCog, Copy, Eye, EyeOff, FilePlus2, FileSearch, Import, LoaderCircle, LockKeyhole, Play, ShieldCheck, Terminal, TriangleAlert } from 'lucide-react';
 import { api, post } from '../api';
-import type { ImportOptions, ImportPreview, ImportRequest, Operation } from '../types';
+import type { ImportOptions, ImportPreview, ImportRequest, Operation, PlanOptions } from '../types';
+import { ContextSummary } from '../profiles/ContextSummary';
+import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 import { Button } from '../components/ui/button';
 import { engineLabel } from '../plans/labels';
 
@@ -13,10 +15,13 @@ const blank: ImportRequest = { address: '', id: '', provider: '', file: 'imports
 // review, with the same confirmation as any other plan.
 export function ImportView({
   workspaceStatus,
+  profileId = '',
   onStarted,
   copy
 }: {
   workspaceStatus?: string;
+  // The execution profile this tab uses ("" for none).
+  profileId?: string;
   onStarted: (operation: Operation) => void;
   copy: (value: string, label: string) => Promise<void>;
 }) {
@@ -25,11 +30,15 @@ export function ImportView({
   const [preview, setPreview] = useState<ImportPreview>();
   const [checking, setChecking] = useState(false);
   const [consent, setConsent] = useState(false);
-  const [varFiles, setVarFiles] = useState<string[]>([]);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
   const options = useQuery({ queryKey: ['import-options', workspaceStatus], queryFn: () => api<ImportOptions>('imports/options') });
   const o = options.data;
+  // The execution context summary comes from the plan options: an import is a plan.
+  const context = useQuery({ queryKey: ['plan-options', workspaceStatus, profileId], queryFn: () => api<PlanOptions>(`plans/options${profileId ? `?profileId=${profileId}` : ''}`) });
+  const choice = useVarFileChoice(context.data);
+  const summary = context.data?.context;
+  const contextBlocked = !!summary && summary.issues.length > 0 || !!context.data?.profileError;
   const engine = engineLabel(o?.engine ?? 'terraform');
   // Any edit invalidates the preview: the server only accepts what was reviewed.
   function change(update: Partial<ImportRequest>) {
@@ -55,7 +64,8 @@ export function ImportView({
     setStarting(true);
     setError('');
     try {
-      const operation = await post<Operation>('imports', { ...request, address: request.address.trim(), varFiles, previewSha256: preview.sha256, acknowledgeWrite: true, acknowledgeBackendAccess: true });
+      const bound = summary?.context.profileId ? { profileId, contextFingerprint: summary.context.fingerprint } : {};
+      const operation = await post<Operation>('imports', { ...request, address: request.address.trim(), varFiles: choice.chosen, previewSha256: preview.sha256, acknowledgeWrite: true, acknowledgeBackendAccess: true, ...bound });
       setRequest(blank);
       setPreview(undefined);
       setConsent(false);
@@ -121,9 +131,10 @@ export function ImportView({
      <li><LockKeyhole size={16} /><span><strong>May lock the state</strong> while planning, if the backend supports locking.</span></li>
      <li><ShieldCheck size={16} /><span><strong>Does not change state or infrastructure.</strong> {o.canApply ? 'The import is recorded only if you apply the reviewed plan and confirm it.' : 'Applying is unavailable here; you can review the plan only.'}</span></li>
     </ul>
-    {o.varFiles.length > 0 && <fieldset className="var-files"><legend>Variable files <span className="muted">(optional)</span></legend>{o.varFiles.map(name => <label key={name}><input type="checkbox" checked={varFiles.includes(name)} onChange={e => setVarFiles(e.target.checked ? [...varFiles, name] : varFiles.filter(v => v !== name))} /><code>{name}</code></label>)}</fieldset>}
+    {summary ? <ContextSummary summary={summary} title="This import plan will use" /> : context.data?.profileError && <p className="dialog-error" role="alert">{context.data.profileError}</p>}
+    <VarFileChoice choice={choice} />
     <label className="check consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>Write <code>{preview.file}</code> to this project</span></label>
-    <div className="form-actions"><Button onClick={() => void start()} disabled={!consent || starting}><Play size={14} />{starting ? 'Starting…' : 'Write file and plan import'}</Button></div>
+    <div className="form-actions"><Button onClick={() => void start()} disabled={!consent || starting || contextBlocked} title={contextBlocked ? 'Resolve the execution context issues first.' : undefined}><Play size={14} />{starting ? 'Starting…' : 'Write file and plan import'}</Button></div>
    </section>}
   </div>;
 }

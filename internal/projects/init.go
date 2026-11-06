@@ -70,6 +70,8 @@ type InitStatus struct {
 	ContextID string                `json:"contextId,omitempty"`
 	Busy      string                `json:"busy,omitempty"`
 	Operation *operations.Operation `json:"operation,omitempty"`
+	// Execution is the selected execution profile context, if any.
+	Execution *operations.ExecutionContext `json:"executionContext,omitempty"`
 }
 
 // initEnvKey reports environment variables that can change what init does. Their values are
@@ -125,7 +127,7 @@ func fileIdentity(path string) string {
 // contextID hashes the reviewed init context: project, root, engine choice and executable,
 // data directory, init-relevant environment and the configuration fingerprint (which covers
 // the lock file and initialized metadata). Empty means it cannot be computed safely.
-func contextID(p Record, name, executable string, environ []string) string {
+func contextID(p Record, name, executable string, environ []string, profile string) string {
 	fingerprint := workspace.Fingerprint(p.RootPath, environ, "init")
 	if fingerprint == "" {
 		return ""
@@ -139,7 +141,7 @@ func contextID(p Record, name, executable string, environ []string) string {
 	}
 	sort.Strings(env)
 	h := sha256.New()
-	for _, field := range append([]string{p.ID, p.RootPath, p.EnginePreference, name, executable, fileIdentity(executable), fingerprint}, env...) {
+	for _, field := range append([]string{p.ID, p.RootPath, p.EnginePreference, name, executable, fileIdentity(executable), fingerprint, "profile:" + profile}, env...) {
 		h.Write([]byte(field))
 		h.Write([]byte{0})
 	}
@@ -148,6 +150,12 @@ func contextID(p Record, name, executable string, environ []string) string {
 
 // InitStatus returns the preflight for a project. No engine command runs.
 func (h *Hub) InitStatus(id string) (InitStatus, error) {
+	return h.InitStatusFor(id, "")
+}
+
+// InitStatusFor is the preflight with an optional execution profile: init then runs with
+// the profile's environment and engine preference, and the context ID covers the profile.
+func (h *Hub) InitStatusFor(id, profileID string) (InitStatus, error) {
 	p, err := h.Registry.Get(id)
 	if err != nil {
 		return InitStatus{}, err
@@ -156,10 +164,18 @@ func (h *Hub) InitStatus(id string) (InitStatus, error) {
 	data, shared := dataDir()
 	s := InitStatus{ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Backend: "unknown", ExecutionMode: "unsupported", DataDir: data, Notices: initNotices(environ)}
 	s.Status, s.Problem = check(p.RootPath)
+	preference, composed, execution, profileErr := h.execution(p, profileID)
+	profile := ""
+	if execution != nil {
+		environ, profile, s.Execution = composed, execution.Fingerprint, execution
+		s.Notices = append(s.Notices, execution.Notices...)
+	} else {
+		preference = p.EnginePreference
+	}
 	// Resolving the engine looks up the executable; it does not run it.
-	name, executable := p.EnginePreference, ""
+	name, executable := preference, ""
 	if h.Initers != nil {
-		if n, exe, _, err := h.Initers(p.RootPath, p.EnginePreference, environ); err == nil {
+		if n, exe, _, err := h.Initers(p.RootPath, preference, environ); err == nil {
 			name, executable = n, exe
 		}
 	}
@@ -186,6 +202,10 @@ func (h *Hub) InitStatus(id string) (InitStatus, error) {
 	if s.Status != StatusReady {
 		return refuse(s.Status, s.Problem)
 	}
+	var refusal *ProfileRefusal
+	if errors.As(profileErr, &refusal) {
+		return refuse(refusal.Code, refusal.Message)
+	}
 	info := workspace.Inspect(p.RootPath)
 	s.Initialized, s.Backend, s.ExecutionMode, s.Lockfile = info.Initialized, info.Backend, info.ExecutionMode, info.ProviderLock
 	s.BackendDeclared = workspace.DeclaresBackend(p.RootPath)
@@ -201,7 +221,7 @@ func (h *Hub) InitStatus(id string) (InitStatus, error) {
 	case s.Busy != "":
 		return refuse("busy", "Another operation is running in this project. Wait for it to finish.")
 	}
-	s.ContextID = contextID(p, name, executable, environ)
+	s.ContextID = contextID(p, name, executable, environ, profile)
 	if s.ContextID == "" {
 		return refuse("too_large", "The project has too many files to fingerprint safely, so Hclaro cannot detect changes made after review. Run init in a terminal.")
 	}
@@ -214,7 +234,12 @@ func (h *Hub) InitStatus(id string) (InitStatus, error) {
 // executable, the root, the data directory and the environment are pinned now and checked
 // again just before the engine starts.
 func (h *Hub) StartInit(id, expected string) (operations.Operation, error) {
-	status, err := h.InitStatus(id)
+	return h.StartInitWith(id, expected, "")
+}
+
+// StartInitWith starts init bound to an optional execution profile reviewed in the preflight.
+func (h *Hub) StartInitWith(id, expected, profileID string) (operations.Operation, error) {
+	status, err := h.InitStatusFor(id, profileID)
 	if err != nil {
 		return operations.Operation{}, err
 	}
@@ -235,15 +260,25 @@ func (h *Hub) StartInit(id, expected string) (operations.Operation, error) {
 	if !ok {
 		return operations.Operation{}, ErrBusy
 	}
-	environ := os.Environ()
-	name, executable, initer, err := h.Initers(p.RootPath, p.EnginePreference, environ)
+	preference, environ, execution, err := h.execution(p, profileID)
+	profile := ""
+	switch {
+	case err != nil:
+		release()
+		return operations.Operation{}, ErrContextChanged
+	case execution != nil:
+		profile = execution.Fingerprint
+	default:
+		environ = os.Environ()
+	}
+	name, executable, initer, err := h.Initers(p.RootPath, preference, environ)
 	if err != nil {
 		release()
 		return operations.Operation{}, &InitRefusal{"missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine."}
 	}
 	rootInfo, statErr := os.Stat(p.RootPath)
 	exeInfo, exeErr := os.Stat(executable)
-	if statErr != nil || exeErr != nil || contextID(p, name, executable, environ) != expected {
+	if statErr != nil || exeErr != nil || contextID(p, name, executable, environ, profile) != expected {
 		release()
 		return operations.Operation{}, ErrContextChanged
 	}
@@ -252,12 +287,12 @@ func (h *Hub) StartInit(id, expected string) (operations.Operation, error) {
 		data = filepath.Join(p.RootPath, data)
 	}
 	return h.Inits.Start(operations.InitRequest{
-		ProjectID: p.ID, Root: p.RootPath, Engine: name, Initer: initer, Environ: environ, Notices: status.Notices,
+		ProjectID: p.ID, Root: p.RootPath, Engine: name, Initer: initer, Environ: environ, Notices: status.Notices, Context: execution,
 		Revalidate: func() string {
 			now, err := os.Stat(p.RootPath)
 			resolved, evalErr := filepath.EvalSymlinks(p.RootPath)
 			exe, exeErr := os.Stat(executable)
-			if err != nil || evalErr != nil || exeErr != nil || resolved != p.RootPath || !os.SameFile(rootInfo, now) || !os.SameFile(exeInfo, exe) || contextID(p, name, executable, environ) != expected {
+			if err != nil || evalErr != nil || exeErr != nil || resolved != p.RootPath || !os.SameFile(rootInfo, now) || !os.SameFile(exeInfo, exe) || contextID(p, name, executable, environ, profile) != expected {
 				return "path_changed"
 			}
 			return ""

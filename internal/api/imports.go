@@ -43,6 +43,9 @@ func importRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			// Both acknowledgements are required: the file write and the backend access.
 			AcknowledgeWrite   *bool `json:"acknowledgeWrite"`
 			AcknowledgeBackend *bool `json:"acknowledgeBackendAccess"`
+			// ProfileID and ContextFingerprint bind the import plan to a reviewed profile.
+			ProfileID          string `json:"profileId"`
+			ContextFingerprint string `json:"contextFingerprint"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
@@ -51,7 +54,11 @@ func importRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			errorJSON(w, 400, "acknowledgement_required")
 			return
 		}
-		op, err := manager.StartImport(operations.ImportRequest{Request: body.Request, PreviewSHA256: body.PreviewSHA256, VarFiles: body.VarFiles})
+		if !validProfileParam(body.ProfileID) {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		op, err := manager.StartImport(operations.ImportRequest{Request: body.Request, PreviewSHA256: body.PreviewSHA256, VarFiles: body.VarFiles, ProfileID: body.ProfileID, ContextFingerprint: body.ContextFingerprint})
 		var rejected *operations.RejectError
 		switch {
 		case errors.As(err, &rejected):

@@ -17,6 +17,7 @@ import (
 	"hclaro/internal/api"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
+	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
 	"hclaro/internal/security"
 	"hclaro/internal/ui"
@@ -102,22 +103,29 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	store := workspace.NoProject()
 	var adapter engine.Adapter
 	var planner engine.Planner
+	var launchCLI *engine.CLI
 	engineName := o.Engine
 	if root != "" {
 		store = workspace.New(workspace.Inspect(root))
 		if cli, detectErr := engine.Detect(root, o.Engine); detectErr == nil {
-			adapter, planner = cli, cli
+			adapter, planner, launchCLI = cli, cli, cli
 			engineName = cli.Name
 		}
 	}
 	registry := projects.Unavailable("The per-user configuration directory is unavailable, so projects cannot be registered.")
+	executionProfiles := profiles.Disabled("The per-user configuration directory is unavailable, so execution profiles cannot be saved.")
 	if dir, err := projects.ConfigDir(); err == nil {
 		registry = projects.Open(dir, time.Now())
+		executionProfiles = profiles.Open(dir, time.Now())
 	}
 	if _, notice, _ := registry.Status(); notice != "" {
 		fmt.Fprintln(output, "Workspace Hub:", notice)
 	}
+	if _, notice := executionProfiles.Status(); notice != "" {
+		fmt.Fprintln(output, "Execution profiles:", notice)
+	}
 	hub := projects.NewHub(registry, root)
+	hub.Profiles = executionProfiles
 	defer hub.Close()
 	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(o.Port)))
 	if err != nil {
@@ -139,6 +147,12 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager := operations.NewManager(store, planner, root)
 	// Hub initialization and the launch project's plans share one claim per project root.
 	manager.Locks = hub.Locks
+	// Execution profiles of the launch project bind a plan to a profile's environment; the
+	// launch adapter itself is never changed.
+	manager.Binder = hub.LaunchBinder()
+	if launchCLI != nil {
+		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
+	}
 	// A saved plan can hold secrets; remove any left by an earlier Hclaro that was killed.
 	if n := manager.SweepStale(time.Now()); n > 0 {
 		fmt.Fprintf(output, "Deleted %d saved plan%s left by an earlier session that did not stop cleanly.\n", n, map[bool]string{true: "", false: "s"}[n == 1])
