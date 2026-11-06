@@ -18,6 +18,8 @@ export function PlansView({
   choosePlan,
   replace,
   clearReplace,
+  openPreflight,
+  preflightOpened,
   copy
 }: {
   project: string;
@@ -29,6 +31,9 @@ export function PlansView({
   // Instances chosen in the explorer; a non-empty list opens the replace preflight.
   replace?: ReplaceTarget[];
   clearReplace?: () => void;
+  // Another view (Drift) asked for a separate normal plan: the preflight opens until closed.
+  openPreflight?: boolean;
+  preflightOpened?: () => void;
   copy: (value: string, label: string) => Promise<void>;
 }) {
   const client = useQueryClient();
@@ -53,7 +58,7 @@ export function PlansView({
   const failed = finishedOperation?.kind === 'plan' && finishedOperation.status !== 'succeeded' && !planId ? finishedOperation : undefined;
   const applied = finishedOperation?.kind === 'apply' && (!planId || planId === finishedOperation.planId) ? finishedOperation : undefined;
   // A replacement chosen in the explorer opens the preflight directly.
-  const preflightOpen = preflight || !!replace?.length;
+  const preflightOpen = preflight || !!replace?.length || !!openPreflight && !!options.data?.canPlan && !running;
   const finished = useCallback((op: Operation) => {
     void client.invalidateQueries({ queryKey: ['operations'] });
     void client.invalidateQueries({ queryKey: ['plans'] });
@@ -70,6 +75,7 @@ export function PlansView({
     setPreflight(false);
     setStartError('');
     clearReplace?.();
+    preflightOpened?.();
   }
   async function start(varFiles: string[], contextFingerprint?: string) {
     setStarting(true);

@@ -4046,3 +4046,83 @@ kbd {
 .context-summary dd svg {
   vertical-align: -1px;
 }
+
+/* Drift detection (M10) */
+.drift-outcome {
+  border: 1px solid color-mix(in srgb, var(--update), transparent 55%);
+  background: var(--surface);
+  border-radius: 8px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 18px;
+  display: flex;
+}
+
+.drift-outcome h2 {
+  color: var(--update);
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  display: flex;
+}
+
+.drift-outcome p, .operation-applied p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.drift-explainer strong {
+  color: var(--text);
+}
+
+.drift-group + .drift-group {
+  margin-top: 14px;
+}
+
+.drift-group-title {
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 16px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+}
+
+.drift-result .change-why {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.drift-next {
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  display: flex;
+}
+
+.drift-next span {
+  flex: 1 1 320px;
+}
+
+/* "Missing remotely" must fit beside the address. */
+.drift-result .changes-table th:first-child {
+  width: 172px;
+}
+
+.drift-result .changes-table td:first-child {
+  white-space: nowrap;
+}
+
+/* A short drift list should not reserve the plan explorer's height. */
+.drift-result .plan-explorer {
+  min-height: 0;
+}

@@ -40,3 +40,33 @@ var (
 	//go:embed tools/providers.txt
 	Providers []byte
 )
+
+// Drift fixtures are synthetic refresh-only `show -json` plan documents and UI streams.
+var (
+	//go:embed drift/no-drift.json
+	DriftNone []byte
+	//go:embed drift/changed-tag.json
+	DriftChangedTag []byte
+	//go:embed drift/security-group.json
+	DriftSecurityGroup []byte
+	//go:embed drift/deleted.json
+	DriftDeleted []byte
+	//go:embed drift/unknown.json
+	DriftUnknown []byte
+	//go:embed drift/inaccessible.json
+	DriftInaccessible []byte
+	//go:embed drift/mixed.json
+	DriftMixed []byte
+	//go:embed drift/mixed-tofu.json
+	DriftMixedTofu []byte
+	//go:embed drift/not-refresh-only.json
+	DriftNotRefreshOnly []byte
+	//go:embed drift/log.jsonl
+	DriftLog []byte
+	//go:embed drift/log-denied.jsonl
+	DriftLogDenied []byte
+	//go:embed drift/log-sso.jsonl
+	DriftLogSSO []byte
+	//go:embed drift/log-locked.jsonl
+	DriftLogLocked []byte
+)

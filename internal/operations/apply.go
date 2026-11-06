@@ -459,7 +459,7 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	return "applied", &zero, true
 }
 
-// SweepStale deletes saved-plan directories left behind by a Hclaro process that was killed
+// SweepStale deletes saved-plan and drift scan directories left behind by a Hclaro process that was killed
 // instead of stopped. Another running instance may share the temp directory, so only
 // directories older than the longest a live instance can still use one (plan expiry plus
 // apply timeout) are removed. It returns the number removed.
@@ -476,7 +476,7 @@ func (m *Manager) SweepStale(now time.Time) int {
 	removed := 0
 	for _, e := range entries {
 		// ReadDir does not follow symlinks, so a link named like a plan directory is skipped.
-		if !e.IsDir() || !strings.HasPrefix(e.Name(), "hclaro-plan-") {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), "hclaro-plan-") && !strings.HasPrefix(e.Name(), "hclaro-drift-") {
 			continue
 		}
 		info, err := e.Info()

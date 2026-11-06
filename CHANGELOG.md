@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Drift detection (M10, draft)
+
+- A **Drift** view for the project opened from the terminal. **Check drift** runs, after a preflight dialog, `plan -input=false -json -out=<private temp file> -refresh-only` with the selected variable files and execution profile, reads it back with `show -json` and deletes it. It never runs `refresh`, applies the refresh-only plan, writes state or starts a normal plan.
+- Results classify drifted objects as changed, missing remotely or cannot verify, with a redacted **Recorded in state** / **Observed during scan** diff, grouping by module or provider, search, inspector links and a separate **Run a normal plan…** action. "No drift" is shown only for a complete, error-free scan; lock conflicts, expired credentials, cancellation and partial provider failures are reported as failed or incomplete.
+- A scan stops matching (and its resource list is withheld) when the workspace, engine, configuration, variable files, data directory, environment or profile change. Up to ten redacted scans are kept in memory for 12 hours.
+- Unsupported for remote/cloud execution, when planning is unavailable and when no state is recorded, with the reason shown.
+- New routes: `GET /api/v1/drift-scans/options`, `POST /api/v1/drift-scans`, `GET /api/v1/drift-scans`, `GET /api/v1/drift-scans/{id}`, `GET /api/v1/drift-scans/{id}/resources/{change}`; progress and cancellation use the operation routes. New package `internal/drift`.
+
 ### Execution profiles (M9, draft)
 
 - Hub projects can have named **execution profiles**: engine preference, workspace selector, approved variable files (canonical, symlink-safe, inside the project), `-parallelism`/`-lock-timeout` for plans, an AWS profile alias and region, and the names of expected environment variables. Profiles never store credentials, tokens, variable values or file contents; they are saved in `profiles.json` next to `projects.json` with revisions.

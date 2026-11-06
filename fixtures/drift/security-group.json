@@ -1,0 +1,79 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_drift": [
+    {
+      "address": "aws_security_group.web",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "sg-0abc",
+          "name": "web",
+          "description": "web ingress",
+          "ingress": [
+            {
+              "from_port": 443,
+              "to_port": 443,
+              "protocol": "tcp",
+              "cidr_blocks": [
+                "10.0.0.0/16"
+              ],
+              "description": "https"
+            }
+          ],
+          "tags": {
+            "Name": "web"
+          }
+        },
+        "after": {
+          "id": "sg-0abc",
+          "name": "web",
+          "description": "AKIAABCDEFGHIJKLMNOP",
+          "ingress": [
+            {
+              "from_port": 443,
+              "to_port": 443,
+              "protocol": "tcp",
+              "cidr_blocks": [
+                "10.0.0.0/16"
+              ],
+              "description": "https"
+            },
+            {
+              "from_port": 22,
+              "to_port": 22,
+              "protocol": "tcp",
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ],
+              "description": "debug DO_NOT_LEAK_HCLARO_TEST_SECRET"
+            }
+          ],
+          "tags": {
+            "Name": "web"
+          }
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "resource_changes": [],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-06T09:00:00Z",
+  "applyable": false,
+  "complete": true,
+  "errored": false
+}

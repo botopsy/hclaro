@@ -1,0 +1,52 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_drift": [
+    {
+      "address": "module.network.aws_subnet.main[0]",
+      "mode": "managed",
+      "type": "aws_subnet",
+      "name": "main",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "subnet-00",
+          "availability_zone": "eu-central-1a",
+          "tags": {
+            "Name": "net-0"
+          },
+          "map_public_ip_on_launch": false
+        },
+        "after": {
+          "id": "subnet-00",
+          "availability_zone": "eu-central-1a",
+          "tags": {
+            "Name": "net-0"
+          },
+          "map_public_ip_on_launch": null
+        },
+        "after_unknown": {
+          "map_public_ip_on_launch": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {}
+      },
+      "module_address": "module.network",
+      "index": 0
+    }
+  ],
+  "resource_changes": [],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-06T09:00:00Z",
+  "applyable": false,
+  "complete": true,
+  "errored": false
+}

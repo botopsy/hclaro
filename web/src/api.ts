@@ -19,13 +19,15 @@ const messages: Record<string, string> = {
   planning_unavailable: 'Planning is not available for this workspace.',
   workspace_loading: 'Hclaro is still reading the workspace. Try again in a moment.',
   invalid_var_files: 'The selected variable files are no longer available. Reopen the plan dialog and choose again.',
-  acknowledgement_required: 'Confirm that planning may contact providers and the backend.',
+  acknowledgement_required: 'Confirm that this may contact providers and the backend.',
   shutting_down: 'Hclaro is shutting down.',
   log_not_retained: 'The log for this operation is no longer kept. Only the most recent operation logs are retained.',
   invalid_replace: 'The selected instances are no longer in the state snapshot, or include data sources. Reselect managed instances and try again.',
   approval_required: 'Confirm the plan again before applying it.',
   approval_invalid: 'The confirmation expired or was already used. Review the plan and confirm again.',
-  confirmation_mismatch: 'The typed confirmation did not match. Nothing was applied.'
+  confirmation_mismatch: 'The typed confirmation did not match. Nothing was applied.',
+  scan_not_found: 'This drift scan is no longer kept. Scan again.',
+  scan_not_started: 'The drift scan could not be started.'
 };
 export class ApiError extends Error {
   constructor(public code: string, message: string) {

@@ -150,6 +150,25 @@ describe('Resource explorer', () => {
     expect(await screen.findByRole('button', { name: /main.*aws_subnet/ })).toBeInTheDocument();
     expect(posts).toEqual([{ url: '/api/v1/workspace/reload', body: {} }]);
   });
+  it('opens Drift without scanning and offers a separate normal plan', async () => {
+    const posts: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (init.method === 'POST') posts.push(url);
+      if (url.endsWith('workspace')) return Response.json(workspace);
+      if (url.endsWith('operations')) return Response.json({ operations: [] });
+      if (url.includes('drift-scans/options')) return Response.json({ canScan: true, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 'local', executionMode: 'local-cli', varFiles: [] });
+      if (url.endsWith('drift-scans')) return Response.json({ scans: [] });
+      if (url.includes('plans/options')) return Response.json({ canPlan: false, reason: 'Not here.', canApply: false, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 'local', varFiles: [] });
+      if (url.endsWith('plans')) return Response.json({ plans: [] });
+      return Response.json({ resources: [resource], total: 1 });
+    }));
+    app();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Drift' }));
+    expect(await screen.findByRole('heading', { name: 'Drift detection' })).toBeInTheDocument();
+    expect(await screen.findByText('No drift scans yet')).toBeInTheDocument();
+    expect(posts).toEqual([]);
+  });
   it('shows empty and no-match states without inventing resources', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('workspace') ? {
       ...workspace,

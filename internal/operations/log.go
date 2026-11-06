@@ -133,7 +133,7 @@ var (
 )
 
 // translate converts one engine UI line into a log event and, for diagnostics, a record.
-// kind is "plan", "apply" or "init". ok is false for lines that are not part of the rendered
+// kind is "plan", "apply", "init" or "drift". ok is false for lines that are not part of the rendered
 // subset; ok with empty text means a recognized event that is deliberately not shown.
 func translate(line []byte, kind, engineLabel string, k *known) (level, text string, diag *EngineDiagnostic, ok bool) {
 	var m uiMessage
@@ -147,6 +147,8 @@ func translate(line []byte, kind, engineLabel string, k *known) (level, text str
 			return "info", "Apply started", nil, true
 		case "init":
 			return "info", "Initialization started", nil, true
+		case "drift":
+			return "info", "Drift scan started (refresh-only plan)", nil, true
 		}
 		return "info", "Planning started", nil, true
 	case "apply_start":
@@ -173,6 +175,10 @@ func translate(line []byte, kind, engineLabel string, k *known) (level, text str
 	case "resource_drift":
 		return "warn", address(m.Change.Resource.Addr) + ": changed outside " + engineLabel + " (" + word(m.Change.Action) + ")", nil, true
 	case "change_summary":
+		if kind == "drift" {
+			// A refresh-only plan proposes no configuration changes; its counts would mislead.
+			return "info", "Refresh-only plan complete.", nil, true
+		}
 		if m.Changes.Operation == "apply" {
 			return "info", fmt.Sprintf("Apply complete: %d added, %d changed, %d destroyed.", m.Changes.Add, m.Changes.Change, m.Changes.Remove), nil, true
 		}

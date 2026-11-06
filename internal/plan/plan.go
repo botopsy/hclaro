@@ -104,6 +104,9 @@ type Review struct {
 	Applyable bool `json:"-"`
 	// Deferred counts changes the engine postponed; such a plan is incomplete.
 	Deferred int `json:"-"`
+	// Incomplete is set when the engine reports the plan errored or not complete. Older
+	// engines omit "complete"; then only "errored" counts.
+	Incomplete bool `json:"-"`
 	// Imports counts resource changes that import an existing object, whatever their action.
 	Imports int `json:"imports"`
 }
@@ -207,6 +210,7 @@ func Parse(input []byte) (Review, error) {
 	// Older engines omit applyable/complete; an errored plan is never applyable.
 	review.Applyable = !doc.Errored && (doc.Applyable == nil || *doc.Applyable) && (doc.Complete == nil || *doc.Complete)
 	review.Deferred = len(doc.Deferred)
+	review.Incomplete = doc.Errored || doc.Complete != nil && !*doc.Complete
 	if doc.Errored {
 		review.Warnings = append(review.Warnings, "The engine reported this plan as errored. It is incomplete and must not be applied.")
 	}

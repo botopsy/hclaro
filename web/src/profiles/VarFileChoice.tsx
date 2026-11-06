@@ -4,7 +4,7 @@ import type { PlanOptions } from '../types';
 // Variable files a launch operation may use: optional files in the project root, plus the
 // files the selected profile approved. The profile's files start checked; unchecking one is a
 // per-operation override that does not change the profile.
-export function useVarFileChoice(options?: PlanOptions) {
+export function useVarFileChoice(options?: Pick<PlanOptions, 'varFiles' | 'context'>) {
   const approved = options?.context?.context.varFiles.map(f => f.ref) || [];
   const key = options?.context?.context.fingerprint || '';
   const [state, setState] = useState<{ key: string; chosen: string[] }>({ key, chosen: approved });

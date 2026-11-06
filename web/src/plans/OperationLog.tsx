@@ -56,7 +56,7 @@ export function OperationLog({
     };
   }, [initial.id]);
   const done = !operationActive(operation);
-  const noun = operation.kind === 'apply' ? 'Apply' : operation.kind === 'init' ? 'Init' : operation.kind === 'workspace' || operation.kind === 'tool' ? 'Command' : 'Plan';
+  const noun = operation.kind === 'apply' ? 'Apply' : operation.kind === 'init' ? 'Init' : operation.kind === 'workspace' || operation.kind === 'tool' ? 'Command' : operation.kind === 'drift' ? 'Scan' : 'Plan';
   useEffect(() => {
     if (done) finished.current?.(operation);
   }, [done, operation]);

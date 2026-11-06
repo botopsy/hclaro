@@ -175,6 +175,18 @@ func ImportSupport(name, version string) (blocks, generate bool) {
 	return ok, ok
 }
 
+// RefreshOnlySupport reports whether `plan -refresh-only` with -out and -json is available.
+// Terraform added it in 0.15.4 and OpenTofu has it in every release, so it holds for the whole
+// Supported range; the check stays explicit so the range can widen safely.
+func RefreshOnlySupport(name, version string) bool {
+	m := versionPattern.FindStringSubmatch(version)
+	if m == nil || !Supported(name, version) {
+		return false
+	}
+	minor, _ := strconv.Atoi(m[1])
+	return name == "terraform" && minor >= 5 || name == "tofu" && minor >= 6
+}
+
 func (c *CLI) Version(ctx context.Context) (string, error) {
 	b, err := c.run(ctx, readTimeout, "version", "-json")
 	if err != nil {

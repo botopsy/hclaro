@@ -1,0 +1,2 @@
+{"@level": "info", "@message": "Terraform 1.9.8", "@module": "terraform.ui", "@timestamp": "2026-11-06T09:00:00.000000Z", "type": "version", "terraform": "1.9.8", "ui": "1.2"}
+{"@level": "error", "@message": "Error: No valid credential sources found", "@module": "terraform.ui", "@timestamp": "2026-11-06T09:00:00.000000Z", "type": "diagnostic", "diagnostic": {"severity": "error", "summary": "No valid credential sources found", "detail": "The SSO session associated with this profile has expired or is otherwise invalid. Session DO_NOT_LEAK_HCLARO_TEST_SECRET"}}
