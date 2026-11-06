@@ -1,9 +1,11 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { CloudCog, LockKeyhole, Play, RefreshCcw, ShieldCheck, X } from 'lucide-react';
 import type { PlanOptions, ReplaceTarget } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { engineLabel } from './labels';
+import { ContextSummary } from '../profiles/ContextSummary';
+import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 
 // Shown before every plan: planning is not a local-only read.
 export function PreflightDialog({
@@ -20,10 +22,12 @@ export function PreflightDialog({
   replace?: ReplaceTarget[];
   busy: boolean;
   error?: string;
-  onConfirm: (varFiles: string[]) => void;
+  onConfirm: (varFiles: string[], contextFingerprint?: string) => void;
   onClose: () => void;
 }) {
-  const [varFiles, setVarFiles] = useState<string[]>([]);
+  const choice = useVarFileChoice(options);
+  const summary = options.context;
+  const blocked = !!summary && summary.issues.length > 0;
   const confirm = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   useModal(dialog, confirm, onClose);
@@ -39,9 +43,10 @@ export function PreflightDialog({
      <li><LockKeyhole size={16} /><span><strong>May lock the state</strong> while planning, if the backend supports locking. Other operations wait until the plan finishes or is cancelled.</span></li>
      <li><ShieldCheck size={16} /><span><strong>Does not change infrastructure.</strong> {options.canApply ? 'You review the saved plan first; it is applied only if you confirm it explicitly.' : 'The saved plan is deleted after Hclaro extracts redacted review data. Applying is unavailable here.'}</span></li>
     </ul>
-    {options.varFiles.length > 0 && <fieldset className="var-files"><legend>Variable files <span className="muted">(optional; *.auto.tfvars and terraform.tfvars load automatically)</span></legend>{options.varFiles.map(name => <label key={name}><input type="checkbox" checked={varFiles.includes(name)} onChange={e => setVarFiles(e.target.checked ? [...varFiles, name] : varFiles.filter(v => v !== name))} /><code>{name}</code></label>)}</fieldset>}
+    {summary ? <ContextSummary summary={summary} title="This plan will use" /> : options.profileError ? <p className="dialog-error" role="alert">{options.profileError}</p> : <p className="muted">No execution profile: the plan uses the environment Hclaro was started with. Save this project to the Hub to choose a profile.</p>}
+    <VarFileChoice choice={choice} />
     {error && <p className="dialog-error" role="alert">{error}</p>}
-    <div className="dialog-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button ref={confirm} onClick={() => onConfirm(varFiles)} disabled={busy}><Play size={14} />{busy ? 'Starting…' : replacing ? 'Plan replacement' : 'Run plan'}</Button></div>
+    <div className="dialog-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button ref={confirm} onClick={() => onConfirm(choice.chosen, summary?.context.profileId ? summary.context.fingerprint : undefined)} disabled={busy || blocked || !!options.profileError} title={blocked ? 'Resolve the execution context issues first.' : undefined}><Play size={14} />{busy ? 'Starting…' : replacing ? 'Plan replacement' : 'Run plan'}</Button></div>
    </div>
   </div>;
 }

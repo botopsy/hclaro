@@ -26,7 +26,7 @@ func workspaceFixture(t *testing.T) (*Hub, map[string]string, string) {
 	}
 	engines := hub.Engines
 	hub.WorkspaceManagers = func(root, preference string, environ []string) (string, string, engine.WorkspaceManager, error) {
-		name, executable, adapter, err := engines(root, preference, "")
+		name, executable, adapter, err := engines(root, preference, "", environ)
 		if err != nil {
 			return "", "", nil, err
 		}

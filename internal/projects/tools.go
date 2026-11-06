@@ -191,6 +191,17 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 	if unsafeToolArgs(environ, tool) {
 		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS or a command-specific TF_CLI_ARGS_* setting adds flags other than -no-color, which would change this command. Restart Hclaro without them.")
 	}
+	preference := p.EnginePreference
+	notices := toolNotices(environ, tool)
+	if c.Execution != nil {
+		// The profile is resolved again: an edited or removed profile no longer describes
+		// this context, so the tool does not run with it.
+		pref, composed, now, err := h.execution(p, c.profileID)
+		if err != nil || now == nil || now.Fingerprint != c.Execution.Fingerprint {
+			return operations.Operation{}, ErrContextChanged
+		}
+		preference, environ, notices = pref, composed, append(notices, c.Execution.Notices...)
+	}
 	var files map[string]bool
 	var folders int
 	var skipped []string
@@ -202,7 +213,7 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 	} else {
 		recursive = false
 	}
-	name, executable, tools, err := h.Tools(p.RootPath, p.EnginePreference, environ, c.Workspace)
+	name, executable, tools, err := h.Tools(p.RootPath, preference, environ, c.Workspace)
 	if err != nil || c.Executable == "" {
 		return refuse("missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine.")
 	}
@@ -220,7 +231,7 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 	}
 	return h.Inits.StartTool(operations.ToolRequest{
 		ProjectID: p.ID, ContextID: c.ID, Root: p.RootPath, Engine: name, Workspace: c.Workspace, Tool: tool, Recursive: recursive,
-		Tools: tools, Environ: environ, Notices: toolNotices(environ, tool), Files: files, Folders: folders, Skipped: skipped,
+		Tools: tools, Environ: environ, Notices: notices, Files: files, Folders: folders, Skipped: skipped, Context: c.Execution.Clone(),
 		Revalidate: func() string {
 			now, err := os.Stat(p.RootPath)
 			resolved, evalErr := filepath.EvalSymlinks(p.RootPath)

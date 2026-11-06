@@ -82,7 +82,7 @@ func TestImportWritesReviewedBlockPlansAndApplies(t *testing.T) {
 		t.Fatalf("%+v", p)
 	}
 	// An import is a no-op action that still writes state: it is applicable and needs the phrase.
-	if status := m.ApplyStatus(p, m.currentFingerprint(p)); !status.Available {
+	if _, status := m.ContextStatus(p); !status.Available {
 		t.Fatalf("%+v", status)
 	}
 	approval, err := m.Approve(p.ID)
@@ -127,7 +127,7 @@ func TestImportGeneratesConfigurationForReview(t *testing.T) {
 		t.Fatal("generated file was modified")
 	}
 	// Writing the generated file is expected and does not make the plan stale.
-	if status := m.ApplyStatus(p, m.currentFingerprint(p)); !status.Available {
+	if _, status := m.ContextStatus(p); !status.Available {
 		t.Fatalf("%+v", status)
 	}
 	// Any later edit does.

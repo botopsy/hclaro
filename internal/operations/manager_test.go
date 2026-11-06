@@ -140,7 +140,7 @@ func TestPlanSucceeds(t *testing.T) {
 		t.Fatalf("plan metadata: %+v", p)
 	}
 	// An applicable plan keeps exactly one private saved artifact.
-	if status := m.ApplyStatus(p, m.currentFingerprint(p)); !status.Available || !status.ArtifactRetained {
+	if _, status := m.ContextStatus(p); !status.Available || !status.ArtifactRetained {
 		t.Fatalf("apply status %+v", status)
 	}
 	assertArtifactPrivate(t, m)

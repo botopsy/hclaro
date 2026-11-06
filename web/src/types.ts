@@ -65,6 +65,10 @@ export type PlanOptions = {
   workspace: string;
   backend: string;
   varFiles: string[];
+  // The launch project's Hub ID; execution profiles exist only when it is set.
+  projectId?: string;
+  context?: ExecutionSummary;
+  profileError?: string;
 };
 export type EngineDiagnostic = {
   severity: string;
@@ -107,6 +111,8 @@ export type Operation = {
   workspace?: WorkspaceResult;
   // Hub project tools only.
   tool?: ToolResult;
+  // The execution profile context the operation was bound to, if any.
+  executionContext?: ExecutionContext;
 };
 export type ToolName = 'validate' | 'fmt-check' | 'providers' | 'outputs-metadata';
 // A tool's sanitized result. outcome is passed, findings (the check ran and found problems)
@@ -254,6 +260,7 @@ export type Plan = {
   fingerprint: string;
   contextChanged: boolean;
   apply: ApplyStatus;
+  executionContext?: ExecutionContext;
 };
 export type ApplyStatus = {
   available: boolean;
@@ -276,6 +283,7 @@ export type Approval = {
   destructive: boolean;
   phrase?: string;
   command: string[];
+  executionContext?: ExecutionContext;
 };
 // A managed instance chosen in the explorer; the server receives only the opaque ID.
 export type ReplaceTarget = {
@@ -412,6 +420,7 @@ export type WorkspaceReview = {
   busy?: string;
   expiresAt?: string;
   contextId?: string;
+  executionContext?: ExecutionContext;
 };
 // Read-only init preflight; no engine command runs to produce it.
 export type InitStatus = {
@@ -437,6 +446,7 @@ export type InitStatus = {
   contextId?: string;
   busy?: string;
   operation?: Operation;
+  executionContext?: ExecutionContext;
 };
 export type ProjectList = {
   projects: Project[];
@@ -463,6 +473,7 @@ export type ContextInfo = {
   workspace: string;
   dataDir: string;
   createdAt: string;
+  executionContext?: ExecutionContext;
 };
 export type FolderListing = {
   path: string;
@@ -471,4 +482,92 @@ export type FolderListing = {
   project: boolean;
   entries: string[];
   truncated: boolean;
+};
+// A stored execution profile. It holds names and aliases only, never values.
+export type ExecutionProfile = {
+  id: string;
+  projectId: string;
+  name: string;
+  engine: '' | 'terraform' | 'tofu';
+  workspace: string;
+  varFiles: string[];
+  parallelism: number;
+  lockTimeoutSeconds: number;
+  awsProfile: string;
+  awsRegion: string;
+  envNames: string[];
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  default: boolean;
+};
+export type ProfileInput = Pick<ExecutionProfile, 'name' | 'engine' | 'workspace' | 'varFiles' | 'parallelism' | 'lockTimeoutSeconds' | 'awsProfile' | 'awsRegion' | 'envNames'>;
+export type ProfileList = {
+  profiles: ExecutionProfile[];
+  defaultId: string;
+  status: 'ready' | 'unavailable';
+  notice: string;
+};
+export type VarFile = {
+  ref: string;
+  path: string;
+  size: number;
+  modifiedAt: string;
+  linked: boolean;
+};
+export type ContextIssue = {
+  code: string;
+  message: string;
+};
+// A profile resolved at one revision, as the server will use it.
+export type ResolvedContext = {
+  projectId: string;
+  profileId?: string;
+  profileName?: string;
+  profileRevision?: number;
+  enginePreference?: string;
+  workspace?: string;
+  varFiles: VarFile[];
+  options: { parallelism?: number; lock_timeout_seconds?: number };
+  awsProfile?: string;
+  awsRegion?: string;
+  env: { name: string; present: boolean }[];
+  identity: 'not_verified';
+  notices: string[];
+  issues: ContextIssue[];
+  fingerprint: string;
+};
+export type ExecutionSummary = {
+  projectId: string;
+  alias: string;
+  rootPath: string;
+  status: ProjectStatus;
+  backend: string;
+  executionMode: string;
+  engine: string;
+  engineFound: boolean;
+  engineVersion?: string;
+  workspace?: string;
+  workspaceSource: 'profile' | 'tab' | 'launch' | 'cli_default';
+  dataDir: string;
+  context: ResolvedContext;
+  issues: ContextIssue[];
+};
+// The immutable context recorded with an operation, plan or approval.
+export type ExecutionContext = {
+  projectId?: string;
+  profileId?: string;
+  profileName?: string;
+  profileRevision?: number;
+  enginePreference?: string;
+  workspace: string;
+  varFiles: string[];
+  parallelism?: number;
+  lockTimeoutSeconds?: number;
+  awsProfile?: string;
+  awsRegion?: string;
+  envNames: string[];
+  identity: string;
+  notices: string[];
+  fingerprint: string;
 };

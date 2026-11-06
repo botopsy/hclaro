@@ -11,6 +11,8 @@ import (
 
 	"hclaro/internal/operations"
 	"hclaro/internal/plan"
+	"hclaro/internal/profiles"
+	"hclaro/internal/projects"
 	"hclaro/internal/workspace"
 )
 
@@ -48,13 +50,61 @@ func summarize(p *operations.Plan) planSummary {
 	return planSummary{p.ID, p.OperationID, p.CreatedAt, p.Engine, p.Workspace, p.VarFiles, p.Kind, p.Replace, p.Summary, p.Errored, changes, outputs, len(p.Drift)}
 }
 
-func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, inits *operations.Inits, csrf, version string) {
+// launchContext is the execution context summary for the launch project and a profile. The
+// workspace is the one the launch snapshot was read from; a profile that prefers another
+// engine or selects another workspace gets a blocking issue. ok is false when the launch
+// project is not registered in the Hub (profiles belong to registered projects).
+func launchContext(hub *projects.Hub, snap workspace.Snapshot, profileID string) (summary executionSummary, ok bool, err error) {
+	if hub == nil || hub.Profiles == nil {
+		return executionSummary{}, false, nil
+	}
+	id := hub.LaunchID()
+	if id == "" {
+		return executionSummary{}, false, nil
+	}
+	resolved, p, err := hub.Resolve(id, profileID)
+	if err != nil {
+		return executionSummary{}, true, err
+	}
+	summary = contextSummary(hub, p, resolved, "")
+	summary.Engine, summary.EngineFound, summary.EngineVersion = snap.Info.Engine, snap.Info.Engine != "", snap.Info.Version
+	summary.Workspace, summary.WorkspaceSource = snap.Info.Workspace, "launch"
+	issues := append([]profiles.Issue{}, resolved.Issues...)
+	if resolved.Engine != "" && resolved.Engine != snap.Info.Engine {
+		issues = append(issues, profiles.Issue{Code: "profile_engine", Message: "This profile prefers " + resolved.Engine + ", but this project was opened with " + snap.Info.Engine + ". Restart Hclaro with --engine " + resolved.Engine + ", or choose another profile."})
+	}
+	if resolved.Workspace != "" && resolved.Workspace != snap.Info.Workspace {
+		issues = append(issues, profiles.Issue{Code: "profile_workspace", Message: "This profile selects workspace " + resolved.Workspace + ", but this project reads workspace " + snap.Info.Workspace + ". A Terraform workspace is a state namespace, not a cloud account or AWS profile."})
+	}
+	summary.Issues = issues
+	return summary, true, nil
+}
+
+func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, inits *operations.Inits, hub *projects.Hub, csrf, version string) {
 	mux.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"csrfToken": csrf, "version": version})
 	})
 	mux.HandleFunc("GET /api/v1/plans/options", func(w http.ResponseWriter, r *http.Request) {
+		profileID := r.URL.Query().Get("profileId")
+		if !validProfileParam(profileID) {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
 		snap := store.Get()
 		caps := snap.Info.Capabilities
+		summary, registered, err := launchContext(hub, snap, profileID)
+		var context *executionSummary
+		projectID := ""
+		if registered && err == nil {
+			context, projectID = &summary, summary.ProjectID
+		} else if registered {
+			projectID = hub.LaunchID()
+		}
+		profileError := ""
+		var refusal *projects.ProfileRefusal
+		if errors.As(err, &refusal) {
+			profileError = refusal.Message
+		}
 		writeJSON(w, 200, struct {
 			CanPlan     bool     `json:"canPlan"`
 			Reason      string   `json:"reason,omitempty"`
@@ -65,7 +115,11 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			Workspace   string   `json:"workspace"`
 			Backend     string   `json:"backend"`
 			VarFiles    []string `json:"varFiles"`
-		}{caps.CanPlan, caps.PlanReason, caps.CanApply, caps.ApplyReason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles()})
+			// ProjectID is the launch project's Hub ID; profiles exist only when it is set.
+			ProjectID    string            `json:"projectId,omitempty"`
+			Context      *executionSummary `json:"context,omitempty"`
+			ProfileError string            `json:"profileError,omitempty"`
+		}{caps.CanPlan, caps.PlanReason, caps.CanApply, caps.ApplyReason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles(), projectID, context, profileError})
 	})
 	mux.HandleFunc("POST /api/v1/plans", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -73,6 +127,10 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			VarFiles    []string `json:"varFiles"`
 			// Replace holds opaque resource IDs from the snapshot, never addresses.
 			Replace []string `json:"replace"`
+			// ProfileID binds the plan to an execution profile; ContextFingerprint is the
+			// fingerprint of the context summary the user reviewed.
+			ProfileID          string `json:"profileId"`
+			ContextFingerprint string `json:"contextFingerprint"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -85,8 +143,15 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			errorJSON(w, 400, "acknowledgement_required")
 			return
 		}
-		op, err := manager.StartPlan(body.VarFiles, body.Replace)
+		if !validProfileParam(body.ProfileID) {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		op, err := manager.StartPlanWith(operations.PlanStart{VarFiles: body.VarFiles, Replace: body.Replace, ProfileID: body.ProfileID, ContextFingerprint: body.ContextFingerprint})
+		var rejected *operations.RejectError
 		switch {
+		case errors.As(err, &rejected):
+			writeJSON(w, 409, map[string]string{"error": rejected.Code, "reason": rejected.Reason})
 		case errors.Is(err, operations.ErrBusy):
 			errorJSON(w, 409, "operation_running")
 		case errors.Is(err, operations.ErrLoading):
@@ -120,13 +185,13 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			return
 		}
 		snap := store.Get()
-		current := manager.Fingerprint(snap, p.VarFiles)
+		changed, status := manager.ContextStatus(p)
 		writeJSON(w, 200, struct {
 			*operations.Plan
 			EngineVersionLabel string                 `json:"currentEngineVersion"`
 			ContextChanged     bool                   `json:"contextChanged"`
 			Apply              operations.ApplyStatus `json:"apply"`
-		}{p, snap.Info.Version, current == "" || current != p.Fingerprint, manager.ApplyStatus(p, current)})
+		}{p, snap.Info.Version, changed, status})
 	})
 	mux.HandleFunc("POST /api/v1/plans/{id}/approval", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{}

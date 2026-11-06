@@ -27,7 +27,7 @@ func initFixture(t *testing.T) (*Hub, map[string]string, string) {
 	}
 	engines := hub.Engines
 	hub.Initers = func(root, preference string, environ []string) (string, string, engine.Initer, error) {
-		name, executable, adapter, err := engines(root, preference, "")
+		name, executable, adapter, err := engines(root, preference, "", environ)
 		if err != nil {
 			return "", "", nil, err
 		}

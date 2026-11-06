@@ -4,6 +4,7 @@ import { send } from '../api';
 import type { Operation, WorkspaceAction, WorkspaceReview } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
+import { RecordedContext } from '../profiles/ContextSummary';
 import { OperationLog } from '../plans/OperationLog';
 
 // The names Hclaro passes to a workspace command: never starting with "-", so a name can
@@ -36,8 +37,10 @@ const outcomeTitle: Record<string, string> = {
 // Creates a workspace, sets the CLI default or deletes an empty workspace. Each runs only
 // after a review that lists workspaces with the CLI, and an explicit confirmation; a
 // failure is never retried automatically.
-export function WorkspaceDialog({ projectId, action, initialName = '', onClose, onFinished, onOpen }: {
+export function WorkspaceDialog({ projectId, profileId = '', action, initialName = '', onClose, onFinished, onOpen }: {
   projectId: string;
+  // The execution profile this tab uses ("" for none); the command runs with its environment.
+  profileId?: string;
   action: WorkspaceAction;
   initialName?: string;
   onClose: () => void;
@@ -64,7 +67,7 @@ export function WorkspaceDialog({ projectId, action, initialName = '', onClose, 
     setAcknowledged(false);
     setTyped('');
     try {
-      setReview(await send<WorkspaceReview>('POST', `projects/${projectId}/workspaces/review`, { action, name: target }));
+      setReview(await send<WorkspaceReview>('POST', `projects/${projectId}/workspaces/review`, { action, name: target, ...(profileId ? { profileId } : {}) }));
     } catch (e) {
       setError(message(e));
     } finally {
@@ -85,7 +88,7 @@ export function WorkspaceDialog({ projectId, action, initialName = '', onClose, 
     setStarting(true);
     setError('');
     try {
-      setOperation(await send<Operation>('POST', `projects/${projectId}/operations/workspace`, { action, name: review.name, expectedContextId: review.contextId }));
+      setOperation(await send<Operation>('POST', `projects/${projectId}/operations/workspace`, { action, name: review.name, expectedContextId: review.contextId, ...(profileId ? { profileId } : {}) }));
     } catch (e) {
       setError(message(e));
       setReview(undefined);
@@ -137,6 +140,7 @@ export function WorkspaceDialog({ projectId, action, initialName = '', onClose, 
       </dl>
       <div className="init-command"><span className="muted">Command</span><code>{review.command.join(' ')}</code><span className="muted">Run in this folder without <code>TF_WORKSPACE</code>. No other flags are added{action === 'delete' ? '; never -force' : ''}.</span></div>
       {review.canRun && <Effects review={review} />}
+      <p className="context-line"><strong>Execution profile:</strong> <RecordedContext context={review.executionContext} /></p>
       {review.notices.length > 0 && <ul className="init-notices">{review.notices.map(n => <li key={n}><AlertTriangle size={13} />{n}</li>)}</ul>}
       {!review.canRun ? <p className="dialog-error" role="alert">{review.reason}</p>
        : action === 'delete' ? <label className="workspace-confirm"><span>Type <strong className="mono">{review.name}</strong> to confirm</span><input className="mono" value={typed} onChange={e => setTyped(e.target.value)} spellCheck={false} autoComplete="off" aria-label={`Type ${review.name} to confirm`} /></label>

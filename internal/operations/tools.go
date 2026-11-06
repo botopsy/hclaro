@@ -45,6 +45,8 @@ type ToolRequest struct {
 	// Revalidate runs before the command starts. A non-empty code refuses to run.
 	Revalidate func() string
 	Release    func()
+	// Context is the execution profile context, recorded in the operation metadata.
+	Context *ExecutionContext
 }
 
 // ToolResult is the sanitized result of a project utility. Outcome is "passed", "findings"
@@ -202,7 +204,7 @@ func toolSuccess(t engine.Tool, r *ToolResult) string {
 // same tool in the same context is refused while one is active.
 func (r *Inits) StartTool(req ToolRequest) (Operation, error) {
 	op := Operation{
-		Kind: "tool", Command: ToolCommand(req.Engine, req.Tool, true, req.Recursive), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices),
+		Kind: "tool", Command: ToolCommand(req.Engine, req.Tool, true, req.Recursive), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 		Tool: &ToolResult{Tool: req.Tool, ContextID: req.ContextID, Workspace: req.Workspace, UsesWorkspace: engine.WorkspaceDependent(req.Tool), Outcome: "not_checked", Findings: []Finding{}},
 	}
 	conflict := func(entries []*initEntry) error {

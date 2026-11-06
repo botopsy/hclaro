@@ -42,6 +42,8 @@ type InitRequest struct {
 	// Finished runs after the outcome is recorded, for example to refresh cached metadata.
 	Finished func()
 	Release  func()
+	// Context is the execution profile context, recorded in the operation metadata.
+	Context *ExecutionContext
 }
 
 // Inits runs Hub project operations: initialization and workspace commands. Different roots
@@ -101,7 +103,7 @@ func InitCommand(engineName string, json bool) []string {
 // its version is supported and Revalidate passes.
 func (r *Inits) Start(req InitRequest) (Operation, error) {
 	op := Operation{
-		Kind: "init", Command: InitCommand(req.Engine, false), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices),
+		Kind: "init", Command: InitCommand(req.Engine, false), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 	}
 	return r.begin(op, req.Release, nil, func(ctx context.Context, e *initEntry) { r.run(ctx, e, req) })
 }
@@ -403,6 +405,7 @@ func (r *Inits) snapshot(e *initEntry) Operation {
 	op.Command = slices.Clone(op.Command)
 	op.Notices = slices.Clone(op.Notices)
 	op.Diagnostics = slices.Clone(op.Diagnostics)
+	op.Context = op.Context.Clone()
 	if op.Workspace != nil {
 		w := *op.Workspace
 		w.Workspaces = slices.Clone(w.Workspaces)

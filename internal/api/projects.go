@@ -22,7 +22,14 @@ func reasonJSON(w http.ResponseWriter, code int, name, reason string) {
 // projectError maps Hub errors to typed responses. Messages never include engine output.
 func projectError(w http.ResponseWriter, hub *projects.Hub, err error) {
 	var path *projects.PathError
+	var refusal *projects.ProfileRefusal
 	switch {
+	case errors.As(err, &refusal):
+		status := 409
+		if refusal.Code == "profile_not_found" {
+			status = 404
+		}
+		reasonJSON(w, status, refusal.Code, refusal.Message)
 	case errors.As(err, &path):
 		reasonJSON(w, 400, "invalid_path", path.Message)
 	case errors.Is(err, projects.ErrRegistryUnavailable):
@@ -174,11 +181,17 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			ProjectID string `json:"projectId"`
 			Workspace string `json:"workspace"`
 			Reload    bool   `json:"reload"`
+			// ProfileID optionally binds the context to an execution profile of the project.
+			ProfileID string `json:"profileId"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		c, reused, err := hub.Open(body.ProjectID, body.Workspace, body.Reload)
+		if !validProfileParam(body.ProfileID) {
+			reasonJSON(w, 400, "invalid_profile", "Choose an execution profile of this project.")
+			return
+		}
+		c, reused, err := hub.OpenWith(body.ProjectID, body.Workspace, body.ProfileID, body.Reload)
 		var path *projects.PathError
 		if errors.As(err, &path) {
 			reasonJSON(w, 409, "project_unavailable", path.Message)
@@ -203,6 +216,8 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 				"evicted":           "This snapshot was released to save memory. Open the workspace again.",
 				"initialized":       "This project was initialized after this snapshot was read. Open the workspace again.",
 				"workspace_deleted": "This workspace was deleted from the project.",
+				"profile_changed":   "The execution profile of this view was edited. Open the workspace again to use the current profile.",
+				"profile_removed":   "The execution profile of this view was deleted. Choose another profile.",
 			}[reason]
 			if message == "" {
 				message = "This workspace view is no longer open. Open the workspace again."
@@ -238,7 +253,12 @@ var contextIDPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // standard init. The server builds the argv; the request only names the reviewed context.
 func initRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	mux.HandleFunc("GET /api/v1/projects/{id}/init-status", func(w http.ResponseWriter, r *http.Request) {
-		status, err := hub.InitStatus(r.PathValue("id"))
+		profile := r.URL.Query().Get("profileId")
+		if !validProfileParam(profile) {
+			reasonJSON(w, 400, "invalid_profile", "Choose an execution profile of this project.")
+			return
+		}
+		status, err := hub.InitStatusFor(r.PathValue("id"), profile)
 		if err != nil {
 			projectError(w, hub, err)
 			return
@@ -249,6 +269,7 @@ func initRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		var body struct {
 			Mode              string `json:"mode"`
 			ExpectedContextID string `json:"expectedContextId"`
+			ProfileID         string `json:"profileId"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
@@ -262,7 +283,11 @@ func initRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			reasonJSON(w, 400, "invalid_context", "Review the project before initializing it.")
 			return
 		}
-		op, err := hub.StartInit(r.PathValue("id"), body.ExpectedContextID)
+		if !validProfileParam(body.ProfileID) {
+			reasonJSON(w, 400, "invalid_profile", "Choose an execution profile of this project.")
+			return
+		}
+		op, err := hub.StartInitWith(r.PathValue("id"), body.ExpectedContextID, body.ProfileID)
 		var refusal *projects.InitRefusal
 		switch {
 		case errors.As(err, &refusal):
@@ -285,16 +310,21 @@ func initRoutes(mux *http.ServeMux, hub *projects.Hub) {
 func workspaceRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	mux.HandleFunc("POST /api/v1/projects/{id}/workspaces/review", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Action engine.WorkspaceAction `json:"action"`
-			Name   string                 `json:"name"`
+			Action    engine.WorkspaceAction `json:"action"`
+			Name      string                 `json:"name"`
+			ProfileID string                 `json:"profileId"`
 		}
 		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !validProfileParam(body.ProfileID) {
+			reasonJSON(w, 400, "invalid_profile", "Choose an execution profile of this project.")
 			return
 		}
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(inspectTimeout + 10*time.Second))
 		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
 		defer cancel()
-		review, err := hub.ReviewWorkspace(ctx, r.PathValue("id"), body.Action, body.Name)
+		review, err := hub.ReviewWorkspaceWith(ctx, r.PathValue("id"), body.Action, body.Name, body.ProfileID)
 		if err != nil {
 			projectError(w, hub, err)
 			return
@@ -306,8 +336,13 @@ func workspaceRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			Action            engine.WorkspaceAction `json:"action"`
 			Name              string                 `json:"name"`
 			ExpectedContextID string                 `json:"expectedContextId"`
+			ProfileID         string                 `json:"profileId"`
 		}
 		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !validProfileParam(body.ProfileID) {
+			reasonJSON(w, 400, "invalid_profile", "Choose an execution profile of this project.")
 			return
 		}
 		if !engine.ValidAction(body.Action) {
@@ -322,7 +357,7 @@ func workspaceRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			reasonJSON(w, 400, "invalid_context", "Review the workspace command before running it.")
 			return
 		}
-		op, err := hub.StartWorkspace(r.PathValue("id"), body.Action, body.Name, body.ExpectedContextID)
+		op, err := hub.StartWorkspaceWith(r.PathValue("id"), body.Action, body.Name, body.ExpectedContextID, body.ProfileID)
 		switch {
 		case errors.Is(err, projects.ErrContextChanged):
 			reasonJSON(w, 409, "context_changed", "This review expired, was already used, or the project, its engine or the environment changed. Nothing was run. Review it again.")
@@ -376,7 +411,7 @@ func toolRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			case errors.Is(err, projects.ErrContextNotFound):
 				reasonJSON(w, 404, "context_closed", "This workspace view is no longer open, or belongs to another project. Open the workspace again.")
 			case errors.Is(err, projects.ErrContextChanged):
-				reasonJSON(w, 409, "context_changed", "The project's engine or folder changed after this workspace was opened. Nothing was run. Open the workspace again.")
+				reasonJSON(w, 409, "context_changed", "The project's engine, folder or execution profile changed after this workspace was opened. Nothing was run. Open the workspace again.")
 			case errors.Is(err, operations.ErrToolRunning):
 				reasonJSON(w, 409, "tool_running", "This tool is already running for this workspace. Wait for it to finish or cancel it.")
 			case errors.Is(err, operations.ErrToolsBusy):

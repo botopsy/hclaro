@@ -26,6 +26,9 @@ type ImportRequest struct {
 	imports.Request
 	PreviewSHA256 string
 	VarFiles      []string
+	// ProfileID and ContextFingerprint bind the import plan to an execution profile.
+	ProfileID          string
+	ContextFingerprint string
 }
 
 func (m *Manager) importEnv(snap workspace.Snapshot) imports.Env {
@@ -75,7 +78,11 @@ func (m *Manager) StartImport(req ImportRequest) (Operation, error) {
 	if m.planner == nil || !snap.Info.Capabilities.CanImport {
 		return Operation{}, reject("import_unavailable", snap.Info.Capabilities.ImportReason)
 	}
-	selected, err := m.selectVarFiles(req.VarFiles)
+	bound, environ, err := m.bind(snap, req.ProfileID, req.ContextFingerprint)
+	if err != nil {
+		return Operation{}, err
+	}
+	selected, err := m.selectVarFiles(req.VarFiles, bound)
 	if err != nil {
 		return Operation{}, err
 	}
@@ -103,7 +110,7 @@ func (m *Manager) StartImport(req ImportRequest) (Operation, error) {
 		return Operation{}, reject("write_failed", fmt.Sprintf("%s could not be written safely. Nothing was planned.", preview.File))
 	}
 	target := &ImportTarget{Address: preview.Address, File: preview.File, GeneratedFile: preview.GeneratedFile, Provider: req.Provider}
-	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: []string{}, Import: target}, release), nil
+	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: []string{}, Import: target, Context: bound}, release, environ), nil
 }
 
 // importWarnings flags an import plan that does not import the requested address.

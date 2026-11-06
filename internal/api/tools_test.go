@@ -27,7 +27,7 @@ func toolServer(t *testing.T, fake *engine.Fake) (*hubServer, projects.Summary) 
 		t.Fatal(err)
 	}
 	calls := s.calls
-	s.hub.Engines = func(root, preference, selected string) (string, string, projects.Adapter, error) {
+	s.hub.Engines = func(root, preference, selected string, _ []string) (string, string, projects.Adapter, error) {
 		return "terraform", exe, hubEngine{"network", selected, calls}, nil
 	}
 	selected := &atomic.Value{}

@@ -31,7 +31,7 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 	if hub != nil {
 		inits = hub.Inits
 	}
-	planRoutes(mux, store, manager, inits, csrf, version)
+	planRoutes(mux, store, manager, inits, hub, csrf, version)
 	importRoutes(mux, store, manager)
 	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": version})
@@ -47,6 +47,7 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 	})
 	if hub != nil {
 		projectRoutes(mux, hub)
+		profileRoutes(mux, hub)
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { errorJSON(w, 404, "route_not_found") })
 	files := http.FileServer(http.FS(assets))

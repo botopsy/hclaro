@@ -37,6 +37,18 @@ type CLI struct {
 	Environ []string
 }
 
+// WithEnvironment returns a copy whose children start from environ instead of Hclaro's
+// environment and, when workspace is set, get TF_WORKSPACE=<workspace> in place of any
+// inherited value. An execution profile binds one operation this way; c is not changed.
+func (c *CLI) WithEnvironment(environ []string, workspace string) *CLI {
+	copy := *c
+	copy.Environ = append([]string(nil), environ...)
+	if workspace != "" {
+		copy.SelectedWorkspace = workspace
+	}
+	return &copy
+}
+
 var ErrUnsafeArgs = errors.New("inherited TF_CLI_ARGS contains unsupported arguments; only -no-color is accepted")
 
 const readTimeout = 45 * time.Second
@@ -91,14 +103,15 @@ func (c *CLI) commandEnv(ctx context.Context, dropWorkspace bool, selected strin
 	}
 	for _, item := range environ {
 		key, value, _ := strings.Cut(item, "=")
-		if key == "TF_CLI_ARGS" || key == "TF_CLI_ARGS_"+args[0] {
+		// Windows environment names are case-insensitive, so the check is too.
+		if strings.EqualFold(key, "TF_CLI_ARGS") || strings.EqualFold(key, "TF_CLI_ARGS_"+args[0]) {
 			for _, arg := range strings.Fields(value) {
 				if arg != "-no-color" {
 					return nil, ErrUnsafeArgs
 				}
 			}
 		}
-		if strings.HasPrefix(key, "TF_LOG") || key == "TF_IN_AUTOMATION" || key == "CHECKPOINT_DISABLE" || dropWorkspace && key == "TF_WORKSPACE" {
+		if strings.HasPrefix(strings.ToUpper(key), "TF_LOG") || key == "TF_IN_AUTOMATION" || key == "CHECKPOINT_DISABLE" || dropWorkspace && strings.EqualFold(key, "TF_WORKSPACE") {
 			continue
 		}
 		cmd.Env = append(cmd.Env, item)

@@ -12,6 +12,7 @@ import { clock } from './labels';
 
 export function PlansView({
   project,
+  profileId = '',
   workspaceStatus,
   planId,
   choosePlan,
@@ -20,6 +21,8 @@ export function PlansView({
   copy
 }: {
   project: string;
+  // The execution profile this tab uses ("" for none).
+  profileId?: string;
   workspaceStatus?: string;
   planId?: string;
   choosePlan: (id?: string) => void;
@@ -34,7 +37,7 @@ export function PlansView({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   // Availability is decided after the startup read; refetch when the workspace status changes.
-  const options = useQuery({ queryKey: ['plan-options', workspaceStatus], queryFn: () => api<PlanOptions>('plans/options') });
+  const options = useQuery({ queryKey: ['plan-options', workspaceStatus, profileId], queryFn: () => api<PlanOptions>(`plans/options${profileId ? `?profileId=${profileId}` : ''}`) });
   const plans = useQuery({ queryKey: ['plans'], queryFn: () => api<{ plans: PlanSummary[] }>('plans') });
   const operations = useQuery({
     queryKey: ['operations'],
@@ -68,16 +71,19 @@ export function PlansView({
     setStartError('');
     clearReplace?.();
   }
-  async function start(varFiles: string[]) {
+  async function start(varFiles: string[], contextFingerprint?: string) {
     setStarting(true);
     setStartError('');
     try {
-      await post<Operation>('plans', { acknowledgeBackendAccess: true, varFiles, replace: (replace ?? []).map(r => r.id) });
+      // The fingerprint binds the plan to the context reviewed in the dialog; the server
+      // refuses it if the profile changed in the meantime.
+      await post<Operation>('plans', { acknowledgeBackendAccess: true, varFiles, replace: (replace ?? []).map(r => r.id), ...(contextFingerprint ? { profileId, contextFingerprint } : {}) });
       closePreflight();
       choosePlan(undefined);
       await client.invalidateQueries({ queryKey: ['operations'] });
     } catch (e) {
       setStartError(e instanceof Error ? e.message : 'The plan could not be started.');
+      void options.refetch();
     } finally {
       setStarting(false);
     }
@@ -100,7 +106,7 @@ export function PlansView({
    {applied && <ApplyResult operation={applied} />}
    {failed && plan.data && <p className="info-line">Below is the previous successful plan, created at {clock(plan.data.createdAt)}. It does not reflect the run above.</p>}
    {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <div className="empty-state error-state" role="alert"><p>{plan.error.message}</p></div> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} copy={copy} busy={!!running} onApply={() => setApplying(true)} /> : !running && !failed && <div className="empty-state"><FileDiff size={30} /><h2>No plans yet</h2><p>Run a plan to see every proposed change: creates, updates, replacements, deletions, data reads and output changes. Nothing runs until you confirm.</p>{options.data?.canPlan && <Button variant="outline" onClick={() => setPreflight(true)}><Play size={14} />Run plan</Button>}</div>}
-   {preflightOpen && options.data && <PreflightDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={varFiles => void start(varFiles)} onClose={closePreflight} />}
+   {preflightOpen && options.data && <PreflightDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
    {applying && plan.data && <ApplyDialog plan={plan.data} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
   </div>;
 }

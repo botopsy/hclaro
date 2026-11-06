@@ -4,6 +4,7 @@ import { post } from '../api';
 import type { Approval, Operation, Plan } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
+import { RecordedContext } from '../profiles/ContextSummary';
 import { actionOrder, engineLabel, meta } from './labels';
 
 // Final confirmation before a saved-plan apply. The server issues a one-time token bound to
@@ -67,6 +68,7 @@ export function ApplyDialog({ plan, onStarted, onClose }: { plan: Plan; onStarte
      {approval.imports > 0 && <p>Imports <strong>{approval.imports}</strong> existing object{approval.imports === 1 ? '' : 's'} into state{approval.import && <>, including <code>{approval.import.address}</code></>}. Import writes state: type the phrase to confirm.</p>}
      {approval.replace.length > 0 && <p>Replacement was requested for <strong>{approval.replace.length}</strong> instance{approval.replace.length === 1 ? '' : 's'}; the counts above include every other change in the plan.</p>}
      {approval.destructive && <p className="plan-warning" role="alert"><TriangleAlert size={15} /><span>This plan destroys or replaces objects. Data stored in them can be lost, and dependent services can be unavailable while they are recreated. Hclaro cannot guarantee zero downtime.</span></p>}
+     <p className="context-line"><strong>Execution context:</strong> <RecordedContext context={approval.executionContext} /></p>
      <div className="command-preview"><span className="muted"><Terminal size={12} /> Command</span><code>{approval.command.join(' ')}</code><span className="muted"><Fingerprint size={12} /> Saved plan SHA-256 <code>{approval.artifactSha256.slice(0, 16)}…</code></span></div>
      {approval.phrase && <label className="phrase-field"><span>Type <code>{approval.phrase}</code> to confirm</span><input value={typed} onChange={e => setTyped(e.target.value)} autoComplete="off" spellCheck={false} aria-label="Confirmation phrase" /></label>}
     </>}

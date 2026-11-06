@@ -59,7 +59,7 @@ func newHubServer(t *testing.T) *hubServer {
 	dir, _ = filepath.EvalSymlinks(dir)
 	hub := projects.NewHub(projects.Open(t.TempDir(), time.Now()), "")
 	calls := &atomic.Int64{}
-	hub.Engines = func(root, preference, selected string) (string, string, projects.Adapter, error) {
+	hub.Engines = func(root, preference, selected string, _ []string) (string, string, projects.Adapter, error) {
 		return "terraform", "/synthetic/terraform", hubEngine{filepath.Base(root), selected, calls}, nil
 	}
 	t.Cleanup(hub.Close)

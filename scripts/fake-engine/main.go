@@ -9,7 +9,8 @@
 // `init -input=false -no-color` and `init -input=false -json` are accepted.
 // HCLARO_FAKE_SPY, when set, names a file that receives each invocation's argv, one
 // NUL-separated line per call, so tests can assert exact flags. With HCLARO_FAKE_SPY_ENV
-// also set, the line is prefixed with "TF_WORKSPACE=<value or unset>" and a NUL.
+// also set, the line is prefixed with "TF_WORKSPACE=<value or unset>" and a NUL; a value
+// other than "1" is a comma-separated list of further names logged the same way.
 //
 // Workspaces: a ".fake-workspaces" file in the working directory holds the exact
 // `workspace list` output (the "* " line is the CLI default); without one the list is
@@ -53,12 +54,22 @@ func main() {
 	if spy := os.Getenv("HCLARO_FAKE_SPY"); spy != "" {
 		if f, err := os.OpenFile(spy, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
 			line := strings.Join(args, "\x00")
-			if os.Getenv("HCLARO_FAKE_SPY_ENV") != "" {
+			if names := os.Getenv("HCLARO_FAKE_SPY_ENV"); names != "" {
 				ws, ok := os.LookupEnv("TF_WORKSPACE")
 				if !ok {
 					ws = "<unset>"
 				}
-				line = "TF_WORKSPACE=" + ws + "\x00" + line
+				prefix := "TF_WORKSPACE=" + ws + "\x00"
+				if names != "1" {
+					for _, name := range strings.Split(names, ",") {
+						value, ok := os.LookupEnv(name)
+						if !ok {
+							value = "<unset>"
+						}
+						prefix += name + "=" + value + "\x00"
+					}
+				}
+				line = prefix + line
 			}
 			_, _ = f.WriteString(line + "\n")
 			_ = f.Close()
@@ -100,7 +111,7 @@ func main() {
 			switch {
 			case strings.HasPrefix(a, "-generate-config-out="):
 				generate = strings.TrimPrefix(a, "-generate-config-out=")
-			case !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace="):
+			case !strings.HasPrefix(a, "-var-file=") && !strings.HasPrefix(a, "-replace=") && !strings.HasPrefix(a, "-parallelism=") && !strings.HasPrefix(a, "-lock-timeout="):
 				refuse()
 			}
 		}
