@@ -1,0 +1,70 @@
+// Synthetic Terraform 1.9 `graph` output for Hclaro tests.
+digraph G {
+  rankdir = "RL";
+  node [shape = rect, fontname = "sans-serif"];
+  "data.aws_caller_identity.current" [label="data.aws_caller_identity.current"];
+  "aws_iam_role.deployer" [label="aws_iam_role.deployer"];
+  "aws_iam_role.legacy" [label="aws_iam_role.legacy"];
+  "aws_vpc.imported" [label="aws_vpc.imported"];
+  "aws_s3_bucket.artifacts" [label="aws_s3_bucket.artifacts"];
+  "aws_s3_bucket.logs" [label="aws_s3_bucket.logs"];
+  "aws_security_group.web" [label="aws_security_group.web"];
+  "aws_instance.retired" [label="aws_instance.retired"];
+  "aws_db_instance.primary" [label="aws_db_instance.primary"];
+  "aws_lb.edge" [label="aws_lb.edge"];
+  "random_password.unused" [label="random_password.unused"];
+  subgraph "cluster_module.compute" {
+    label = "module.compute"
+    fontname = "sans-serif"
+    "module.compute.aws_instance.main" [label="aws_instance.main"];
+  }
+  subgraph "cluster_module.compute.module.workers" {
+    label = "module.compute.module.workers"
+    fontname = "sans-serif"
+    "module.compute.module.workers.aws_instance.node" [label="aws_instance.node"];
+  }
+  subgraph "cluster_module.database" {
+    label = "module.database"
+    fontname = "sans-serif"
+    "module.database.aws_db_instance.main" [label="aws_db_instance.main"];
+  }
+  subgraph "cluster_module.edge" {
+    label = "module.edge"
+    fontname = "sans-serif"
+    "module.edge.aws_lb.main" [label="aws_lb.main"];
+  }
+  subgraph "cluster_module.network" {
+    label = "module.network"
+    fontname = "sans-serif"
+    "module.network.aws_subnet.main" [label="aws_subnet.main"];
+  }
+  subgraph "cluster_module.observability" {
+    label = "module.observability"
+    fontname = "sans-serif"
+    "module.observability.aws_cloudwatch_log_group.main" [label="aws_cloudwatch_log_group.main"];
+  }
+  subgraph "cluster_module.storage" {
+    label = "module.storage"
+    fontname = "sans-serif"
+    "module.storage.aws_s3_bucket.main" [label="aws_s3_bucket.main"];
+  }
+  "aws_s3_bucket.artifacts" -> "data.aws_caller_identity.current";
+  "aws_s3_bucket.logs" -> "data.aws_caller_identity.current";
+  "aws_security_group.web" -> "aws_vpc.imported";
+  "aws_instance.retired" -> "aws_security_group.web";
+  "aws_db_instance.primary" -> "aws_security_group.web";
+  "aws_db_instance.primary" -> "module.network.aws_subnet.main";
+  "aws_lb.edge" -> "aws_security_group.web";
+  "aws_lb.edge" -> "module.network.aws_subnet.main";
+  "module.network.aws_subnet.main" -> "aws_vpc.imported";
+  "module.compute.aws_instance.main" -> "module.network.aws_subnet.main";
+  "module.compute.aws_instance.main" -> "aws_security_group.web";
+  "module.compute.aws_instance.main" -> "aws_iam_role.deployer";
+  "module.compute.module.workers.aws_instance.node" -> "module.compute.aws_instance.main";
+  "module.database.aws_db_instance.main" -> "module.network.aws_subnet.main";
+  "module.edge.aws_lb.main" -> "module.compute.aws_instance.main";
+  "module.edge.aws_lb.main" -> "aws_lb.edge";
+  "module.observability.aws_cloudwatch_log_group.main" -> "aws_s3_bucket.logs";
+  "module.storage.aws_s3_bucket.main" -> "aws_iam_role.deployer";
+  "module.storage.aws_s3_bucket.main" -> "data.aws_caller_identity.current";
+}

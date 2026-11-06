@@ -3,6 +3,10 @@
 // that declares an import block gets the import plan fixture; -generate-config-out writes
 // the generated configuration fixture.
 // `plan ... -refresh-only` is a drift scan; HCLARO_FAKE_DRIFT selects its result (see driftScan).
+// `graph` (no other argument) prints the Terraform graph fixture, or the OpenTofu full walk
+// graph when invoked as "tofu". HCLARO_FAKE_GRAPH selects others: "large" (1,000 nodes),
+// "cycle", "malformed", "init" (backend initialization required, exit 1), "leak" (a canary
+// on stderr, then the fixture) and "slow" (waits for an interrupt).
 // HCLARO_FAKE_APPLY selects apply behavior: unset (success), "stale" or "fail".
 // HCLARO_FAKE_INIT selects init behavior: unset (success: creates the data directory and a
 // lock file), "migrate", "prompt", "credentials", "registry", "slow" (waits for an
@@ -91,6 +95,10 @@ func main() {
 		_, _ = os.Stdout.Write(workspaceList())
 	case len(args) == 3 && args[0] == "workspace" && (args[1] == "new" || args[1] == "select" || args[1] == "delete"):
 		changeWorkspace(args[1], args[2])
+	case len(args) == 1 && args[0] == "graph":
+		graph()
+	case len(args) > 0 && args[0] == "graph":
+		refuse()
 	case strings.Join(args, " ") == "workspace show":
 		fmt.Println(selectedWorkspace())
 	case strings.Join(args, " ") == "show -json":
@@ -629,4 +637,34 @@ func outputs() {
 		return
 	}
 	_, _ = os.Stdout.Write(fixtures.Outputs)
+}
+
+// graph emulates `graph` without flags; see the header for HCLARO_FAKE_GRAPH.
+func graph() {
+	document := fixtures.GraphTerraform
+	if strings.HasPrefix(filepath.Base(os.Args[0]), "tofu") {
+		document = fixtures.GraphTofu
+	}
+	switch os.Getenv("HCLARO_FAKE_GRAPH") {
+	case "large":
+		document = fixtures.GraphLarge
+	case "cycle":
+		document = fixtures.GraphCycle
+	case "malformed":
+		document = fixtures.GraphMalformed
+	case "init":
+		fmt.Fprintln(os.Stderr, "Error: Backend initialization required, please run \"terraform init\"")
+		os.Exit(1)
+	case "leak":
+		fmt.Fprintln(os.Stderr, "DO_NOT_LEAK_HCLARO_TEST_SECRET AWS_SECRET_ACCESS_KEY="+os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	case "slow":
+		interrupted := make(chan os.Signal, 1)
+		signal.Notify(interrupted, os.Interrupt)
+		select {
+		case <-interrupted:
+			os.Exit(1)
+		case <-time.After(60 * time.Second):
+		}
+	}
+	_, _ = os.Stdout.Write(document)
 }

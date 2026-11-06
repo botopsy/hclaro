@@ -1,0 +1,10 @@
+// Synthetic graph with two cycles and a disconnected node. Not engine output.
+digraph G {
+  "aws_instance.a" -> "aws_instance.b";
+  "aws_instance.b" -> "aws_instance.c";
+  "aws_instance.c" -> "aws_instance.a";
+  "aws_instance.d" -> "aws_instance.a";
+  "module.x.aws_s3_bucket.p" -> "module.x.aws_s3_bucket.q";
+  "module.x.aws_s3_bucket.q" -> "module.x.aws_s3_bucket.p";
+  "aws_iam_role.alone";
+}

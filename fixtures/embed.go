@@ -70,3 +70,19 @@ var (
 	//go:embed drift/log-locked.jsonl
 	DriftLogLocked []byte
 )
+
+// Graph fixtures are synthetic `graph` DOT outputs (see scripts/fixtures/generate-graph.py).
+var (
+	//go:embed graph/terraform.dot
+	GraphTerraform []byte
+	//go:embed graph/tofu.dot
+	GraphTofu []byte
+	//go:embed graph/large.dot
+	GraphLarge []byte
+	//go:embed graph/edge-cases.dot
+	GraphEdgeCases []byte
+	//go:embed graph/cycle.dot
+	GraphCycle []byte
+	//go:embed graph/malformed.dot
+	GraphMalformed []byte
+)

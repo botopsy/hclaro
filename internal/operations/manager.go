@@ -83,6 +83,8 @@ type Operation struct {
 	Context *ExecutionContext `json:"executionContext,omitempty"`
 	// DriftScanID is set for drift scans (kind "drift").
 	DriftScanID string `json:"driftScanId,omitempty"`
+	// GraphID is set for dependency graphs (kind "graph").
+	GraphID string `json:"graphId,omitempty"`
 }
 
 // Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved
@@ -152,6 +154,7 @@ type Manager struct {
 	entries  []*entry
 	plans    []*Plan
 	scans    []*DriftScan
+	graphs   []*GraphRun
 	running  *entry
 	artifact *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.

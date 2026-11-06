@@ -1,6 +1,6 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRightLeft, Braces, Copy, Fingerprint, Import, LoaderCircle, LockKeyhole, RefreshCcw, Rocket, Search, TriangleAlert, X } from 'lucide-react';
+import { ArrowRightLeft, Braces, Copy, Fingerprint, Import, LoaderCircle, LockKeyhole, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
 import { api } from '../api';
 import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, PlanChange } from '../types';
 import { Button } from '../components/ui/button';
@@ -25,7 +25,7 @@ function Value({ value, unknown, empty = '—' }: { value: unknown; unknown?: bo
   return <code className={typeof value === 'string' ? 'json-string' : 'json-value'}>{String(value)}</code>;
 }
 
-export function PlanReview({ plan, copy, onApply, busy }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; busy?: boolean }) {
+export function PlanReview({ plan, copy, onApply, busy, onInspectImpact }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; busy?: boolean; onInspectImpact?: (planId: string, address: string) => void }) {
   const [tab, setTab] = useState<Tab>('changes');
   const [actions, setActions] = useState<PlanAction[]>([]);
   const [showNoOp, setShowNoOp] = useState(false);
@@ -51,7 +51,7 @@ export function PlanReview({ plan, copy, onApply, busy }: { plan: Plan; copy: (v
     <div><span className="muted">Execution context</span><strong><RecordedContext context={plan.executionContext} /></strong></div>
     <div><span className="muted">Saved plan SHA-256</span><button className="hash" onClick={() => void copy(plan.artifactSha256, 'Plan digest')} title={plan.artifactSha256} aria-label="Copy saved plan SHA-256"><Fingerprint size={12} />{plan.artifactSha256.slice(0, 12)}<Copy size={11} /></button></div>
    </div>
-   {plan.kind === 'replace' && <ReplaceSummary plan={plan} />}
+   {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
    {plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={15} /><div><strong>Ready to apply.</strong> Applying uses exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}. You confirm on the next screen.</div>{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}><Rocket size={14} />Review and apply…</Button>}</div> : <div className="apply-banner" role="note"><LockKeyhole size={15} /><div><strong>Review only.</strong> {plan.apply.reason}</div></div>}
    {plan.contextChanged && <div className="plan-warning" role="alert"><TriangleAlert size={15} />Configuration, variable files, the engine or the execution profile changed since this plan was created. Run a new plan to review current changes.</div>}
@@ -83,7 +83,7 @@ export function PlanReview({ plan, copy, onApply, busy }: { plan: Plan; copy: (v
 
 // Replacement is never only what was selected: show requested instances next to every
 // other change, and the risks the plan itself cannot rule out.
-function ReplaceSummary({ plan }: { plan: Plan }) {
+function ReplaceSummary({ plan, onInspectImpact }: { plan: Plan; onInspectImpact?: (planId: string, address: string) => void }) {
   const requested = new Set(plan.replace);
   const collateral = plan.changes.filter(c => c.action !== 'no-op' && c.action !== 'read' && !(requested.has(c.address) && !c.deposed));
   const destructiveCollateral = collateral.filter(c => c.action === 'delete' || c.action === 'replace' || c.action === 'unknown');
@@ -95,6 +95,7 @@ function ReplaceSummary({ plan }: { plan: Plan }) {
    })}</ul>
    {collateral.length > 0 && <p className={destructiveCollateral.length ? 'plan-warning' : 'info-line'} role={destructiveCollateral.length ? 'alert' : undefined}><TriangleAlert size={14} />{collateral.length} other change{collateral.length === 1 ? ' is' : 's are'} part of this plan{destructiveCollateral.length > 0 && `, including ${destructiveCollateral.length} deletion${destructiveCollateral.length === 1 ? '' : 's'} or replacement${destructiveCollateral.length === 1 ? '' : 's'} you did not select`}. Review them below; they are applied together.</p>}
    <p className="muted">Replacing destroys and recreates objects. Unless the provider creates the new object first, expect downtime, and data stored in the old object can be lost. The plan shows the order for each change; it cannot prove what depends on these objects outside {engineLabel(plan.engine)}.</p>
+   {onInspectImpact && plan.replace.length > 0 && <div className="replace-impact"><span className="muted">Optional: see what depends on {plan.replace.length === 1 ? 'this resource' : 'these resources'} in the dependency graph, next to the changes this plan confirms. It does not change what is applied.</span><Button variant="outline" size="small" onClick={() => onInspectImpact(plan.id, plan.replace[0])}><Waypoints size={13} />Inspect impact</Button></div>}
   </section>;
 }
 

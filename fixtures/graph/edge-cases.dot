@@ -1,0 +1,26 @@
+# Synthetic DOT edge cases for Hclaro's parser. Not engine output.
+/* A block comment
+   spanning lines. */
+strict digraph "edge cases" {
+  graph [rankdir = "RL"]; node [shape = rect]
+  edge [color = "gray"]
+  // Quoted IDs with punctuation, escaped quotes and a continued line.
+  "module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]" [label = "node \"blue\"", shape = box];
+  "aws_instance.web[0]" -> "aws_security_group.web" [style = dashed]
+  "aws_instance.web[1]" -> "aws_security_group.web"
+  "aws_security_group.web" -> "aws_vpc.main"
+  "module.a.module.b.aws_s3_bucket.deep" -> "aws_vpc.main" -> "data.aws_region.current";
+  "lone.resource" ; "aws_iam_role.lonely"
+  "aws_lb.front" -> { "aws_instance.web[0]" "aws_instance.web[1]" }
+  subgraph cluster_net {
+    label = "module.net";
+    subgraph "cluster_module.net.module.inner" { "module.net.module.inner.aws_subnet.a" }
+    "module.net.aws_route_table.rt":p1:n -> "module.net.module.inner.aws_subnet.a"
+  }
+  "my_type.name (weird phase)" -> "aws_vpc.main"
+  "aws_secret.x\"password=hunter2\"" -> "aws_vpc.main"
+  "concat" + "enated.name" -> "aws_vpc.main"
+  "ephemeral.aws_secret.tmp" -> "aws_vpc.main"
+  "var.region"; "local.tags"; "output.id"; "check.health"
+  "aws_vpc.main" -> "aws_vpc.main"
+}

@@ -21,7 +21,7 @@ export function OperationsView({ openPlan }: { openPlan: (id: string) => void })
   if (!list.length) return <div className="empty-state"><Terminal size={28} /><h2>No operations yet</h2><p>Plans and applies you run appear here with their status, duration and sanitized output. History is kept only while Hclaro runs.</p></div>;
   return <div className="operations">
    <table className="resources-table operations-table"><thead><tr><th scope="col">Operation</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Duration</th><th scope="col">Result</th></tr></thead><tbody>{list.map(o => <tr key={o.id} className={selected === o.id ? 'selected' : ''}>
-    <td><button className="resource-button" aria-pressed={selected === o.id} onClick={() => setSelected(o.id)}><span className="resource-text"><strong>{o.kind === 'apply' ? 'Apply' : o.kind === 'drift' ? 'Drift scan' : o.replace?.length ? `Replace plan · ${o.replace.length}` : 'Plan'}</strong><span className="resource-address mono">{o.command.join(' ')}</span></span></button></td>
+    <td><button className="resource-button" aria-pressed={selected === o.id} onClick={() => setSelected(o.id)}><span className="resource-text"><strong>{o.kind === 'apply' ? 'Apply' : o.kind === 'drift' ? 'Drift scan' : o.kind === 'graph' ? 'Dependency graph' : o.replace?.length ? `Replace plan · ${o.replace.length}` : 'Plan'}</strong><span className="resource-address mono">{o.command.join(' ')}</span></span></button></td>
     <td><span className={`status-pill status-${o.status}`}>{o.status === 'running' ? o.stage : o.status}</span></td>
     <td>{clock(o.startedAt)}</td>
     <td>{duration(o.durationMs)}</td>

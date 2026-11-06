@@ -1,0 +1,1333 @@
+{
+  "graph": {
+    "completedAt": "2026-11-06T10:00:01Z",
+    "current": true,
+    "edges": [
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n4",
+        "to": "n0"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n5",
+        "to": "n0"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n6",
+        "to": "n3"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n7",
+        "to": "n6"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n8",
+        "to": "n6"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n8",
+        "to": "n15"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n9",
+        "to": "n6"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n9",
+        "to": "n15"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n15",
+        "to": "n3"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n11",
+        "to": "n15"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n11",
+        "to": "n6"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n11",
+        "to": "n1"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n12",
+        "to": "n11"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n13",
+        "to": "n15"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n14",
+        "to": "n11"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n14",
+        "to": "n9"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n16",
+        "to": "n5"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n17",
+        "to": "n1"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n17",
+        "to": "n0"
+      }
+    ],
+    "engine": "terraform",
+    "engineVersion": "1.9.8",
+    "format": "resources",
+    "id": "00000000000000000000000000000004",
+    "nodes": [
+      {
+        "confidence": "exact",
+        "displayName": "data.aws_caller_identity.current",
+        "id": "n0",
+        "instanceCount": 1,
+        "instances": [
+          {
+            "address": "data.aws_caller_identity.current",
+            "resourceId": "a0199ee6ee7148d16f5b0c9158fb8362"
+          }
+        ],
+        "modulePath": "",
+        "nodeKind": "data",
+        "planned": [
+          {
+            "action": "read",
+            "address": "data.aws_caller_identity.current",
+            "changeId": "6ab22339dde5396e82aaa73fa1ed9fe8",
+            "mode": "data",
+            "node": "n0"
+          }
+        ],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "data.aws_caller_identity.current",
+        "type": "aws_caller_identity"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "aws_iam_role.deployer",
+        "id": "n1",
+        "instanceCount": 1,
+        "instances": [
+          {
+            "address": "aws_iam_role.deployer",
+            "resourceId": "d503050bba8b29345e3c1fb9d2fc2d60"
+          }
+        ],
+        "modulePath": "",
+        "nodeKind": "resource",
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "aws_iam_role.deployer",
+        "type": "aws_iam_role"
+      },
+      {
+        "confidence": "configuration",
+        "displayName": "aws_iam_role.legacy",
+        "id": "n2",
+        "instanceCount": 0,
+        "modulePath": "",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "delete",
+            "address": "aws_iam_role.legacy",
+            "changeId": "7a1b79c96ae7f823f86e21f1a802e022",
+            "mode": "managed",
+            "node": "n2"
+          }
+        ],
+        "resourceAddress": "aws_iam_role.legacy",
+        "type": "aws_iam_role"
+      },
+      {
+        "confidence": "configuration",
+        "displayName": "aws_vpc.imported",
+        "id": "n3",
+        "instanceCount": 0,
+        "modulePath": "",
+        "nodeKind": "resource",
+        "resourceAddress": "aws_vpc.imported",
+        "type": "aws_vpc"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "aws_s3_bucket.artifacts",
+        "id": "n4",
+        "instanceCount": 1,
+        "instances": [
+          {
+            "address": "aws_s3_bucket.artifacts",
+            "resourceId": "7cd1b18f24f6b39f722b43b3b5cfb95a"
+          }
+        ],
+        "modulePath": "",
+        "nodeKind": "resource",
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "aws_s3_bucket.artifacts",
+        "type": "aws_s3_bucket"
+      },
+      {
+        "confidence": "configuration",
+        "displayName": "aws_s3_bucket.logs",
+        "id": "n5",
+        "instanceCount": 0,
+        "modulePath": "",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "create",
+            "address": "aws_s3_bucket.logs",
+            "changeId": "536f0c4ee5468e0b7604f07168dbc135",
+            "mode": "managed",
+            "node": "n5"
+          }
+        ],
+        "resourceAddress": "aws_s3_bucket.logs",
+        "type": "aws_s3_bucket"
+      },
+      {
+        "confidence": "configuration",
+        "displayName": "aws_security_group.web",
+        "id": "n6",
+        "instanceCount": 0,
+        "modulePath": "",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "update",
+            "address": "aws_security_group.web",
+            "changeId": "7ee5dad366c17f0fbaeb4f7680aa8f87",
+            "mode": "managed",
+            "node": "n6"
+          }
+        ],
+        "resourceAddress": "aws_security_group.web",
+        "type": "aws_security_group"
+      },
+      {
+        "confidence": "configuration",
+        "displayName": "aws_instance.retired",
+        "id": "n7",
+        "instanceCount": 0,
+        "modulePath": "",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "delete",
+            "address": "aws_instance.retired",
+            "changeId": "6d246b952ce59ebaf4f1bbb9a05771e3",
+            "mode": "managed",
+            "node": "n7"
+          }
+        ],
+        "resourceAddress": "aws_instance.retired",
+        "type": "aws_instance"
+      },
+      {
+        "confidence": "configuration",
+        "displayName": "aws_db_instance.primary",
+        "id": "n8",
+        "instanceCount": 0,
+        "modulePath": "",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "update",
+            "address": "aws_db_instance.primary",
+            "changeId": "03d23d8725766af238491b5683e6172a",
+            "mode": "managed",
+            "node": "n8"
+          }
+        ],
+        "resourceAddress": "aws_db_instance.primary",
+        "type": "aws_db_instance"
+      },
+      {
+        "confidence": "configuration",
+        "displayName": "aws_lb.edge",
+        "id": "n9",
+        "instanceCount": 0,
+        "modulePath": "",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "unknown",
+            "address": "aws_lb.edge",
+            "changeId": "bfc7e1530e3aebf11ca8e2a886601b0e",
+            "mode": "managed",
+            "node": "n9"
+          }
+        ],
+        "resourceAddress": "aws_lb.edge",
+        "type": "aws_lb"
+      },
+      {
+        "confidence": "configuration",
+        "displayName": "random_password.unused",
+        "id": "n10",
+        "instanceCount": 0,
+        "modulePath": "",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "forget",
+            "address": "random_password.unused",
+            "changeId": "10fbd2e2feffe59750ea2eb3d68c1a41",
+            "mode": "managed",
+            "node": "n10"
+          }
+        ],
+        "resourceAddress": "random_password.unused",
+        "type": "random_password"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "module.compute.aws_instance.main",
+        "id": "n11",
+        "instanceCount": 52,
+        "instances": [
+          {
+            "address": "module.compute.aws_instance.main[0]",
+            "resourceId": "3cf2c2b1c6491bc4733d94160c727063"
+          },
+          {
+            "address": "module.compute.aws_instance.main[10]",
+            "resourceId": "38d9fdb66d681674c44a6de4a462de7c"
+          },
+          {
+            "address": "module.compute.aws_instance.main[11]",
+            "resourceId": "af0e512aa1b0d80e18b65a1debe6b522"
+          },
+          {
+            "address": "module.compute.aws_instance.main[12]",
+            "resourceId": "7d5def1f2708f80df9ae887e9544bf14"
+          },
+          {
+            "address": "module.compute.aws_instance.main[13]",
+            "resourceId": "aa928d53850a32422dbe8f0fe704cdbf"
+          },
+          {
+            "address": "module.compute.aws_instance.main[14]",
+            "resourceId": "4dde782c59c56c702a1e515981a7d15a"
+          },
+          {
+            "address": "module.compute.aws_instance.main[15]",
+            "resourceId": "73c3271f950cc58b23258e820dd04c88"
+          },
+          {
+            "address": "module.compute.aws_instance.main[16]",
+            "resourceId": "8881057f6b0609fe1d4ee5372036cc9e"
+          },
+          {
+            "address": "module.compute.aws_instance.main[17]",
+            "resourceId": "79f7a4bda20b28e3434d1641564ada26"
+          },
+          {
+            "address": "module.compute.aws_instance.main[18]",
+            "resourceId": "8e2f9e86daa592e516ebc006379d8a9d"
+          },
+          {
+            "address": "module.compute.aws_instance.main[19]",
+            "resourceId": "c604ef9544a0f11f0325d6ea90149b67"
+          },
+          {
+            "address": "module.compute.aws_instance.main[1]",
+            "resourceId": "fe6888a618a967b780755c4770b52da3"
+          },
+          {
+            "address": "module.compute.aws_instance.main[20]",
+            "resourceId": "3846e49b84e1edfe60eb185ce8d0c00d"
+          },
+          {
+            "address": "module.compute.aws_instance.main[21]",
+            "resourceId": "b8f6e4c3298fad18e60ab7ba11a034a0"
+          },
+          {
+            "address": "module.compute.aws_instance.main[22]",
+            "resourceId": "ba3add699730aa0aaf06580da2766819"
+          },
+          {
+            "address": "module.compute.aws_instance.main[23]",
+            "resourceId": "36190f11eb2c36e03f06d2355c8dccb1"
+          },
+          {
+            "address": "module.compute.aws_instance.main[24]",
+            "resourceId": "5d12cb68f5b324cf0893079bec00b208"
+          },
+          {
+            "address": "module.compute.aws_instance.main[25]",
+            "resourceId": "77170ebf7f3675c050c638f0b8584d4a"
+          },
+          {
+            "address": "module.compute.aws_instance.main[26]",
+            "resourceId": "266b655ba4a98ecba1037b905e127b6d"
+          },
+          {
+            "address": "module.compute.aws_instance.main[27]",
+            "resourceId": "e6c6f62aa0eb7f361bbb54eaa439ac11"
+          },
+          {
+            "address": "module.compute.aws_instance.main[28]",
+            "resourceId": "ef48e3bcc25f3d34065a92802187098d"
+          },
+          {
+            "address": "module.compute.aws_instance.main[29]",
+            "resourceId": "fa6f8a37de294bd2a077bdbedecdeb6e"
+          },
+          {
+            "address": "module.compute.aws_instance.main[2]",
+            "resourceId": "515365eae230273de5141a914d930da1"
+          },
+          {
+            "address": "module.compute.aws_instance.main[30]",
+            "resourceId": "e380cb682a70370c23bdbbe6a1534ba1"
+          },
+          {
+            "address": "module.compute.aws_instance.main[31]",
+            "resourceId": "201c84e7825f9347acbe7fd7ccd3e280"
+          }
+        ],
+        "modulePath": "module.compute",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "replace",
+            "address": "module.compute.aws_instance.main[0]",
+            "changeId": "39cbac37a73cc7a7cf2643bd82668f48",
+            "mode": "managed",
+            "node": "n11"
+          }
+        ],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "module.compute.aws_instance.main",
+        "type": "aws_instance"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "module.compute.module.workers.aws_instance.node",
+        "id": "n12",
+        "instanceCount": 1,
+        "instances": [
+          {
+            "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+            "resourceId": "df3f1e9e0b17e26f4458c1cbbbccb76b"
+          }
+        ],
+        "modulePath": "module.compute.module.workers",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "replace",
+            "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+            "changeId": "ee9b954e1c5a62927419edb14242741d",
+            "mode": "managed",
+            "node": "n12"
+          }
+        ],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "module.compute.module.workers.aws_instance.node",
+        "type": "aws_instance"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "module.database.aws_db_instance.main",
+        "id": "n13",
+        "instanceCount": 52,
+        "instances": [
+          {
+            "address": "module.database.aws_db_instance.main[0]",
+            "resourceId": "203fc5aacaf1c91a5ba46d7c99c6517e"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[10]",
+            "resourceId": "95cb355b321f879465959d9ebb3216da"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[11]",
+            "resourceId": "adb8d4f0b6775e0a272c39af0c7b39ef"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[12]",
+            "resourceId": "acb51a08274a5a073189870614059ad4"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[13]",
+            "resourceId": "2de257ac4df0d9d78bce47f56771c76c"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[14]",
+            "resourceId": "a59bfe8fd8f4a70d03c11c180ce6863a"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[15]",
+            "resourceId": "00dc20769ceeaeba34e412b8e793c5ab"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[16]",
+            "resourceId": "4afb0e8ad696a3113e9a162a143872e1"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[17]",
+            "resourceId": "1708af03b28d9fc3f01333008babebce"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[18]",
+            "resourceId": "a9c2feeb3cfb4244f2d54881e050dc1f"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[19]",
+            "resourceId": "6ac558d80310bab204a541e852eb2d64"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[1]",
+            "resourceId": "ee6c7d6239fe42fa9a5988df181ff6eb"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[20]",
+            "resourceId": "fbdb26467f427e2d9e7a903537688270"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[21]",
+            "resourceId": "26ede4c4a6d12ad8af79c722f1e0dbd6"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[22]",
+            "resourceId": "d4f28d4b554e1222a6edaeecba32ebef"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[23]",
+            "resourceId": "60d0fd6019be2852d50b59695d101c8d"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[24]",
+            "resourceId": "c4880f03d36d4092240cae983ecaf758"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[25]",
+            "resourceId": "6c62244be9867c956fc88835774214fb"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[26]",
+            "resourceId": "65f4435f5cd887fd83be8484ed008274"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[27]",
+            "resourceId": "abebbf3882910a1ec7a035c15f5b0647"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[28]",
+            "resourceId": "00b613b09975a6b47e8626485bb0b524"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[29]",
+            "resourceId": "a2711eb4bdb9a1ecb1361f412e9ca378"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[2]",
+            "resourceId": "92753b8ac808f5743bb7b23176af54fb"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[30]",
+            "resourceId": "2fcaead07292a18156184bc72922f5b3"
+          },
+          {
+            "address": "module.database.aws_db_instance.main[31]",
+            "resourceId": "4f9169ee353a93e5fe743027c6fc9621"
+          }
+        ],
+        "modulePath": "module.database",
+        "nodeKind": "resource",
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "module.database.aws_db_instance.main",
+        "type": "aws_db_instance"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "module.edge.aws_lb.main",
+        "id": "n14",
+        "instanceCount": 52,
+        "instances": [
+          {
+            "address": "module.edge.aws_lb.main[0]",
+            "resourceId": "ad05cee76715b9428dc3e1f60ee55c43"
+          },
+          {
+            "address": "module.edge.aws_lb.main[10]",
+            "resourceId": "bc215cb7a158a4499d5e7ae02d0a8df5"
+          },
+          {
+            "address": "module.edge.aws_lb.main[11]",
+            "resourceId": "e8409c3e27e4b5820f4452192405f1b1"
+          },
+          {
+            "address": "module.edge.aws_lb.main[12]",
+            "resourceId": "f9148b8798ebe4d413de2249ab9ad0de"
+          },
+          {
+            "address": "module.edge.aws_lb.main[13]",
+            "resourceId": "141d55a008cfd673e311372edaf6f0a9"
+          },
+          {
+            "address": "module.edge.aws_lb.main[14]",
+            "resourceId": "d63b3bc5fcc17399e02e51b7702e85a0"
+          },
+          {
+            "address": "module.edge.aws_lb.main[15]",
+            "resourceId": "398494ec692a7db3e67d8651e90467ae"
+          },
+          {
+            "address": "module.edge.aws_lb.main[16]",
+            "resourceId": "0f5127dd5495f5540225cdfd7e766849"
+          },
+          {
+            "address": "module.edge.aws_lb.main[17]",
+            "resourceId": "18d60a64ad66b65617dca62df88dfb2a"
+          },
+          {
+            "address": "module.edge.aws_lb.main[18]",
+            "resourceId": "c747753051412e8fb1ff65082f45ba26"
+          },
+          {
+            "address": "module.edge.aws_lb.main[19]",
+            "resourceId": "3c0bccb97c8963efb266d1906263b8e1"
+          },
+          {
+            "address": "module.edge.aws_lb.main[1]",
+            "resourceId": "4cef888e7b5933a466d3789fcf87e920"
+          },
+          {
+            "address": "module.edge.aws_lb.main[20]",
+            "resourceId": "097fe90ee4362473dbd3e2dbca296529"
+          },
+          {
+            "address": "module.edge.aws_lb.main[21]",
+            "resourceId": "e2b32bf7ef2660aff40e2815cf38ec17"
+          },
+          {
+            "address": "module.edge.aws_lb.main[22]",
+            "resourceId": "54d250a36add64767701f9ad1def85b6"
+          },
+          {
+            "address": "module.edge.aws_lb.main[23]",
+            "resourceId": "16c46cdaf1bb0c15be9c0aacb75ffc14"
+          },
+          {
+            "address": "module.edge.aws_lb.main[24]",
+            "resourceId": "e2a75dee94f8c75ca232eb5e832c781b"
+          },
+          {
+            "address": "module.edge.aws_lb.main[25]",
+            "resourceId": "bc40319c6fb9ab870931c87cafac9372"
+          },
+          {
+            "address": "module.edge.aws_lb.main[26]",
+            "resourceId": "7020d22e7e2e4f845a60f80fa303ab99"
+          },
+          {
+            "address": "module.edge.aws_lb.main[27]",
+            "resourceId": "63084b7f7f7e27fddaf917dabed3b620"
+          },
+          {
+            "address": "module.edge.aws_lb.main[28]",
+            "resourceId": "ced45db70c8afd078b611797676a6fb0"
+          },
+          {
+            "address": "module.edge.aws_lb.main[29]",
+            "resourceId": "6dacb9323d48dbe88ef0b26dbaea081b"
+          },
+          {
+            "address": "module.edge.aws_lb.main[2]",
+            "resourceId": "d0a2ef1f239fd92ff0645af63162e91c"
+          },
+          {
+            "address": "module.edge.aws_lb.main[30]",
+            "resourceId": "96764d6000f7d41110f904d7cd31dde2"
+          },
+          {
+            "address": "module.edge.aws_lb.main[31]",
+            "resourceId": "55f7193944b1ad7bdfa0fdf5deafe846"
+          }
+        ],
+        "modulePath": "module.edge",
+        "nodeKind": "resource",
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "module.edge.aws_lb.main",
+        "type": "aws_lb"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "module.network.aws_subnet.main",
+        "id": "n15",
+        "instanceCount": 52,
+        "instances": [
+          {
+            "address": "module.network.aws_subnet.main[0]",
+            "resourceId": "29edfeaad3864ee6d9305c339d80e03e"
+          },
+          {
+            "address": "module.network.aws_subnet.main[10]",
+            "resourceId": "e7e2452fc1f11b519586fd871898dce3"
+          },
+          {
+            "address": "module.network.aws_subnet.main[11]",
+            "resourceId": "f0642cf9baa9214a8f54cf12892a5e8f"
+          },
+          {
+            "address": "module.network.aws_subnet.main[12]",
+            "resourceId": "eb046c3a2b7853bde288cf0aaa744667"
+          },
+          {
+            "address": "module.network.aws_subnet.main[13]",
+            "resourceId": "05ce983c2bb48382da6a910fab88a12f"
+          },
+          {
+            "address": "module.network.aws_subnet.main[14]",
+            "resourceId": "340ff7afe6ba3688322bb629d3317883"
+          },
+          {
+            "address": "module.network.aws_subnet.main[15]",
+            "resourceId": "6fb4818c136fe3811fe60d4bcbe27bba"
+          },
+          {
+            "address": "module.network.aws_subnet.main[16]",
+            "resourceId": "2737d7a9048f1e41284325fb8c29ac32"
+          },
+          {
+            "address": "module.network.aws_subnet.main[17]",
+            "resourceId": "49495992e10043b2d5d1915f0502cf71"
+          },
+          {
+            "address": "module.network.aws_subnet.main[18]",
+            "resourceId": "879f28665631568ac08bd64fa3d6df23"
+          },
+          {
+            "address": "module.network.aws_subnet.main[19]",
+            "resourceId": "b72f3a81cb7bfc968fb56d2fb2dbcce5"
+          },
+          {
+            "address": "module.network.aws_subnet.main[1]",
+            "resourceId": "61d4f342231bbde4672c4851282b41c4"
+          },
+          {
+            "address": "module.network.aws_subnet.main[20]",
+            "resourceId": "1d3ebd483da9f7a56665547ae01aece3"
+          },
+          {
+            "address": "module.network.aws_subnet.main[21]",
+            "resourceId": "75f39f2116c16a97e8ef1dbc807ae212"
+          },
+          {
+            "address": "module.network.aws_subnet.main[22]",
+            "resourceId": "6feb45679826a5f241564b8dc39089f4"
+          },
+          {
+            "address": "module.network.aws_subnet.main[23]",
+            "resourceId": "3d225491b4162e70bbe8d17632acc3e7"
+          },
+          {
+            "address": "module.network.aws_subnet.main[24]",
+            "resourceId": "0e8a9d93a3a204602998c7cc2467a6f5"
+          },
+          {
+            "address": "module.network.aws_subnet.main[25]",
+            "resourceId": "8487d31b43d8ca930192b6e034bc5526"
+          },
+          {
+            "address": "module.network.aws_subnet.main[26]",
+            "resourceId": "8b7d1c001d095147e44938c5b2dc3879"
+          },
+          {
+            "address": "module.network.aws_subnet.main[27]",
+            "resourceId": "837002b8ae548d9a0c9e752a4e343eb5"
+          },
+          {
+            "address": "module.network.aws_subnet.main[28]",
+            "resourceId": "266d2817c568a76605da964cd437e091"
+          },
+          {
+            "address": "module.network.aws_subnet.main[29]",
+            "resourceId": "aff0338d7126145e11b7bf324eea4d3e"
+          },
+          {
+            "address": "module.network.aws_subnet.main[2]",
+            "resourceId": "8d1de2e70b93d1980669fe345e54c5ee"
+          },
+          {
+            "address": "module.network.aws_subnet.main[30]",
+            "resourceId": "6d6450ce9327e866da0c372c5a78ba54"
+          },
+          {
+            "address": "module.network.aws_subnet.main[31]",
+            "resourceId": "1bb45c2cec8d882872fc4524e898d3a4"
+          }
+        ],
+        "modulePath": "module.network",
+        "nodeKind": "resource",
+        "planned": [
+          {
+            "action": "update",
+            "address": "module.network.aws_subnet.main[0]",
+            "changeId": "441a66c8137a2a3e5fe8b5d68b885a29",
+            "mode": "managed",
+            "node": "n15"
+          }
+        ],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "module.network.aws_subnet.main",
+        "type": "aws_subnet"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "module.observability.aws_cloudwatch_log_group.main",
+        "id": "n16",
+        "instanceCount": 52,
+        "instances": [
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[0]",
+            "resourceId": "c4a8aa8f48161d555f70f04997b615e9"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[10]",
+            "resourceId": "968caef1ca8916cb61753b4a727f8422"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[11]",
+            "resourceId": "b2d1e2669ef0069530ed21e15c0e0e1b"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[12]",
+            "resourceId": "944a1f1bef2b87c9ed9c59c7c2c1e502"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[13]",
+            "resourceId": "153983ffa945d1def9bf6d0b8c2fd50a"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[14]",
+            "resourceId": "7337cb8be5e05a13661efe4a0d5f5e02"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[15]",
+            "resourceId": "188ed19a21141dae3abc51187efc47f1"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[16]",
+            "resourceId": "fe72b84719799a5979213cc99b2b4450"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[17]",
+            "resourceId": "4382e4ed6461678b93d259b6e980e297"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[18]",
+            "resourceId": "0c497f981f571f713e8b1e1b4e71a361"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[19]",
+            "resourceId": "9f80bafcf4853499d58eb4fb2d6cf835"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[1]",
+            "resourceId": "a450d075db4624d7012095ba1bbbe20c"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[20]",
+            "resourceId": "a31f69753df448151e3f389dd0ee744c"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[21]",
+            "resourceId": "58af6db19b3a87db003ebab8386a4dff"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[22]",
+            "resourceId": "6bef9132e9974e0791a99469bfb1fde0"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[23]",
+            "resourceId": "1467d4e16b9aeeda77873c002a18bf8a"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[24]",
+            "resourceId": "611161c524d9ac0440efcfcd8f9aba46"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[25]",
+            "resourceId": "9061c7e5f84ba8e0938763ce54468cc5"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[26]",
+            "resourceId": "3c057a3c112b3ce92a555b50269e35af"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[27]",
+            "resourceId": "299c271c684b1594f5dbb5763bb6d50d"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[28]",
+            "resourceId": "f953e805be628071faf0c250c5db699e"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[29]",
+            "resourceId": "a4c054c96236be5430185b464cd41e66"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[2]",
+            "resourceId": "58af14211dd51aa61eb603cf127be3bf"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[30]",
+            "resourceId": "b30ace2015489f09d2ebf2d8924013e5"
+          },
+          {
+            "address": "module.observability.aws_cloudwatch_log_group.main[31]",
+            "resourceId": "abca367f85328cf29f80bceedec12551"
+          }
+        ],
+        "modulePath": "module.observability",
+        "nodeKind": "resource",
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "module.observability.aws_cloudwatch_log_group.main",
+        "type": "aws_cloudwatch_log_group"
+      },
+      {
+        "confidence": "exact",
+        "displayName": "module.storage.aws_s3_bucket.main",
+        "id": "n17",
+        "instanceCount": 52,
+        "instances": [
+          {
+            "address": "module.storage.aws_s3_bucket.main[0]",
+            "resourceId": "dc7f09b8980e83ad93230f36994489f5"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[10]",
+            "resourceId": "855f0b41669c3392f22890204bdf5194"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[11]",
+            "resourceId": "6381d7f0d431be974a3b32576ce9ca96"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[12]",
+            "resourceId": "03d952b809462db4266ef15aff04b576"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[13]",
+            "resourceId": "548ed5e86cfed2efc9b3b4862e8446ef"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[14]",
+            "resourceId": "cf82cdb4e77f90072182fefa7512b5bc"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[15]",
+            "resourceId": "2a246b91127b8a2b65b3ac33969c1e99"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[16]",
+            "resourceId": "9cd9d0613ec8317d41bc5b0c0604698a"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[17]",
+            "resourceId": "72e1207bf5783933eb1d4bf30d15f330"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[18]",
+            "resourceId": "d39f4f05e50edcbd94e32abafe16b9c5"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[19]",
+            "resourceId": "ec14e67bda63101d74231b86c1f2e400"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[1]",
+            "resourceId": "8014a04cd4613dc0c8bfe638ea32d33e"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[20]",
+            "resourceId": "2785cb4f2220f16b84c3ed8771b0510a"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[21]",
+            "resourceId": "dfcaa4c5d2ad8ec8ab922320965e76b9"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[22]",
+            "resourceId": "e33326f4c41c4a5ada68d3fff05ca466"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[23]",
+            "resourceId": "c34921bb4cfb2140956418c06885e193"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[24]",
+            "resourceId": "c6d42a72474a21140beeb7d18e7befdd"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[25]",
+            "resourceId": "51ef7b3ef22f35bf4cdb696f1b84163a"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[26]",
+            "resourceId": "b1e53fcf321f67bbc8f1ea5bfee24b30"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[27]",
+            "resourceId": "4c1d734231ffb048f6c78edb88bb4ac3"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[28]",
+            "resourceId": "785281761ad3ed0b64ea8006e8ab1380"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[29]",
+            "resourceId": "65bf9c4729c05d9e2983bb0db651ff95"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[2]",
+            "resourceId": "6f32d78907ddbf19cac0db72d54beef6"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[30]",
+            "resourceId": "6b6299c92e36982393a26d12b865cef8"
+          },
+          {
+            "address": "module.storage.aws_s3_bucket.main[31]",
+            "resourceId": "fd2124ac9d1ce89df7849a9e160b6f73"
+          }
+        ],
+        "modulePath": "module.storage",
+        "nodeKind": "resource",
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "resourceAddress": "module.storage.aws_s3_bucket.main",
+        "type": "aws_s3_bucket"
+      }
+    ],
+    "operationId": "00000000000000000000000000000003",
+    "plan": {
+      "changes": 11,
+      "createdAt": "2026-11-06T09:59:00Z",
+      "id": "00000000000000000000000000000002",
+      "kind": "plan",
+      "replace": [],
+      "unmapped": []
+    },
+    "resourceEdges": [
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n4",
+        "to": "n0"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n5",
+        "to": "n0"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n6",
+        "to": "n3"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n7",
+        "to": "n6"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n8",
+        "to": "n6"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n8",
+        "to": "n15"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n9",
+        "to": "n6"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n9",
+        "to": "n15"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n11",
+        "to": "n1"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n11",
+        "to": "n6"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n11",
+        "to": "n15"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n12",
+        "to": "n11"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n13",
+        "to": "n15"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n14",
+        "to": "n9"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n14",
+        "to": "n11"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n15",
+        "to": "n3"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n16",
+        "to": "n5"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n17",
+        "to": "n0"
+      },
+      {
+        "confidence": "declared",
+        "edgeKind": "depends_on",
+        "from": "n17",
+        "to": "n1"
+      }
+    ],
+    "startedAt": "2026-11-06T10:00:00Z",
+    "status": "completed",
+    "summary": {
+      "cycleNodes": 0,
+      "cycles": 0,
+      "dataSources": 1,
+      "derivedEdges": 0,
+      "derivedTruncated": false,
+      "dropped": 0,
+      "edges": 19,
+      "internal": 0,
+      "modules": 0,
+      "nodes": 18,
+      "redacted": 0,
+      "resources": 17,
+      "unknown": 0
+    },
+    "warnings": [],
+    "withheld": false,
+    "workspace": "demo"
+  },
+  "impact": {
+    "directDependencies": [
+      "n3"
+    ],
+    "directDependents": [
+      "n11",
+      "n7",
+      "n8",
+      "n9"
+    ],
+    "downstream": [
+      {
+        "distance": 1,
+        "node": "n7"
+      },
+      {
+        "distance": 1,
+        "node": "n8"
+      },
+      {
+        "distance": 1,
+        "node": "n9"
+      },
+      {
+        "distance": 1,
+        "node": "n11"
+      },
+      {
+        "distance": 2,
+        "node": "n14"
+      },
+      {
+        "distance": 2,
+        "node": "n12"
+      }
+    ],
+    "downstreamResources": 6,
+    "downstreamTotal": 6,
+    "inCycle": false,
+    "node": "n6",
+    "plan": {
+      "elsewhere": [
+        {
+          "action": "read",
+          "address": "data.aws_caller_identity.current",
+          "changeId": "6ab22339dde5396e82aaa73fa1ed9fe8",
+          "mode": "data",
+          "node": "n0"
+        },
+        {
+          "action": "delete",
+          "address": "aws_iam_role.legacy",
+          "changeId": "7a1b79c96ae7f823f86e21f1a802e022",
+          "mode": "managed",
+          "node": "n2"
+        },
+        {
+          "action": "create",
+          "address": "aws_s3_bucket.logs",
+          "changeId": "536f0c4ee5468e0b7604f07168dbc135",
+          "mode": "managed",
+          "node": "n5"
+        },
+        {
+          "action": "forget",
+          "address": "random_password.unused",
+          "changeId": "10fbd2e2feffe59750ea2eb3d68c1a41",
+          "mode": "managed",
+          "node": "n10"
+        },
+        {
+          "action": "update",
+          "address": "module.network.aws_subnet.main[0]",
+          "changeId": "441a66c8137a2a3e5fe8b5d68b885a29",
+          "mode": "managed",
+          "node": "n15"
+        }
+      ],
+      "id": "00000000000000000000000000000002",
+      "inImpact": [
+        {
+          "action": "update",
+          "address": "aws_security_group.web",
+          "changeId": "7ee5dad366c17f0fbaeb4f7680aa8f87",
+          "mode": "managed",
+          "node": "n6"
+        },
+        {
+          "action": "delete",
+          "address": "aws_instance.retired",
+          "changeId": "6d246b952ce59ebaf4f1bbb9a05771e3",
+          "mode": "managed",
+          "node": "n7"
+        },
+        {
+          "action": "update",
+          "address": "aws_db_instance.primary",
+          "changeId": "03d23d8725766af238491b5683e6172a",
+          "mode": "managed",
+          "node": "n8"
+        },
+        {
+          "action": "unknown",
+          "address": "aws_lb.edge",
+          "changeId": "bfc7e1530e3aebf11ca8e2a886601b0e",
+          "mode": "managed",
+          "node": "n9"
+        },
+        {
+          "action": "replace",
+          "address": "module.compute.aws_instance.main[0]",
+          "changeId": "39cbac37a73cc7a7cf2643bd82668f48",
+          "mode": "managed",
+          "node": "n11"
+        },
+        {
+          "action": "replace",
+          "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+          "changeId": "ee9b954e1c5a62927419edb14242741d",
+          "mode": "managed",
+          "node": "n12"
+        }
+      ],
+      "unmapped": []
+    },
+    "truncated": false,
+    "upstream": [
+      {
+        "distance": 1,
+        "node": "n3"
+      }
+    ],
+    "upstreamTotal": 1
+  },
+  "planId": "00000000000000000000000000000002"
+}

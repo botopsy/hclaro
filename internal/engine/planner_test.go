@@ -16,6 +16,9 @@ import (
 // the exact argv it receives; anything unexpected exits 2.
 func planHelper() {
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "graph" {
+		graphHelper(args)
+	}
 	if len(args) == 3 && args[0] == "show" && args[1] == "-json" {
 		b, err := os.ReadFile(args[2])
 		if err != nil {

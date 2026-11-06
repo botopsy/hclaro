@@ -20,7 +20,8 @@ export function PlansView({
   clearReplace,
   openPreflight,
   preflightOpened,
-  copy
+  copy,
+  inspectImpact
 }: {
   project: string;
   // The execution profile this tab uses ("" for none).
@@ -35,6 +36,8 @@ export function PlansView({
   openPreflight?: boolean;
   preflightOpened?: () => void;
   copy: (value: string, label: string) => Promise<void>;
+  // Opens the dependency graph with this plan's changes and the replaced address selected.
+  inspectImpact?: (planId: string, address: string) => void;
 }) {
   const client = useQueryClient();
   const [preflight, setPreflight] = useState(false);
@@ -111,7 +114,7 @@ export function PlansView({
    {failed && <FailedOperation operation={failed} />}
    {applied && <ApplyResult operation={applied} />}
    {failed && plan.data && <p className="info-line">Below is the previous successful plan, created at {clock(plan.data.createdAt)}. It does not reflect the run above.</p>}
-   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <div className="empty-state error-state" role="alert"><p>{plan.error.message}</p></div> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} copy={copy} busy={!!running} onApply={() => setApplying(true)} /> : !running && !failed && <div className="empty-state"><FileDiff size={30} /><h2>No plans yet</h2><p>Run a plan to see every proposed change: creates, updates, replacements, deletions, data reads and output changes. Nothing runs until you confirm.</p>{options.data?.canPlan && <Button variant="outline" onClick={() => setPreflight(true)}><Play size={14} />Run plan</Button>}</div>}
+   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <div className="empty-state error-state" role="alert"><p>{plan.error.message}</p></div> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} copy={copy} busy={!!running} onApply={() => setApplying(true)} onInspectImpact={inspectImpact} /> : !running && !failed && <div className="empty-state"><FileDiff size={30} /><h2>No plans yet</h2><p>Run a plan to see every proposed change: creates, updates, replacements, deletions, data reads and output changes. Nothing runs until you confirm.</p>{options.data?.canPlan && <Button variant="outline" onClick={() => setPreflight(true)}><Play size={14} />Run plan</Button>}</div>}
    {preflightOpen && options.data && <PreflightDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
    {applying && plan.data && <ApplyDialog plan={plan.data} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
   </div>;

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Dependency graph and blast radius (M11, draft)
+
+- A **Graph** view for the project opened from the terminal. **Generate graph** runs, after a preflight dialog, exactly `terraform graph` / `tofu graph` (no flags) and keeps a redacted model in memory. It never plans, refreshes, applies or reads a saved plan.
+- Reads both the Terraform 1.7+ resource-only format and the full walk graph of earlier Terraform and OpenTofu; drops engine bookkeeping nodes, hides internal nodes by default and labels resource links through them as derived; detects cycles; withholds secret-shaped node names; refuses malformed or oversized output.
+- Canvas with zoom, pan, fit, module collapse, provider/type/data/internal filters and search, plus an accessible virtualized list. The inspector shows dependencies, direct dependents and **Potential impact** (reachability with hop counts), maps resources to recorded instances only by address grammar, and links to **Resources**.
+- **Compare with plan** overlays the **confirmed planned changes** of a complete, current plan and splits them, for the selected node, into those in its potential impact and the rest. Replace plans offer an optional **Inspect impact** step. A dependency is never presented as the cause of a change.
+- New routes: `GET /api/v1/graphs/options`, `POST /api/v1/graphs`, `GET /api/v1/graphs`, `GET /api/v1/graphs/{id}`, `GET /api/v1/graphs/{id}/nodes/{node}`. New package `internal/graph`; engine `Grapher` interface.
+
 ### Drift detection (M10, draft)
 
 - A **Drift** view for the project opened from the terminal. **Check drift** runs, after a preflight dialog, `plan -input=false -json -out=<private temp file> -refresh-only` with the selected variable files and execution profile, reads it back with `show -json` and deletes it. It never runs `refresh`, applies the refresh-only plan, writes state or starts a normal plan.

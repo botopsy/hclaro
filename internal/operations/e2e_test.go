@@ -180,3 +180,96 @@ func TestDriftScanThroughSyntheticCLI(t *testing.T) {
 		})
 	}
 }
+
+// TestGraphThroughSyntheticCLI generates graphs with the real CLI adapter against the
+// compiled synthetic engine as Terraform (resource-only format) and OpenTofu (full walk
+// graph). The spy must show exactly one bare `graph` and only startup reads otherwise.
+func TestGraphThroughSyntheticCLI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the synthetic engine")
+	}
+	dir := t.TempDir()
+	build := func(name string) string {
+		bin := filepath.Join(dir, name)
+		if runtime.GOOS == "windows" {
+			bin += ".exe"
+		}
+		cmd := exec.Command("go", "build", "-o", bin, "hclaro/scripts/fake-engine")
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		return bin
+	}
+	bins := map[string]string{"terraform": build("terraform"), "tofu": build("tofu")}
+	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_graph", "TF_CLI_ARGS_show", "TF_CLI_ARGS_workspace"} {
+		t.Setenv(key, "")
+	}
+	for _, tc := range []struct {
+		engine, mode, status, format, code string
+		resources                          int
+	}{
+		{"terraform", "", GraphCompleted, "resources", "", 17},
+		{"tofu", "", GraphCompleted, "full", "", 17},
+		{"terraform", "large", GraphCompleted, "resources", "", 1000},
+		{"terraform", "cycle", GraphCompleted, "resources", "", 7},
+		{"terraform", "malformed", GraphFailed, "", "graph_format", 0},
+		{"tofu", "init", GraphFailed, "", "init_required", 0},
+		{"terraform", "leak", GraphCompleted, "resources", "", 17},
+	} {
+		t.Run(tc.engine+"/"+tc.mode, func(t *testing.T) {
+			spy := filepath.Join(t.TempDir(), "argv")
+			t.Setenv("HCLARO_FAKE_SPY", spy)
+			t.Setenv("HCLARO_FAKE_GRAPH", tc.mode)
+			t.Setenv("AWS_SECRET_ACCESS_KEY", canary)
+			root := t.TempDir()
+			cli := &engine.CLI{Name: tc.engine, Executable: bins[tc.engine], Root: root}
+			store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
+			store.Load(context.Background(), cli, tc.engine)
+			m := NewManager(store, cli, root)
+			m.TempDir = t.TempDir()
+			t.Cleanup(func() { m.Close(5 * time.Second) })
+			op, run, err := m.StartGraph(GraphStart{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wait(t, m, op.ID)
+			view, err := m.Graph(run.ID, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			code := ""
+			if view.Diagnostic != nil {
+				code = view.Diagnostic.Code
+			}
+			if view.Status != tc.status || view.Format != tc.format || code != tc.code || view.Summary.Resources != tc.resources {
+				t.Fatalf("%+v", view.GraphRun)
+			}
+			_, log, _ := m.Operation(op.ID)
+			events, _, _, _ := log.Since(0)
+			assertNoCanary(t, view, m.Operations(), events)
+			assertTempEmpty(t, m)
+			b, err := os.ReadFile(spy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			graphs := 0
+			for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+				args := strings.Split(line, "\x00")
+				switch args[0] {
+				case "version", "workspace", "show":
+				case "graph":
+					graphs++
+					if len(args) != 1 {
+						t.Fatalf("graph argv %q", args)
+					}
+				default:
+					t.Fatalf("graph generation ran %q", args)
+				}
+			}
+			if graphs != 1 {
+				t.Fatalf("%d graph runs", graphs)
+			}
+		})
+	}
+}

@@ -219,6 +219,18 @@ describe('Plans', () => {
     expect(summary).toHaveTextContent('expect downtime');
   });
 
+  it('offers Inspect impact for a replace plan and starts nothing', async () => {
+    const replacePlan = { ...plan, kind: 'replace', replace: ['module.compute.aws_instance.main[0]'] } as Plan;
+    serve(url => url.endsWith(`/plans/${planId}`) ? Response.json(replacePlan) : undefined);
+    const inspect = vi.fn();
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" choosePlan={vi.fn()} copy={async () => {}} inspectImpact={inspect} /></QueryClientProvider>);
+    const summary = await screen.findByRole('region', { name: 'Requested replacements' });
+    expect(summary).toHaveTextContent('It does not change what is applied');
+    await userEvent.click(within(summary).getByRole('button', { name: 'Inspect impact' }));
+    expect(inspect).toHaveBeenCalledWith(planId, 'module.compute.aws_instance.main[0]');
+    expect(posts).toHaveLength(0);
+  });
+
   it('applies only after the server approval and the typed phrase; declining sends nothing', async () => {
     serve((url, init) => {
       if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
