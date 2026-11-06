@@ -1,0 +1,212 @@
+{
+  "format_version": "1.0",
+  "values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_vpc.main",
+          "mode": "managed",
+          "type": "aws_vpc",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "id": "vpc-devmain",
+            "cidr_block": "10.0.0.0/16",
+            "enable_dns_support": true,
+            "tags": {
+              "Environment": "dev",
+              "Team": "platform"
+            }
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "aws_s3_bucket.logs",
+          "mode": "managed",
+          "type": "aws_s3_bucket",
+          "name": "logs",
+          "provider_name": "registry.terraform.io/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "id": "hclaro-dev-logs",
+            "bucket": "hclaro-dev-logs",
+            "region": "us-east-1",
+            "force_destroy": false,
+            "tags": {
+              "Environment": "dev"
+            }
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "aws_db_instance.main",
+          "mode": "managed",
+          "type": "aws_db_instance",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "id": "dev-db",
+            "engine": "postgres",
+            "engine_version": "16.3",
+            "password": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+            "master_user_secret": [
+              {
+                "secret_arn": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+              }
+            ],
+            "description": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+          },
+          "sensitive_values": {
+            "password": true,
+            "master_user_secret": [
+              {
+                "secret_arn": true
+              }
+            ]
+          }
+        },
+        {
+          "address": "aws_sns_topic.alerts",
+          "mode": "managed",
+          "type": "aws_sns_topic",
+          "name": "alerts",
+          "provider_name": "registry.terraform.io/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "id": "dev-alerts",
+            "name": "dev-alerts"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "data.aws_ami.ubuntu",
+          "mode": "data",
+          "type": "aws_ami",
+          "name": "ubuntu",
+          "provider_name": "registry.terraform.io/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "id": "ami-ubuntu-2404",
+            "name": "ubuntu-24.04",
+            "most_recent": true
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "aws_iam_role.debug",
+          "mode": "managed",
+          "type": "aws_iam_role",
+          "name": "debug",
+          "provider_name": "registry.terraform.io/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "id": "dev-debug",
+            "name": "dev-debug"
+          },
+          "sensitive_values": {}
+        }
+      ],
+      "child_modules": [
+        {
+          "address": "module.app",
+          "resources": [
+            {
+              "address": "module.app.aws_instance.web[0]",
+              "mode": "managed",
+              "type": "aws_instance",
+              "name": "web",
+              "provider_name": "registry.terraform.io/hashicorp/aws",
+              "schema_version": 0,
+              "values": {
+                "id": "i-devweb0",
+                "ami": "ami-ubuntu-2404",
+                "instance_type": "t3.small",
+                "user_data": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+                "tags": {
+                  "Name": "dev-web-0"
+                }
+              },
+              "sensitive_values": {},
+              "index": 0
+            },
+            {
+              "address": "module.app.aws_instance.web[1]",
+              "mode": "managed",
+              "type": "aws_instance",
+              "name": "web",
+              "provider_name": "registry.terraform.io/hashicorp/aws",
+              "schema_version": 0,
+              "values": {
+                "id": "i-devweb1",
+                "ami": "ami-ubuntu-2404",
+                "instance_type": "t3.small",
+                "user_data": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+                "tags": {
+                  "Name": "dev-web-1"
+                }
+              },
+              "sensitive_values": {},
+              "index": 1
+            },
+            {
+              "address": "module.app.aws_lb.front",
+              "mode": "managed",
+              "type": "aws_lb",
+              "name": "front",
+              "provider_name": "registry.terraform.io/hashicorp/aws",
+              "schema_version": 0,
+              "values": {
+                "id": "dev-front",
+                "name": "dev-front",
+                "internal": false,
+                "subnets": [
+                  "subnet-a",
+                  "subnet-b"
+                ]
+              },
+              "sensitive_values": {}
+            }
+          ]
+        },
+        {
+          "address": "module.monitoring",
+          "resources": [
+            {
+              "address": "module.monitoring.aws_cloudwatch_metric_alarm.cpu[\"api\"]",
+              "mode": "managed",
+              "type": "aws_cloudwatch_metric_alarm",
+              "name": "cpu",
+              "provider_name": "registry.terraform.io/hashicorp/aws",
+              "schema_version": 0,
+              "values": {
+                "id": "dev-api-cpu",
+                "alarm_name": "dev-api-cpu",
+                "threshold": 80
+              },
+              "sensitive_values": {},
+              "index": "api"
+            },
+            {
+              "address": "module.monitoring.aws_cloudwatch_metric_alarm.cpu[\"worker.batch\"]",
+              "mode": "managed",
+              "type": "aws_cloudwatch_metric_alarm",
+              "name": "cpu",
+              "provider_name": "registry.terraform.io/hashicorp/aws",
+              "schema_version": 0,
+              "values": {
+                "id": "dev-worker-cpu",
+                "alarm_name": "dev-worker-cpu",
+                "threshold": 90
+              },
+              "sensitive_values": {},
+              "index": "worker.batch"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "terraform_version": "1.9.8"
+}

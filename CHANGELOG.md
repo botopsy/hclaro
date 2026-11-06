@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Workspace comparison (M12, draft)
+
+- **Compare** in the sidebar compares the recorded state of two Hub workspaces: `{project, workspace, execution profile}` per side, in one project or across project roots, Terraform and OpenTofu mixed. Each side shows its root, engine, backend and last read time. Nothing is read until **Compare…** is confirmed; each side is read like a Hub tab (`show -json` with a per-command `TF_WORKSPACE`), and a side already read in this session is reused.
+- Instances match by exact canonical address; renamed modules, resources or instances pair only through explicit mapping rules, and a mapping conflict is reported as uncomparable. Statuses: attribute differences, only left, only right, same, unknown (redacted values not compared) and uncomparable (type, mode or provider differs). Data sources are counted separately. The page states that a difference is not drift.
+- Ignore rules (attribute paths, optionally per resource type) and substitution rules (`dev` → `prod`) for expected differences, with per-rule match counts and a warning that they can hide divergence. Credential-shaped rule text is refused; rules are not saved to disk.
+- Status filters, search, mode/type filters, paging, a side-by-side redacted attribute diff, **Open in left/right workspace** deep links (with the same profile), Modules and Providers tabs, and Markdown/JSON export of a redacted summary (paths and counts, no values, no folder paths).
+- A side that cannot be read makes the comparison partial, never empty; reading a side again, releasing it, or changing its project or profile makes the comparison stale and withholds its results.
+- New routes: `GET /api/v1/comparisons/target`, `POST /api/v1/comparisons`, `GET /api/v1/comparisons`, `GET /api/v1/comparisons/{id}`, `…/resources`, `…/resources/{match}`, `…/export`. New package `internal/compare`; client route `/compare`. `make demo-hub` adds two comparison projects.
+
 ### Dependency graph and blast radius (M11, draft)
 
 - A **Graph** view for the project opened from the terminal. **Generate graph** runs, after a preflight dialog, exactly `terraform graph` / `tofu graph` (no flags) and keeps a redacted model in memory. It never plans, refreshes, applies or reads a saved plan.

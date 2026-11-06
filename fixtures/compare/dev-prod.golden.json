@@ -1,0 +1,575 @@
+{
+  "bucket": {
+    "attributes": [
+      {
+        "left": "hclaro-dev-logs",
+        "normalized": true,
+        "path": "bucket",
+        "right": "hclaro-prod-logs",
+        "rule": 1,
+        "status": "same"
+      },
+      {
+        "left": false,
+        "path": "force_destroy",
+        "right": false,
+        "status": "same"
+      },
+      {
+        "left": "hclaro-dev-logs",
+        "normalized": true,
+        "path": "id",
+        "right": "hclaro-prod-logs",
+        "rule": 1,
+        "status": "same"
+      },
+      {
+        "path": "region",
+        "rule": 2,
+        "status": "ignored"
+      },
+      {
+        "left": "dev",
+        "normalized": true,
+        "path": "tags.Environment",
+        "right": "prod",
+        "rule": 1,
+        "status": "same"
+      }
+    ],
+    "differences": 0,
+    "id": "5df60b23cf8d50a5555fa38639aea2ca",
+    "ignored": 1,
+    "left": {
+      "bucket": "hclaro-dev-logs",
+      "force_destroy": false,
+      "id": "hclaro-dev-logs",
+      "region": "us-east-1",
+      "tags": {
+        "Environment": "dev"
+      }
+    },
+    "leftAddress": "aws_s3_bucket.logs",
+    "leftId": "bd3aaa1aef21e61274b0e2f61eeb5626",
+    "mode": "managed",
+    "module": "",
+    "normalized": 3,
+    "notCompared": 0,
+    "paths": [],
+    "provider": "registry.terraform.io/hashicorp/aws",
+    "right": {
+      "bucket": "hclaro-prod-logs",
+      "force_destroy": false,
+      "id": "hclaro-prod-logs",
+      "region": "eu-west-1",
+      "tags": {
+        "Environment": "prod"
+      }
+    },
+    "rightAddress": "aws_s3_bucket.logs",
+    "rightId": "bd3aaa1aef21e61274b0e2f61eeb5626",
+    "status": "same",
+    "type": "aws_s3_bucket"
+  },
+  "comparison": {
+    "createdAt": "2026-11-06T10:00:00Z",
+    "current": true,
+    "id": "cccccccccccccccccccccccccccccccc",
+    "left": {
+      "alias": "Infra",
+      "backend": "local",
+      "capturedAt": "2026-11-06T10:00:00Z",
+      "contextId": "1111111111111111111111111111111111111111111111111111111111111111",
+      "engine": "terraform",
+      "executionMode": "local-cli",
+      "rootPath": "/synthetic/network",
+      "status": "ready",
+      "target": {
+        "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "workspace": "dev"
+      },
+      "version": "1.9.8"
+    },
+    "modules": [
+      {
+        "address": "",
+        "counts": {
+          "different": 1,
+          "onlyLeft": 1,
+          "onlyRight": 1,
+          "same": 2,
+          "total": 7,
+          "uncomparable": 1,
+          "unknown": 1
+        },
+        "left": 6,
+        "right": 6,
+        "status": "both"
+      },
+      {
+        "address": "module.app",
+        "counts": {
+          "different": 2,
+          "onlyLeft": 0,
+          "onlyRight": 1,
+          "same": 1,
+          "total": 4,
+          "uncomparable": 0,
+          "unknown": 0
+        },
+        "left": 3,
+        "right": 4,
+        "status": "both"
+      },
+      {
+        "address": "module.monitoring",
+        "counts": {
+          "different": 1,
+          "onlyLeft": 0,
+          "onlyRight": 0,
+          "same": 1,
+          "total": 2,
+          "uncomparable": 0,
+          "unknown": 0
+        },
+        "left": 2,
+        "right": 2,
+        "status": "both"
+      }
+    ],
+    "notice": "Different is not necessarily drift. Both sides are recorded state of separate environments; expected differences (names, regions, sizes) look exactly like unexpected ones. Drift is recorded state versus live provider data, which only a drift scan checks.",
+    "providers": [
+      {
+        "left": 0,
+        "notes": [],
+        "right": 1,
+        "rightSource": "registry.terraform.io/acme/aws",
+        "source": "acme/aws",
+        "status": "only-right"
+      },
+      {
+        "left": 11,
+        "leftSource": "registry.terraform.io/hashicorp/aws",
+        "notes": [],
+        "right": 11,
+        "rightSource": "registry.terraform.io/hashicorp/aws",
+        "source": "hashicorp/aws",
+        "status": "both"
+      }
+    ],
+    "right": {
+      "alias": "Infra",
+      "backend": "local",
+      "capturedAt": "2026-11-06T10:00:00Z",
+      "contextId": "2222222222222222222222222222222222222222222222222222222222222222",
+      "engine": "terraform",
+      "executionMode": "local-cli",
+      "rootPath": "/synthetic/network",
+      "status": "ready",
+      "target": {
+        "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "workspace": "prod"
+      },
+      "version": "1.9.8"
+    },
+    "rules": [
+      {
+        "kind": "substitute",
+        "left": "dev",
+        "right": "prod"
+      },
+      {
+        "kind": "ignore",
+        "path": "region"
+      },
+      {
+        "kind": "map",
+        "left": "module.legacy",
+        "right": "module.app"
+      }
+    ],
+    "status": "ready",
+    "summary": {
+      "data": {
+        "different": 0,
+        "onlyLeft": 0,
+        "onlyRight": 1,
+        "same": 1,
+        "total": 2,
+        "uncomparable": 0,
+        "unknown": 0
+      },
+      "ignoredAttributes": 1,
+      "left": {
+        "data": 1,
+        "managed": 10,
+        "modules": 3,
+        "providers": 1
+      },
+      "managed": {
+        "different": 4,
+        "onlyLeft": 1,
+        "onlyRight": 1,
+        "same": 3,
+        "total": 11,
+        "uncomparable": 1,
+        "unknown": 1
+      },
+      "mapped": 0,
+      "normalized": 16,
+      "notCompared": 5,
+      "right": {
+        "data": 2,
+        "managed": 10,
+        "modules": 3,
+        "providers": 2
+      },
+      "ruleHits": [
+        16,
+        1,
+        0
+      ]
+    },
+    "truncated": false,
+    "types": [
+      "aws_ami",
+      "aws_caller_identity",
+      "aws_cloudwatch_metric_alarm",
+      "aws_db_instance",
+      "aws_iam_role",
+      "aws_instance",
+      "aws_lb",
+      "aws_s3_bucket",
+      "aws_sns_topic",
+      "aws_vpc"
+    ],
+    "warnings": [
+      "Mapping rule 3 (module.legacy → module.app) matched no left address."
+    ],
+    "withheld": false
+  },
+  "database": {
+    "attributes": [
+      {
+        "path": "description",
+        "status": "sensitive"
+      },
+      {
+        "left": "postgres",
+        "path": "engine",
+        "right": "postgres",
+        "status": "same"
+      },
+      {
+        "left": "16.3",
+        "path": "engine_version",
+        "right": "16.3",
+        "status": "same"
+      },
+      {
+        "left": "dev-db",
+        "normalized": true,
+        "path": "id",
+        "right": "prod-db",
+        "rule": 1,
+        "status": "same"
+      },
+      {
+        "path": "master_user_secret",
+        "status": "sensitive"
+      },
+      {
+        "path": "password",
+        "status": "sensitive"
+      }
+    ],
+    "differences": 0,
+    "id": "54d7e4db609ad4efa51c52f6e7e720b3",
+    "ignored": 0,
+    "left": {
+      "description": "[redacted]",
+      "engine": "postgres",
+      "engine_version": "16.3",
+      "id": "dev-db",
+      "master_user_secret": "[redacted]",
+      "password": "[redacted]"
+    },
+    "leftAddress": "aws_db_instance.main",
+    "leftId": "9468970500753318e647bfe7f3479906",
+    "mode": "managed",
+    "module": "",
+    "normalized": 1,
+    "notCompared": 3,
+    "paths": [],
+    "provider": "registry.terraform.io/hashicorp/aws",
+    "reason": "No visible differences, but 3 redacted values were not compared. Equality cannot be confirmed.",
+    "right": {
+      "description": "[redacted]",
+      "engine": "postgres",
+      "engine_version": "16.3",
+      "id": "prod-db",
+      "master_user_secret": "[redacted]",
+      "password": "[redacted]"
+    },
+    "rightAddress": "aws_db_instance.main",
+    "rightId": "9468970500753318e647bfe7f3479906",
+    "status": "unknown",
+    "type": "aws_db_instance"
+  },
+  "page": {
+    "matches": [
+      {
+        "differences": 0,
+        "id": "54d7e4db609ad4efa51c52f6e7e720b3",
+        "ignored": 0,
+        "leftAddress": "aws_db_instance.main",
+        "leftId": "9468970500753318e647bfe7f3479906",
+        "mode": "managed",
+        "module": "",
+        "normalized": 1,
+        "notCompared": 3,
+        "paths": [],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "reason": "No visible differences, but 3 redacted values were not compared. Equality cannot be confirmed.",
+        "rightAddress": "aws_db_instance.main",
+        "rightId": "9468970500753318e647bfe7f3479906",
+        "status": "unknown",
+        "type": "aws_db_instance"
+      },
+      {
+        "differences": 0,
+        "id": "2f2b76da9be26ef121ee74bd68c612ea",
+        "ignored": 0,
+        "leftAddress": "aws_iam_role.debug",
+        "leftId": "2a6d552d2e338f8d1aebb654246da026",
+        "mode": "managed",
+        "module": "",
+        "normalized": 0,
+        "notCompared": 0,
+        "paths": [],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "status": "only-left",
+        "type": "aws_iam_role"
+      },
+      {
+        "differences": 0,
+        "id": "5df60b23cf8d50a5555fa38639aea2ca",
+        "ignored": 1,
+        "leftAddress": "aws_s3_bucket.logs",
+        "leftId": "bd3aaa1aef21e61274b0e2f61eeb5626",
+        "mode": "managed",
+        "module": "",
+        "normalized": 3,
+        "notCompared": 0,
+        "paths": [],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "aws_s3_bucket.logs",
+        "rightId": "bd3aaa1aef21e61274b0e2f61eeb5626",
+        "status": "same",
+        "type": "aws_s3_bucket"
+      },
+      {
+        "differences": 0,
+        "id": "97e6f59990f606520446a9ef77fb03e5",
+        "ignored": 0,
+        "leftAddress": "aws_sns_topic.alerts",
+        "leftId": "40699631ce3bc244b93c9a54ac36bff1",
+        "mode": "managed",
+        "module": "",
+        "normalized": 0,
+        "notCompared": 0,
+        "paths": [],
+        "provider": "registry.terraform.io/acme/aws",
+        "reason": "The provider sources differ (hashicorp/aws and acme/aws), so attributes may not mean the same thing.",
+        "rightAddress": "aws_sns_topic.alerts",
+        "rightId": "40699631ce3bc244b93c9a54ac36bff1",
+        "status": "uncomparable",
+        "type": "aws_sns_topic"
+      },
+      {
+        "differences": 1,
+        "id": "4a7dc32956e456eb26daa73faf99cc62",
+        "ignored": 0,
+        "leftAddress": "aws_vpc.main",
+        "leftId": "ec67d780682f42d715adc8f19a5b2e76",
+        "mode": "managed",
+        "module": "",
+        "normalized": 2,
+        "notCompared": 0,
+        "paths": [
+          "cidr_block"
+        ],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "aws_vpc.main",
+        "rightId": "ec67d780682f42d715adc8f19a5b2e76",
+        "status": "attribute-different",
+        "type": "aws_vpc"
+      },
+      {
+        "differences": 0,
+        "id": "c996b121a6e6c573a4d770565edcb9ac",
+        "ignored": 0,
+        "leftAddress": "data.aws_ami.ubuntu",
+        "leftId": "c9e4a79bf4871c69a82faf83050c78f1",
+        "mode": "data",
+        "module": "",
+        "normalized": 0,
+        "notCompared": 0,
+        "paths": [],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "data.aws_ami.ubuntu",
+        "rightId": "c9e4a79bf4871c69a82faf83050c78f1",
+        "status": "same",
+        "type": "aws_ami"
+      },
+      {
+        "differences": 0,
+        "id": "494efee79226bd201360e34ee850d79d",
+        "ignored": 0,
+        "mode": "data",
+        "module": "",
+        "normalized": 0,
+        "notCompared": 0,
+        "paths": [],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "data.aws_caller_identity.current",
+        "rightId": "a0199ee6ee7148d16f5b0c9158fb8362",
+        "status": "only-right",
+        "type": "aws_caller_identity"
+      },
+      {
+        "differences": 1,
+        "id": "f77ce427b6a7725f443614a9a53bee87",
+        "ignored": 0,
+        "leftAddress": "module.app.aws_instance.web[0]",
+        "leftId": "27425a7d785797b1bede1d457066f5f7",
+        "mode": "managed",
+        "module": "module.app",
+        "normalized": 2,
+        "notCompared": 1,
+        "paths": [
+          "instance_type"
+        ],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "module.app.aws_instance.web[0]",
+        "rightId": "27425a7d785797b1bede1d457066f5f7",
+        "status": "attribute-different",
+        "type": "aws_instance"
+      },
+      {
+        "differences": 1,
+        "id": "649f44d9393446bef638fce337da8c10",
+        "ignored": 0,
+        "leftAddress": "module.app.aws_instance.web[1]",
+        "leftId": "32b0dbcbc04f0742f92c038dc1e5b167",
+        "mode": "managed",
+        "module": "module.app",
+        "normalized": 2,
+        "notCompared": 1,
+        "paths": [
+          "instance_type"
+        ],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "module.app.aws_instance.web[1]",
+        "rightId": "32b0dbcbc04f0742f92c038dc1e5b167",
+        "status": "attribute-different",
+        "type": "aws_instance"
+      },
+      {
+        "differences": 0,
+        "id": "b8c0724818564a3709f92777d8c455ef",
+        "ignored": 0,
+        "mode": "managed",
+        "module": "module.app",
+        "normalized": 0,
+        "notCompared": 0,
+        "paths": [],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "module.app.aws_instance.web[2]",
+        "rightId": "62559738a04ee97bee7f66a5d537d0a9",
+        "status": "only-right",
+        "type": "aws_instance"
+      },
+      {
+        "differences": 0,
+        "id": "49404d3427f45cb86a8d05d13debdeca",
+        "ignored": 0,
+        "leftAddress": "module.app.aws_lb.front",
+        "leftId": "696a62fb926fd0ae249279469fccecf7",
+        "mode": "managed",
+        "module": "module.app",
+        "normalized": 2,
+        "notCompared": 0,
+        "paths": [],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "module.app.aws_lb.front",
+        "rightId": "696a62fb926fd0ae249279469fccecf7",
+        "status": "same",
+        "type": "aws_lb"
+      },
+      {
+        "differences": 1,
+        "id": "8bab59257d75b4a193960a7da7686255",
+        "ignored": 0,
+        "leftAddress": "module.monitoring.aws_cloudwatch_metric_alarm.cpu[\"api\"]",
+        "leftId": "0487d599b97828e1056fb10780b51c22",
+        "mode": "managed",
+        "module": "module.monitoring",
+        "normalized": 2,
+        "notCompared": 0,
+        "paths": [
+          "threshold"
+        ],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "module.monitoring.aws_cloudwatch_metric_alarm.cpu[\"api\"]",
+        "rightId": "0487d599b97828e1056fb10780b51c22",
+        "status": "attribute-different",
+        "type": "aws_cloudwatch_metric_alarm"
+      },
+      {
+        "differences": 0,
+        "id": "77b23e2d57a128d2d48eeb5d9aa6a307",
+        "ignored": 0,
+        "leftAddress": "module.monitoring.aws_cloudwatch_metric_alarm.cpu[\"worker.batch\"]",
+        "leftId": "dcd6fe6054e7e1b39211e53a00efa100",
+        "mode": "managed",
+        "module": "module.monitoring",
+        "normalized": 2,
+        "notCompared": 0,
+        "paths": [],
+        "provider": "registry.terraform.io/hashicorp/aws",
+        "rightAddress": "module.monitoring.aws_cloudwatch_metric_alarm.cpu[\"worker.batch\"]",
+        "rightId": "dcd6fe6054e7e1b39211e53a00efa100",
+        "status": "same",
+        "type": "aws_cloudwatch_metric_alarm"
+      }
+    ],
+    "total": 13
+  },
+  "web": {
+    "attributes": [],
+    "differences": 0,
+    "id": "b8c0724818564a3709f92777d8c455ef",
+    "ignored": 0,
+    "left": null,
+    "mode": "managed",
+    "module": "module.app",
+    "normalized": 0,
+    "notCompared": 0,
+    "paths": [],
+    "provider": "registry.terraform.io/hashicorp/aws",
+    "right": {
+      "ami": "ami-ubuntu-2404",
+      "id": "i-prodweb2",
+      "instance_type": "m6i.large",
+      "tags": {
+        "Name": "prod-web-2"
+      },
+      "user_data": "[redacted]"
+    },
+    "rightAddress": "module.app.aws_instance.web[2]",
+    "rightId": "62559738a04ee97bee7f66a5d537d0a9",
+    "status": "only-right",
+    "type": "aws_instance"
+  }
+}

@@ -50,6 +50,7 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 	if hub != nil {
 		projectRoutes(mux, hub)
 		profileRoutes(mux, hub)
+		comparisonRoutes(mux, hub)
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { errorJSON(w, 404, "route_not_found") })
 	files := http.FileServer(http.FS(assets))
@@ -74,10 +75,10 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 	return security.Guard(host, token, csrf, mux)
 }
 
-// clientRoute matches the Hub's client-side routes: /projects, /projects/<id> and
-// /projects/<id>/workspaces/<name>/<view>. Segments are only routing hints; the server
-// resolves IDs and names itself.
-var clientRoute = regexp.MustCompile(`^/projects(/[0-9a-f]{32}(/workspaces/[A-Za-z0-9_-]{1,90}(/(resources|overview|modules|providers|tools))?)?)?/?$`)
+// clientRoute matches the Hub's client-side routes: /projects, /projects/<id>,
+// /projects/<id>/workspaces/<name>/<view> and /compare. Segments are only routing hints;
+// the server resolves IDs and names itself.
+var clientRoute = regexp.MustCompile(`^(/projects(/[0-9a-f]{32}(/workspaces/[A-Za-z0-9_-]{1,90}(/(resources|overview|modules|providers|tools))?)?)?|/compare)/?$`)
 
 type workspaceResponse struct {
 	workspace.Snapshot

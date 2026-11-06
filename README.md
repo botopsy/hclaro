@@ -20,7 +20,7 @@ Do not install the fake executable on your normal PATH.
 make demo-hub
 ```
 
-opens the Workspace Hub with three synthetic projects: a Terraform project with `default`, `dev` and `prod` workspaces, an OpenTofu project and an uninitialized one. They and their registry live in `.cache/hub-demo`; your real registry is not used.
+opens the Workspace Hub with three synthetic projects: a Terraform project with `default`, `dev` and `prod` workspaces, an OpenTofu project and an uninitialized one, plus two comparison roots (`stack` with `dev` and `prod`, and `stack-tofu`, the same stack recorded by OpenTofu, whose `default` workspace has a renamed module) for **Compare workspaces**. They and their registry live in `.cache/hub-demo`; your real registry is not used.
 
 ## Build from source
 
@@ -142,6 +142,21 @@ An **execution profile** names everything a command needs besides the project fo
 - Without a profile, everything behaves as before.
 
 Profiles are saved in `profiles.json` next to `projects.json` (schema `version: 1`, atomic `0600` writes, same recovery rules). Removing a project from the Hub removes its profiles.
+
+### Compare workspaces
+
+**Compare** in the sidebar lines up the recorded state of two workspaces, for example `dev` and `prod` of one project, or one stack in two project roots (Terraform and OpenTofu roots can be compared with each other). Each side is a registered Hub project, a CLI workspace and an optional execution profile; the card shows the root folder, engine, backend and execution mode, and when that workspace was last read in this session. Nothing is read when the page opens. **List** runs `version` and `workspace list` for that project, as on the project page.
+
+**Compare…** opens a dialog and, after you confirm, opens a read context for each side, exactly like opening the workspace in a Hub tab: `version`, `workspace list`, `workspace show` and `show -json`, with a per-command `TF_WORKSPACE` and the side's profile environment. A side already read in this session is reused without running anything; **Read both sides again** forces fresh reads. No plan, refresh, workspace selection or state write runs.
+
+- **Matching.** Resource instances match only by identical canonical address (instance keys included). A renamed module, resource or instance pairs only through an explicit **mapping rule** (`module.app` → `module.application`), which rewrites the left address prefix at a segment boundary. A mapping that lands on an address that is already matched is reported, and the instance is **uncomparable** instead of guessed.
+- **Statuses.** *Attribute differences*, *only in left*, *only in right*, *same*, **unknown** (no visible difference, but redacted values were not compared, so equality cannot be confirmed) and **uncomparable** (different type, managed vs data source, a different provider such as `hashicorp/aws` vs a fork, or a mapping conflict). The same provider from `registry.terraform.io` and `registry.opentofu.org` is one provider, with a note. Managed resources and data sources are counted separately.
+- **Different is not necessarily drift.** Both sides are recorded state of separate environments; an expected difference (a name, a region, a size) looks exactly like an unexpected one. Nothing is ever labeled drift; drift is checked only by a drift scan.
+- **Rules** for expected differences, kept in this browser tab and sent with the comparison only: **Ignore attribute** (`region`, `tags.Environment`, `tags["cost-center"]`, `ingress[*].cidr_blocks`, optionally for one resource type; a path also covers everything below it) and **Treat values as equal** (a substitution such as `dev` → `prod`, so `dev-api` and `prod-api` compare equal; optionally limited to a path). The page warns that rules can hide meaningful divergence and shows how many values each rule matched. Rule text that looks like a credential is refused.
+- **Secrets.** Attribute values are redacted on the server by the explorer's policy before they are compared. A redacted value is never compared and never shown (*redacted · not compared*), so the diff cannot reveal whether two secrets are equal. Rules hold paths and tokens, never values.
+- **Views.** Status cards double as filters; **Resources** has search, mode and type filters and 100 rows per page; the details drawer shows a side-by-side attribute diff (equal values behind **Show equal**), both redacted trees and **Open in left/right workspace**, which opens that instance in a Hub tab with the same profile. **Modules** aligns module paths (mapped ones show their left path) and opens the resource list for one module; **Providers** aligns provider sources. State records no provider versions, so none are shown.
+- **Export** downloads a Markdown or JSON summary: both identities (alias, workspace, profile, engine, backend, read time), rules, counts and every instance's status with its differing attribute **paths**. No attribute values and no folder paths are included.
+- **Partial and stale results.** If a side cannot be read (not initialized, missing workspace, backend or credential error, project removed), the comparison says which side and why and compares nothing: an unavailable workspace is never treated as empty. A workspace that genuinely records no state is compared as empty. A comparison stops matching, and its results are withheld, when either side is read again, its project or execution profile changes, or its read is released to save memory (eight reads are kept). Up to eight comparisons are kept in memory for 12 hours; nothing is written to disk.
 
 
 ## Explorer

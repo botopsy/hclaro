@@ -86,3 +86,16 @@ var (
 	//go:embed graph/malformed.dot
 	GraphMalformed []byte
 )
+
+// Workspace comparison fixtures are synthetic `show -json` states (see
+// scripts/fixtures/generate-compare.py).
+var (
+	//go:embed compare/dev.json
+	CompareDev []byte
+	//go:embed compare/prod.json
+	CompareProd []byte
+	//go:embed compare/prod-tofu.json
+	CompareProdTofu []byte
+	//go:embed compare/prod-renamed.json
+	CompareProdRenamed []byte
+)
