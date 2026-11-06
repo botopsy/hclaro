@@ -13,6 +13,7 @@ import (
 
 	"hclaro/internal/engine"
 	"hclaro/internal/plan"
+	"hclaro/internal/preflight"
 )
 
 // artifact is the single retained saved plan. The file holds plaintext secrets, so it lives
@@ -23,6 +24,8 @@ type artifact struct {
 	created                                                            time.Time
 	timer                                                              *time.Timer
 	approval                                                           *approval
+	// preflight is the binding of the latest passed preflight; an approval needs it.
+	preflight *preflightBinding
 	// applying is set while an apply uses the file; expiry then waits for the apply.
 	applying bool
 	// environ and context pin a profile-bound plan's environment for its apply.
@@ -33,6 +36,8 @@ type artifact struct {
 type approval struct {
 	token   string
 	expires time.Time
+	// binding is the preflight binding token the approval was issued for.
+	binding string
 }
 
 // ApplyStatus reports, at request time, whether a plan's saved artifact can be applied.
@@ -61,6 +66,8 @@ type Approval struct {
 	Command        []string       `json:"command"`
 	// Context is the execution profile context the apply will use, if any.
 	Context *ExecutionContext `json:"executionContext,omitempty"`
+	// Acknowledged lists the preflight warnings acknowledged for this approval.
+	Acknowledged []string `json:"acknowledged"`
 }
 
 // RejectError explains why an approval or apply was refused. Nothing ran.
@@ -221,9 +228,10 @@ func applyCommand(a *artifact) []string {
 	return []string{a.engine, "apply", "-input=false", "-json", "<reviewed saved plan " + a.digest[:12] + ">"}
 }
 
-// Approve issues a one-time confirmation token for applying plan id. A new approval
-// replaces any earlier unused one.
-func (m *Manager) Approve(id string) (Approval, error) {
+// Approve issues a one-time confirmation token for applying plan id. It needs the binding
+// of a passed preflight and an acknowledgement of each of its warnings, by check ID; there
+// is no blanket acknowledgement. A new approval replaces any earlier unused one.
+func (m *Manager) Approve(id string, req ApprovalRequest) (Approval, error) {
 	p, ok := m.Plan(id)
 	if !ok {
 		return Approval{}, ErrNotFound
@@ -235,7 +243,14 @@ func (m *Manager) Approve(id string) (Approval, error) {
 		return Approval{}, err
 	}
 	a := m.artifact
-	a.approval = &approval{token: newID() + newID(), expires: time.Now().Add(m.ApprovalTTL)}
+	b, err := m.checkBindingLocked(a, req.Binding)
+	if err != nil {
+		return Approval{}, err
+	}
+	if !sameSet(b.acknowledge, req.Acknowledged) {
+		return Approval{}, reject("acknowledgement_required", "Acknowledge each preflight warning individually before approving. Nothing was approved.")
+	}
+	a.approval = &approval{token: newID() + newID(), expires: time.Now().Add(m.ApprovalTTL), binding: b.token}
 	summary := map[string]int{}
 	for k, v := range p.Summary {
 		summary[k] = v
@@ -244,17 +259,27 @@ func (m *Manager) Approve(id string) (Approval, error) {
 		Token: a.approval.token, ExpiresAt: a.approval.expires.UTC().Format(time.RFC3339), PlanID: p.ID,
 		ArtifactSHA256: a.digest, Engine: a.engine, Workspace: a.workspace, Summary: summary,
 		Replace: slices.Clone(p.Replace), Import: p.Import, Imports: p.Imports, Destructive: p.Destructive, Phrase: phrase(p), Command: applyCommand(a),
-		Context: a.context.Clone(),
+		Context: a.context.Clone(), Acknowledged: slices.Clone(b.acknowledge),
 	}, nil
 }
 
 // StartApply consumes the approval token and applies the reviewed saved plan. The token is
-// single-use: any attempt to use it, valid or not, invalidates it.
+// single-use: any attempt to use it, valid or not, invalidates it. Immediately before the
+// apply starts, the whole preflight is evaluated again: a new blocker, or a warning that
+// was not acknowledged, refuses the apply. Nothing is re-planned.
 func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	p, ok := m.Plan(id)
 	if !ok {
 		return Operation{}, ErrNotFound
 	}
+	identity := notRequested()
+	m.mu.Lock()
+	if a := m.artifact; a != nil && a.planID == p.ID && a.preflight != nil {
+		identity = a.preflight.identity
+	}
+	m.mu.Unlock()
+	checks := preflight.Evaluate(m.facts(m.base, p, identity))
+	blockers, ack := acknowledgements(checks)
 	current, reason := m.currentFingerprint(p)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -273,14 +298,35 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	if err := m.checkLocked(p, current, reason); err != nil {
 		return Operation{}, err
 	}
+	b, err := m.checkBindingLocked(a, granted.binding)
+	if err != nil {
+		return Operation{}, err
+	}
+	if blockers > 0 {
+		names := []string{}
+		for _, c := range checks {
+			if c.Blocks() {
+				names = append(names, c.ID)
+			}
+		}
+		a.preflight = nil
+		return Operation{}, reject("preflight_blocked", "A preflight check now blocks this apply: "+titles(checks, names)+". Nothing was applied. Run the checks again.")
+	}
+	if !slices.Equal(ack, b.acknowledge) {
+		a.preflight = nil
+		return Operation{}, reject("preflight_changed", "The preflight warnings changed since you acknowledged them. Nothing was applied. Run the checks again.")
+	}
 	release, claimed := m.Locks.Acquire(m.root, "apply")
 	if !claimed {
 		return Operation{}, reject("operation_running", "Another operation, such as initialization, is running in this project. Wait for it to finish.")
 	}
+	// The binding is used once.
+	a.preflight = nil
 	a.applying = true
 	ctx, cancel := context.WithTimeout(m.base, m.ApplyTimeout)
+	summary := &PreflightSummary{CheckedAt: b.checkedAt.UTC().Format(time.RFC3339), Policy: b.policy, Acknowledged: slices.Clone(b.acknowledge), IdentityVerified: b.identity.State == "verified"}
 	e := &entry{
-		op:      Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), Import: p.Import, PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: a.context.Clone()},
+		op:      Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), Import: p.Import, PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: a.context.Clone(), Preflight: summary},
 		log:     NewLog(logEvents, logBytes),
 		cancel:  cancel,
 		start:   time.Now(),
@@ -288,6 +334,7 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 		environ: slices.Clone(a.environ),
 		meta:    recordMeta{m.root, a.engine, a.version, a.workspace},
 	}
+	e.log.Append("info", fmt.Sprintf("Preflight passed again before apply: %d checks, %d acknowledged warning(s), policy %s.", len(checks), len(b.acknowledge), b.policy))
 	m.entries = append(m.entries, e)
 	m.trim()
 	m.running = e

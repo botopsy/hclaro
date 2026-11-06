@@ -20,6 +20,7 @@ import (
 	"hclaro/internal/engine"
 	"hclaro/internal/imports"
 	"hclaro/internal/plan"
+	"hclaro/internal/preflight"
 	"hclaro/internal/rootlock"
 	"hclaro/internal/workspace"
 )
@@ -85,6 +86,8 @@ type Operation struct {
 	DriftScanID string `json:"driftScanId,omitempty"`
 	// GraphID is set for dependency graphs (kind "graph").
 	GraphID string `json:"graphId,omitempty"`
+	// Preflight is set for applies: the policy used and the acknowledged warning IDs.
+	Preflight *PreflightSummary `json:"preflight,omitempty"`
 }
 
 // Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved
@@ -154,12 +157,17 @@ type Manager struct {
 	Bind   func(environ []string, workspace string) engine.Planner
 	// Recorder, when set, keeps metadata of every plan, apply, drift scan and graph.
 	Recorder Recorder
-	entries  []*entry
-	plans    []*Plan
-	scans    []*DriftScan
-	graphs   []*GraphRun
-	running  *entry
-	artifact *artifact
+	// GitProbe and IdentityProbe gather preflight facts; nil reports them as unavailable.
+	// PreflightTTL bounds how long a passed preflight can be used for an approval.
+	GitProbe      preflight.GitProbe
+	IdentityProbe preflight.IdentityProbe
+	PreflightTTL  time.Duration
+	entries       []*entry
+	plans         []*Plan
+	scans         []*DriftScan
+	graphs        []*GraphRun
+	running       *entry
+	artifact      *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.
 	notes  map[string]string
 	base   context.Context
@@ -182,7 +190,7 @@ const (
 func NewManager(store *workspace.Store, planner engine.Planner, root string) *Manager {
 	base, stop := context.WithCancel(context.Background())
 	applier, _ := planner.(engine.Applier)
-	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID}
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID}
 }
 
 func newID() string {

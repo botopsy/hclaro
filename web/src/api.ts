@@ -26,6 +26,10 @@ const messages: Record<string, string> = {
   approval_required: 'Confirm the plan again before applying it.',
   approval_invalid: 'The confirmation expired or was already used. Review the plan and confirm again.',
   confirmation_mismatch: 'The typed confirmation did not match. Nothing was applied.',
+  preflight_required: 'Run the preflight checks again before applying.',
+  preflight_expired: 'The preflight checks expired. Run them again.',
+  preflight_blocked: 'A preflight check now blocks this apply. Nothing was applied.',
+  preflight_changed: 'The preflight results changed. Review them again. Nothing was applied.',
   scan_not_found: 'This drift scan is no longer kept. Scan again.',
   scan_not_started: 'The drift scan could not be started.'
 };

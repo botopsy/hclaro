@@ -235,7 +235,16 @@ Any plan, not only a replacement, can be applied when all of these hold:
 - it is the most recent applicable plan, less than one hour old;
 - configuration, variable files, the lock file, the engine version and the workspace are unchanged since planning.
 
-Only then is the saved plan kept, in a private `0700` temp directory. **Review and apply…** asks the server for a one-time confirmation valid for five minutes, then shows the action counts, the exact command and the plan digest. Plans that delete, replace or forget anything require typing `apply <workspace>`. Hclaro then re-checks the workspace and the file's SHA-256 and runs `apply -input=false -json <saved plan>`. A saved plan never prompts, so this dialog is the only confirmation. Closing it applies nothing.
+Only then is the saved plan kept, in a private `0700` temp directory. **Review and apply…** opens the apply preflight. The server checks, and shows with evidence and a fix for each failure:
+
+- **Blocking (always):** engine, version and workspace match the plan; the execution profile and the context fingerprint are unchanged; the saved file is still held, unexpired and has the reviewed SHA-256; the engine version is supported; the backend runs locally; no other Hclaro operation is running in the project; the project policy file (if any) is valid.
+- **Policy (configurable):** a dirty Git working tree (default: warning), a production-like workspace, profile or AWS profile name (default: warning for names such as `prod`, `*-prod`, `production`), a limit on destructive changes, and an AWS account allow-list.
+- **Plan scope:** a replace or import plan that changes other resources is a warning; every change in the whole plan is listed, with the requested ones marked, and high-risk deletions and replacements are listed separately.
+- **AWS identity:** shown when the plan uses AWS. It is *not verified* until you choose **Verify AWS identity**, which calls STS GetCallerIdentity (read-only, contacts AWS) with the plan's credentials. Hclaro never infers an account from a profile name.
+
+Apply stays disabled while anything blocks. Each warning has its own acknowledgement checkbox; there is no "accept all". Plans that delete, replace or forget anything also require typing `apply <workspace>`. The dialog shows the exact command and plan digest. When you apply, the server issues a one-time approval for that preflight, evaluates every check again, re-checks the workspace and the file's SHA-256 and runs `apply -input=false -json <saved plan>`. If anything changed since the preflight (a new blocker or an unacknowledged warning), nothing is applied and the dialog runs the checks again. A saved plan never prompts, so this dialog is the only confirmation. Closing it applies nothing.
+
+To tune the advisory rules for a project, add `.hclaro/policy.json` (see [`fixtures/preflight/policy.json`](fixtures/preflight/policy.json) and [architecture](docs/architecture.md#apply-preflight)). It is data only (version 1, strict schema); an invalid file blocks applies until fixed, and it cannot relax the built-in blocking checks.
 
 The saved plan is deleted after one apply attempt, whatever the result, and also when it expires, when a newer plan replaces it, and when Hclaro stops. There is no automatic re-plan: if the engine reports the plan as stale, run a new one. After an apply, Hclaro re-reads state and reports the outcome separately from the process status: **applied**, **not applied**, or **uncertain** when an apply failed or was interrupted after starting.
 

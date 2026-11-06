@@ -123,7 +123,7 @@ func TestPlanThenRestartNeverReappliesHistory(t *testing.T) {
 	if _, ok := restarted.m.Plan(done.PlanID); ok {
 		t.Fatal("a historical plan is reviewable as a live plan")
 	}
-	if _, err := restarted.m.Approve(done.PlanID); err == nil {
+	if _, err := approve(restarted.m, done.PlanID); err == nil {
 		t.Fatal("a historical plan could be approved")
 	}
 	if _, err := restarted.m.StartApply(done.PlanID, strings.Repeat("0", 64), ""); err == nil {
@@ -201,7 +201,7 @@ func TestCancelledApplyIsPartialAndLinkedToItsPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	planned := h.wait(op.ID)
-	approval, err := h.m.Approve(planned.PlanID)
+	approval, err := approve(h.m, planned.PlanID)
 	if err != nil {
 		t.Fatal(err)
 	}

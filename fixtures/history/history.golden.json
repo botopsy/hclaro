@@ -101,6 +101,11 @@
       {
         "time": "2026-11-06T10:00:00Z",
         "level": "info",
+        "text": "Preflight passed again before apply: 13 checks, 1 acknowledged warning(s), policy default."
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
         "text": "Checking workspace…"
       },
       {

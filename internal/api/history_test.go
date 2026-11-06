@@ -335,7 +335,7 @@ func TestHistoryGolden(t *testing.T) {
 	s.fake.ApplyLines = [][]byte{[]byte(`{"type":"version"}`), []byte(`{"type":"change_summary","changes":{"add":1,"change":1,"remove":2,"operation":"apply"}}`)}
 	first := s.plan()
 	e, _ := s.store.Get(first)
-	approval, err := s.manager.Approve(e.Plan.PlanID)
+	approval, err := approve(s.manager, e.Plan.PlanID)
 	if err != nil {
 		t.Fatal(err)
 	}

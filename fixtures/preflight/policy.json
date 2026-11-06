@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "rules": {
+    "gitDirty": "warn",
+    "productionLabels": {
+      "severity": "warn",
+      "patterns": ["prod", "prod-*", "*-prod", "production", "*production*", "live"]
+    },
+    "destructiveLimit": {
+      "severity": "block",
+      "max": 10
+    },
+    "awsAccounts": {
+      "severity": "block",
+      "allowed": ["123456789012"]
+    }
+  }
+}

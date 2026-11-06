@@ -117,6 +117,8 @@ export type Operation = {
   driftScanId?: string;
   // Dependency graphs only.
   graphId?: string;
+  // Set for applies: the preflight policy and the warning check IDs acknowledged.
+  preflight?: { checkedAt: string; policy: string; acknowledged: string[]; identityVerified: boolean };
 };
 export type DriftOptions = {
   canScan: boolean;
@@ -355,6 +357,74 @@ export type Approval = {
   phrase?: string;
   command: string[];
   executionContext?: ExecutionContext;
+  acknowledged: string[];
+};
+// M14: server-side apply preflight. Checks are evaluated on the server; the UI only shows
+// them and returns the acknowledged warning IDs with the opaque binding.
+export type PreflightSeverity = 'block' | 'warn' | 'info';
+export type PreflightStatus = 'pass' | 'fail' | 'unknown';
+export type PreflightCheck = {
+  id: string;
+  title: string;
+  severity: PreflightSeverity;
+  status: PreflightStatus;
+  evidence: string;
+  remediation?: string;
+  source: 'built-in' | 'policy';
+};
+export type PreflightResource = {
+  address: string;
+  action: PlanAction;
+  reason?: string;
+  deposed?: boolean;
+  requested?: boolean;
+  importing?: boolean;
+};
+export type PreflightIdentity = {
+  state: 'not_requested' | 'verified' | 'unavailable' | 'failed';
+  account?: string;
+  arn?: string;
+  message?: string;
+  verifiedAt?: string;
+};
+export type PreflightReport = {
+  planId: string;
+  generatedAt: string;
+  expiresAt?: string;
+  context: {
+    project: string;
+    engine: string;
+    engineVersion: string;
+    workspace: string;
+    backend: string;
+    executionMode: string;
+    planKind: PlanKind;
+    planCreatedAt: string;
+    artifactSha256: string;
+    fingerprint: string;
+    varFiles: string[];
+    executionContext?: ExecutionContext;
+  };
+  checks: PreflightCheck[];
+  blocked: boolean;
+  blockers: number;
+  acknowledge: string[];
+  impact: {
+    summary: Partial<Record<PlanAction, number>>;
+    total: number;
+    destructive: number;
+    imports: number;
+    requested: string[];
+    extra: number;
+    highRisk: PreflightResource[];
+    changes: PreflightResource[];
+    truncated: boolean;
+  };
+  policy: { source: string; version: number; valid: boolean; error?: string };
+  identity: PreflightIdentity;
+  binding?: string;
+  phrase?: string;
+  command: string[];
 };
 // A managed instance chosen in the explorer; the server receives only the opaque ID.
 export type ReplaceTarget = {

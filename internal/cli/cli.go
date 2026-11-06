@@ -18,6 +18,7 @@ import (
 	"hclaro/internal/engine"
 	"hclaro/internal/history"
 	"hclaro/internal/operations"
+	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
 	"hclaro/internal/security"
@@ -193,6 +194,10 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	// launch adapter itself is never changed.
 	manager.Binder = hub.LaunchBinder()
 	manager.Recorder = operationHistory
+	// Apply preflight: Git status is read with a fixed argv; the AWS caller identity probe
+	// runs only when the user asks for it in the preflight dialog.
+	manager.GitProbe = preflight.GitStatus
+	manager.IdentityProbe = preflight.AWSIdentity
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
 	}

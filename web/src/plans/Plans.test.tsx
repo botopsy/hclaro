@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The Go parser's golden output keeps the frontend honest about the API contract.
 import golden from '../../../fixtures/plan/all-actions.golden.json';
 import { PlansView } from './PlansView';
-import type { Approval, Operation, Plan, PlanOptions } from '../types';
+import type { Approval, Operation, Plan, PlanOptions, PreflightCheck, PreflightReport } from '../types';
 
 const canary = 'DO_NOT_LEAK_HCLARO_TEST_SECRET';
 const planId = 'a'.repeat(32);
@@ -30,7 +30,28 @@ const plan = {
 const applicable: Plan = { ...plan, apply: { available: true, artifactRetained: true, expiresAt: '2026-11-05T10:00:00Z' } };
 const options: PlanOptions = { canPlan: true, canApply: true, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 's3', varFiles: ['prod.tfvars'] };
 const operation: Operation = { id: 'b'.repeat(32), kind: 'plan', status: 'succeeded', stage: 'Finished', startedAt: '2026-11-05T09:00:00Z', durationMs: 4200, exitCode: 0, command: ['terraform', 'plan', '-input=false', '-json', '-out=<private temporary file>'], varFiles: [], replace: [], planId, stateReloaded: false, engineDiagnostics: [], cancelRequested: false, logDropped: 0, logRetained: true };
-const approval: Approval = { confirmationToken: 'f'.repeat(64), expiresAt: '2026-11-05T09:05:00Z', planId, artifactSha256: 'c'.repeat(64), engine: 'terraform', workspace: 'demo', summary: { create: 1, replace: 2, delete: 2 }, replace: [], imports: 0, destructive: true, phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>'] };
+const approval: Approval = { confirmationToken: 'f'.repeat(64), expiresAt: '2026-11-05T09:05:00Z', planId, artifactSha256: 'c'.repeat(64), engine: 'terraform', workspace: 'demo', summary: { create: 1, replace: 2, delete: 2 }, replace: [], imports: 0, destructive: true, phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>'], acknowledged: ['git.worktree'] };
+const check = (id: string, severity: PreflightCheck['severity'], status: PreflightCheck['status'], title: string, evidence: string, extra: Partial<PreflightCheck> = {}): PreflightCheck => ({ id, title, severity, status, evidence, source: 'built-in', ...extra });
+const report: PreflightReport = {
+  planId, generatedAt: '2026-11-05T09:01:00Z', expiresAt: '2026-11-05T09:11:00Z',
+  context: { project: 'platform-infra', engine: 'terraform', engineVersion: '1.9.8', workspace: 'demo', backend: 's3', executionMode: 'local-cli', planKind: 'replace', planCreatedAt: '2026-11-05T09:00:00Z', artifactSha256: 'c'.repeat(64), fingerprint: 'd'.repeat(16), varFiles: [] },
+  checks: [
+    check('context.identity', 'block', 'pass', 'Engine, version and workspace match the plan', 'Terraform 1.9.8, workspace demo.'),
+    check('plan.artifact', 'block', 'pass', 'Reviewed saved plan is intact', 'SHA-256 cccccccccccccccc… matches the reviewed plan.'),
+    check('git.worktree', 'warn', 'fail', 'Git working tree is clean', '1 modified and 0 untracked file(s), including main.tf.', { source: 'policy', remediation: 'Commit or stash the changes.' }),
+    check('plan.scope', 'warn', 'fail', 'Plan changes only what was requested', 'Besides the 1 requested replacement(s), the plan also changes 2 other resource instance(s).'),
+    check('cloud.aws.identity', 'info', 'unknown', 'AWS caller identity verified', 'Not verified. Hclaro does not infer the account from an AWS profile name.')
+  ],
+  blocked: false, blockers: 0, acknowledge: ['git.worktree', 'plan.scope'],
+  impact: {
+    summary: { create: 1, replace: 2, delete: 2 }, total: 5, destructive: 4, imports: 0, requested: ['module.compute.aws_instance.main[0]'], extra: 2,
+    highRisk: [{ address: 'module.compute.aws_instance.main[0]', action: 'replace', requested: true }, { address: 'aws_lb_target_group_attachment.web[2]', action: 'delete' }],
+    changes: [{ address: 'module.compute.aws_instance.main[0]', action: 'replace', requested: true }, { address: 'aws_lb_target_group_attachment.web[2]', action: 'delete' }, { address: 'aws_route53_record.www', action: 'create' }],
+    truncated: false
+  },
+  policy: { source: 'default', version: 1, valid: true }, identity: { state: 'not_requested' },
+  binding: 'b'.repeat(64), phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>']
+};
 
 type Route = (url: string, init?: RequestInit) => Response | undefined;
 let posts: { url: string; init: RequestInit }[] = [];
@@ -231,9 +252,10 @@ describe('Plans', () => {
     expect(posts).toHaveLength(0);
   });
 
-  it('applies only after the server approval and the typed phrase; declining sends nothing', async () => {
+  it('applies only after the server preflight, each warning acknowledged and the typed phrase; declining sends nothing', async () => {
     serve((url, init) => {
       if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
+      if (url.endsWith('/preflight') && init?.method === 'POST') return Response.json(report);
       if (url.endsWith('/approval') && init?.method === 'POST') return Response.json(approval);
       if (url.endsWith('/apply') && init?.method === 'POST') return Response.json({ ...operation, kind: 'apply', status: 'running' }, { status: 202 });
       return undefined;
@@ -242,66 +264,121 @@ describe('Plans', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
     let dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
-    expect(await within(dialog).findByText(/2 replace/)).toBeInTheDocument();
+    const identity = await within(dialog).findByRole('region', { name: 'Context identity' });
+    expect(identity).toHaveTextContent('platform-infra');
+    expect(identity).toHaveTextContent('Terraform 1.9.8');
+    expect(identity).toHaveTextContent('s3 (local-cli)');
+    expect(within(dialog).getByRole('list', { name: 'Changes to apply' })).toHaveTextContent('2 replace');
     expect(dialog).toHaveTextContent('terraform apply -input=false -json <reviewed saved plan cccccccccccc>');
     expect(dialog).toHaveTextContent('cannot guarantee zero downtime');
-    // Escape declines: an approval was requested, but nothing was applied.
+    // The full plan, not only the selection: collateral changes are listed.
+    expect(dialog).toHaveTextContent('The plan also changes 2 other resource instances');
+    expect(within(dialog).getByRole('list', { name: 'High-risk resources' })).toHaveTextContent('aws_lb_target_group_attachment.web[2]');
+    expect(within(dialog).getByRole('list', { name: 'Planned changes' })).toHaveTextContent('aws_route53_record.www');
+    // Opening the dialog runs the preflight only; the identity probe is not requested.
+    expect(posts.filter(p => p.url.endsWith('/preflight')).map(p => JSON.parse(p.init.body as string))).toEqual([{ verifyIdentity: false }]);
+    // Escape declines: nothing was approved or applied.
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(0);
+    expect(posts.filter(p => p.url.endsWith('/approval') || p.url.endsWith('/apply'))).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: 'Review and apply…' }));
     dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
     const apply = await within(dialog).findByRole('button', { name: 'Apply plan' });
+    await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply demo');
+    // There is no blanket acknowledgement: each warning has its own checkbox.
+    const boxes = within(dialog).getAllByRole('checkbox');
+    expect(boxes).toHaveLength(2);
     expect(apply).toBeDisabled();
-    await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply dem');
+    await user.click(boxes[0]);
     expect(apply).toBeDisabled();
     await user.keyboard('{Enter}');
-    expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(0);
-    await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'o');
+    expect(posts.filter(p => p.url.endsWith('/approval'))).toHaveLength(0);
+    await user.click(boxes[1]);
+    expect(apply).toBeEnabled();
     await user.click(apply);
     await waitFor(() => expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(1));
+    const approvalSent = posts.find(p => p.url.endsWith('/approval'))!;
+    expect(JSON.parse(approvalSent.init.body as string)).toEqual({ preflightBinding: report.binding, acknowledged: ['git.worktree', 'plan.scope'] });
     const sent = posts.find(p => p.url.endsWith('/apply'))!;
     expect(JSON.parse(sent.init.body as string)).toEqual({ confirmationToken: approval.confirmationToken, confirmation: 'apply demo' });
     expect((sent.init.headers as Record<string, string>)['X-Hclaro-CSRF']).toBe('e'.repeat(64));
   });
 
-  it('keeps the dialog usable after a failed apply request with a fresh approval', async () => {
-    let approvals = 0, applies = 0;
+  it('disables apply while a blocker remains and shows its remediation', async () => {
+    const blocked: PreflightReport = { ...report, blocked: true, blockers: 1, binding: undefined, acknowledge: [], checks: [check('context.fingerprint', 'block', 'fail', 'Configuration and planning environment are unchanged', 'Configuration changed since this plan was created.', { remediation: 'Run a new plan and review it again.' }), ...report.checks.slice(0, 2)] };
     serve((url, init) => {
       if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
-      if (url.endsWith('/approval') && init?.method === 'POST') return Response.json({ ...approval, confirmationToken: String(++approvals).repeat(64) });
-      if (url.endsWith('/apply') && init?.method === 'POST') return ++applies === 1 ? Response.json({ error: 'busy', reason: 'Another operation is running. Wait for it to finish.' }, { status: 409 }) : Response.json({ ...operation, kind: 'apply', status: 'running' }, { status: 202 });
+      if (url.endsWith('/preflight') && init?.method === 'POST') return Response.json(blocked);
+      return undefined;
+    });
+    view();
+    await userEvent.click(await screen.findByRole('button', { name: 'Review and apply…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const section = await within(dialog).findByRole('region', { name: 'Blocking' });
+    expect(section).toHaveTextContent('Blocks');
+    expect(section).toHaveTextContent('Run a new plan and review it again.');
+    expect(dialog).toHaveTextContent('1 blocking check failed');
+    expect(within(dialog).queryByLabelText('Confirmation phrase')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
+  });
+
+  it('verifies the AWS identity only when asked', async () => {
+    const verified: PreflightReport = { ...report, identity: { state: 'verified', account: '123456789012', arn: 'arn:aws:sts::123456789012:assumed-role/deploy/s' }, checks: report.checks.map(c => c.id === 'cloud.aws.identity' ? { ...c, status: 'pass', evidence: 'STS reports account 123456789012.' } : c) };
+    serve((url, init) => {
+      if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
+      if (url.endsWith('/preflight') && init?.method === 'POST') return Response.json(JSON.parse(init.body as string).verifyIdentity ? verified : report);
       return undefined;
     });
     view();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
-    await user.type(await within(dialog).findByLabelText('Confirmation phrase'), 'apply demo');
-    await user.click(within(dialog).getByRole('button', { name: 'Apply plan' }));
-    expect(await within(dialog).findByText('Another operation is running. Wait for it to finish.')).toHaveAttribute('role', 'alert');
-    // A new token is requested; the phrase must be typed again before the button is enabled.
-    const phrase = await within(dialog).findByLabelText('Confirmation phrase');
-    expect(phrase).toHaveValue('');
-    expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
-    await user.type(phrase, 'apply demo');
-    await user.click(within(dialog).getByRole('button', { name: 'Apply plan' }));
-    await waitFor(() => expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(2));
-    const last = posts.filter(p => p.url.endsWith('/apply'))[1];
-    expect(JSON.parse(last.init.body as string).confirmationToken).toBe(String(approvals).repeat(64));
-    expect(approvals).toBeGreaterThan(1);
+    await user.click(await within(dialog).findByRole('button', { name: 'Verify AWS identity' }));
+    await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Verify AWS identity' })).not.toBeInTheDocument());
+    expect(posts.filter(p => p.url.endsWith('/preflight')).map(p => JSON.parse(p.init.body as string).verifyIdentity)).toEqual([false, true]);
+    expect(dialog).toHaveTextContent('STS reports account 123456789012');
   });
 
-  it('shows why the server refused an approval', async () => {
+  it('keeps the dialog usable after a failed apply request by running the checks again', async () => {
+    let preflights = 0, applies = 0;
     serve((url, init) => {
       if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
-      if (url.endsWith('/approval') && init?.method === 'POST') return Response.json({ error: 'context_changed', reason: 'Configuration changed since this plan was created. Run a new plan.' }, { status: 409 });
+      if (url.endsWith('/preflight') && init?.method === 'POST') return Response.json({ ...report, binding: String(++preflights).repeat(64) });
+      if (url.endsWith('/approval') && init?.method === 'POST') return Response.json(approval);
+      if (url.endsWith('/apply') && init?.method === 'POST') return ++applies === 1 ? Response.json({ error: 'preflight_changed', reason: 'The preflight warnings changed since you acknowledged them. Nothing was applied. Run the checks again.' }, { status: 409 }) : Response.json({ ...operation, kind: 'apply', status: 'running' }, { status: 202 });
+      return undefined;
+    });
+    view();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const confirm = async () => {
+      await user.type(await within(dialog).findByLabelText('Confirmation phrase'), 'apply demo');
+      for (const box of within(dialog).getAllByRole('checkbox')) await user.click(box);
+      await user.click(within(dialog).getByRole('button', { name: 'Apply plan' }));
+    };
+    await confirm();
+    expect(await within(dialog).findByText(/preflight warnings changed/)).toHaveAttribute('role', 'alert');
+    // The checks ran again; acknowledgements and the phrase are given again.
+    await waitFor(() => expect(preflights).toBe(2));
+    expect(await within(dialog).findByLabelText('Confirmation phrase')).toHaveValue('');
+    expect(within(dialog).getAllByRole('checkbox').every(b => !(b as HTMLInputElement).checked)).toBe(true);
+    await confirm();
+    await waitFor(() => expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(2));
+    const approvals = posts.filter(p => p.url.endsWith('/approval'));
+    expect(JSON.parse(approvals[1].init.body as string).preflightBinding).toBe('2'.repeat(64));
+  });
+
+  it('shows why the server refused the preflight', async () => {
+    serve((url, init) => {
+      if (url.endsWith(`/plans/${planId}`)) return Response.json(applicable);
+      if (url.endsWith('/preflight') && init?.method === 'POST') return Response.json({ error: 'plan_not_found' }, { status: 404 });
       return undefined;
     });
     view();
     await userEvent.click(await screen.findByRole('button', { name: 'Review and apply…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Configuration changed since this plan was created');
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
   });
 
