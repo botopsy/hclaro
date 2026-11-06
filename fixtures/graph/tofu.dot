@@ -1,0 +1,186 @@
+// Synthetic OpenTofu 1.8 `graph` output (full walk graph) for Hclaro tests.
+digraph {
+	compound = "true"
+	newrank = "true"
+	subgraph "root" {
+		"[root] module.compute (expand)" [label = "module.compute", shape = "box"]
+		"[root] module.compute (close)" [label = "module.compute", shape = "box"]
+		"[root] module.compute.module.workers (expand)" [label = "module.compute.module.workers", shape = "box"]
+		"[root] module.compute.module.workers (close)" [label = "module.compute.module.workers", shape = "box"]
+		"[root] module.database (expand)" [label = "module.database", shape = "box"]
+		"[root] module.database (close)" [label = "module.database", shape = "box"]
+		"[root] module.edge (expand)" [label = "module.edge", shape = "box"]
+		"[root] module.edge (close)" [label = "module.edge", shape = "box"]
+		"[root] module.network (expand)" [label = "module.network", shape = "box"]
+		"[root] module.network (close)" [label = "module.network", shape = "box"]
+		"[root] module.observability (expand)" [label = "module.observability", shape = "box"]
+		"[root] module.observability (close)" [label = "module.observability", shape = "box"]
+		"[root] module.storage (expand)" [label = "module.storage", shape = "box"]
+		"[root] module.storage (close)" [label = "module.storage", shape = "box"]
+		"[root] var.region" [label = "var.region", shape = "note"]
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"]" [label = "provider[\"registry.terraform.io/hashicorp/aws\"]", shape = "diamond"]
+		"[root] provider[\"registry.terraform.io/hashicorp/random\"]" [label = "provider[\"registry.terraform.io/hashicorp/random\"]", shape = "diamond"]
+		"[root] local.tags" [label = "local.tags", shape = "note"]
+		"[root] data.aws_caller_identity.current (expand)" [label = "data.aws_caller_identity.current", shape = "box"]
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" [label = "provider[\"registry.terraform.io/hashicorp/aws\"]", shape = "box"]
+		"[root] aws_iam_role.deployer (expand)" [label = "aws_iam_role.deployer", shape = "box"]
+		"[root] aws_iam_role.legacy (expand)" [label = "aws_iam_role.legacy", shape = "box"]
+		"[root] aws_vpc.imported (expand)" [label = "aws_vpc.imported", shape = "box"]
+		"[root] aws_s3_bucket.artifacts (expand)" [label = "aws_s3_bucket.artifacts", shape = "box"]
+		"[root] aws_s3_bucket.logs (expand)" [label = "aws_s3_bucket.logs", shape = "box"]
+		"[root] aws_security_group.web (expand)" [label = "aws_security_group.web", shape = "box"]
+		"[root] aws_instance.retired (expand)" [label = "aws_instance.retired", shape = "box"]
+		"[root] aws_db_instance.primary (expand)" [label = "aws_db_instance.primary", shape = "box"]
+		"[root] module.network.output.aws_subnet_id (expand)" [label = "module.network.output.aws_subnet_id", shape = "box"]
+		"[root] module.network.aws_subnet.main (expand)" [label = "module.network.aws_subnet.main", shape = "box"]
+		"[root] aws_lb.edge (expand)" [label = "aws_lb.edge", shape = "box"]
+		"[root] random_password.unused (expand)" [label = "random_password.unused", shape = "box"]
+		"[root] provider[\"registry.terraform.io/hashicorp/random\"] (close)" [label = "provider[\"registry.terraform.io/hashicorp/random\"]", shape = "box"]
+		"[root] module.network.var.aws_vpc_id (expand)" [label = "module.network.var.aws_vpc_id", shape = "box"]
+		"[root] module.compute.aws_instance.main (expand)" [label = "module.compute.aws_instance.main", shape = "box"]
+		"[root] module.compute.var.aws_subnet_id (expand)" [label = "module.compute.var.aws_subnet_id", shape = "box"]
+		"[root] module.compute.var.aws_security_group_id (expand)" [label = "module.compute.var.aws_security_group_id", shape = "box"]
+		"[root] module.compute.var.aws_iam_role_id (expand)" [label = "module.compute.var.aws_iam_role_id", shape = "box"]
+		"[root] module.compute.module.workers.aws_instance.node (expand)" [label = "module.compute.module.workers.aws_instance.node", shape = "box"]
+		"[root] module.compute.output.aws_instance_id (expand)" [label = "module.compute.output.aws_instance_id", shape = "box"]
+		"[root] module.compute.module.workers.var.aws_instance_id (expand)" [label = "module.compute.module.workers.var.aws_instance_id", shape = "box"]
+		"[root] module.database.aws_db_instance.main (expand)" [label = "module.database.aws_db_instance.main", shape = "box"]
+		"[root] module.database.var.aws_subnet_id (expand)" [label = "module.database.var.aws_subnet_id", shape = "box"]
+		"[root] module.edge.aws_lb.main (expand)" [label = "module.edge.aws_lb.main", shape = "box"]
+		"[root] module.edge.var.aws_instance_id (expand)" [label = "module.edge.var.aws_instance_id", shape = "box"]
+		"[root] module.edge.var.aws_lb_id (expand)" [label = "module.edge.var.aws_lb_id", shape = "box"]
+		"[root] module.observability.aws_cloudwatch_log_group.main (expand)" [label = "module.observability.aws_cloudwatch_log_group.main", shape = "box"]
+		"[root] module.observability.var.aws_s3_bucket_id (expand)" [label = "module.observability.var.aws_s3_bucket_id", shape = "box"]
+		"[root] module.storage.aws_s3_bucket.main (expand)" [label = "module.storage.aws_s3_bucket.main", shape = "box"]
+		"[root] module.storage.var.aws_iam_role_id (expand)" [label = "module.storage.var.aws_iam_role_id", shape = "box"]
+		"[root] module.storage.var.aws_caller_identity_id (expand)" [label = "module.storage.var.aws_caller_identity_id", shape = "box"]
+		"[root] meta.count-boundary (EachMode fixup)" [label = "meta.count-boundary (EachMode fixup)", shape = "box"]
+		"[root] output.bucket_arn" [label = "output.bucket_arn", shape = "box"]
+		"[root] root" [label = "root", shape = "box"]
+		"[root] module.compute (close)" -> "[root] module.compute (expand)"
+		"[root] module.compute.module.workers (close)" -> "[root] module.compute.module.workers (expand)"
+		"[root] module.compute.module.workers (expand)" -> "[root] module.compute (expand)"
+		"[root] module.database (close)" -> "[root] module.database (expand)"
+		"[root] module.edge (close)" -> "[root] module.edge (expand)"
+		"[root] module.network (close)" -> "[root] module.network (expand)"
+		"[root] module.observability (close)" -> "[root] module.observability (expand)"
+		"[root] module.storage (close)" -> "[root] module.storage (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"]" -> "[root] var.region"
+		"[root] data.aws_caller_identity.current (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] data.aws_caller_identity.current (expand)" -> "[root] local.tags"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] data.aws_caller_identity.current (expand)"
+		"[root] aws_iam_role.deployer (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_iam_role.deployer (expand)" -> "[root] local.tags"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_iam_role.deployer (expand)"
+		"[root] aws_iam_role.legacy (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_iam_role.legacy (expand)" -> "[root] local.tags"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_iam_role.legacy (expand)"
+		"[root] aws_vpc.imported (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_vpc.imported (expand)" -> "[root] local.tags"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_vpc.imported (expand)"
+		"[root] aws_s3_bucket.artifacts (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_s3_bucket.artifacts (expand)" -> "[root] local.tags"
+		"[root] aws_s3_bucket.artifacts (expand)" -> "[root] data.aws_caller_identity.current (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_s3_bucket.artifacts (expand)"
+		"[root] aws_s3_bucket.logs (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_s3_bucket.logs (expand)" -> "[root] local.tags"
+		"[root] aws_s3_bucket.logs (expand)" -> "[root] data.aws_caller_identity.current (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_s3_bucket.logs (expand)"
+		"[root] aws_security_group.web (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_security_group.web (expand)" -> "[root] local.tags"
+		"[root] aws_security_group.web (expand)" -> "[root] aws_vpc.imported (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_security_group.web (expand)"
+		"[root] aws_instance.retired (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_instance.retired (expand)" -> "[root] local.tags"
+		"[root] aws_instance.retired (expand)" -> "[root] aws_security_group.web (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_instance.retired (expand)"
+		"[root] aws_db_instance.primary (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_db_instance.primary (expand)" -> "[root] local.tags"
+		"[root] aws_db_instance.primary (expand)" -> "[root] aws_security_group.web (expand)"
+		"[root] module.network.output.aws_subnet_id (expand)" -> "[root] module.network.aws_subnet.main (expand)"
+		"[root] aws_db_instance.primary (expand)" -> "[root] module.network.output.aws_subnet_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_db_instance.primary (expand)"
+		"[root] aws_lb.edge (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] aws_lb.edge (expand)" -> "[root] local.tags"
+		"[root] aws_lb.edge (expand)" -> "[root] aws_security_group.web (expand)"
+		"[root] aws_lb.edge (expand)" -> "[root] module.network.output.aws_subnet_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] aws_lb.edge (expand)"
+		"[root] random_password.unused (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/random\"]"
+		"[root] random_password.unused (expand)" -> "[root] local.tags"
+		"[root] provider[\"registry.terraform.io/hashicorp/random\"] (close)" -> "[root] random_password.unused (expand)"
+		"[root] module.network.aws_subnet.main (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] module.network.aws_subnet.main (expand)" -> "[root] module.network (expand)"
+		"[root] module.network (close)" -> "[root] module.network.aws_subnet.main (expand)"
+		"[root] module.network.var.aws_vpc_id (expand)" -> "[root] aws_vpc.imported (expand)"
+		"[root] module.network.var.aws_vpc_id (expand)" -> "[root] module.network (expand)"
+		"[root] module.network.aws_subnet.main (expand)" -> "[root] module.network.var.aws_vpc_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] module.network.aws_subnet.main (expand)"
+		"[root] module.compute.aws_instance.main (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] module.compute.aws_instance.main (expand)" -> "[root] module.compute (expand)"
+		"[root] module.compute (close)" -> "[root] module.compute.aws_instance.main (expand)"
+		"[root] module.compute.var.aws_subnet_id (expand)" -> "[root] module.network.output.aws_subnet_id (expand)"
+		"[root] module.compute.var.aws_subnet_id (expand)" -> "[root] module.compute (expand)"
+		"[root] module.compute.aws_instance.main (expand)" -> "[root] module.compute.var.aws_subnet_id (expand)"
+		"[root] module.compute.var.aws_security_group_id (expand)" -> "[root] aws_security_group.web (expand)"
+		"[root] module.compute.var.aws_security_group_id (expand)" -> "[root] module.compute (expand)"
+		"[root] module.compute.aws_instance.main (expand)" -> "[root] module.compute.var.aws_security_group_id (expand)"
+		"[root] module.compute.var.aws_iam_role_id (expand)" -> "[root] aws_iam_role.deployer (expand)"
+		"[root] module.compute.var.aws_iam_role_id (expand)" -> "[root] module.compute (expand)"
+		"[root] module.compute.aws_instance.main (expand)" -> "[root] module.compute.var.aws_iam_role_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] module.compute.aws_instance.main (expand)"
+		"[root] module.compute.module.workers.aws_instance.node (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] module.compute.module.workers.aws_instance.node (expand)" -> "[root] module.compute.module.workers (expand)"
+		"[root] module.compute.module.workers (close)" -> "[root] module.compute.module.workers.aws_instance.node (expand)"
+		"[root] module.compute.output.aws_instance_id (expand)" -> "[root] module.compute.aws_instance.main (expand)"
+		"[root] module.compute.module.workers.var.aws_instance_id (expand)" -> "[root] module.compute.output.aws_instance_id (expand)"
+		"[root] module.compute.module.workers.var.aws_instance_id (expand)" -> "[root] module.compute.module.workers (expand)"
+		"[root] module.compute.module.workers.aws_instance.node (expand)" -> "[root] module.compute.module.workers.var.aws_instance_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] module.compute.module.workers.aws_instance.node (expand)"
+		"[root] module.database.aws_db_instance.main (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] module.database.aws_db_instance.main (expand)" -> "[root] module.database (expand)"
+		"[root] module.database (close)" -> "[root] module.database.aws_db_instance.main (expand)"
+		"[root] module.database.var.aws_subnet_id (expand)" -> "[root] module.network.output.aws_subnet_id (expand)"
+		"[root] module.database.var.aws_subnet_id (expand)" -> "[root] module.database (expand)"
+		"[root] module.database.aws_db_instance.main (expand)" -> "[root] module.database.var.aws_subnet_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] module.database.aws_db_instance.main (expand)"
+		"[root] module.edge.aws_lb.main (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] module.edge.aws_lb.main (expand)" -> "[root] module.edge (expand)"
+		"[root] module.edge (close)" -> "[root] module.edge.aws_lb.main (expand)"
+		"[root] module.edge.var.aws_instance_id (expand)" -> "[root] module.compute.output.aws_instance_id (expand)"
+		"[root] module.edge.var.aws_instance_id (expand)" -> "[root] module.edge (expand)"
+		"[root] module.edge.aws_lb.main (expand)" -> "[root] module.edge.var.aws_instance_id (expand)"
+		"[root] module.edge.var.aws_lb_id (expand)" -> "[root] aws_lb.edge (expand)"
+		"[root] module.edge.var.aws_lb_id (expand)" -> "[root] module.edge (expand)"
+		"[root] module.edge.aws_lb.main (expand)" -> "[root] module.edge.var.aws_lb_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] module.edge.aws_lb.main (expand)"
+		"[root] module.observability.aws_cloudwatch_log_group.main (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] module.observability.aws_cloudwatch_log_group.main (expand)" -> "[root] module.observability (expand)"
+		"[root] module.observability (close)" -> "[root] module.observability.aws_cloudwatch_log_group.main (expand)"
+		"[root] module.observability.var.aws_s3_bucket_id (expand)" -> "[root] aws_s3_bucket.logs (expand)"
+		"[root] module.observability.var.aws_s3_bucket_id (expand)" -> "[root] module.observability (expand)"
+		"[root] module.observability.aws_cloudwatch_log_group.main (expand)" -> "[root] module.observability.var.aws_s3_bucket_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] module.observability.aws_cloudwatch_log_group.main (expand)"
+		"[root] module.storage.aws_s3_bucket.main (expand)" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"]"
+		"[root] module.storage.aws_s3_bucket.main (expand)" -> "[root] module.storage (expand)"
+		"[root] module.storage (close)" -> "[root] module.storage.aws_s3_bucket.main (expand)"
+		"[root] module.storage.var.aws_iam_role_id (expand)" -> "[root] aws_iam_role.deployer (expand)"
+		"[root] module.storage.var.aws_iam_role_id (expand)" -> "[root] module.storage (expand)"
+		"[root] module.storage.aws_s3_bucket.main (expand)" -> "[root] module.storage.var.aws_iam_role_id (expand)"
+		"[root] module.storage.var.aws_caller_identity_id (expand)" -> "[root] data.aws_caller_identity.current (expand)"
+		"[root] module.storage.var.aws_caller_identity_id (expand)" -> "[root] module.storage (expand)"
+		"[root] module.storage.aws_s3_bucket.main (expand)" -> "[root] module.storage.var.aws_caller_identity_id (expand)"
+		"[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)" -> "[root] module.storage.aws_s3_bucket.main (expand)"
+		"[root] meta.count-boundary (EachMode fixup)" -> "[root] aws_s3_bucket.artifacts (expand)"
+		"[root] output.bucket_arn" -> "[root] aws_s3_bucket.artifacts (expand)"
+		"[root] root" -> "[root] provider[\"registry.terraform.io/hashicorp/aws\"] (close)"
+		"[root] root" -> "[root] provider[\"registry.terraform.io/hashicorp/random\"] (close)"
+		"[root] root" -> "[root] meta.count-boundary (EachMode fixup)"
+		"[root] root" -> "[root] module.compute (close)"
+		"[root] root" -> "[root] module.compute.module.workers (close)"
+		"[root] root" -> "[root] module.database (close)"
+		"[root] root" -> "[root] module.edge (close)"
+		"[root] root" -> "[root] module.network (close)"
+		"[root] root" -> "[root] module.observability (close)"
+		"[root] root" -> "[root] module.storage (close)"
+	}
+}

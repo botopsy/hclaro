@@ -345,10 +345,15 @@ type Fake struct {
 	OutputsOut       Capture
 	ToolErr          error
 	BlockTool        bool
-	calls            []string
-	requests         []PlanRequest
-	applied          [][]byte
-	inits            [][]string
+	// GraphDOT is the `graph` output; GraphErr fails it and BlockGraph makes it wait for
+	// cancellation.
+	GraphDOT   []byte
+	GraphErr   error
+	BlockGraph bool
+	calls      []string
+	requests   []PlanRequest
+	applied    [][]byte
+	inits      [][]string
 }
 
 func (m *Fake) record(call string) {
