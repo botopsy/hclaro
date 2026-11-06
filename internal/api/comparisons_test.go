@@ -459,12 +459,17 @@ func TestComparisonGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(got)
+	// The root appears JSON-encoded: on Windows its backslashes are escaped.
+	root, err := json.Marshal(filepath.Join(s.dir, "network"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	text = strings.NewReplacer(
 		doc.ID, strings.Repeat("c", 32),
 		p.ID, strings.Repeat("a", 32),
 		doc.Left.ContextID, strings.Repeat("1", 64),
 		doc.Right.ContextID, strings.Repeat("2", 64),
-		filepath.Join(s.dir, "network"), "/synthetic/network",
+		strings.Trim(string(root), `"`), "/synthetic/network",
 	).Replace(text)
 	text = regexp.MustCompile(`"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z"`).ReplaceAllString(text, `"2026-11-06T10:00:00Z"`)
 	path := filepath.Join("..", "..", "fixtures", "compare", "dev-prod.golden.json")
