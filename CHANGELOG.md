@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-alpha.6 — 2026-11-06
 
 ### Read the launch project again
 
