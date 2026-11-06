@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"hclaro/internal/history"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -155,6 +156,8 @@ type Hub struct {
 	Locks *rootlock.Set
 	// Profiles holds execution profiles per project; nil disables them.
 	Profiles *profiles.Store
+	// History keeps operation metadata on disk; nil when it is not used. See UseHistory.
+	History *history.Store
 	// Launch is the canonical root Hclaro was started with, or "".
 	Launch string
 	// LaunchChanged runs after an init of the launch root has ended and released the root,

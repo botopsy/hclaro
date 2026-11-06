@@ -16,6 +16,7 @@ import (
 
 	"hclaro/internal/api"
 	"hclaro/internal/engine"
+	"hclaro/internal/history"
 	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
@@ -30,6 +31,8 @@ type Options struct {
 	NoBrowser, Version bool
 	// Hub opens the Workspace Hub. PathSet records an explicit --path.
 	Hub, PathSet bool
+	// ExportHistory writes the redacted operation history to a new file and exits.
+	ExportHistory string
 }
 
 func Parse(args []string, output io.Writer) (Options, error) {
@@ -42,6 +45,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.BoolVar(&o.NoBrowser, "no-browser", false, "Print URL without opening a browser")
 	flags.BoolVar(&o.Version, "version", false, "Print version and exit")
 	flags.BoolVar(&o.Hub, "hub", false, "Open the Workspace Hub; the current directory is not read unless --path is given")
+	flags.StringVar(&o.ExportHistory, "export-history", "", "Write the redacted operation history to a new .json or .md `file` and exit")
 	flags.Usage = func() {
 		fmt.Fprintln(output, "Hclaro — local Terraform & OpenTofu explorer\n\nUsage: hclaro [flags]\n\nRun inside a Terraform/OpenTofu root to open it; elsewhere, or with --hub, the Workspace\nHub opens with your registered projects.")
 		flags.PrintDefaults()
@@ -64,6 +68,11 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	if o.Engine != "" && o.Engine != "terraform" && o.Engine != "tofu" {
 		return o, errors.New("engine must be terraform or tofu")
 	}
+	if o.ExportHistory != "" {
+		if _, err := history.ExportFormat(o.ExportHistory); err != nil {
+			return o, err
+		}
+	}
 	return o, nil
 }
 
@@ -84,7 +93,34 @@ func openBrowser(ctx context.Context, url string) error {
 	return exec.CommandContext(ctx, command, args...).Run()
 }
 
+// ExportHistory writes the redacted history in the configuration directory to path. It
+// starts no server and reads no project.
+func ExportHistory(path string, output io.Writer, version string) error {
+	dir, err := projects.ConfigDir()
+	if err != nil {
+		return errors.New("the per-user configuration directory is unavailable")
+	}
+	store := history.Open(dir, time.Now())
+	status, notice, _ := store.Status()
+	if notice != "" {
+		fmt.Fprintln(output, "Operation history:", notice)
+	}
+	if status == history.Unavailable || status == history.ReadOnly {
+		return errors.New("operation history cannot be exported")
+	}
+	entries := store.List(history.Filter{})
+	report := history.NewReport(entries, history.Filter{}, version, time.Now())
+	if err := history.WriteExport(path, report); err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "Wrote %d operation(s) to %s. Log excerpts are not exported; values that looked like secrets were withheld when recorded.\n", len(report.Entries), path)
+	return nil
+}
+
 func Run(ctx context.Context, o Options, output io.Writer, version string) error {
+	if o.ExportHistory != "" {
+		return ExportHistory(o.ExportHistory, output, version)
+	}
 	// Without --hub, the current directory (or --path) is the launch project, as before.
 	// Outside a project, an implicit current directory falls back to the Hub; an explicit
 	// --path that is not a project still fails.
@@ -114,9 +150,14 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	registry := projects.Unavailable("The per-user configuration directory is unavailable, so projects cannot be registered.")
 	executionProfiles := profiles.Disabled("The per-user configuration directory is unavailable, so execution profiles cannot be saved.")
+	operationHistory := history.Disabled("The per-user configuration directory is unavailable, so operation history is not kept.")
 	if dir, err := projects.ConfigDir(); err == nil {
 		registry = projects.Open(dir, time.Now())
 		executionProfiles = profiles.Open(dir, time.Now())
+		operationHistory = history.Open(dir, time.Now())
+	}
+	if _, notice, _ := operationHistory.Status(); notice != "" {
+		fmt.Fprintln(output, "Operation history:", notice)
 	}
 	if _, notice, _ := registry.Status(); notice != "" {
 		fmt.Fprintln(output, "Workspace Hub:", notice)
@@ -126,6 +167,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	hub := projects.NewHub(registry, root)
 	hub.Profiles = executionProfiles
+	hub.UseHistory(operationHistory)
 	defer hub.Close()
 	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(o.Port)))
 	if err != nil {
@@ -150,6 +192,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	// Execution profiles of the launch project bind a plan to a profile's environment; the
 	// launch adapter itself is never changed.
 	manager.Binder = hub.LaunchBinder()
+	manager.Recorder = operationHistory
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
 	}

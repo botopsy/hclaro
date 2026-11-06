@@ -56,6 +56,8 @@ type Inits struct {
 	wg      sync.WaitGroup
 	closed  bool
 	NewID   func() string
+	// Recorder, when set, keeps metadata of every initialization, workspace command and tool.
+	Recorder Recorder
 }
 
 type initEntry struct {
@@ -105,13 +107,13 @@ func (r *Inits) Start(req InitRequest) (Operation, error) {
 	op := Operation{
 		Kind: "init", Command: InitCommand(req.Engine, false), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 	}
-	return r.begin(op, req.Release, nil, func(ctx context.Context, e *initEntry) { r.run(ctx, e, req) })
+	return r.begin(op, recordMeta{root: req.Root, engine: req.Engine}, req.Release, nil, func(ctx context.Context, e *initEntry) { r.run(ctx, e, req) })
 }
 
 // begin records a queued operation for a project and runs it in the background. The caller
 // has claimed the project root; release gives it up once the operation ends. conflict, when
 // set, is checked under the same lock against the recorded operations and refuses to start.
-func (r *Inits) begin(op Operation, release func(), conflict func([]*initEntry) error, run func(context.Context, *initEntry)) (Operation, error) {
+func (r *Inits) begin(op Operation, meta recordMeta, release func(), conflict func([]*initEntry) error, run func(context.Context, *initEntry)) (Operation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
@@ -127,7 +129,7 @@ func (r *Inits) begin(op Operation, release func(), conflict func([]*initEntry) 
 	ctx, cancel := context.WithCancel(r.base)
 	op.ID, op.Status, op.Stage, op.StartedAt = r.NewID(), Queued, "Queued", time.Now().UTC().Format(time.RFC3339)
 	op.VarFiles, op.Replace, op.Diagnostics, op.LogRetained = []string{}, []string{}, []EngineDiagnostic{}, true
-	e := &initEntry{projectID: op.ProjectID, entry: entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release}}
+	e := &initEntry{projectID: op.ProjectID, entry: entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release, meta: meta}}
 	r.entries = append(r.entries, e)
 	// The oldest finished operations are forgotten first; running ones stay reachable.
 	for i := 0; len(r.entries) > maxInits && i < len(r.entries); {
@@ -143,6 +145,7 @@ func (r *Inits) begin(op Operation, release func(), conflict func([]*initEntry) 
 			r.entries[i].op.LogRetained = false
 		}
 	}
+	r.recordLocked(e)
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
@@ -207,6 +210,7 @@ func (r *Inits) run(ctx context.Context, e *initEntry, req InitRequest) {
 		level = "info"
 	}
 	e.log.Append(level, initMessages[code])
+	r.recordFinal(e)
 	e.log.Finish()
 }
 
@@ -238,7 +242,10 @@ func (r *Inits) execute(ctx context.Context, e *initEntry, req InitRequest) (cod
 		return "engine_version", nil, false
 	}
 	json := engine.InitJSON(req.Engine, version)
-	r.update(e, func(o *Operation) { o.Command = InitCommand(req.Engine, json) })
+	r.update(e, func(o *Operation) {
+		o.Command = InitCommand(req.Engine, json)
+		e.meta.version = version
+	})
 	r.stage(e, "Checking project")
 	if code := req.Revalidate(); code != "" {
 		return code, nil, false

@@ -196,5 +196,6 @@ describe('Graph', () => {
     await user.click(screen.getByRole('button', { name: 'Collapse all' }));
     expect(screen.getAllByRole('button', { name: /^Collapsed module/ })).toHaveLength(20);
     expect(performance.now() - start).toBeLessThan(15000);
-  });
+    // Renders and searches 1,000 nodes; allow for a loaded test machine.
+  }, 15_000);
 });

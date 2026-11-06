@@ -401,8 +401,14 @@ func (h *Hub) StartWorkspaceWith(id string, action engine.WorkspaceAction, targe
 		release()
 		return operations.Operation{}, ErrContextChanged
 	}
+	version := ""
+	h.mu.Lock()
+	if inspection := h.inspections[id]; inspection != nil && inspection.Engine == name {
+		version = inspection.Version
+	}
+	h.mu.Unlock()
 	return h.Inits.StartWorkspace(operations.WorkspaceRequest{
-		ProjectID: p.ID, Root: p.RootPath, Engine: name, Action: action, Name: target, Manager: manager, Environ: environ, Context: execution,
+		ProjectID: p.ID, Root: p.RootPath, Engine: name, EngineVersion: version, Action: action, Name: target, Manager: manager, Environ: environ, Context: execution,
 		Notices: review.notices, Reviewed: review.listing,
 		Revalidate: func() string {
 			now, err := os.Stat(p.RootPath)

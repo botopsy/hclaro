@@ -123,6 +123,7 @@ type entry struct {
 	// environ is the composed child environment of a profile-bound operation; nil inherits
 	// Hclaro's environment. It is never serialized.
 	environ []string
+	meta    recordMeta
 }
 
 type Manager struct {
@@ -149,8 +150,10 @@ type Manager struct {
 	// Binder resolves execution profiles of the launch project; nil disables profiles.
 	// Bind returns the planner for a profile's environment and workspace; nil keeps the
 	// launch planner (tests).
-	Binder   Binder
-	Bind     func(environ []string, workspace string) engine.Planner
+	Binder Binder
+	Bind   func(environ []string, workspace string) engine.Planner
+	// Recorder, when set, keeps metadata of every plan, apply, drift scan and graph.
+	Recorder Recorder
 	entries  []*entry
 	plans    []*Plan
 	scans    []*DriftScan
@@ -298,10 +301,11 @@ func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation, release
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
 	op.ID, op.Kind, op.Status, op.Stage = m.NewID(), "plan", Running, "Starting"
 	op.StartedAt, op.Command, op.Diagnostics, op.LogRetained = time.Now().UTC().Format(time.RFC3339), command, []EngineDiagnostic{}, true
-	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release, environ: environ}
+	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release, environ: environ, meta: recordMeta{m.root, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}}
 	m.entries = append(m.entries, e)
 	m.trim()
 	m.running = e
+	m.recordLocked(e)
 	m.wg.Add(1)
 	go m.run(ctx, e, snap)
 	return m.snapshot(e)
@@ -393,6 +397,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 	case code != "":
 		e.log.Append("error", message)
 	}
+	m.recordFinal(e, result, nil)
 	e.log.Finish()
 }
 

@@ -189,10 +189,11 @@ func (m *Manager) StartDriftScan(req DriftStart) (Operation, DriftScan, error) {
 		Resources: []drift.ResourceChange{}, Warnings: []string{}, Diagnostics: []EngineDiagnostic{}, details: map[string]drift.Detail{}, started: now,
 	}
 	op.DriftScanID = scan.ID
-	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: now, release: release, environ: environ}
+	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: now, release: release, environ: environ, meta: recordMeta{m.root, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}}
 	m.entries = append(m.entries, e)
 	m.trim()
 	m.running = e
+	m.recordLocked(e)
 	m.scans = append(m.scans, scan)
 	if len(m.scans) > maxScans {
 		m.scans = m.scans[len(m.scans)-maxScans:]
@@ -275,6 +276,12 @@ func (m *Manager) runDrift(ctx context.Context, e *entry, snap workspace.Snapsho
 		e.log.Append("error", driftMessage(code))
 	}
 	e.log.Append("info", "The refresh-only plan file was deleted. It cannot be applied, and no state was written.")
+	m.recordFinal(e, nil, func(r *Record) {
+		r.DriftStatus, r.DriftOutcome = status, outcome
+		if status == ScanCompleted || status == ScanPartial {
+			r.Drift = &summary
+		}
+	})
 	e.log.Finish()
 }
 

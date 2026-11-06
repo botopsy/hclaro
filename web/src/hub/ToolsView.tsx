@@ -138,7 +138,7 @@ export function ToolsView({ context }: { context: ContextInfo }) {
        <td>{duration(o.durationMs)}</td>
        <td>{o.tool ? <OutcomeLabel op={o} /> : <span className="muted">{o.diagnostic?.code.replaceAll('_', ' ') || '—'}{o.exitCode !== undefined && ` · exit ${o.exitCode}`}</span>}</td>
       </tr>)}</tbody></table>}
-    <p className="info-line">History and logs are kept in memory only, for this Hclaro session. Logs contain sanitized summaries; output values and raw engine output are never kept.</p>
+    <p className="info-line">This list and its logs are kept in memory, for this Hclaro session; redacted metadata also goes to Operation history. Logs contain sanitized summaries; output values and raw engine output are never kept.</p>
    </section>
   </div>;
 }

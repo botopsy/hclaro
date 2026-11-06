@@ -33,8 +33,8 @@ func Token() (string, error) {
 // opening a context run read-only engine commands, which GET routes never do.
 var mutating = map[string]*regexp.Regexp{
 	http.MethodPost:   regexp.MustCompile(`^/api/v1/(workspace/reload|plans|drift-scans|graphs|plans/[0-9a-f]{32}/(approval|apply)|operations/[0-9a-f]{32}/cancel|imports|imports/preview|projects|projects/(order|browse)|projects/[0-9a-f]{32}/(inspect|operations/(init|workspace|validate|fmt-check|providers|outputs-metadata)|workspaces/review|execution-profiles|execution-profiles/default|execution-profiles/[0-9a-f]{32}/clone)|contexts|comparisons)$`),
-	http.MethodPatch:  regexp.MustCompile(`^/api/v1/projects/[0-9a-f]{32}(/execution-profiles/[0-9a-f]{32})?$`),
-	http.MethodDelete: regexp.MustCompile(`^/api/v1/projects/[0-9a-f]{32}(/execution-profiles/[0-9a-f]{32})?$`),
+	http.MethodPatch:  regexp.MustCompile(`^/api/v1/(projects/[0-9a-f]{32}(/execution-profiles/[0-9a-f]{32})?|history/retention)$`),
+	http.MethodDelete: regexp.MustCompile(`^/api/v1/(projects/[0-9a-f]{32}(/execution-profiles/[0-9a-f]{32})?|history(/[0-9a-f]{32})?)$`),
 }
 
 func equal(got, want string) bool {

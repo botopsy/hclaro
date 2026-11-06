@@ -29,6 +29,8 @@ type WorkspaceRequest struct {
 	Notices []string
 	// Reviewed is the listing the user saw. The command runs only if a fresh listing matches.
 	Reviewed engine.WorkspaceList
+	// EngineVersion is the version the project was inspected with, for operation history.
+	EngineVersion string
 	// Revalidate runs before the command starts. A non-empty code refuses to run.
 	Revalidate func() string
 	// Finished receives the listing read after the command, or nil when it is unknown.
@@ -99,7 +101,7 @@ func (r *Inits) StartWorkspace(req WorkspaceRequest) (Operation, error) {
 		Kind: "workspace", Command: WorkspaceCommand(req.Engine, req.Action, req.Name), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 		Workspace: &WorkspaceResult{Action: req.Action, Name: req.Name, CLIDefaultBefore: req.Reviewed.Current},
 	}
-	return r.begin(op, req.Release, nil, func(ctx context.Context, e *initEntry) { r.runWorkspace(ctx, e, req) })
+	return r.begin(op, recordMeta{req.Root, req.Engine, req.EngineVersion, req.Name}, req.Release, nil, func(ctx context.Context, e *initEntry) { r.runWorkspace(ctx, e, req) })
 }
 
 func (r *Inits) runWorkspace(ctx context.Context, e *initEntry, req WorkspaceRequest) {
@@ -139,6 +141,7 @@ func (r *Inits) runWorkspace(ctx context.Context, e *initEntry, req WorkspaceReq
 		level = "info"
 	}
 	e.log.Append(level, message)
+	r.recordFinal(e)
 	e.log.Finish()
 }
 

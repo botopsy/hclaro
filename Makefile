@@ -35,7 +35,7 @@ bin/mock/tofu$(EXE): scripts/fake-engine/main.go fixtures/state.json
 	go build -trimpath -buildvcs=false -o bin/mock/tofu$(EXE) ./scripts/fake-engine
 
 demo: binary bin/mock/terraform$(EXE)
-	PATH="$(CURDIR)/bin/mock:$$PATH" TF_DATA_DIR="$(CURDIR)/fixtures/backend" ./bin/hclaro$(EXE) --engine terraform --path fixtures/project --no-browser
+	PATH="$(CURDIR)/bin/mock:$$PATH" TF_DATA_DIR="$(CURDIR)/fixtures/backend" HCLARO_CONFIG_DIR="$(CURDIR)/.cache/demo/config" ./bin/hclaro$(EXE) --engine terraform --path fixtures/project --no-browser
 
 # Synthetic Hub projects and a registry under .cache/hub-demo; the real registry is untouched.
 demo-hub: binary bin/mock/terraform$(EXE) bin/mock/tofu$(EXE)

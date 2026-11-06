@@ -241,6 +241,8 @@ describe('Routes', () => {
     expect(parseRoute('/projects')).toEqual({ kind: 'hub' });
     expect(parseRoute('/compare')).toEqual({ kind: 'compare' });
     expect(parseRoute('/compare/extra')).toEqual({ kind: 'launch' });
+    expect(parseRoute('/history')).toEqual({ kind: 'history' });
+    expect(parseRoute('/history/' + 'a'.repeat(32))).toEqual({ kind: 'launch' });
     expect(parseRoute(`/projects/${network}/workspaces/prod`)).toEqual({ kind: 'context', projectId: network, workspace: 'prod', view: 'Resources' });
     expect(parseRoute(`/projects/${network}/workspaces/prod/modules`)).toEqual({ kind: 'context', projectId: network, workspace: 'prod', view: 'Modules' });
     for (const bad of ['..%2Fprod', '%E0%A4%A', 'a%20b', 'x'.repeat(91)]) {
