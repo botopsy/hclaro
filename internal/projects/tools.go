@@ -230,7 +230,7 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 		return operations.Operation{}, ErrBusy
 	}
 	return h.Inits.StartTool(operations.ToolRequest{
-		ProjectID: p.ID, ContextID: c.ID, Root: p.RootPath, Engine: name, Workspace: c.Workspace, Tool: tool, Recursive: recursive,
+		ProjectID: p.ID, ContextID: c.ID, Root: p.RootPath, Engine: name, EngineVersion: c.Snapshot().Info.Version, Workspace: c.Workspace, Tool: tool, Recursive: recursive,
 		Tools: tools, Environ: environ, Notices: notices, Files: files, Folders: folders, Skipped: skipped, Context: c.Execution.Clone(),
 		Revalidate: func() string {
 			now, err := os.Stat(p.RootPath)

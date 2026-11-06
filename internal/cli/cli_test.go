@@ -1,9 +1,18 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"hclaro/fixtures"
+	"hclaro/internal/history"
+	"hclaro/internal/operations"
 )
 
 func TestArguments(t *testing.T) {
@@ -34,5 +43,31 @@ func TestHubArguments(t *testing.T) {
 	}
 	if o, _ := Parse([]string{"--hub", "--path", "."}, io.Discard); !o.Hub || !o.PathSet {
 		t.Fatalf("%+v", o)
+	}
+}
+
+func TestExportHistory(t *testing.T) {
+	if _, err := Parse([]string{"--export-history", "history.txt"}, io.Discard); err == nil {
+		t.Fatal("accepted a .txt export")
+	}
+	if o, err := Parse([]string{"--export-history", "history.md"}, io.Discard); err != nil || o.ExportHistory != "history.md" {
+		t.Fatalf("%+v %v", o, err)
+	}
+	config := t.TempDir()
+	t.Setenv("HCLARO_CONFIG_DIR", config)
+	store := history.Open(config, time.Now())
+	store.Record(operations.Record{Operation: operations.Operation{ID: strings.Repeat("a", 32), Kind: "plan", Status: operations.Failed, StartedAt: time.Now().UTC().Format(time.RFC3339), Diagnostic: &operations.Diagnostic{Code: "plan_failed", Message: "password=" + fixtures.Canary}}, Root: "/synthetic/net", Engine: "terraform", Final: true})
+	out := filepath.Join(t.TempDir(), "history.json")
+	var log strings.Builder
+	// Export runs no server and reads no project, even when a path is given.
+	if err := Run(context.Background(), Options{ExportHistory: out, Path: "/nonexistent"}, &log, "test"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(out)
+	if err != nil || !strings.Contains(string(b), strings.Repeat("a", 32)) || strings.Contains(string(b), fixtures.Canary) || !strings.Contains(log.String(), "Wrote 1 operation(s)") {
+		t.Fatalf("%v %s %s", err, b, log.String())
+	}
+	if err := Run(context.Background(), Options{ExportHistory: out}, io.Discard, "test"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("overwrote an existing export: %v", err)
 	}
 }

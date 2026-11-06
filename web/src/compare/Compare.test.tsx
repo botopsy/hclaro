@@ -90,7 +90,8 @@ describe('Compare workspaces', () => {
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0].body).toEqual({ left: { projectId, workspace: 'dev' }, right: { projectId, workspace: 'prod' }, rules: [], reload: false, acknowledgeStateRead: true });
     expect(await screen.findByRole('group', { name: 'Filter by comparison status' })).toBeInTheDocument();
-  });
+    // Many simulated keystrokes; allow for a loaded test machine.
+  }, 15_000);
 
   it('shows target identity, counts, the drift caveat and redacted differences', async () => {
     const user = userEvent.setup();

@@ -30,9 +30,11 @@ type ToolRequest struct {
 	// Workspace is the context's UI workspace. Only providers and outputs pass it to the
 	// engine, as the child's TF_WORKSPACE.
 	Workspace string
-	Tool      engine.Tool
-	Recursive bool
-	Tools     engine.Tools
+	// EngineVersion is the version the context was read with, for operation history.
+	EngineVersion string
+	Tool          engine.Tool
+	Recursive     bool
+	Tools         engine.Tools
 	// Environ is the pinned child environment; it is used here only to recognize secret
 	// values the engine might echo.
 	Environ []string
@@ -223,7 +225,7 @@ func (r *Inits) StartTool(req ToolRequest) (Operation, error) {
 		}
 		return nil
 	}
-	return r.begin(op, req.Release, conflict, func(ctx context.Context, e *initEntry) { r.runTool(ctx, e, req) })
+	return r.begin(op, recordMeta{req.Root, req.Engine, req.EngineVersion, req.Workspace}, req.Release, conflict, func(ctx context.Context, e *initEntry) { r.runTool(ctx, e, req) })
 }
 
 func (r *Inits) runTool(ctx context.Context, e *initEntry, req ToolRequest) {
@@ -258,6 +260,7 @@ func (r *Inits) runTool(ctx context.Context, e *initEntry, req ToolRequest) {
 		level = "info"
 	}
 	e.log.Append(level, message)
+	r.recordFinal(e)
 	e.log.Finish()
 }
 

@@ -10,6 +10,8 @@ export type Route = {
 } | {
   kind: 'compare';
 } | {
+  kind: 'history';
+} | {
   kind: 'project';
   projectId: string;
 } | {
@@ -30,6 +32,7 @@ const workspaceName = /^[A-Za-z0-9_-]{1,90}$/;
 export function parseRoute(pathname: string): Route {
   const parts = pathname.split('/').filter(Boolean);
   if (parts[0] === 'compare' && parts.length === 1) return { kind: 'compare' };
+  if (parts[0] === 'history' && parts.length === 1) return { kind: 'history' };
   if (parts[0] !== 'projects') return { kind: 'launch' };
   if (parts.length === 1) return { kind: 'hub' };
   if (!projectId.test(parts[1])) return { kind: 'hub' };
@@ -44,6 +47,9 @@ export function parseRoute(pathname: string): Route {
 }
 export function comparePath() {
   return '/compare';
+}
+export function historyPath() {
+  return '/history';
 }
 // Deep links into a Hub workspace may name a resource to inspect and the execution profile
 // the link was made with (a new tab has no profile choice of its own). The parameters are

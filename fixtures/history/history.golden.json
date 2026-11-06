@@ -1,0 +1,710 @@
+{
+  "apply": {
+    "id": "00000000000000000000000000000003",
+    "kind": "apply",
+    "status": "succeeded",
+    "startedAt": "2026-11-06T10:00:00Z",
+    "finishedAt": "2026-11-06T10:00:00Z",
+    "durationMs": 1000,
+    "exitCode": 0,
+    "engine": "terraform",
+    "engineVersion": "1.9.8",
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectName": "network",
+    "registered": false,
+    "workspace": "demo",
+    "command": [
+      "terraform",
+      "apply",
+      "-input=false",
+      "-json",
+      "\u003creviewed saved plan 8fd04b5c44a5\u003e"
+    ],
+    "plan": {
+      "planId": "00000000000000000000000000000002",
+      "kind": "plan",
+      "counts": {
+        "create": 1,
+        "delete": 2,
+        "forget": 1,
+        "read": 1,
+        "replace": 2,
+        "unknown": 1,
+        "update": 3
+      },
+      "changes": [
+        {
+          "address": "aws_s3_bucket.logs",
+          "action": "create"
+        },
+        {
+          "address": "module.network.aws_subnet.main[0]",
+          "action": "update"
+        },
+        {
+          "address": "aws_iam_role.legacy",
+          "action": "delete"
+        },
+        {
+          "address": "module.compute.aws_instance.main[0]",
+          "action": "replace"
+        },
+        {
+          "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+          "action": "replace"
+        },
+        {
+          "address": "data.aws_caller_identity.current",
+          "action": "read"
+        },
+        {
+          "address": "aws_db_instance.primary",
+          "action": "update"
+        },
+        {
+          "address": "aws_instance.retired",
+          "action": "delete"
+        },
+        {
+          "address": "aws_security_group.web",
+          "action": "update"
+        },
+        {
+          "address": "aws_vpc.imported",
+          "action": "import"
+        },
+        {
+          "address": "random_password.unused",
+          "action": "forget"
+        },
+        {
+          "address": "aws_lb.edge",
+          "action": "unknown"
+        }
+      ],
+      "outputs": 4,
+      "drift": 1,
+      "errored": false,
+      "destructive": true,
+      "varFiles": [],
+      "replace": [],
+      "fingerprint": "0123456789ab"
+    },
+    "outcome": {
+      "result": "applied",
+      "summary": "The engine reported that the apply finished. This is not proof that every resource is healthy; check them in your provider.",
+      "stateReloaded": true,
+      "verified": false,
+      "planId": "00000000000000000000000000000002"
+    },
+    "excerpt": [
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Checking workspace…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Verifying saved plan…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Applying…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Apply started"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Apply complete: 1 added, 1 changed, 2 destroyed."
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Reloading state…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Apply finished. The state view was reloaded from the engine."
+      }
+    ],
+    "live": true
+  },
+  "compare": {
+    "left": "00000000000000000000000000000001",
+    "right": "00000000000000000000000000000004",
+    "notices": [],
+    "added": [
+      {
+        "address": "aws_instance.web[0]",
+        "action": "replace"
+      },
+      {
+        "address": "aws_instance.web[1]",
+        "action": "replace"
+      },
+      {
+        "address": "aws_lb_target_group_attachment.web[2]",
+        "action": "delete"
+      }
+    ],
+    "removed": [
+      {
+        "address": "aws_s3_bucket.logs",
+        "action": "create"
+      },
+      {
+        "address": "module.network.aws_subnet.main[0]",
+        "action": "update"
+      },
+      {
+        "address": "aws_iam_role.legacy",
+        "action": "delete"
+      },
+      {
+        "address": "module.compute.aws_instance.main[0]",
+        "action": "replace"
+      },
+      {
+        "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+        "action": "replace"
+      },
+      {
+        "address": "data.aws_caller_identity.current",
+        "action": "read"
+      },
+      {
+        "address": "aws_db_instance.primary",
+        "action": "update"
+      },
+      {
+        "address": "aws_instance.retired",
+        "action": "delete"
+      },
+      {
+        "address": "aws_security_group.web",
+        "action": "update"
+      },
+      {
+        "address": "aws_vpc.imported",
+        "action": "import"
+      },
+      {
+        "address": "random_password.unused",
+        "action": "forget"
+      },
+      {
+        "address": "aws_lb.edge",
+        "action": "unknown"
+      }
+    ],
+    "changed": [],
+    "same": 0,
+    "complete": true
+  },
+  "failed": {
+    "id": "00000000000000000000000000000006",
+    "kind": "plan",
+    "status": "failed",
+    "startedAt": "2026-11-06T10:00:00Z",
+    "finishedAt": "2026-11-06T10:00:00Z",
+    "durationMs": 1000,
+    "exitCode": 1,
+    "engine": "terraform",
+    "engineVersion": "1.9.8",
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectName": "network",
+    "registered": false,
+    "workspace": "demo",
+    "command": [
+      "terraform",
+      "plan",
+      "-input=false",
+      "-json",
+      "-out=\u003cprivate temporary file\u003e"
+    ],
+    "diagnostic": {
+      "code": "plan_failed",
+      "message": "The plan failed. Review the engine diagnostics; lines that look like secrets are withheld."
+    },
+    "outcome": {
+      "result": "not_planned",
+      "summary": "The plan did not finish and no plan was kept. Planning does not change infrastructure.",
+      "verified": false
+    },
+    "excerpt": [
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Checking workspace…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Planning…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "error",
+        "text": "Error: Invalid provider configuration"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "error",
+        "text": "The plan failed. Review the engine diagnostics; lines that look like secrets are withheld."
+      }
+    ],
+    "live": true
+  },
+  "page": {
+    "status": "ready",
+    "retention": {
+      "maxEntries": 500,
+      "maxAgeDays": 90,
+      "maxBytes": 4194304
+    },
+    "total": 4,
+    "stored": 4,
+    "entries": [
+      {
+        "id": "00000000000000000000000000000006",
+        "kind": "plan",
+        "status": "failed",
+        "startedAt": "2026-11-06T10:00:00Z",
+        "finishedAt": "2026-11-06T10:00:00Z",
+        "durationMs": 1000,
+        "exitCode": 1,
+        "engine": "terraform",
+        "engineVersion": "1.9.8",
+        "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "projectName": "network",
+        "registered": false,
+        "workspace": "demo",
+        "command": [
+          "terraform",
+          "plan",
+          "-input=false",
+          "-json",
+          "-out=\u003cprivate temporary file\u003e"
+        ],
+        "diagnostic": {
+          "code": "plan_failed",
+          "message": "The plan failed. Review the engine diagnostics; lines that look like secrets are withheld."
+        },
+        "outcome": {
+          "result": "not_planned",
+          "summary": "The plan did not finish and no plan was kept. Planning does not change infrastructure.",
+          "verified": false
+        },
+        "excerpt": [],
+        "live": true
+      },
+      {
+        "id": "00000000000000000000000000000004",
+        "kind": "plan",
+        "status": "succeeded",
+        "startedAt": "2026-11-06T10:00:00Z",
+        "finishedAt": "2026-11-06T10:00:00Z",
+        "durationMs": 1000,
+        "exitCode": 0,
+        "engine": "terraform",
+        "engineVersion": "1.9.8",
+        "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "projectName": "network",
+        "registered": false,
+        "workspace": "demo",
+        "command": [
+          "terraform",
+          "plan",
+          "-input=false",
+          "-json",
+          "-out=\u003cprivate temporary file\u003e"
+        ],
+        "plan": {
+          "planId": "00000000000000000000000000000005",
+          "kind": "plan",
+          "counts": {
+            "delete": 1,
+            "replace": 2
+          },
+          "changes": [
+            {
+              "address": "aws_instance.web[0]",
+              "action": "replace"
+            },
+            {
+              "address": "aws_instance.web[1]",
+              "action": "replace"
+            },
+            {
+              "address": "aws_lb_target_group_attachment.web[2]",
+              "action": "delete"
+            }
+          ],
+          "outputs": 0,
+          "drift": 0,
+          "errored": false,
+          "destructive": true,
+          "varFiles": [],
+          "replace": [],
+          "fingerprint": "0123456789ab"
+        },
+        "outcome": {
+          "result": "planned",
+          "summary": "A plan was created for review. Planning does not change infrastructure. A plan in history cannot be applied; run a new plan and review it.",
+          "verified": false
+        },
+        "excerpt": [],
+        "live": true
+      },
+      {
+        "id": "00000000000000000000000000000003",
+        "kind": "apply",
+        "status": "succeeded",
+        "startedAt": "2026-11-06T10:00:00Z",
+        "finishedAt": "2026-11-06T10:00:00Z",
+        "durationMs": 1000,
+        "exitCode": 0,
+        "engine": "terraform",
+        "engineVersion": "1.9.8",
+        "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "projectName": "network",
+        "registered": false,
+        "workspace": "demo",
+        "command": [
+          "terraform",
+          "apply",
+          "-input=false",
+          "-json",
+          "\u003creviewed saved plan 8fd04b5c44a5\u003e"
+        ],
+        "plan": {
+          "planId": "00000000000000000000000000000002",
+          "kind": "plan",
+          "counts": {
+            "create": 1,
+            "delete": 2,
+            "forget": 1,
+            "read": 1,
+            "replace": 2,
+            "unknown": 1,
+            "update": 3
+          },
+          "changes": [
+            {
+              "address": "aws_s3_bucket.logs",
+              "action": "create"
+            },
+            {
+              "address": "module.network.aws_subnet.main[0]",
+              "action": "update"
+            },
+            {
+              "address": "aws_iam_role.legacy",
+              "action": "delete"
+            },
+            {
+              "address": "module.compute.aws_instance.main[0]",
+              "action": "replace"
+            },
+            {
+              "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+              "action": "replace"
+            },
+            {
+              "address": "data.aws_caller_identity.current",
+              "action": "read"
+            },
+            {
+              "address": "aws_db_instance.primary",
+              "action": "update"
+            },
+            {
+              "address": "aws_instance.retired",
+              "action": "delete"
+            },
+            {
+              "address": "aws_security_group.web",
+              "action": "update"
+            },
+            {
+              "address": "aws_vpc.imported",
+              "action": "import"
+            },
+            {
+              "address": "random_password.unused",
+              "action": "forget"
+            },
+            {
+              "address": "aws_lb.edge",
+              "action": "unknown"
+            }
+          ],
+          "outputs": 4,
+          "drift": 1,
+          "errored": false,
+          "destructive": true,
+          "varFiles": [],
+          "replace": [],
+          "fingerprint": "0123456789ab"
+        },
+        "outcome": {
+          "result": "applied",
+          "summary": "The engine reported that the apply finished. This is not proof that every resource is healthy; check them in your provider.",
+          "stateReloaded": true,
+          "verified": false,
+          "planId": "00000000000000000000000000000002"
+        },
+        "excerpt": [],
+        "live": true
+      },
+      {
+        "id": "00000000000000000000000000000001",
+        "kind": "plan",
+        "status": "succeeded",
+        "startedAt": "2026-11-06T10:00:00Z",
+        "finishedAt": "2026-11-06T10:00:00Z",
+        "durationMs": 1000,
+        "exitCode": 0,
+        "engine": "terraform",
+        "engineVersion": "1.9.8",
+        "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "projectName": "network",
+        "registered": false,
+        "workspace": "demo",
+        "command": [
+          "terraform",
+          "plan",
+          "-input=false",
+          "-json",
+          "-out=\u003cprivate temporary file\u003e"
+        ],
+        "plan": {
+          "planId": "00000000000000000000000000000002",
+          "kind": "plan",
+          "counts": {
+            "create": 1,
+            "delete": 2,
+            "forget": 1,
+            "read": 1,
+            "replace": 2,
+            "unknown": 1,
+            "update": 3
+          },
+          "changes": [
+            {
+              "address": "aws_s3_bucket.logs",
+              "action": "create"
+            },
+            {
+              "address": "module.network.aws_subnet.main[0]",
+              "action": "update"
+            },
+            {
+              "address": "aws_iam_role.legacy",
+              "action": "delete"
+            },
+            {
+              "address": "module.compute.aws_instance.main[0]",
+              "action": "replace"
+            },
+            {
+              "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+              "action": "replace"
+            },
+            {
+              "address": "data.aws_caller_identity.current",
+              "action": "read"
+            },
+            {
+              "address": "aws_db_instance.primary",
+              "action": "update"
+            },
+            {
+              "address": "aws_instance.retired",
+              "action": "delete"
+            },
+            {
+              "address": "aws_security_group.web",
+              "action": "update"
+            },
+            {
+              "address": "aws_vpc.imported",
+              "action": "import"
+            },
+            {
+              "address": "random_password.unused",
+              "action": "forget"
+            },
+            {
+              "address": "aws_lb.edge",
+              "action": "unknown"
+            }
+          ],
+          "outputs": 4,
+          "drift": 1,
+          "errored": false,
+          "destructive": true,
+          "varFiles": [],
+          "replace": [],
+          "fingerprint": "0123456789ab",
+          "execution": {
+            "operationId": "00000000000000000000000000000003",
+            "status": "succeeded",
+            "result": "applied",
+            "finishedAt": "2026-11-06T10:00:00Z"
+          }
+        },
+        "outcome": {
+          "result": "planned",
+          "summary": "A plan was created for review. Planning does not change infrastructure. A plan in history cannot be applied; run a new plan and review it.",
+          "verified": false
+        },
+        "excerpt": [],
+        "live": true
+      }
+    ],
+    "projects": [
+      {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "network",
+        "registered": false,
+        "workspaces": [
+          "demo"
+        ]
+      }
+    ]
+  },
+  "plan": {
+    "id": "00000000000000000000000000000001",
+    "kind": "plan",
+    "status": "succeeded",
+    "startedAt": "2026-11-06T10:00:00Z",
+    "finishedAt": "2026-11-06T10:00:00Z",
+    "durationMs": 1000,
+    "exitCode": 0,
+    "engine": "terraform",
+    "engineVersion": "1.9.8",
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectName": "network",
+    "registered": false,
+    "workspace": "demo",
+    "command": [
+      "terraform",
+      "plan",
+      "-input=false",
+      "-json",
+      "-out=\u003cprivate temporary file\u003e"
+    ],
+    "plan": {
+      "planId": "00000000000000000000000000000002",
+      "kind": "plan",
+      "counts": {
+        "create": 1,
+        "delete": 2,
+        "forget": 1,
+        "read": 1,
+        "replace": 2,
+        "unknown": 1,
+        "update": 3
+      },
+      "changes": [
+        {
+          "address": "aws_s3_bucket.logs",
+          "action": "create"
+        },
+        {
+          "address": "module.network.aws_subnet.main[0]",
+          "action": "update"
+        },
+        {
+          "address": "aws_iam_role.legacy",
+          "action": "delete"
+        },
+        {
+          "address": "module.compute.aws_instance.main[0]",
+          "action": "replace"
+        },
+        {
+          "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+          "action": "replace"
+        },
+        {
+          "address": "data.aws_caller_identity.current",
+          "action": "read"
+        },
+        {
+          "address": "aws_db_instance.primary",
+          "action": "update"
+        },
+        {
+          "address": "aws_instance.retired",
+          "action": "delete"
+        },
+        {
+          "address": "aws_security_group.web",
+          "action": "update"
+        },
+        {
+          "address": "aws_vpc.imported",
+          "action": "import"
+        },
+        {
+          "address": "random_password.unused",
+          "action": "forget"
+        },
+        {
+          "address": "aws_lb.edge",
+          "action": "unknown"
+        }
+      ],
+      "outputs": 4,
+      "drift": 1,
+      "errored": false,
+      "destructive": true,
+      "varFiles": [],
+      "replace": [],
+      "fingerprint": "0123456789ab",
+      "execution": {
+        "operationId": "00000000000000000000000000000003",
+        "status": "succeeded",
+        "result": "applied",
+        "finishedAt": "2026-11-06T10:00:00Z"
+      }
+    },
+    "outcome": {
+      "result": "planned",
+      "summary": "A plan was created for review. Planning does not change infrastructure. A plan in history cannot be applied; run a new plan and review it.",
+      "verified": false
+    },
+    "excerpt": [
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Checking workspace…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Planning…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Reading plan…"
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "Plan ready for review: 13 resource change(s), 5 output change(s)."
+      }
+    ],
+    "live": true
+  }
+}

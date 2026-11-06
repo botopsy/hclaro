@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Plan and execution history (M13, draft)
+
+- **History** in the sidebar: a persistent local record of plans (normal, replace, import), applies, drift scans, graphs, initializations, workspace commands and project tools, for the launch project and Hub projects. Each entry has its times, duration, exit code, status, engine and version, project and workspace, profile, context fingerprint, redacted command, diagnostic, Git commit and branch, a sanitized log excerpt and, for plans, the counts and addresses/actions of up to 300 changes.
+- Planned changes and the execution outcome are separate: a plan shows whether an apply used it; an apply reports *Engine reported applied* (never verified), *Partial* or *Nothing applied*; cancelled and failed plans keep no plan; operations interrupted by a stop are shown as unknown at the next start.
+- Filters (project, workspace, operation, status), search, a details drawer with *Planned* / *Executed* stages, comparison of two compatible plan summaries, and redacted Markdown/JSON export (without log lines). `hclaro --export-history FILE.md|FILE.json` writes the history to a new file and exits.
+- Retention by count, age and size (default 500 operations, 90 days, 4 MiB), deleting one entry and clearing all or one project's history. Plan files, state, values, environment and raw logs are never stored, and a plan in history cannot be applied.
+- `history.json` (schema 1) next to `projects.json`: atomic `0600` writes, recovery from corrupt files and interrupted writes, migrations for later schemas, read-only for newer ones.
+- New routes: `GET /api/v1/history`, `GET /api/v1/history/{id}`, `GET /api/v1/history/compare`, `GET /api/v1/history/export`, `PATCH /api/v1/history/retention`, `DELETE /api/v1/history/{id}`, `DELETE /api/v1/history`. New package `internal/history`; `operations.Recorder`; client route `/history`.
+
 ### Workspace comparison (M12, draft)
 
 - **Compare** in the sidebar compares the recorded state of two Hub workspaces: `{project, workspace, execution profile}` per side, in one project or across project roots, Terraform and OpenTofu mixed. Each side shows its root, engine, backend and last read time. Nothing is read until **Compare…** is confirmed; each side is read like a Hub tab (`show -json` with a per-command `TF_WORKSPACE`), and a side already read in this session is reused.

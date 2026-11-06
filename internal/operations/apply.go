@@ -286,10 +286,12 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 		start:   time.Now(),
 		release: release,
 		environ: slices.Clone(a.environ),
+		meta:    recordMeta{m.root, a.engine, a.version, a.workspace},
 	}
 	m.entries = append(m.entries, e)
 	m.trim()
 	m.running = e
+	m.recordLocked(e)
 	m.wg.Add(1)
 	go m.runApply(ctx, e, a)
 	return m.snapshot(e), nil
@@ -372,6 +374,8 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 		level = "error"
 	}
 	e.log.Append(level, message)
+	applied, _ := m.Plan(e.op.PlanID)
+	m.recordFinal(e, applied, nil)
 	e.log.Finish()
 }
 

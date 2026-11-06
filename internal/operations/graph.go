@@ -188,10 +188,11 @@ func (m *Manager) StartGraph(req GraphStart) (Operation, GraphRun, error) {
 		EngineVersion: snap.Info.Version, Workspace: snap.Info.Workspace, Context: bound.Clone(), Warnings: []string{}, started: now,
 	}
 	op.GraphID = run.ID
-	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: now, release: release, environ: environ}
+	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: now, release: release, environ: environ, meta: recordMeta{m.root, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}}
 	m.entries = append(m.entries, e)
 	m.trim()
 	m.running = e
+	m.recordLocked(e)
 	m.graphs = append(m.graphs, run)
 	if len(m.graphs) > maxGraphs {
 		m.graphs = m.graphs[len(m.graphs)-maxGraphs:]
@@ -238,6 +239,7 @@ func (m *Manager) runGraph(ctx context.Context, e *entry, snap workspace.Snapsho
 		e.log.Append("error", graphMessage(code))
 	}
 	e.log.Append("info", "Only a redacted summary of the graph was kept. No plan, refresh or apply was run.")
+	m.recordFinal(e, nil, nil)
 	e.log.Finish()
 }
 

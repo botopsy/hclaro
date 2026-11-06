@@ -12,7 +12,7 @@ Go 1.26 or newer and Make are sufficient; the frontend is already built and embe
 make demo
 ```
 
-Open the private session URL printed in the terminal. This builds a fake CLI in `bin/mock`, selects it explicitly, and uses only the synthetic project, backend metadata, and 316-resource fixture. It never runs an installed Terraform/OpenTofu executable. Ctrl+C stops the server. Your environment must permit local TCP listeners and a browser.
+Open the private session URL printed in the terminal. This builds a fake CLI in `bin/mock`, selects it explicitly, and uses only the synthetic project, backend metadata, and 316-resource fixture. It never runs an installed Terraform/OpenTofu executable. Operation history from the demo is kept in `.cache/demo/config`, not in your real configuration folder. Ctrl+C stops the server. Your environment must permit local TCP listeners and a browser.
 
 Do not install the fake executable on your normal PATH.
 
@@ -124,7 +124,7 @@ Each Hub workspace tab has a **Tools** view (also reachable with **Project tools
 - `output -json` prints every value in plaintext, including values not marked sensitive. Hclaro decodes only each output's name, type and `sensitive` flag; the values are skipped by the decoder and never kept, logged, cached or sent to the browser. Output names that look like secrets are counted, not shown. There is no way to reveal values in this release.
 - Inherited `TF_CLI_ARGS` or `TF_CLI_ARGS_<command>` with anything but `-no-color` makes a tool unavailable. There is no command box, path, `-chdir` or executable option: the request names only the open workspace and, for format check, whether to recurse.
 - A running command stays bound to the workspace it was started in, even if you switch the tab. Tools can run in parallel with each other and in several projects at once, but not while init, a workspace command or a plan runs in the same folder. Each result shows status, exit code, duration and the sanitized log, with **Cancel** while running; a cancelled or timed-out command shows no partial result.
-- **Operations in this project** lists init, workspace commands and tool runs for the project (this workspace or all), with status and a link back to the project page. History is in memory only and disappears when Hclaro stops; the last 50 operations and 10 logs are kept.
+- **Operations in this project** lists init, workspace commands and tool runs for the project (this workspace or all), with status and a link back to the project page. This list and its logs are in memory only (the last 50 operations and 10 logs); redacted metadata is also kept in [Operation history](#operation-history).
 
 ### Execution profiles
 
@@ -159,6 +159,20 @@ Profiles are saved in `profiles.json` next to `projects.json` (schema `version: 
 - **Partial and stale results.** If a side cannot be read (not initialized, missing workspace, backend or credential error, project removed), the comparison says which side and why and compares nothing: an unavailable workspace is never treated as empty. A workspace that genuinely records no state is compared as empty. A comparison stops matching, and its results are withheld, when either side is read again, its project or execution profile changes, or its read is released to save memory (eight reads are kept). Up to eight comparisons are kept in memory for 12 hours; nothing is written to disk.
 
 
+### Operation history
+
+**History** in the sidebar lists the operations Hclaro ran on this machine, also after a restart: plans (normal, replace, import), applies, drift scans, dependency graphs, initializations, workspace commands and project tools, for the project opened from the terminal and for Hub projects.
+
+- **What is kept.** For each operation: when it started and finished, its duration and exit code, the project (Hub alias, or folder name for a project not in the Hub; the folder path is not kept), workspace, engine and version, execution profile name and revision, a short context fingerprint, the redacted command, the diagnostic code and message, the Git commit and branch checked out in the project (read from the repository files, uncommitted changes are not detected), the last 40 sanitized log lines and, for plans, the counts and the address and action of up to 300 changes.
+- **What is never kept.** Plan files, state, attribute values, output values, variable values, environment values, credentials and raw engine output. Every value passes the same secret checks as the log before it is written, and a value that looks like a secret is withheld.
+- **Planned and executed are separate.** A plan's details show what it proposed (**Planned**) and, separately, whether an apply used it (**Executed**). An apply that the engine reported as finished is shown as *Engine reported applied*, never as verified: it is not proof that resources are healthy. Cancelled or failed applies are *Partial · may be changed*. Operations still running when Hclaro stopped show as *Interrupted · unknown* at the next start.
+- **No replay.** A plan in history has no plan file and can never be approved or applied; run a new plan and review it.
+- **Views.** Filter by project, workspace, operation and status, and search operations, addresses and commits. Tick two plans of the same project, workspace and engine to **Compare summaries**: newly planned, no longer planned and different actions, with a notice when the plan context or engine version differed.
+- **Export** downloads a redacted Markdown or JSON report of the filtered operations, without log lines; it states what was left out. From the command line, `hclaro --export-history FILE.md` (or `.json`) writes the whole history to a new file (owner-only permissions) and exits; it never overwrites a file and refuses `.terraform` and `.git` folders.
+- **Retention and deletion.** By default 500 operations, 90 days and 4 MiB are kept; **Retention** changes the limits (10–5,000 operations, 1–3,650 days, 64 KiB–16 MiB) and the oldest entries go first. Delete one entry from its details, or **Clear…** all history or one project's. Deleting history never changes infrastructure, state or files.
+
+History is saved in `history.json` next to `projects.json` (schema `version: 1`, atomic `0600` writes in a `0700` folder). A file that cannot be decoded is moved aside to `history.json.corrupt-<time>` and history starts empty; a file written by a newer Hclaro is left unchanged and nothing new is recorded. Two Hclaro processes sharing the folder merge their entries.
+
 ## Explorer
 
 - Resource table with 50-row pages, address sorting, and composable provider/type/mode/module filters.
@@ -182,7 +196,7 @@ The review shows:
 - Output changes and changes made outside Terraform/OpenTofu (drift).
 - Metadata: engine, workspace, variable files, plan SHA-256, and a warning when configuration changed since the plan.
 
-Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans and applies with status, duration, exit code and their logs. History lives in memory only.
+Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans and applies with status, duration, exit code and their logs; this list is in memory only. Redacted metadata of every operation is also kept in [Operation history](#operation-history).
 
 ## Drift detection
 
