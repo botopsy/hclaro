@@ -137,3 +137,23 @@ export async function streamEvents(id: string, after: number, handlers: StreamHa
   }
   return ended;
 }
+// download saves an authenticated GET response as a file. The bearer token stays in a header;
+// the browser receives only a local object URL.
+export async function download(path: string, filename: string) {
+  const response = await fetch(`/api/v1/${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    cache: 'no-store'
+  });
+  if (!response.ok) return failure(response);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.rel = 'noopener';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

@@ -173,8 +173,11 @@ type Hub struct {
 	closed map[string]string
 	// reviews holds reviewed workspace commands by context ID until they start or expire.
 	reviews map[string]*pendingReview
-	loads   chan struct{}
-	wg      sync.WaitGroup
+	// comparisons are workspace comparisons in memory, oldest first in comparisonOrder.
+	comparisons     map[string]*Comparison
+	comparisonOrder []string
+	loads           chan struct{}
+	wg              sync.WaitGroup
 }
 
 // NewHub creates a Hub. Close cancels running reads.

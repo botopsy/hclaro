@@ -1,4 +1,5 @@
-// hub-demo writes the synthetic Workspace Hub projects (fixtures.HubProjects) below a
+// hub-demo writes the synthetic Workspace Hub projects (fixtures.HubProjects and the
+// workspace comparison roots, fixtures.CompareProjects) below a
 // directory and registers them in a registry there, for `make demo-hub` and browser checks.
 // It never touches the real per-user registry.
 package main
@@ -22,13 +23,16 @@ func main() {
 	if err == nil {
 		err = fixtures.WriteHubProjects(filepath.Join(dir, "projects"))
 	}
+	if err == nil {
+		err = fixtures.WriteCompareProjects(filepath.Join(dir, "projects"))
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hub-demo:", err)
 		os.Exit(1)
 	}
 	hub := projects.NewHub(projects.Open(filepath.Join(dir, "config"), time.Now()), "")
 	defer hub.Close()
-	for _, p := range fixtures.HubProjects {
+	for _, p := range append(append([]fixtures.HubProject{}, fixtures.HubProjects...), fixtures.CompareProjects...) {
 		if _, err := hub.Add(filepath.Join(dir, "projects", p.Dir), "", p.Engine); err != nil {
 			fmt.Fprintln(os.Stderr, "hub-demo:", err)
 			os.Exit(1)

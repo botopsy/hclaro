@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
-import { parseRoute, productionLike } from '../router';
+import { consumeDeepLink, parseRoute, productionLike } from '../router';
 import type { Project, ProjectList, Resource, Workspace } from '../types';
 
 const network = 'a'.repeat(32);
@@ -187,6 +187,34 @@ describe('Workspace Hub', () => {
     // No call ever asks the server to select a workspace.
     expect(calls.some(c => JSON.stringify(c.body || {}).includes('select'))).toBe(false);
   });
+  it('opens Compare workspaces from the sidebar without reading anything', async () => {
+    stub(listing(projects));
+    app('/projects');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Compare workspaces' }));
+    expect(window.location.pathname).toBe('/compare');
+    expect(await screen.findByRole('heading', { name: 'Compare workspaces' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compare workspaces' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: /Compare…/ })).toBeDisabled();
+    expect(calls.filter(c => c.method !== 'GET')).toHaveLength(0);
+  });
+  it('opens a deep-linked resource with the linked profile and removes the parameters', async () => {
+    stub(listing(projects));
+    const rid = 'f'.repeat(32);
+    window.history.pushState(null, '', `/projects/${network}/workspaces/prod/resources?resource=${rid}&profile=none`);
+    consumeDeepLink();
+    expect(window.location.search).toBe('');
+    expect(sessionStorage.getItem(`hclaro.profile.${network}`)).toBe('none');
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><App /></QueryClientProvider>);
+    await waitFor(() => expect(calls.some(c => c.url.endsWith(`contexts/ctx-prod/resources/${rid}`))).toBe(true));
+    sessionStorage.clear();
+  });
+  it('ignores malformed deep-link parameters', () => {
+    window.history.pushState(null, '', `/projects/${network}/workspaces/prod/resources?resource=../x&profile=${encodeURIComponent('-lock=false')}`);
+    consumeDeepLink();
+    expect(window.location.search).toBe('');
+    expect(sessionStorage.getItem(`hclaro.profile.${network}`)).toBeNull();
+  });
   it('opens the Hub when Hclaro was started without a project', async () => {
     stub(listing([]));
     app('/');
@@ -211,6 +239,8 @@ describe('Routes', () => {
   it('parses only well-formed segments', () => {
     expect(parseRoute('/')).toEqual({ kind: 'launch' });
     expect(parseRoute('/projects')).toEqual({ kind: 'hub' });
+    expect(parseRoute('/compare')).toEqual({ kind: 'compare' });
+    expect(parseRoute('/compare/extra')).toEqual({ kind: 'launch' });
     expect(parseRoute(`/projects/${network}/workspaces/prod`)).toEqual({ kind: 'context', projectId: network, workspace: 'prod', view: 'Resources' });
     expect(parseRoute(`/projects/${network}/workspaces/prod/modules`)).toEqual({ kind: 'context', projectId: network, workspace: 'prod', view: 'Modules' });
     for (const bad of ['..%2Fprod', '%E0%A4%A', 'a%20b', 'x'.repeat(91)]) {

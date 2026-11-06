@@ -8,6 +8,8 @@ export type Route = {
 } | {
   kind: 'hub';
 } | {
+  kind: 'compare';
+} | {
   kind: 'project';
   projectId: string;
 } | {
@@ -27,6 +29,7 @@ const projectId = /^[0-9a-f]{32}$/;
 const workspaceName = /^[A-Za-z0-9_-]{1,90}$/;
 export function parseRoute(pathname: string): Route {
   const parts = pathname.split('/').filter(Boolean);
+  if (parts[0] === 'compare' && parts.length === 1) return { kind: 'compare' };
   if (parts[0] !== 'projects') return { kind: 'launch' };
   if (parts.length === 1) return { kind: 'hub' };
   if (!projectId.test(parts[1])) return { kind: 'hub' };
@@ -38,6 +41,33 @@ export function parseRoute(pathname: string): Route {
   const view = views[parts[4] || 'resources'];
   if (parts[2] !== 'workspaces' || !workspaceName.test(workspace) || !view || parts.length > 5) return { kind: 'project', projectId: parts[1] };
   return { kind: 'context', projectId: parts[1], workspace, view };
+}
+export function comparePath() {
+  return '/compare';
+}
+// Deep links into a Hub workspace may name a resource to inspect and the execution profile
+// the link was made with (a new tab has no profile choice of its own). The parameters are
+// read once at startup and removed from the address bar.
+let linkedResource: { path: string; id: string } | undefined;
+export function consumeDeepLink() {
+  const route = parseRoute(window.location.pathname);
+  const params = new URLSearchParams(window.location.search);
+  if (route.kind === 'context') {
+    const resource = params.get('resource') || '';
+    if (/^[0-9a-f]{32}$/.test(resource)) linkedResource = { path: window.location.pathname, id: resource };
+    const profile = params.get('profile') || '';
+    if (profile === 'none' || projectId.test(profile)) {
+      try {
+        sessionStorage.setItem(`hclaro.profile.${route.projectId}`, profile);
+      } catch {/* Without storage the project's default profile applies. */}
+    }
+  }
+  if (window.location.search) window.history.replaceState(null, '', window.location.pathname);
+}
+// takeLinkedResource returns the deep-linked resource while the linked page is shown. It is
+// idempotent (StrictMode may run state initializers twice); navigating away forgets it.
+export function takeLinkedResource() {
+  return linkedResource && linkedResource.path === window.location.pathname ? linkedResource.id : undefined;
 }
 export function hubPath() {
   return '/projects';
@@ -54,6 +84,7 @@ export function isExplorerView(view: string): view is ExplorerView {
 const listeners = new Set<() => void>();
 export function navigate(path: string, replace = false) {
   if (path === window.location.pathname) return;
+  linkedResource = undefined;
   if (replace) window.history.replaceState(null, '', path);
   else window.history.pushState(null, '', path);
   listeners.forEach(l => l());
