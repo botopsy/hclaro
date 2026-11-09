@@ -1,5 +1,7 @@
 # M22 public beta checklist
 
+**Update (2026-11-09, M25): the repository is public.** `v0.1.0-beta.1` was built by CircleCI while the repository was private and turned back into a draft before the visibility change; the first public release is `v0.1.0-beta.2`, built by GitHub Actions (`docs/RELEASING.md`). Rulesets, secret scanning with push protection and private vulnerability reporting are on (rows 14, 15). The rows below record the state before that.
+
 **M23 status (2026-11-09): PREPARED, NOT PUBLISHED.** Version bump and the GitHub settings that work on a private repository are done (rows 11–13, 17, 18). The repository stays private. Still open: CircleCI (row 16), going public and the settings that need a public repository (rows 14, 15, 23).
 
 **M22.1 status: READY WITH WARNINGS.** Local history cleanup and the remote synchronization of `master`, `m19-brand-identity` and `m21-navigation-ia` are complete and verified (CircleCI green, mockup path absent on GitHub, tags, releases and other branches unchanged; [M22.1](M22.1-remote-history-remediation.md)). Warnings: the closed PRs #36/#37 still expose the original commits (accepted risk), two merge commits lost GitHub's *Verified* badge, other clones need refreshing, and the M22 changes are not committed yet. Public beta publication remains a separate M23 decision.
