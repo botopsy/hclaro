@@ -20,6 +20,8 @@ import { ToolsView } from './hub/ToolsView';
 import { ContextSelector } from './profiles/ContextSelector';
 import { useProfileSelection } from './profiles/selection';
 import { GitBadge, GitView, SourceLink, editorLabels, gitPrefix } from './git/GitView';
+import { HclaroLogo, HclaroMark } from './brand/HclaroLogo';
+import { applyTheme } from './brand/theme';
 import type { DiscoveryPrefill, EditorName } from './types';
 type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Settings' | 'Plans' | 'Drift' | 'Graph' | 'Discovery' | 'Import' | 'Operations';
 type Preferences = {
@@ -238,9 +240,7 @@ function Workbench({
       localStorage.setItem('hclaro.preferences', JSON.stringify(preferences));
     } catch {/* Preferences are optional. */}
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => {
-      document.documentElement.dataset.theme = preferences.theme === 'system' ? media.matches ? 'dark' : 'light' : preferences.theme;
-    };
+    const apply = () => applyTheme(preferences.theme);
     apply();
     media.addEventListener('change', apply);
     return () => media.removeEventListener('change', apply);
@@ -302,7 +302,7 @@ function Workbench({
    <a className="brand" href="#" onClick={e => {
         e.preventDefault();
         setView('Overview');
-      }} aria-label="Hclaro overview"><span className="brand-mark"><span /><span /><span /></span><span>hclaro<span className="alpha">ALPHA</span></span></a>
+      }} aria-label="Hclaro overview"><HclaroLogo className="brand-wordmark" decorative /><HclaroMark className="brand-compact" size={40} decorative /><span className="alpha">ALPHA</span></a>
    <button className={`nav-item ${onHub && !comparing && !historyPage ? 'active' : ''}`} aria-label="Projects" aria-current={route.kind === 'hub' ? 'page' : undefined} onClick={() => navigate('/projects')}><FolderKanban size={17} /><span>Projects</span></button>
    <button className={`nav-item ${comparing ? 'active' : ''}`} aria-label="Compare workspaces" aria-current={comparing ? 'page' : undefined} onClick={() => navigate(comparePath())}><GitCompareArrows size={17} /><span>Compare</span></button>
    <button className={`nav-item ${historyPage ? 'active' : ''}`} aria-label="Operation history" aria-current={historyPage ? 'page' : undefined} onClick={() => navigate(historyPath())}><History size={17} /><span>History</span></button>
@@ -548,7 +548,7 @@ function SettingsPanel({
   preferences: Preferences;
   changePreference: (change: Partial<Preferences>) => void;
 }) {
-  return <div className="settings-panel"><div className="setting-row"><div><h2>Appearance</h2><p>Follow your system, or choose a theme.</p></div><div className="segmented">{(['system', 'light', 'dark'] as const).map((theme, i) => {
+  return <div className="settings-panel"><div className="setting-row about-row"><div><h2>About Hclaro</h2><p>A local workspace for Terraform and OpenTofu. Alpha release.</p></div><HclaroLogo /></div><div className="setting-row"><div><h2>Appearance</h2><p>Follow your system, or choose a theme.</p></div><div className="segmented">{(['system', 'light', 'dark'] as const).map((theme, i) => {
           const Icon = [Monitor, Sun, Moon][i];
           return <button aria-pressed={preferences.theme === theme} key={theme} onClick={() => changePreference({
             theme

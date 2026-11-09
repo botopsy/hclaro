@@ -7,7 +7,7 @@ export CGO_ENABLED := 0
 GO_PACKAGES := ./cmd/... ./internal/... ./scripts/...
 GOFLAGS_BUILD := -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build binary frontend install test test-go test-web lint fmt demo demo-hub dev cross browser-test
+.PHONY: build binary frontend install test test-go test-web lint fmt demo demo-hub dev cross browser-test brand-assets
 install:
 	npm ci --prefix web
 frontend:
@@ -54,6 +54,10 @@ demo-hub: binary bin/mock/terraform$(EXE) bin/mock/tofu$(EXE)
 
 dev: binary bin/mock/terraform$(EXE)
 	node scripts/dev.mjs
+
+# Regenerates the committed favicon, touch icon and docs/design/assets from the M19 reference geometry.
+brand-assets:
+	node scripts/brand-assets.mjs
 
 browser-test:
 	go build -trimpath -o bin/fixture-http$(EXE) ./scripts/fixture-http

@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initializeSession } from './api';
 import App from './App';
 import { consumeDeepLink } from './router';
+import { applyTheme, savedTheme } from './brand/theme';
+import '@fontsource/jetbrains-mono/latin-700.css';
 import './styles.css';
+applyTheme(savedTheme());
 initializeSession();
 consumeDeepLink();
 const queryClient = new QueryClient({

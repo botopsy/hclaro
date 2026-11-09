@@ -19,5 +19,5 @@ export async function writeNotices(modules,output,packages) {
  await fs.writeFile(path.join(output,'THIRD-PARTY-NOTICES.txt'),text)
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
- await writeNotices(path.join(root,'web/node_modules'),path.join(root,'internal/ui/dist'),['react','react-dom','scheduler','lucide-react','tailwindcss','@tanstack/react-query','@tanstack/query-core','@radix-ui/react-slot','@radix-ui/react-compose-refs','class-variance-authority','clsx','tailwind-merge'])
+ await writeNotices(path.join(root,'web/node_modules'),path.join(root,'internal/ui/dist'),['react','react-dom','scheduler','lucide-react','tailwindcss','@tanstack/react-query','@tanstack/query-core','@radix-ui/react-slot','@radix-ui/react-compose-refs','class-variance-authority','clsx','tailwind-merge','@fontsource/jetbrains-mono'])
 }

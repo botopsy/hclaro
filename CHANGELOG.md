@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Brand identity: hollow cursor (M19, draft)
+
+- New **hollow-cursor identity**: a terminal-style chevron, lowercase `hclaro` in JetBrains Mono Bold and an unfilled cursor, in light, dark and lime (inverse) variants, plus a compact `h` + cursor app mark. Reusable `HclaroLogo` and `HclaroMark` components with one accessible name and decorative parts hidden.
+- The sidebar shows the wordmark, and the compact mark when collapsed; a static mark is shown while the bundle loads; the Workspace Hub's first-run state and a new **Settings → About Hclaro** row use the brand. New favicon (SVG, 16/32 px PNG) and Apple touch icon; `theme-color` follows the theme.
+- **Centralized theme tokens**: the five reference colours (`#0B1220`, `#F4F4F0`, `#E8E8E1`, `#C6F432`, `#6A8F00`) are raw tokens; every semantic token is defined once for both themes with `light-dark()`. The system theme applies before any script runs and a saved theme before React renders, so the palette no longer flashes. Primary buttons are navy (light) or lime (dark); focus rings, form-control borders and plan statuses were re-measured for WCAG 2.2 AA in both themes and statuses stay distinct from the brand accent.
+- The logo typeface is self-hosted from `@fontsource/jetbrains-mono` (OFL-1.1, Latin 700 only) and embedded in the binary; no network font. `make brand-assets` regenerates the icon set. Documentation in `docs/design/BRAND.md`. No API, CLI, Terraform/OpenTofu or security behaviour changed.
+
 ### Cost impact estimation (M17, draft)
 
 - **Cost estimate** tab in the plan review: projected recurring monthly change with currency, new/removed/changed split, priced configuration totals, coverage of cost-bearing changes, caveats (unsupported types, usage-based charges, free resources, forgotten resources, exchange rates, not a bill), a breakdown by resource type and per-resource line items with price components. Unpriced resources are labelled, never shown as zero.
