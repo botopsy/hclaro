@@ -1,0 +1,648 @@
+{
+  "options": {
+    "canScan": true,
+    "provider": "aws",
+    "types": [
+      {
+        "type": "aws_vpc",
+        "service": "ec2",
+        "label": "VPCs",
+        "global": false,
+        "operation": "ec2:DescribeVpcs",
+        "importIdFormat": "VPC ID (vpc-…)",
+        "permission": "ec2:DescribeVpcs"
+      },
+      {
+        "type": "aws_subnet",
+        "service": "ec2",
+        "label": "Subnets",
+        "global": false,
+        "operation": "ec2:DescribeSubnets",
+        "importIdFormat": "Subnet ID (subnet-…)",
+        "permission": "ec2:DescribeSubnets"
+      },
+      {
+        "type": "aws_security_group",
+        "service": "ec2",
+        "label": "Security groups",
+        "global": false,
+        "operation": "ec2:DescribeSecurityGroups",
+        "importIdFormat": "Security group ID (sg-…)",
+        "permission": "ec2:DescribeSecurityGroups"
+      },
+      {
+        "type": "aws_s3_bucket",
+        "service": "s3",
+        "label": "S3 buckets",
+        "global": true,
+        "operation": "s3:ListAllMyBuckets",
+        "importIdFormat": "Bucket name",
+        "permission": "s3:ListAllMyBuckets"
+      },
+      {
+        "type": "aws_db_instance",
+        "service": "rds",
+        "label": "RDS DB instances",
+        "global": false,
+        "operation": "rds:DescribeDBInstances",
+        "importIdFormat": "DB instance identifier",
+        "permission": "rds:DescribeDBInstances"
+      }
+    ],
+    "regions": [
+      "us-east-1",
+      "us-east-2",
+      "us-west-1",
+      "us-west-2",
+      "ca-central-1",
+      "ca-west-1",
+      "sa-east-1",
+      "mx-central-1",
+      "eu-west-1",
+      "eu-west-2",
+      "eu-west-3",
+      "eu-central-1",
+      "eu-central-2",
+      "eu-north-1",
+      "eu-south-1",
+      "eu-south-2",
+      "af-south-1",
+      "me-south-1",
+      "me-central-1",
+      "il-central-1",
+      "ap-east-1",
+      "ap-south-1",
+      "ap-south-2",
+      "ap-southeast-1",
+      "ap-southeast-2",
+      "ap-southeast-3",
+      "ap-southeast-4",
+      "ap-southeast-5",
+      "ap-southeast-7",
+      "ap-northeast-1",
+      "ap-northeast-2",
+      "ap-northeast-3"
+    ],
+    "defaultRegion": "us-east-1",
+    "regionSource": "default",
+    "limits": {
+      "defaultConcurrency": 2,
+      "defaultPerType": 200,
+      "maxConcurrency": 4,
+      "maxPerType": 1000,
+      "maxRegions": 6,
+      "pageSize": 100
+    },
+    "project": "demo",
+    "engine": "terraform",
+    "workspace": "demo",
+    "backend": "local",
+    "stateStatus": "ready",
+    "identity": {
+      "id": "00000000000000000000000000000001",
+      "provider": "aws",
+      "account": "111122223333",
+      "arn": "arn:aws:sts::111122223333:assumed-role/HclaroDemoReadOnly/…",
+      "principalType": "assumed-role",
+      "partition": "aws",
+      "region": "us-east-1",
+      "regionSource": "default",
+      "cliVersion": "2.17.0",
+      "verifiedAt": "2026-11-09T09:00:00Z",
+      "expiresAt": "2026-11-09T09:30:00Z",
+      "context": {
+        "contextFingerprint": "inherited",
+        "workspace": "demo",
+        "engine": "terraform"
+      }
+    }
+  },
+  "prefill": {
+    "token": "00000000000000000000000000000003",
+    "scanId": "00000000000000000000000000000002",
+    "candidateId": "78d22a07bf95b3a7c20ffdbb3447dce5",
+    "type": "aws_s3_bucket",
+    "importId": "hclaro-legacy-logs",
+    "suggestedAddress": "aws_s3_bucket.hclaro_legacy_logs",
+    "region": "eu-west-1",
+    "account": "111122223333",
+    "match": "possibly_untracked",
+    "warnings": [
+      "This object is in eu-west-1, but this context's default region is us-east-1. If the default provider configuration targets us-east-1, set Provider to an aliased configuration for eu-west-1, or the plan will not find the object.",
+      "Choose the address and write or generate the resource block yourself. The plan, not discovery, shows what the import would change."
+    ],
+    "expiresAt": "2026-11-09T09:15:00Z"
+  },
+  "scan": {
+    "id": "00000000000000000000000000000002",
+    "status": "completed",
+    "startedAt": "2026-11-09T09:00:00Z",
+    "completedAt": "2026-11-09T09:00:00Z",
+    "scope": {
+      "regions": [
+        "eu-west-1",
+        "us-east-1"
+      ],
+      "types": [
+        "aws_vpc",
+        "aws_subnet",
+        "aws_security_group",
+        "aws_s3_bucket",
+        "aws_db_instance"
+      ],
+      "maxPerType": 200,
+      "concurrency": 2
+    },
+    "estimate": {
+      "tasks": 9,
+      "minCalls": 10,
+      "maxCalls": 19
+    },
+    "calls": 11,
+    "identity": {
+      "id": "00000000000000000000000000000001",
+      "provider": "aws",
+      "account": "111122223333",
+      "arn": "arn:aws:sts::111122223333:assumed-role/HclaroDemoReadOnly/…",
+      "principalType": "assumed-role",
+      "partition": "aws",
+      "region": "us-east-1",
+      "regionSource": "default",
+      "cliVersion": "2.17.0",
+      "verifiedAt": "2026-11-09T09:00:00Z",
+      "expiresAt": "2026-11-09T09:30:00Z",
+      "context": {
+        "contextFingerprint": "inherited",
+        "workspace": "demo",
+        "engine": "terraform"
+      }
+    },
+    "context": {
+      "contextFingerprint": "inherited",
+      "workspace": "demo",
+      "engine": "terraform"
+    },
+    "tasks": [
+      {
+        "type": "aws_vpc",
+        "region": "eu-west-1",
+        "status": "done",
+        "count": 3,
+        "pages": 2,
+        "retries": 0,
+        "truncated": false
+      },
+      {
+        "type": "aws_vpc",
+        "region": "us-east-1",
+        "status": "done",
+        "count": 0,
+        "pages": 1,
+        "retries": 0,
+        "truncated": false
+      },
+      {
+        "type": "aws_subnet",
+        "region": "eu-west-1",
+        "status": "done",
+        "count": 2,
+        "pages": 1,
+        "retries": 0,
+        "truncated": false
+      },
+      {
+        "type": "aws_subnet",
+        "region": "us-east-1",
+        "status": "done",
+        "count": 0,
+        "pages": 1,
+        "retries": 0,
+        "truncated": false
+      },
+      {
+        "type": "aws_security_group",
+        "region": "eu-west-1",
+        "status": "done",
+        "count": 1,
+        "pages": 1,
+        "retries": 0,
+        "truncated": false
+      },
+      {
+        "type": "aws_security_group",
+        "region": "us-east-1",
+        "status": "done",
+        "count": 0,
+        "pages": 1,
+        "retries": 0,
+        "truncated": false
+      },
+      {
+        "type": "aws_s3_bucket",
+        "region": "global",
+        "status": "done",
+        "count": 4,
+        "pages": 1,
+        "retries": 0,
+        "truncated": false
+      },
+      {
+        "type": "aws_db_instance",
+        "region": "eu-west-1",
+        "status": "done",
+        "count": 2,
+        "pages": 1,
+        "retries": 0,
+        "truncated": false
+      },
+      {
+        "type": "aws_db_instance",
+        "region": "us-east-1",
+        "status": "done",
+        "count": 0,
+        "pages": 1,
+        "retries": 0,
+        "truncated": false
+      }
+    ],
+    "duplicatesMerged": 0,
+    "results": [
+      {
+        "id": "847e28ca988bafea05af5c0774305c2e",
+        "type": "aws_vpc",
+        "service": "ec2",
+        "resourceId": "vpc-0a1b2c3d4e5f60001",
+        "arn": "arn:aws:ec2:eu-west-1:111122223333:vpc/vpc-0a1b2c3d4e5f60001",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "platform-core",
+        "tags": [
+          {
+            "key": "Name",
+            "value": "platform-core"
+          },
+          {
+            "key": "deploy_token",
+            "value": "[redacted]"
+          },
+          {
+            "key": "note",
+            "value": "[redacted]"
+          },
+          {
+            "key": "team",
+            "value": "platform"
+          }
+        ],
+        "details": {
+          "cidr": "10.0.0.0/16",
+          "state": "available"
+        },
+        "importId": "vpc-0a1b2c3d4e5f60001",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "possibly_untracked",
+          "reason": "Not in this workspace's recorded state. Another workspace, project or tool may still manage it.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      },
+      {
+        "id": "a5dac3019392ba4557cb44e66750c681",
+        "type": "aws_vpc",
+        "service": "ec2",
+        "resourceId": "vpc-0a1b2c3d4e5f60002",
+        "arn": "arn:aws:ec2:eu-west-1:111122223333:vpc/vpc-0a1b2c3d4e5f60002",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "tags": [],
+        "details": {
+          "cidr": "172.31.0.0/16",
+          "default": "true",
+          "state": "available"
+        },
+        "importId": "vpc-0a1b2c3d4e5f60002",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "possibly_untracked",
+          "reason": "Not in this workspace's recorded state. Another workspace, project or tool may still manage it.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      },
+      {
+        "id": "186eeefc43c7083e905957d61b061790",
+        "type": "aws_vpc",
+        "service": "ec2",
+        "resourceId": "vpc-0a1b2c3d4e5f60003",
+        "arn": "arn:aws:ec2:eu-west-1:111122223333:vpc/vpc-0a1b2c3d4e5f60003",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "legacy-analytics",
+        "tags": [
+          {
+            "key": "Name",
+            "value": "legacy-analytics"
+          },
+          {
+            "key": "password",
+            "value": "[redacted]"
+          }
+        ],
+        "details": {
+          "cidr": "10.20.0.0/16",
+          "state": "available"
+        },
+        "importId": "vpc-0a1b2c3d4e5f60003",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "possibly_untracked",
+          "reason": "Not in this workspace's recorded state. Another workspace, project or tool may still manage it.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      },
+      {
+        "id": "d9b4d58c30e4062a847e8a7b1712f2ac",
+        "type": "aws_subnet",
+        "service": "ec2",
+        "resourceId": "subnet-0f1e2d3c4b5a60001",
+        "arn": "arn:aws:ec2:eu-west-1:111122223333:subnet/subnet-0f1e2d3c4b5a60001",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "core-private-a",
+        "tags": [
+          {
+            "key": "Name",
+            "value": "core-private-a"
+          }
+        ],
+        "details": {
+          "availabilityZone": "eu-west-1a",
+          "cidr": "10.0.1.0/24",
+          "vpc": "vpc-0a1b2c3d4e5f60001"
+        },
+        "importId": "subnet-0f1e2d3c4b5a60001",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "unknown",
+          "reason": "Some aws_subnet instances in this workspace's state have no comparable identifier (withheld, missing or in another format), so this object may already be one of them.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      },
+      {
+        "id": "c3edfc9ab16a0656ada520f9e2db7aa3",
+        "type": "aws_subnet",
+        "service": "ec2",
+        "resourceId": "subnet-0f1e2d3c4b5a60002",
+        "arn": "arn:aws:ec2:eu-west-1:444455556666:subnet/subnet-0f1e2d3c4b5a60002",
+        "region": "eu-west-1",
+        "account": "444455556666",
+        "name": "shared-from-network-account",
+        "tags": [
+          {
+            "key": "Name",
+            "value": "shared-from-network-account"
+          }
+        ],
+        "details": {
+          "availabilityZone": "eu-west-1b",
+          "cidr": "10.9.1.0/24",
+          "vpc": "vpc-0a1b2c3d4e5f69999"
+        },
+        "importIdStatus": "unresolved",
+        "importIdNote": "Owned by account 444455556666 and shared with the verified account. Import it from the owner account.",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "unresolved",
+          "reason": "Owned by account 444455556666 and shared with the verified account. Import it from the owner account.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      },
+      {
+        "id": "26ac720a0b140dcfff5209b3bf6b2db2",
+        "type": "aws_security_group",
+        "service": "ec2",
+        "resourceId": "sg-0123456789abcdef0",
+        "arn": "arn:aws:ec2:eu-west-1:111122223333:security-group/sg-0123456789abcdef0",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "web-ingress",
+        "tags": [],
+        "details": {
+          "vpc": "vpc-0a1b2c3d4e5f60001"
+        },
+        "importId": "sg-0123456789abcdef0",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "possibly_untracked",
+          "reason": "Not in this workspace's recorded state. Another workspace, project or tool may still manage it.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      },
+      {
+        "id": "8461c7ffc27dba2e18fa2e7457213c02",
+        "type": "aws_s3_bucket",
+        "service": "s3",
+        "resourceId": "demo-storage-000",
+        "arn": "arn:aws:s3:::demo-storage-000",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "demo-storage-000",
+        "tags": [],
+        "details": {},
+        "importId": "demo-storage-000",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "already_tracked",
+          "reason": "Recorded in this workspace's state with the same identifier.",
+          "addresses": [
+            "module.storage.aws_s3_bucket.main[0]"
+          ],
+          "resourceIds": [
+            "dc7f09b8980e83ad93230f36994489f5"
+          ]
+        }
+      },
+      {
+        "id": "47c9e506d84fb66cf1c69c284110606a",
+        "type": "aws_s3_bucket",
+        "service": "s3",
+        "resourceId": "hclaro-demo-artifacts",
+        "arn": "arn:aws:s3:::hclaro-demo-artifacts",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "hclaro-demo-artifacts",
+        "tags": [],
+        "details": {},
+        "importId": "hclaro-demo-artifacts",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "already_tracked",
+          "reason": "Recorded in this workspace's state with the same identifier.",
+          "addresses": [
+            "aws_s3_bucket.artifacts"
+          ],
+          "resourceIds": [
+            "7cd1b18f24f6b39f722b43b3b5cfb95a"
+          ]
+        }
+      },
+      {
+        "id": "78d22a07bf95b3a7c20ffdbb3447dce5",
+        "type": "aws_s3_bucket",
+        "service": "s3",
+        "resourceId": "hclaro-legacy-logs",
+        "arn": "arn:aws:s3:::hclaro-legacy-logs",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "hclaro-legacy-logs",
+        "tags": [],
+        "details": {},
+        "importId": "hclaro-legacy-logs",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "possibly_untracked",
+          "reason": "Not in this workspace's recorded state. Another workspace, project or tool may still manage it.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      },
+      {
+        "id": "1b711e9aaa76948d405a464c6e5b267f",
+        "type": "aws_s3_bucket",
+        "service": "s3",
+        "resourceId": "hclaro-us-archive",
+        "arn": "arn:aws:s3:::hclaro-us-archive",
+        "region": "us-east-1",
+        "account": "111122223333",
+        "name": "hclaro-us-archive",
+        "tags": [],
+        "details": {},
+        "importId": "hclaro-us-archive",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "us-east-1"
+        ],
+        "match": {
+          "status": "possibly_untracked",
+          "reason": "Not in this workspace's recorded state. Another workspace, project or tool may still manage it.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      },
+      {
+        "id": "72292b85d1bdd44e7e0ccb8b8318bf5d",
+        "type": "aws_db_instance",
+        "service": "rds",
+        "resourceId": "demo-database-000",
+        "arn": "arn:aws:rds:eu-west-1:111122223333:db:demo-database-000",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "orders",
+        "tags": [
+          {
+            "key": "Name",
+            "value": "orders"
+          }
+        ],
+        "details": {
+          "class": "db.t4g.micro",
+          "engine": "postgres",
+          "status": "available"
+        },
+        "importId": "demo-database-000",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "already_tracked",
+          "reason": "Recorded in this workspace's state with the same identifier.",
+          "addresses": [
+            "module.database.aws_db_instance.main[0]"
+          ],
+          "resourceIds": [
+            "203fc5aacaf1c91a5ba46d7c99c6517e"
+          ]
+        }
+      },
+      {
+        "id": "de7661d98d48f973f367b1f9465bbc6b",
+        "type": "aws_db_instance",
+        "service": "rds",
+        "resourceId": "legacy-reporting",
+        "arn": "arn:aws:rds:eu-west-1:111122223333:db:legacy-reporting",
+        "region": "eu-west-1",
+        "account": "111122223333",
+        "name": "legacy-reporting",
+        "tags": [],
+        "details": {
+          "class": "db.t3.small",
+          "engine": "mysql",
+          "status": "available"
+        },
+        "importId": "legacy-reporting",
+        "importIdStatus": "verified",
+        "observedAt": "2026-11-09T09:00:00Z",
+        "seenInRegions": [
+          "eu-west-1"
+        ],
+        "match": {
+          "status": "possibly_untracked",
+          "reason": "Not in this workspace's recorded state. Another workspace, project or tool may still manage it.",
+          "addresses": [],
+          "resourceIds": []
+        }
+      }
+    ],
+    "summary": {
+      "already_tracked": 3,
+      "possibly_untracked": 7,
+      "unknown": 1,
+      "unresolved": 1
+    },
+    "current": true,
+    "withheld": false
+  }
+}

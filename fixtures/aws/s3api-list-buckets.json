@@ -1,0 +1,9 @@
+{
+  "Buckets": [
+    {"Name": "hclaro-demo-artifacts", "CreationDate": "2025-01-10T10:00:00+00:00", "BucketRegion": "eu-west-1"},
+    {"Name": "demo-storage-000", "CreationDate": "2025-01-10T10:00:00+00:00", "BucketRegion": "eu-west-1"},
+    {"Name": "hclaro-legacy-logs", "CreationDate": "2024-03-02T08:00:00+00:00", "BucketRegion": "eu-west-1"},
+    {"Name": "hclaro-us-archive", "CreationDate": "2024-03-02T08:00:00+00:00", "BucketRegion": "us-east-1"}
+  ],
+  "Owner": {"DisplayName": "synthetic-owner", "ID": "0000000000000000000000000000000000000000000000000000000000000000"}
+}

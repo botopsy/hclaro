@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/imports"
@@ -168,13 +169,16 @@ type Manager struct {
 	PreflightTTL  time.Duration
 	// Git reads the launch project's Git context and records each plan's source
 	// fingerprint; nil disables source tracking (tests that do not need it).
-	Git      *gitctx.Service
-	entries  []*entry
-	plans    []*Plan
-	scans    []*DriftScan
-	graphs   []*GraphRun
-	running  *entry
-	artifact *artifact
+	Git *gitctx.Service
+	// Discovery lists existing AWS objects for the launch workspace on request (M16); nil
+	// disables cloud discovery.
+	Discovery *discovery.Service
+	entries   []*entry
+	plans     []*Plan
+	scans     []*DriftScan
+	graphs    []*GraphRun
+	running   *entry
+	artifact  *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.
 	notes  map[string]string
 	base   context.Context

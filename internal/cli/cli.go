@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"hclaro/internal/api"
+	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/history"
@@ -204,6 +205,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager.Git = gitService
 	hub.Git = gitService
 	manager.IdentityProbe = preflight.AWSIdentity
+	// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
+	manager.Discovery = discovery.New(discovery.Exec{})
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
 	}
@@ -261,6 +264,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	cancel()
 	// A running plan or init is interrupted and its private temp files removed before exit.
 	manager.Close(20 * time.Second)
+	manager.Discovery.Close(5 * time.Second)
 	hub.Inits.Close(20 * time.Second)
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()

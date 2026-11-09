@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"hclaro/internal/discovery"
 	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
@@ -46,6 +47,9 @@ func importRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			// ProfileID and ContextFingerprint bind the import plan to a reviewed profile.
 			ProfileID          string `json:"profileId"`
 			ContextFingerprint string `json:"contextFingerprint"`
+			// DiscoveryToken, when set, links the import to a candidate prepared from an AWS
+			// discovery scan (M16); the server checks it still matches before planning.
+			DiscoveryToken string `json:"discoveryToken"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
@@ -56,6 +60,11 @@ func importRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 		if !validProfileParam(body.ProfileID) {
 			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		if body.DiscoveryToken != "" && !checkDiscoveryImport(w, manager, body.DiscoveryToken, body.ProfileID, body.ContextFingerprint, func(pin discovery.Pin) error {
+			return manager.Discovery.CheckImport(body.DiscoveryToken, pin, body.Request)
+		}) {
 			return
 		}
 		op, err := manager.StartImport(operations.ImportRequest{Request: body.Request, PreviewSHA256: body.PreviewSHA256, VarFiles: body.VarFiles, ProfileID: body.ProfileID, ContextFingerprint: body.ContextFingerprint})
@@ -74,6 +83,9 @@ func importRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		case err != nil:
 			errorJSON(w, 500, "import_not_started")
 		default:
+			if body.DiscoveryToken != "" {
+				manager.Discovery.Consume(body.DiscoveryToken)
+			}
 			writeJSON(w, 202, op)
 		}
 	})

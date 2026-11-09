@@ -12,7 +12,7 @@ const {chromium}=await import(pathToFileURL(path.join(modules,'playwright/index.
 const browser=await chromium.launch({headless:true,...(process.env.HCLARO_CHROME ? {executablePath:process.env.HCLARO_CHROME} : {}),args:['--no-sandbox','--disable-background-networking','--disable-component-update']})
 const token='a'.repeat(64), host='http://127.0.0.1:9273', canary='DO_NOT_LEAK_HCLARO_TEST_SECRET'
 const errors=[],consoleOutput=[],external=[]
-let large=false,importReview=false,gitMode=false
+let large=false,importReview=false,gitMode=false,discoveryMode=false
 // A disposable synthetic Git repository for the Git view (setup only; Hclaro itself never writes to Git).
 const gitFixture=path.resolve('.cache/git-fixture')
 await fs.rm(gitFixture,{recursive:true,force:true})
@@ -29,7 +29,7 @@ await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:host
 await context.route('**/*',async route=>{
  const req=route.request(),url=new URL(req.url())
  if(url.origin!==host){external.push(url.origin);await route.abort();return}
- const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':'',HCLARO_FIXTURE_IMPORT:importReview?'1':'',HCLARO_FIXTURE_GIT:gitMode?gitFixture:''},maxBuffer:8<<20}))
+ const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':'',HCLARO_FIXTURE_IMPORT:importReview?'1':'',HCLARO_FIXTURE_GIT:gitMode?gitFixture:'',HCLARO_FIXTURE_DISCOVERY:discoveryMode?'1':''},maxBuffer:8<<20}))
  const body=Buffer.from(response.body,'base64')
  if(url.pathname.startsWith('/api/')) assert(!body.includes(Buffer.from(canary)),'secret crossed actual API boundary')
  const headers=Object.fromEntries(Object.entries(response.headers).map(([k,v])=>[k,v.join(', ')]))
@@ -198,6 +198,36 @@ try{
  await page.getByRole('button',{name:'Plans',exact:true}).click()
  await page.getByText(/main @ [0-9a-f]{7} · 3 uncommitted IaC files/).waitFor()
  gitMode=false
+ // M16: Cloud discovery through the real Go handler with recorded synthetic AWS responses.
+ await page.reload()
+ await page.getByRole('button',{name:'Discovery',exact:true}).click()
+ await page.getByRole('heading',{name:'AWS context not verified'}).waitFor()
+ assert.equal(await page.getByRole('button',{name:/Scan…/}).count(),0,'scan offered before verification')
+ discoveryMode=true
+ await page.reload()
+ await page.getByRole('button',{name:'Discovery',exact:true}).click()
+ await page.getByRole('heading',{name:'AWS account 111122223333'}).waitFor()
+ await page.getByText('Scan complete').waitFor()
+ const mapping=page.getByRole('group',{name:'Filter by state mapping'})
+ await mapping.getByRole('button',{name:/Possibly untracked\s*7/}).waitFor()
+ await mapping.getByRole('button',{name:/Already tracked\s*3/}).waitFor()
+ const discoveryText=await page.locator('body').innerText()
+ for(const leak of [canary,'hunter2','demo.user@example.com']) assert(!discoveryText.includes(leak),'secret rendered in cloud discovery')
+ await page.screenshot({path:'docs/screenshots/cloud-discovery-dark.png',fullPage:true})
+ await page.getByRole('button',{name:/Scan…/}).click()
+ await page.getByRole('dialog',{name:/Scan AWS account/}).getByText(/can incur charges/).waitFor()
+ assert(await page.getByRole('button',{name:'Start scan'}).isDisabled(),'scan enabled before consent')
+ await page.screenshot({path:'docs/screenshots/cloud-discovery-scan-dark.png'})
+ await page.keyboard.press('Escape')
+ await page.getByRole('row',{name:/hclaro-legacy-logs/}).getByRole('button',{name:'Prepare import'}).click()
+ await page.getByRole('heading',{name:'Import an existing object'}).waitFor()
+ await page.getByText(/From Cloud discovery/).waitFor()
+ assert.equal(await page.getByLabel('Import ID',{exact:true}).inputValue(),'hclaro-legacy-logs')
+ await page.getByLabel('Resource instance address',{exact:true}).fill('aws_s3_bucket.legacy_logs')
+ await page.getByRole('button',{name:'Check and preview'}).click()
+ await page.getByLabel('Contents of imports.tf').waitFor()
+ await page.screenshot({path:'docs/screenshots/import-from-discovery-dark.png',fullPage:true})
+ discoveryMode=false
  // Exercise 1,000 resources through the same handler; rendering stays bounded to 50 rows.
  large=true
  await page.reload()
@@ -210,6 +240,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/changes/redacted diff/editor link/source reference/plan source, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/changes/redacted diff/editor link/source reference/plan source, cloud discovery verification/scan preview/labels/redaction/prepared import, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

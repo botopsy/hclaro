@@ -26,7 +26,7 @@ lint:
 	npm --prefix web run typecheck
 	npm --prefix web run lint
 fmt:
-	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fixture-http scripts/hub-demo
+	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fixture-http scripts/hub-demo
 
 bin/mock/terraform$(EXE): scripts/fake-engine/main.go fixtures/state.json
 	go build -trimpath -buildvcs=false -o bin/mock/terraform$(EXE) ./scripts/fake-engine
@@ -34,7 +34,12 @@ bin/mock/terraform$(EXE): scripts/fake-engine/main.go fixtures/state.json
 bin/mock/tofu$(EXE): scripts/fake-engine/main.go fixtures/state.json
 	go build -trimpath -buildvcs=false -o bin/mock/tofu$(EXE) ./scripts/fake-engine
 
-demo: binary bin/mock/terraform$(EXE)
+# A synthetic AWS CLI for Cloud discovery; bin/mock is first on the demo PATH, so the real
+# AWS CLI and real credentials are never used by the demo.
+bin/mock/aws$(EXE): scripts/fake-aws/main.go $(wildcard fixtures/aws/*.json)
+	go build -trimpath -buildvcs=false -o bin/mock/aws$(EXE) ./scripts/fake-aws
+
+demo: binary bin/mock/terraform$(EXE) bin/mock/aws$(EXE)
 	PATH="$(CURDIR)/bin/mock:$$PATH" TF_DATA_DIR="$(CURDIR)/fixtures/backend" HCLARO_CONFIG_DIR="$(CURDIR)/.cache/demo/config" ./bin/hclaro$(EXE) --engine terraform --path fixtures/project --no-browser
 
 # Synthetic Hub projects and a registry under .cache/hub-demo; the real registry is untouched.
