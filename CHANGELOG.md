@@ -3,7 +3,8 @@
 ## Unreleased
 
 - Plans with an action combination Hclaro does not support, in a resource or output change, can be reviewed but are never applied (`unknown_actions`), even with the destructive confirmation. See `docs/plan-actions.md`. (M24.01)
-- Pull requests and `master` are verified on GitHub Actions (Linux, Windows, macOS) instead of CircleCI; releases still build on CircleCI. (M25.06)
+- Pull requests and `master` are verified on GitHub Actions (Linux, Windows, macOS) instead of CircleCI. (M25.06)
+- Releases build on GitHub Actions (`.github/workflows/release.yml`): the tag must be annotated, on `master`, match the version in the source and have green CI; archives and checksums are unchanged; the result is a **draft** release the maintainer publishes. CircleCI no longer has a release workflow or a release token. (M25.07)
 
 ## 0.1.0-beta.1 — 2026-11-09
 
