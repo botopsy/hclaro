@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 // Client routes. Segments are routing hints only: the server resolves project IDs and
 // workspace names itself and never reads files from them.
-export type ExplorerView = 'Resources' | 'Overview' | 'Modules' | 'Providers' | 'Tools';
+export type ExplorerView = 'Resources' | 'Overview' | 'Modules' | 'Providers' | 'Tools' | 'Git';
 export type Route = {
   kind: 'launch';
 } | {
@@ -25,7 +25,8 @@ const views: Record<string, ExplorerView> = {
   overview: 'Overview',
   modules: 'Modules',
   providers: 'Providers',
-  tools: 'Tools'
+  tools: 'Tools',
+  git: 'Git'
 };
 const projectId = /^[0-9a-f]{32}$/;
 const workspaceName = /^[A-Za-z0-9_-]{1,90}$/;

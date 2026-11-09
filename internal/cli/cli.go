@@ -16,6 +16,7 @@ import (
 
 	"hclaro/internal/api"
 	"hclaro/internal/engine"
+	"hclaro/internal/gitctx"
 	"hclaro/internal/history"
 	"hclaro/internal/operations"
 	"hclaro/internal/preflight"
@@ -197,6 +198,11 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	// Apply preflight: Git status is read with a fixed argv; the AWS caller identity probe
 	// runs only when the user asks for it in the preflight dialog.
 	manager.GitProbe = preflight.GitStatus
+	// Git context (M15): read-only Git commands with fixed argv, source fingerprints of
+	// plans and validated editor links. One service, so file IDs match across routes.
+	gitService := gitctx.New()
+	manager.Git = gitService
+	hub.Git = gitService
 	manager.IdentityProbe = preflight.AWSIdentity
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }

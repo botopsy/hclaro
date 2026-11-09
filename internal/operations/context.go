@@ -4,6 +4,8 @@ import (
 	"slices"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/gitctx"
+	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/workspace"
 )
@@ -146,10 +148,42 @@ func (m *Manager) contextFingerprint(varFiles []string, c *ExecutionContext, wha
 	return m.fingerprintFor(snap, varFiles, "", c, b.Environ), ""
 }
 
+// SourceStatus compares the plan's recorded source fingerprint with the working tree now.
+func (m *Manager) SourceStatus(p *Plan) gitctx.SourceStatus {
+	if m.Git == nil || p.Source == nil {
+		return gitctx.SourceStatus{State: "not_recorded", Message: "No source fingerprint was recorded for this plan."}
+	}
+	return m.Git.Compare(p.Source, m.root)
+}
+
+// sourceFacts turns a source comparison into preflight facts; nil when none was recorded.
+func sourceFacts(st gitctx.SourceStatus) *preflight.SourceFacts {
+	if st.Recorded == nil || st.Current == nil {
+		return nil
+	}
+	label := func(fp *gitctx.PlanSourceFingerprint) string {
+		switch {
+		case !fp.Repository:
+			return "a folder outside Git"
+		case fp.Commit == "":
+			return "a branch without commits"
+		}
+		return "commit " + fp.Commit[:min(12, len(fp.Commit))]
+	}
+	return &preflight.SourceFacts{Unknown: st.State == "unknown", FilesChanged: st.FilesChanged, HeadChanged: st.HeadChanged, Planned: label(st.Recorded), Current: label(st.Current)}
+}
+
 // ContextStatus reports whether a plan's context changed and whether it can be applied now.
+// A source change (IaC files of local modules outside the root, which the context
+// fingerprint does not cover) also makes the plan unavailable for apply.
 func (m *Manager) ContextStatus(p *Plan) (changed bool, status ApplyStatus) {
 	current, reason := m.currentFingerprint(p)
-	return current == "" || current != p.Fingerprint, m.applyStatus(p, current, reason)
+	changed, status = current == "" || current != p.Fingerprint, m.applyStatus(p, current, reason)
+	if src := m.SourceStatus(p); status.Available && (src.FilesChanged || src.State == "unknown") {
+		status = ApplyStatus{Reason: src.Message + " Run a new plan.", ArtifactRetained: status.ArtifactRetained}
+		changed = true
+	}
+	return changed, status
 }
 
 // FromResolved converts a resolved profile into the operation's sanitized context.

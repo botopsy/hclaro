@@ -50,6 +50,7 @@ const (
 	CheckConflict    = "operations.conflict"
 	CheckPolicy      = "policy.valid"
 	CheckGit         = "git.worktree"
+	CheckSource      = "git.source"
 	CheckProduction  = "context.production"
 	CheckDestructive = "plan.destructive"
 	CheckScope       = "plan.scope"
@@ -87,6 +88,17 @@ type Identity struct {
 	// Message explains unavailable or failed probes; it never contains CLI output.
 	Message string `json:"message,omitempty"`
 	At      string `json:"verifiedAt,omitempty"`
+}
+
+// SourceFacts is the comparison of a plan's source fingerprint (HEAD and the IaC files of
+// the project root and its local modules) with the working tree now.
+type SourceFacts struct {
+	// Unknown is set when either fingerprint could not be computed.
+	Unknown      bool
+	FilesChanged bool
+	HeadChanged  bool
+	// Planned and Current are short commit labels for evidence.
+	Planned, Current string
 }
 
 // Recorded is the context a plan was created in.
@@ -130,6 +142,9 @@ type Input struct {
 	// Labels.
 	ProfileName string
 	AWSProfile  string
+	// Source compares the plan's recorded source fingerprint with the files now; nil when
+	// none was recorded (the check is then omitted).
+	Source *SourceFacts
 	// Probes and policy.
 	Git        GitResult
 	Identity   Identity
@@ -269,6 +284,26 @@ func Evaluate(in Input) []Check {
 			out = append(out, policyCheck(CheckGit, title, s, Unknown, "The project is not in a Git repository, so uncommitted changes cannot be detected.", ""))
 		default:
 			out = append(out, policyCheck(CheckGit, title, sev, Unknown, "Git status could not be read (Git missing, timed out or refused the repository).", "Check the working tree with git status yourself."))
+		}
+	}
+
+	// Source revision: the IaC files the plan was made from, including local modules outside
+	// the project root, and the commit checked out.
+	if src := in.Source; src != nil {
+		title := "Plan matches the current source revision"
+		switch {
+		case src.Unknown:
+			out = append(out, check(CheckSource, title, Block, Unknown, "The IaC files of the project and its local modules could not be fingerprinted, so changes since the plan cannot be ruled out.", rerun))
+		case src.FilesChanged:
+			ev := "Plan generated from a different source revision: IaC files in the project or its local modules changed since the plan."
+			if src.HeadChanged {
+				ev = "Plan generated from a different source revision: HEAD moved from " + src.Planned + " to " + src.Current + " and IaC files changed."
+			}
+			out = append(out, check(CheckSource, title, Block, Fail, ev, rerun))
+		case src.HeadChanged:
+			out = append(out, check(CheckSource, title, Warn, Fail, "HEAD moved from "+src.Planned+" to "+src.Current+" since the plan. The IaC files in scope are identical, so the reviewed plan still matches them.", "Acknowledge applying a plan made at another commit, or run a new plan."))
+		default:
+			out = append(out, check(CheckSource, title, Block, Pass, "Planned at "+src.Planned+"; the IaC files in the project and its local modules are unchanged.", ""))
 		}
 	}
 

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/gitctx"
 	"hclaro/internal/imports"
 	"hclaro/internal/plan"
 	"hclaro/internal/preflight"
@@ -114,6 +115,9 @@ type Plan struct {
 	Destructive bool `json:"destructive"`
 	// Context is the execution profile context the plan was created with, if any.
 	Context *ExecutionContext `json:"executionContext,omitempty"`
+	// Source is the Git commit and IaC file fingerprint the plan was made from, taken
+	// before the engine ran; nil when source tracking is off.
+	Source *gitctx.PlanSourceFingerprint `json:"source,omitempty"`
 }
 
 type entry struct {
@@ -162,12 +166,15 @@ type Manager struct {
 	GitProbe      preflight.GitProbe
 	IdentityProbe preflight.IdentityProbe
 	PreflightTTL  time.Duration
-	entries       []*entry
-	plans         []*Plan
-	scans         []*DriftScan
-	graphs        []*GraphRun
-	running       *entry
-	artifact      *artifact
+	// Git reads the launch project's Git context and records each plan's source
+	// fingerprint; nil disables source tracking (tests that do not need it).
+	Git      *gitctx.Service
+	entries  []*entry
+	plans    []*Plan
+	scans    []*DriftScan
+	graphs   []*GraphRun
+	running  *entry
+	artifact *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.
 	notes  map[string]string
 	base   context.Context
@@ -461,6 +468,10 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		generated = e.op.Import.GeneratedFile
 	}
 	fingerprint := m.fingerprintFor(snap, e.op.VarFiles, generated, bound, e.environ)
+	var source *gitctx.PlanSourceFingerprint
+	if m.Git != nil {
+		source = m.Git.Record(ctx, m.root)
+	}
 	m.stage(e, "Planning")
 	label := engineLabel(snap.Info.Engine)
 	environ := e.environ
@@ -538,6 +549,10 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 			// The generated file is new; any other edit made while planning still counts.
 			if m.fingerprintFor(snap, e.op.VarFiles, generated, bound, e.environ) == fingerprint {
 				fingerprint = m.fingerprintFor(snap, e.op.VarFiles, "", bound, e.environ)
+				// The source now includes the generated file, which the plan was made with.
+				if m.Git != nil {
+					source = m.Git.Record(ctx, m.root)
+				}
 			}
 			text, truncated, err := imports.ReadGenerated(m.root, generated)
 			if err != nil {
@@ -550,7 +565,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		Review: review, ID: m.NewID(), OperationID: e.op.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
 		Import: e.op.Import, GeneratedConfig: generatedConfig, GeneratedConfigTruncated: generatedTruncated,
-		ArtifactSHA256: digest, Fingerprint: fingerprint, Context: bound.Clone(),
+		ArtifactSHA256: digest, Fingerprint: fingerprint, Context: bound.Clone(), Source: source,
 		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Summary[plan.Unknown] > 0,
 	}
 	// The artifact holds secrets in plaintext. It is kept only when it could be applied;
@@ -601,6 +616,9 @@ func sha256File(path string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// Root is the launch project root ("" without a launch project).
+func (m *Manager) Root() string { return m.root }
 
 // VarFiles lists the variable files a plan request may select.
 func (m *Manager) VarFiles() []string { return workspace.VarFiles(m.root) }

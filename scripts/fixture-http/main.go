@@ -10,6 +10,7 @@ import (
 	"hclaro/fixtures"
 	"hclaro/internal/api"
 	"hclaro/internal/engine"
+	"hclaro/internal/gitctx"
 	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/ui"
@@ -61,10 +62,26 @@ func main() {
 	if importing {
 		mainTF = "terraform {}\n"
 	}
-	_ = os.WriteFile(filepath.Join(temp, "main.tf"), []byte(mainTF), 0o644)
-	fake.Root = temp
-	manager := operations.NewManager(store, fake, temp)
+	root := temp
+	// HCLARO_FIXTURE_GIT names a synthetic Git repository prepared by the browser test; it
+	// becomes the launch root so the Git view, source links and plan source are exercised.
+	gitRoot := os.Getenv("HCLARO_FIXTURE_GIT")
+	if gitRoot != "" {
+		root = gitRoot
+	} else {
+		_ = os.WriteFile(filepath.Join(temp, "main.tf"), []byte(mainTF), 0o644)
+	}
+	fake.Root = root
+	manager := operations.NewManager(store, fake, root)
 	manager.TempDir = temp
+	if gitRoot != "" {
+		git := gitctx.New()
+		// File IDs must match across the per-request processes; links are never opened.
+		git.UseKey([]byte(strings.Repeat("k", 32)))
+		git.OpenURL = func(context.Context, string) error { return nil }
+		git.Environ = func() []string { return nil }
+		manager.Git = git
+	}
 	next := 0
 	manager.NewID = func() string { next++; return fmt.Sprintf("%032x", next) }
 	start := func() (operations.Operation, error) { return manager.StartPlan(nil, nil) }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownAZ, Import, ArrowLeft, ArrowRight, Box, RefreshCcw, ScanSearch, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Command, Copy, Database, ExternalLink, FileCode2, Folder, FolderKanban, FolderTree, GitCompareArrows, History, Layers3, LayoutDashboard, LoaderCircle, LockKeyhole, Monitor, Moon, Network, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Waypoints, Workflow, Wrench, X } from 'lucide-react';
+import { ArrowDownAZ, GitBranch, Import, ArrowLeft, ArrowRight, Box, RefreshCcw, ScanSearch, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Command, Copy, Database, ExternalLink, FileCode2, Folder, FolderKanban, FolderTree, GitCompareArrows, History, Layers3, LayoutDashboard, LoaderCircle, LockKeyhole, Monitor, Moon, Network, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Waypoints, Workflow, Wrench, X } from 'lucide-react';
 import { api, ApiError, openInNewTab, post } from './api';
 import type { ContextInfo, Module, Operation, ReplaceTarget, Resource, ResourcePage, Workspace } from './types';
 import { comparePath, historyPath, contextPath, isExplorerView, navigate, productionLike, projectPath, takeLinkedResource, useRoute, type Route } from './router';
@@ -18,16 +18,21 @@ import { HistoryView } from './history/HistoryView';
 import { ToolsView } from './hub/ToolsView';
 import { ContextSelector } from './profiles/ContextSelector';
 import { useProfileSelection } from './profiles/selection';
-type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Tools' | 'Settings' | 'Plans' | 'Drift' | 'Graph' | 'Import' | 'Operations';
+import { GitBadge, GitView, SourceLink, editorLabels, gitPrefix } from './git/GitView';
+import type { EditorName } from './types';
+type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Settings' | 'Plans' | 'Drift' | 'Graph' | 'Import' | 'Operations';
 type Preferences = {
   theme: 'system' | 'light' | 'dark';
   density: 'comfortable' | 'compact';
   grouping: 'module' | 'flat';
+  // The editor that "Open in editor" links use; only these names exist on the server.
+  editor: EditorName;
 };
 const defaults: Preferences = {
   theme: 'system',
   density: 'comfortable',
-  grouping: 'module'
+  grouping: 'module',
+  editor: 'vscode'
 };
 function readPreferences(): Preferences {
   try {
@@ -35,7 +40,8 @@ function readPreferences(): Preferences {
     return {
       theme: ['system', 'light', 'dark'].includes(saved.theme) ? saved.theme : defaults.theme,
       density: saved.density === 'compact' ? 'compact' : 'comfortable',
-      grouping: saved.grouping === 'flat' ? 'flat' : 'module'
+      grouping: saved.grouping === 'flat' ? 'flat' : 'module',
+      editor: saved.editor === 'cursor' ? 'cursor' : 'vscode'
     };
   } catch {
     return defaults;
@@ -68,6 +74,9 @@ const navigation = [{
 }, {
   name: 'Tools',
   icon: Wrench
+}, {
+  name: 'Git',
+  icon: GitBranch
 }, {
   name: 'Settings',
   icon: Settings2
@@ -147,6 +156,8 @@ function Workbench({
   });
   const w = workspace.data;
   const noLaunch = !scoped && w?.diagnostic?.code === 'no_launch_project';
+  // Git routes of this tab's project: the launch project's at the API root, a Hub project's by ID.
+  const gitBase = scoped ? gitPrefix(scoped.projectId) : w && !noLaunch ? '' : undefined;
   const closed = workspace.error instanceof ApiError && workspace.error.code === 'context_closed';
   function setView(next: View) {
     setViewState(next);
@@ -323,9 +334,9 @@ function Workbench({
    {!onHub && !noLaunch && <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" />{scoped ? <div className="context-item"><Layers3 size={13} /><label htmlFor="workspace-switch">Workspace</label><select id="workspace-switch" className="workspace-switch" value={scoped.workspace} onChange={e => navigate(contextPath(scoped.projectId, e.target.value, isExplorerView(view) ? view : 'Resources'))}>{Array.from(new Set([scoped.workspace, ...(project?.inspection?.workspaces || [])])).map(ws => <option key={ws} value={ws}>{ws}{ws === project?.inspection?.cliDefault ? ' (CLI default)' : ''}</option>)}</select>{productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}</div> : <div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div>}{profileProject ? <><span className="context-divider" /><ContextSelector projectId={profileProject} selection={profile} workspaces={scoped ? project?.inspection?.workspaces : undefined} onChosen={p => {
           // A profile that selects a workspace opens that workspace in this tab.
           if (scoped && p?.workspace && p.workspace !== scoped.workspace) navigate(contextPath(scoped.projectId, p.workspace, isExplorerView(view) ? view : 'Resources'));
-        }} /></> : !scoped && w && <><span className="context-divider" /><div className="context-item muted" title="Execution profiles belong to Hub projects. Save this project to the Hub to use them.">Profile: none</div></>}<span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div><span className="context-spacer" />{scoped && <><Button variant="ghost" size="small" onClick={reread} disabled={w?.status === 'loading'} title="Read this workspace's recorded state again. No refresh is run."><RefreshCcw size={12} />Read again</Button><Button variant="ghost" size="small" onClick={() => openInNewTab(contextPath(scoped.projectId, scoped.workspace, isExplorerView(view) ? view : 'Resources'))} title="Open this workspace in a new browser tab"><ExternalLink size={12} />New tab</Button></>}{!scoped && <Button variant="ghost" size="small" onClick={() => void rereadLaunch()} disabled={rereading || w?.status === 'loading' || !!runningOperation} title="Inspect this folder and read its recorded state again, as at startup. No init, plan or refresh is run."><RefreshCcw size={12} />Read again</Button>}{!scoped && runningOperation && <button className="context-running" onClick={() => setView(runningOperation.kind === 'drift' ? 'Drift' : runningOperation.kind === 'graph' ? 'Graph' : 'Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.kind === 'drift' ? 'Drift scan' : runningOperation.kind === 'graph' ? 'Graph' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>}
+        }} /></> : !scoped && w && <><span className="context-divider" /><div className="context-item muted" title="Execution profiles belong to Hub projects. Save this project to the Hub to use them.">Profile: none</div></>}<span className="context-divider" /><div className="context-item"><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong><span className={`dot ${ready ? '' : 'dot-muted'}`} /></div>{gitBase !== undefined && <><span className="context-divider" /><GitBadge prefix={gitBase} onOpen={() => setView('Git')} /></>}<span className="context-spacer" />{scoped && <><Button variant="ghost" size="small" onClick={reread} disabled={w?.status === 'loading'} title="Read this workspace's recorded state again. No refresh is run."><RefreshCcw size={12} />Read again</Button><Button variant="ghost" size="small" onClick={() => openInNewTab(contextPath(scoped.projectId, scoped.workspace, isExplorerView(view) ? view : 'Resources'))} title="Open this workspace in a new browser tab"><ExternalLink size={12} />New tab</Button></>}{!scoped && <Button variant="ghost" size="small" onClick={() => void rereadLaunch()} disabled={rereading || w?.status === 'loading' || !!runningOperation} title="Inspect this folder and read its recorded state again, as at startup. No init, plan or refresh is run."><RefreshCcw size={12} />Read again</Button>}{!scoped && runningOperation && <button className="context-running" onClick={() => setView(runningOperation.kind === 'drift' ? 'Drift' : runningOperation.kind === 'graph' ? 'Graph' : 'Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.kind === 'drift' ? 'Drift scan' : runningOperation.kind === 'graph' ? 'Graph' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>}
    <main id="main-content" tabIndex={-1} className="main-content">
-    {historyPage ? <div className="page-heading"><div><div className="eyebrow">ON THIS MACHINE</div><h1>Operation history</h1><p>What ran, when, against which workspace, and what each reviewed plan proposed. Redacted metadata only.</p></div><span className="read-only-badge"><ShieldCheck size={13} />Never re-runs</span></div> : comparing ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>Compare workspaces</h1><p>Line up the recorded state of two workspaces: dev and prod, or one stack in two roots. Only when you ask.</p></div><span className="read-only-badge"><ShieldCheck size={13} />Read-only</span></div> : onHub ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>{route.kind === 'hub' ? 'Projects' : 'Project workspaces'}</h1><p>{route.kind === 'hub' ? 'Every Terraform and OpenTofu root you work with, in one place.' : 'Open a CLI workspace to read its recorded state in this tab.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{route.kind === 'project' ? 'Changes ask first' : 'Read-only'}</span></div> : <div className="page-heading"><div><div className="eyebrow">{scoped ? `HUB WORKSPACE · ${scoped.workspace.toUpperCase()}` : 'YOUR INFRASTRUCTURE, IN FOCUS'}</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view === 'Drift' ? 'Drift detection' : view === 'Graph' ? 'Dependency graph' : view === 'Tools' ? 'Project tools' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Tools' ? 'Validate, check formatting, and list provider requirements and output names. Read-only, and only when you ask.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Drift' ? 'Compare what state records with what providers report, only when you ask.' : view === 'Graph' ? 'See what depends on what, and what a change could reach. Only a plan confirms what will change.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : view === 'Drift' ? 'Never writes state' : 'Read-only'}</span></div>}
+    {historyPage ? <div className="page-heading"><div><div className="eyebrow">ON THIS MACHINE</div><h1>Operation history</h1><p>What ran, when, against which workspace, and what each reviewed plan proposed. Redacted metadata only.</p></div><span className="read-only-badge"><ShieldCheck size={13} />Never re-runs</span></div> : comparing ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>Compare workspaces</h1><p>Line up the recorded state of two workspaces: dev and prod, or one stack in two roots. Only when you ask.</p></div><span className="read-only-badge"><ShieldCheck size={13} />Read-only</span></div> : onHub ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>{route.kind === 'hub' ? 'Projects' : 'Project workspaces'}</h1><p>{route.kind === 'hub' ? 'Every Terraform and OpenTofu root you work with, in one place.' : 'Open a CLI workspace to read its recorded state in this tab.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{route.kind === 'project' ? 'Changes ask first' : 'Read-only'}</span></div> : <div className="page-heading"><div><div className="eyebrow">{scoped ? `HUB WORKSPACE · ${scoped.workspace.toUpperCase()}` : 'YOUR INFRASTRUCTURE, IN FOCUS'}</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view === 'Drift' ? 'Drift detection' : view === 'Graph' ? 'Dependency graph' : view === 'Tools' ? 'Project tools' : view === 'Git' ? 'Git changes' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Tools' ? 'Validate, check formatting, and list provider requirements and output names. Read-only, and only when you ask.' : view === 'Git' ? 'Branch, commit and the IaC files you changed, with redacted diffs. Read-only: Hclaro never runs checkout, commit or push.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Drift' ? 'Compare what state records with what providers report, only when you ask.' : view === 'Graph' ? 'See what depends on what, and what a change could reach. Only a plan confirms what will change.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : view === 'Drift' ? 'Never writes state' : 'Read-only'}</span></div>}
     {historyPage ? <HistoryView copy={copy} /> : comparing ? <CompareView copy={copy} /> : route.kind === 'hub' ? <HubView notify={setNotice} /> : route.kind === 'project' ? <ProjectView id={route.projectId} /> : view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : view === 'Plans' ? <PlansView project={w?.info.project || 'this project'} profileId={profile.selected} workspaceStatus={w?.status} planId={planId} choosePlan={setPlanId} replace={pendingReplace} clearReplace={() => setPendingReplace(undefined)} openPreflight={planRequested} preflightOpened={() => setPlanRequested(false)} copy={copy} inspectImpact={(id, address) => {
           setGraphFocus({ planId: id, address });
           setView('Graph');
@@ -348,7 +359,7 @@ function Workbench({
         }} /> : view === 'Operations' ? <OperationsView openPlan={id => {
           setPlanId(id);
           setView('Plans');
-        }} /> : view === 'Tools' && scoped ? opened.data ? <ToolsView context={opened.data} /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
+        }} /> : view === 'Git' && gitBase !== undefined ? <GitView projectId={scoped?.projectId} editor={preferences.editor} notify={setNotice} /> : view === 'Tools' && scoped ? opened.data ? <ToolsView context={opened.data} /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
           void opened.refetch();
         }} retryLabel="Try again" /> : <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Opening this workspace…</p></div> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
           void opened.refetch();
@@ -380,7 +391,7 @@ function Workbench({
                   setView('Plans');
                 }}>Plan replacement…</Button><Button variant="ghost" size="small" onClick={() => setReplaceSelection([])}><X size={12} />Clear</Button></div>}<table className="resources-table"><thead><tr><th scope="col" className="select-column"><span className="sr-only">Select for replacement</span></th><th scope="col">Resource</th><th scope="col" className="provider-column">Provider</th><th scope="col">Mode</th></tr></thead><tbody>{resources.data?.resources.map(r => <ResourceRow key={r.id} resource={r} selected={selected === r.id} onSelect={() => setSelected(r.id)} selectable={!scoped} chosen={replaceSelection.some(c => c.id === r.id)} onChoose={() => toggleReplace(r)} />)}</tbody></table><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
        </section>
-       {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} />}
+       {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && base !== undefined && detail.data ? { path: `${base ? `${base}/` : ''}resources/${detail.data.id}/source`, prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} />}
       </div>
      </>}
      {view === 'Overview' && <Overview workspace={w} browse={() => setView('Resources')} chooseType={t => {
@@ -469,17 +480,23 @@ function Inspector({
   loading,
   error,
   close,
-  copy
+  copy,
+  source,
+  editor,
+  notify
 }: {
   resource?: Resource;
   loading: boolean;
   error?: string;
   close: () => void;
   copy: (value: string, label: string) => Promise<void>;
+  source?: { path: string; prefix: string };
+  editor: EditorName;
+  notify: (text: string) => void;
 }) {
   return <Drawer label="Resource inspector" onClose={close}><div className="inspector-header"><span><Braces size={15} />Resource details</span><Button variant="ghost" size="icon" aria-label="Close inspector" onClick={close}><X size={16} /></Button></div>{loading ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading details…</div> : error ? <ErrorState message={error} /> : resource && <div className="inspector-body"><div className="inspector-title"><span className="resource-icon"><Box size={23} /></span><span className={`mode-badge ${resource.mode}`}>{resource.mode}</span></div><h2>{resource.name}</h2><p className="inspector-type mono">{resource.type}</p><div className="address-box"><div className="label-row"><span>RESOURCE ADDRESS</span><Button variant="ghost" size="icon" aria-label="Copy resource address" onClick={() => {
             void copy(resource.address, 'Address');
-          }}><Copy size={13} /></Button></div><code>{resource.address}</code></div><dl className="metadata"><div><dt>Provider</dt><dd className="mono">{resource.provider || 'Not recorded'}</dd></div><div><dt>Module</dt><dd className="mono">{resource.module || 'Root module'}</dd></div><div><dt>Instance key</dt><dd className="mono">{resource.index === undefined ? '—' : JSON.stringify(resource.index)}</dd></div><div><dt>Source</dt><dd>Recorded state</dd></div></dl><div className="attributes-header"><h3>Attributes</h3><Button variant="ghost" size="icon" aria-label="Copy redacted JSON" onClick={() => {
+          }}><Copy size={13} /></Button></div><code>{resource.address}</code></div><dl className="metadata"><div><dt>Provider</dt><dd className="mono">{resource.provider || 'Not recorded'}</dd></div><div><dt>Module</dt><dd className="mono">{resource.module || 'Root module'}</dd></div><div><dt>Instance key</dt><dd className="mono">{resource.index === undefined ? '—' : JSON.stringify(resource.index)}</dd></div><div><dt>Source</dt><dd>Recorded state</dd></div></dl>{source && <SourceLink prefix={source.prefix} sourcePath={source.path} editor={editor} notify={notify} />}<div className="attributes-header"><h3>Attributes</h3><Button variant="ghost" size="icon" aria-label="Copy redacted JSON" onClick={() => {
           void copy(JSON.stringify(resource.attributes, null, 2), 'Redacted JSON');
         }}><Copy size={14} /></Button></div><div className="redaction-note"><LockKeyhole size={12} />Sensitive, secret-named and credential-like values are hidden.</div><div className="json-viewer"><JsonTree value={resource.attributes} /></div></div>}</Drawer>;
 }
@@ -531,5 +548,7 @@ function SettingsPanel({
         density: e.target.value as Preferences['density']
       })}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div className="setting-row"><div><h2>Default grouping</h2><p>Browse by module or use a flat resource list.</p></div><select aria-label="Default grouping" value={preferences.grouping} onChange={e => changePreference({
         grouping: e.target.value as Preferences['grouping']
-      })}><option value="module">Module tree</option><option value="flat">Flat list</option></select></div><div className="settings-security"><ShieldCheck size={23} /><div><h2>Your machine. Your infrastructure.</h2><p>No telemetry, cloud accounts, or external services. Only display preferences are saved in this browser. Hub projects are saved as paths and names in your user configuration directory. To change engines, restart with <code>--engine terraform</code> or <code>--engine tofu</code>.</p></div></div></div>;
+      })}><option value="module">Module tree</option><option value="flat">Flat list</option></select></div><div className="setting-row"><div><h2>Source editor</h2><p>Used by Open in editor links. Hclaro asks the operating system to open the editor's link; it never runs a command you type.</p></div><select aria-label="Source editor" value={preferences.editor} onChange={e => changePreference({
+        editor: e.target.value === 'cursor' ? 'cursor' : 'vscode'
+      })}>{(Object.keys(editorLabels) as EditorName[]).map(name => <option key={name} value={name}>{editorLabels[name]}</option>)}</select></div><div className="settings-security"><ShieldCheck size={23} /><div><h2>Your machine. Your infrastructure.</h2><p>No telemetry, cloud accounts, or external services. Only display preferences are saved in this browser. Hub projects are saved as paths and names in your user configuration directory. To change engines, restart with <code>--engine terraform</code> or <code>--engine tofu</code>.</p></div></div></div>;
 }

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Git-aware infrastructure (M15, draft)
+
+- **Git** view for the launch project and Hub workspaces: repository name, project path inside the repository, branch, HEAD, linked worktree, and the changed `.tf`, `.tf.json`, `.tofu`, `.tfvars` and lock files of the project root and its local modules, with warnings for a detached HEAD, a branch without commits, untracked IaC files and IaC changes elsewhere in a monorepo. A Git badge in the context bar shows branch and commit (read from `.git` files) and opens the view.
+- Redacted line diffs against HEAD for an explicitly selected `.tf`/`.tf.json` file (secret-named literals, credential-shaped values and secret heredocs replaced on the server). Variable and lock files are listed by name only. Binary, oversized and malformed output is refused or truncated.
+- **Open in VS Code / Cursor** from diffs and from the resource inspector's new best-effort **Configuration source** link (`main.tf:12`), through the editor's URL handler with a validated, percent-encoded path. The editor is chosen in Settings.
+- Plans record a **source fingerprint** (commit, branch, uncommitted IaC files, SHA-256 of the IaC files of the root and local modules). The review shows the source and warns *Plan generated from a different source revision*; the new preflight check `git.source` blocks applies after IaC changes (including local modules outside the project folder) and asks for an acknowledgement when only HEAD moved.
+- New routes: `GET /api/v1/git/head`, `POST /api/v1/git/status`, `POST /api/v1/git/diff`, `POST /api/v1/editor/open` (and the same under `/api/v1/projects/{id}/`), `GET /api/v1/resources/{id}/source`, `GET /api/v1/contexts/{cid}/resources/{rid}/source`; plan detail adds `source` and `sourceStatus`. New package `internal/gitctx`; client route `/projects/<id>/workspaces/<name>/git`. Hclaro never runs Git commands that change a repository.
+
 ### Safe apply and preflight checks (M14, draft)
 
 - **Apply preflight** in the apply dialog: context identity at the top (project, workspace, engine and version, backend and execution mode, profile, plan digest, fingerprint), blocking checks with remediation, warnings with one acknowledgement each, passed checks, and the impact of the whole saved plan (counts, high-risk resources, every planned change with requested ones marked). Apply stays disabled while anything blocks.

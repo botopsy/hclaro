@@ -12,13 +12,24 @@ const {chromium}=await import(pathToFileURL(path.join(modules,'playwright/index.
 const browser=await chromium.launch({headless:true,...(process.env.HCLARO_CHROME ? {executablePath:process.env.HCLARO_CHROME} : {}),args:['--no-sandbox','--disable-background-networking','--disable-component-update']})
 const token='a'.repeat(64), host='http://127.0.0.1:9273', canary='DO_NOT_LEAK_HCLARO_TEST_SECRET'
 const errors=[],consoleOutput=[],external=[]
-let large=false,importReview=false
+let large=false,importReview=false,gitMode=false
+// A disposable synthetic Git repository for the Git view (setup only; Hclaro itself never writes to Git).
+const gitFixture=path.resolve('.cache/git-fixture')
+await fs.rm(gitFixture,{recursive:true,force:true})
+await fs.mkdir(gitFixture,{recursive:true})
+const git=(...args)=>execFileSync('git',['-c','user.name=Hclaro Test','-c','user.email=test@example.invalid','-c','init.defaultBranch=main','-c','commit.gpgsign=false',...args],{cwd:gitFixture,env:{...process.env,HOME:gitFixture,GIT_CONFIG_NOSYSTEM:'1'}})
+await fs.writeFile(path.join(gitFixture,'main.tf'),'resource "aws_s3_bucket" "artifacts" {\n  bucket = "platform-artifacts"\n}\n\nresource "aws_iam_role" "deployer" {\n  name = "deployer"\n}\n')
+await fs.writeFile(path.join(gitFixture,'prod.tfvars'),'region = "eu-west-1"\n')
+git('init','-q');git('add','.');git('commit','-q','-m','Synthetic fixture')
+await fs.appendFile(path.join(gitFixture,'main.tf'),'\nresource "aws_db_instance" "main" {\n  engine   = "postgres"\n  password = "'+canary+'"\n}\n')
+await fs.writeFile(path.join(gitFixture,'network.tf'),'resource "aws_vpc" "main" {\n  cidr_block = "10.0.0.0/16"\n}\n')
+await fs.writeFile(path.join(gitFixture,'prod.tfvars'),'db_password = "'+canary+'"\n')
 const context=await browser.newContext({viewport:{width:1512,height:1050},colorScheme:'dark',reducedMotion:'reduce'})
 await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:host})
 await context.route('**/*',async route=>{
  const req=route.request(),url=new URL(req.url())
  if(url.origin!==host){external.push(url.origin);await route.abort();return}
- const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':'',HCLARO_FIXTURE_IMPORT:importReview?'1':''},maxBuffer:8<<20}))
+ const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':'',HCLARO_FIXTURE_IMPORT:importReview?'1':'',HCLARO_FIXTURE_GIT:gitMode?gitFixture:''},maxBuffer:8<<20}))
  const body=Buffer.from(response.body,'base64')
  if(url.pathname.startsWith('/api/')) assert(!body.includes(Buffer.from(canary)),'secret crossed actual API boundary')
  const headers=Object.fromEntries(Object.entries(response.headers).map(([k,v])=>[k,v.join(', ')]))
@@ -156,6 +167,37 @@ try{
  assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in import review')
  await page.screenshot({path:'docs/screenshots/import-review-dark.png',fullPage:true})
  importReview=false
+ // M15: Git context of a synthetic repository through the real Go handler and read-only Git.
+ gitMode=true
+ await page.reload()
+ const badge=page.getByRole('button',{name:/^Git main @ [0-9a-f]{7}/})
+ await badge.waitFor()
+ await badge.click()
+ await page.getByRole('heading',{name:'Git changes'}).waitFor()
+ const repo=page.getByRole('region',{name:'Repository'})
+ await repo.getByText('3 changed files').waitFor()
+ await page.getByRole('button',{name:/prod\.tfvars/}).click()
+ await page.getByLabel('Diff inspector').getByText(/never shown/).waitFor()
+ await page.keyboard.press('Escape')
+ await page.getByLabel('Diff inspector').waitFor({state:'detached'})
+ await page.getByRole('button',{name:/^main\.tf/}).click()
+ const diffPanel=page.getByLabel('Diff inspector')
+ await diffPanel.getByText(/1 line redacted/).waitFor()
+ await diffPanel.getByText('password = "[redacted]"',{exact:false}).waitFor()
+ assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in Git diff')
+ await page.screenshot({path:'docs/screenshots/git-changes-dark.png',fullPage:true})
+ await diffPanel.getByRole('button',{name:'Open in VS Code'}).click()
+ await page.getByRole('status').getByText(/Asked VS Code to open main\.tf:/).waitFor()
+ await page.getByRole('button',{name:'Resources',exact:true}).click()
+ await page.getByRole('button',{name:/deployer.*aws_iam_role/}).click()
+ const inspectorPanel=page.getByLabel('Resource inspector')
+ await inspectorPanel.getByText('main.tf:5').waitFor()
+ await inspectorPanel.getByText('Best effort',{exact:true}).waitFor()
+ await page.screenshot({path:'docs/screenshots/resource-source-dark.png'})
+ await page.keyboard.press('Escape')
+ await page.getByRole('button',{name:'Plans',exact:true}).click()
+ await page.getByText(/main @ [0-9a-f]{7} · 3 uncommitted IaC files/).waitFor()
+ gitMode=false
  // Exercise 1,000 resources through the same handler; rendering stays bounded to 50 rows.
  large=true
  await page.reload()
@@ -168,6 +210,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/changes/redacted diff/editor link/source reference/plan source, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

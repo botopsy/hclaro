@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"hclaro/internal/gitctx"
 	"hclaro/internal/history"
 	"io/fs"
 	"os"
@@ -158,6 +159,9 @@ type Hub struct {
 	Profiles *profiles.Store
 	// History keeps operation metadata on disk; nil when it is not used. See UseHistory.
 	History *history.Store
+	// Git reads Git context, diffs and source locations of registered projects and opens
+	// approved files in an editor; nil disables those routes.
+	Git *gitctx.Service
 	// Launch is the canonical root Hclaro was started with, or "".
 	Launch string
 	// LaunchChanged runs after an init of the launch root has ended and released the root,
