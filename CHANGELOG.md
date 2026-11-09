@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Plans with an action combination Hclaro does not support, in a resource or output change, can be reviewed but are never applied (`unknown_actions`), even with the destructive confirmation. See `docs/plan-actions.md`. (M24.01)
+- Pull requests and `master` are verified on GitHub Actions (Linux, Windows, macOS) instead of CircleCI; releases still build on CircleCI. (M25.06)
+
 ## 0.1.0-beta.1 — 2026-11-09
 
 First public beta. Execution profiles, drift detection, the dependency graph, workspace comparison, history, safe apply, Git awareness, AWS discovery, cost estimation, the new brand and navigation are new since 0.1.0-alpha.6. They are tested with synthetic fixtures and fake engines only; see `docs/BETA.md` before using them on infrastructure you care about.
