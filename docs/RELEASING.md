@@ -10,7 +10,7 @@ hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub reposito
 
 ## Before tagging
 
-1. Work from an up-to-date `master` with green CircleCI `master` checks (Linux, Windows, macOS).
+1. Work from an up-to-date `master` with green GitHub Actions `CI` checks on `master` (`linux`, `windows`, `macos`).
 2. Bump the default version (see above) and move the `## Unreleased` entries in `CHANGELOG.md` under `## <version> — <date>`. Merge that through a pull request.
 3. Run the full local suite from a clean checkout:
 

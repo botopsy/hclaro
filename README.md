@@ -398,7 +398,7 @@ Cross-compilation is not OS runtime validation. Release signing, installers, and
 
 ### Continuous integration
 
-Pull requests, `master` and releases run on CircleCI (`.circleci/config.yml`). Pull requests run the full suite, the embedded-asset check and the synthetic browser checks on Linux. Go and unit tests run on Windows (without the race detector: the Windows image has no C compiler) and macOS only when a pull request changes Go code, `go.mod`, `scripts/`, `fixtures/` or `.circleci/`. Merges to `master` and releases always run the suite and browser checks on Linux, Windows and macOS. Changes that touch only `docs/` or Markdown files skip the checks. Go and Node are downloaded at pinned versions and verified against pinned SHA-256 sums; no orbs are used.
+Pull requests and `master` run on GitHub Actions (`.github/workflows/ci.yml`, checks `changes`, `linux`, `windows`, `macos`). Pull requests run the full suite, the embedded-asset check and the synthetic browser checks on Linux. Go and unit tests run on Windows (without the race detector) and macOS only when a pull request changes Go code, `go.mod`, `scripts/`, `fixtures/` or `.github/`. Merges to `master` always run the suite and browser checks on Linux, Windows and macOS. Changes that touch only `docs/` or Markdown files skip the checks; a skipped job reports success. The workflow has a read-only token, no secrets and no caches, and never publishes; actions are pinned to commit SHAs and Go and Node to exact versions. Releases still run on CircleCI (`.circleci/config.yml`), below.
 
 ### Releases
 

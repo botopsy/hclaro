@@ -1,56 +1,123 @@
-name: CI (manual fallback)
-# Pull requests, master and releases run on CircleCI (.circleci/config.yml). This workflow
-# is a manual fallback only.
+name: CI
+# Pull requests and master are verified here. This workflow holds no secrets, never
+# publishes, and gives its token read access only; fork pull requests run with the same
+# read-only token. Releases still run on CircleCI (.circleci/config.yml) until the release
+# workflow moves (M25.07/M25.10).
+#
+# - Pull requests: full suite and browser checks on Linux; Go and unit tests on Windows and
+#   macOS when Go code, go.mod, scripts/, fixtures/ or .github/ changed.
+# - master: full suite and browser checks on Linux, Windows and macOS.
+# - Changes that touch only docs/ or Markdown files skip the checks. Skipping is decided per
+#   job (a skipped job reports success), not by workflow path filters, so required checks
+#   are never left waiting.
 on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  # A newer push to the same pull request cancels the older run; master runs never cancel.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+defaults:
+  run:
+    shell: bash
 jobs:
-  verify:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      # Report every OS on failure instead of cancelling the rest.
-      fail-fast: false
-      matrix:
-        # Ubuntu is pinned: Playwright 1.58 (held for macOS 13 development) does not support ubuntu-latest (26.04).
-        os: [ubuntu-24.04, macos-latest, windows-latest]
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+      go: ${{ steps.diff.outputs.go }}
     steps:
-      # Actions are pinned to release commits; the comment names the release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.27.3'
-          cache: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          package-manager-cache: false
-      - name: Install frontend dependencies
-        run: npm ci --prefix web
-      - run: go test -race ./cmd/... ./internal/... ./scripts/...
-      - run: go vet ./cmd/... ./internal/... ./scripts/...
-      - run: npm --prefix web run typecheck
-      - run: npm --prefix web run lint
-      - run: npm --prefix web test
-      - run: npm --prefix web run build
-      - name: Embedded assets match a fresh build
-        if: runner.os == 'Linux'
-        run: git diff --exit-code -- internal/ui/dist
-      - name: Build embedded host binary
-        shell: bash
-        run: CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o bin/hclaro ./cmd/hclaro
-      - name: Install test browser
-        run: npm --prefix web exec -- playwright install --with-deps chromium
-      - name: Synthetic browser checks
-        shell: bash
+          # A pull request checks out its merge commit and a push its master commit; the first
+          # parent is the base either way.
+          fetch-depth: 2
+      - id: diff
+        name: Classify changed files
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
-          suffix=""; if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
-          go build -o "bin/fixture-http${suffix}" ./scripts/fixture-http
-          node scripts/browser-smoke.mjs
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+          set -euo pipefail
+          code=true go=true
+          # A manual run, or a diff that cannot be computed, runs everything.
+          if [ "$EVENT" != workflow_dispatch ] && changed=$(git diff --name-only HEAD^1 HEAD) && [ -n "$changed" ]; then
+            printf '%s\n' "$changed" | grep -Ev '^docs/|\.md$' >/dev/null || code=false
+            # fixtures/ is embedded into Go tests; scripts/ holds the fake engine and fixture server.
+            printf '%s\n' "$changed" | grep -E '\.go$|^go\.(mod|sum)$|^(scripts|fixtures|\.github)/' >/dev/null || go=false
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "code=$code go=$go"
+
+  linux:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04 # Playwright 1.58 (held for macOS 13 development) does not support 26.04.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: evidence-${{ matrix.os }}
-          path: docs/screenshots/
+          persist-credentials: false
+      - uses: ./.github/actions/verify
+        with:
+          static: 'true'
+          browser: 'true'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: browser-evidence-linux
+          path: |
+            .cache/browser-failure.png
+            docs/screenshots/
+          retention-days: 5
+          if-no-files-found: ignore
+
+  windows:
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.go == 'true')
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Same tests without -race (as on CircleCI), for platform behavior: paths, permissions,
+      # CTRL_BREAK. Races are checked on Linux and macOS.
+      - uses: ./.github/actions/verify
+        with:
+          race: 'false'
+          browser: ${{ github.event_name != 'pull_request' }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: browser-evidence-windows
+          path: .cache/browser-failure.png
+          retention-days: 5
+          if-no-files-found: ignore
+
+  macos:
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.go == 'true')
+    runs-on: macos-15 # arm64
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/verify
+        with:
+          browser: ${{ github.event_name != 'pull_request' }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: browser-evidence-macos
+          path: .cache/browser-failure.png
+          retention-days: 5
+          if-no-files-found: ignore
