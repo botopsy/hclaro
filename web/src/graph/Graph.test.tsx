@@ -96,11 +96,11 @@ describe('Graph', () => {
     expect(document.querySelector('.graph-node.upstream')).toHaveTextContent('▲ dependency');
 
     await user.selectOptions(screen.getByLabelText('Compare with plan'), planId);
-    expect(await screen.findByText(/Showing/)).toHaveTextContent('Showing 11 confirmed planned changes');
+    expect(await screen.findByText(/Showing/)).toHaveTextContent('Showing 10 confirmed planned changes');
     await user.click(node('aws_security_group.web'));
     const confirmed = await screen.findByRole('region', { name: 'Confirmed planned changes' });
     expect(confirmed).toHaveTextContent('a dependency link does not show that one change causes another');
-    expect(confirmed).toHaveTextContent('Here and in its potential impact 6');
+    expect(confirmed).toHaveTextContent('Here and in its potential impact 5');
     expect(confirmed).toHaveTextContent('aws_s3_bucket.logs');
     expect(posts).toHaveLength(0);
   });

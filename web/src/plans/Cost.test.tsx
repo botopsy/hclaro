@@ -90,14 +90,14 @@ describe('Cost estimate tab', () => {
     const delta = await screen.findByText((_, el) => el?.classList.contains('cost-delta') ?? false, {}, { timeout: 3000 });
     expect(delta).toHaveTextContent('+9.89 USD / month');
     expect(screen.getByText(/Estimated recurring monthly change \(partial\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Covers 3 of 6 cost-bearing changes \(50%\)\. 3 without a direct price\./)).toBeInTheDocument();
+    expect(screen.getByText(/Covers 3 of 5 cost-bearing changes \(60%\)\. 3 without a direct price\./)).toBeInTheDocument();
     expect(screen.getAllByText(/not your cloud bill/).length).toBeGreaterThan(0);
     const items = screen.getByRole('table', { name: 'Changed resources' });
     const row = (address: string) => within(items).getByText(address).closest('tr')!;
     expect(row('module.compute.aws_instance.main[0]')).toHaveTextContent('+7.59 USD');
     expect(row('aws_db_instance.primary')).toHaveTextContent(/Partly estimated.*14\.71 USD.*17\.01 USD.*\+2\.30 USD/);
     // Unsupported, usage-based, free and forgotten resources carry labels, never amounts.
-    for (const [address, label] of [['aws_s3_bucket.logs', 'Usage-based'], ['aws_iam_role.legacy', 'No direct price'], ['random_password.unused', 'Not estimated'], ['aws_lb.edge', 'Not estimated']]) {
+    for (const [address, label] of [['aws_s3_bucket.logs', 'Usage-based'], ['aws_iam_role.legacy', 'No direct price'], ['random_password.unused', 'Not estimated']]) {
       expect(row(address)).toHaveTextContent(label);
       expect(row(address)).not.toHaveTextContent('USD');
     }

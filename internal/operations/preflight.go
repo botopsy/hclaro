@@ -99,6 +99,7 @@ func (m *Manager) facts(ctx context.Context, p *Plan, identity preflight.Identit
 		ArtifactNote:     m.notes[p.ID],
 		Digest:           p.ArtifactSHA256,
 		Ineligible:       ineligible(p),
+		Unsupported:      unsupportedCount(p),
 		Backend:          snap.Info.Backend,
 		ExecutionMode:    snap.Info.ExecutionMode,
 		CanApply:         snap.Info.Capabilities.CanApply,

@@ -174,7 +174,7 @@ func TestPlanFlowOverHTTP(t *testing.T) {
 	list := decode[struct {
 		Plans []planSummary `json:"plans"`
 	}](t, s.do("GET", "/api/v1/plans", ""))
-	if len(list.Plans) != 1 || list.Plans[0].Changes != 11 || list.Plans[0].Drift != 1 {
+	if len(list.Plans) != 1 || list.Plans[0].Changes != 10 || list.Plans[0].Drift != 1 {
 		t.Fatalf("%+v", list)
 	}
 	type planDetail struct {
@@ -183,7 +183,7 @@ func TestPlanFlowOverHTTP(t *testing.T) {
 		Apply          operations.ApplyStatus `json:"apply"`
 	}
 	detail := decode[planDetail](t, s.do("GET", "/api/v1/plans/"+op.PlanID, ""))
-	if !detail.Apply.Available || !detail.Apply.ArtifactRetained || detail.ContextChanged || len(detail.Changes) != 13 || detail.ArtifactSHA256 == "" {
+	if !detail.Apply.Available || !detail.Apply.ArtifactRetained || detail.ContextChanged || len(detail.Changes) != 12 || detail.ArtifactSHA256 == "" {
 		t.Fatalf("plan detail: %+v %+v", detail.Apply, detail.Plan)
 	}
 	// Every change and drift record is individually retrievable and redacted.
@@ -372,5 +372,48 @@ func TestPreflightOverHTTP(t *testing.T) {
 	// After the apply the plan cannot pass preflight again.
 	if r := decode[operations.PreflightReport](t, s.do("POST", path+"/preflight", `{}`)); !r.Blocked || r.Binding != "" {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// M24.01: over HTTP, a plan with unsupported action combinations is reviewable but apply is
+// unavailable with a stable code, and approval and apply are refused even with the
+// destructive confirmation phrase. The engine's apply never runs and no values leak.
+func TestUnknownActionsRefusedOverHTTP(t *testing.T) {
+	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanUnknownActions})
+	w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`)
+	if w.Code != 202 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	op := s.wait(decode[operations.Operation](t, w).ID)
+	if op.Status != operations.Succeeded {
+		t.Fatalf("%+v", op)
+	}
+	raw := s.do("GET", "/api/v1/plans/"+op.PlanID, "")
+	if strings.Contains(raw.Body.String(), "DO_NOT_LEAK_HCLARO_TEST_SECRET") {
+		t.Fatal("secret in plan detail")
+	}
+	detail := decode[struct {
+		Unsupported int                    `json:"unsupportedActions"`
+		Destructive bool                   `json:"destructive"`
+		Warnings    []string               `json:"warnings"`
+		Apply       operations.ApplyStatus `json:"apply"`
+	}](t, raw)
+	if detail.Apply.Available || detail.Apply.Code != "unknown_actions" || detail.Apply.ArtifactRetained || detail.Unsupported != 2 || !detail.Destructive || len(detail.Warnings) == 0 {
+		t.Fatalf("detail %+v", detail)
+	}
+	preflight := s.do("POST", "/api/v1/plans/"+op.PlanID+"/preflight", `{}`)
+	if preflight.Code != 200 || !strings.Contains(preflight.Body.String(), `"blocked":true`) || strings.Contains(preflight.Body.String(), `"binding"`) {
+		t.Fatalf("preflight %d %s", preflight.Code, preflight.Body.String())
+	}
+	w = s.do("POST", "/api/v1/plans/"+op.PlanID+"/approval", `{"preflightBinding":"forged","acknowledged":["plan.destructive"]}`)
+	if w.Code != 409 || decode[map[string]string](t, w)["error"] != "unknown_actions" {
+		t.Fatalf("approval: %d %s", w.Code, w.Body.String())
+	}
+	w = s.do("POST", "/api/v1/plans/"+op.PlanID+"/apply", `{"confirmationToken":"x","confirmation":"apply demo"}`)
+	if w.Code != 409 {
+		t.Fatalf("apply: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(strings.Join(s.fake.Calls(), ","), "apply") {
+		t.Fatalf("engine apply ran: %v", s.fake.Calls())
 	}
 }

@@ -295,15 +295,6 @@
         "instanceCount": 0,
         "modulePath": "",
         "nodeKind": "resource",
-        "planned": [
-          {
-            "action": "unknown",
-            "address": "aws_lb.edge",
-            "changeId": "bfc7e1530e3aebf11ca8e2a886601b0e",
-            "mode": "managed",
-            "node": "n9"
-          }
-        ],
         "resourceAddress": "aws_lb.edge",
         "type": "aws_lb"
       },
@@ -1051,7 +1042,7 @@
     ],
     "operationId": "00000000000000000000000000000003",
     "plan": {
-      "changes": 11,
+      "changes": 10,
       "createdAt": "2026-11-06T09:59:00Z",
       "id": "00000000000000000000000000000002",
       "kind": "plan",
@@ -1295,13 +1286,6 @@
           "changeId": "03d23d8725766af238491b5683e6172a",
           "mode": "managed",
           "node": "n8"
-        },
-        {
-          "action": "unknown",
-          "address": "aws_lb.edge",
-          "changeId": "bfc7e1530e3aebf11ca8e2a886601b0e",
-          "mode": "managed",
-          "node": "n9"
         },
         {
           "action": "replace",
