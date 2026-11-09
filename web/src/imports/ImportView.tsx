@@ -1,12 +1,18 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CircleCheck, CircleHelp, CloudCog, Copy, Eye, EyeOff, FilePlus2, FileSearch, Import, LoaderCircle, LockKeyhole, Play, ShieldCheck, Terminal, TriangleAlert } from 'lucide-react';
+import { CircleCheck, CircleHelp, CloudCog, Radar, Unlink, Copy, Eye, EyeOff, FilePlus2, FileSearch, Import, LoaderCircle, LockKeyhole, Play, ShieldCheck, Terminal, TriangleAlert } from 'lucide-react';
 import { api, post } from '../api';
-import type { ImportOptions, ImportPreview, ImportRequest, Operation, PlanOptions } from '../types';
+import type { DiscoveryPrefill, ImportOptions, ImportPreview, ImportRequest, Operation, PlanOptions } from '../types';
 import { ContextSummary } from '../profiles/ContextSummary';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 import { Button } from '../components/ui/button';
 import { engineLabel } from '../plans/labels';
+
+// addressType returns the resource type of an instance address (the server parses it exactly).
+function addressType(address: string) {
+  const parts = address.trim().replace(/\[[^\]]*\]$/, '').split('.');
+  return parts.length >= 2 ? parts[parts.length - 2] : '';
+}
 
 const blank: ImportRequest = { address: '', id: '', provider: '', file: 'imports.tf', generateConfig: false };
 
@@ -17,15 +23,24 @@ export function ImportView({
   workspaceStatus,
   profileId = '',
   onStarted,
-  copy
+  copy,
+  prefill,
+  clearPrefill
 }: {
   workspaceStatus?: string;
+  // An object prepared in Cloud discovery: it fills the ID and suggests an address. The
+  // address and resource block remain the user's decision.
+  prefill?: DiscoveryPrefill;
+  clearPrefill?: () => void;
   // The execution profile this tab uses ("" for none).
   profileId?: string;
   onStarted: (operation: Operation) => void;
   copy: (value: string, label: string) => Promise<void>;
 }) {
-  const [request, setRequest] = useState<ImportRequest>(blank);
+  const [request, setRequest] = useState<ImportRequest>(() => prefill ? { ...blank, address: prefill.suggestedAddress, id: prefill.importId } : blank);
+  // The import stays linked to the discovered object only while its ID and type are unchanged;
+  // the server checks the link again before planning.
+  const linked = !!prefill && request.id === prefill.importId && addressType(request.address) === prefill.type;
   const [maskId, setMaskId] = useState(false);
   const [preview, setPreview] = useState<ImportPreview>();
   const [checking, setChecking] = useState(false);
@@ -65,8 +80,9 @@ export function ImportView({
     setError('');
     try {
       const bound = summary?.context.profileId ? { profileId, contextFingerprint: summary.context.fingerprint } : {};
-      const operation = await post<Operation>('imports', { ...request, address: request.address.trim(), varFiles: choice.chosen, previewSha256: preview.sha256, acknowledgeWrite: true, acknowledgeBackendAccess: true, ...bound });
+      const operation = await post<Operation>('imports', { ...request, address: request.address.trim(), varFiles: choice.chosen, previewSha256: preview.sha256, acknowledgeWrite: true, acknowledgeBackendAccess: true, ...bound, ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });
       setRequest(blank);
+      clearPrefill?.();
       setPreview(undefined);
       setConsent(false);
       onStarted(operation);
@@ -84,6 +100,11 @@ export function ImportView({
   const ready = !!preview && !preview.blocked && !!o?.canImport;
   return <div className="import-wizard">
    {workspaceStatus === 'loading' ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace before imports can be checked…</div> : o && !o.canImport && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span>{o.reason || 'Importing through Hclaro is unavailable for this workspace.'} You can still check an import here and copy a manual recipe.</span></div>}
+   {prefill && <section className={`discovery-link ${linked ? '' : 'unlinked'}`} aria-label="Discovered object">
+    <div><Radar size={15} aria-hidden="true" /><span>{linked ? <>From Cloud discovery: <code>{prefill.type}</code> <code>{prefill.importId}</code> in account <strong>{prefill.account}</strong>{prefill.region && <>, {prefill.region}</>}. The address is only a suggestion: confirm it and the resource block, then review the plan.</> : <>No longer linked to the discovered object: the import ID or resource type was changed. This is now a manual import.</>}</span>
+     <Button variant="ghost" size="small" onClick={() => { clearPrefill?.(); }}><Unlink size={12} />Clear</Button></div>
+    {linked && prefill.warnings.length > 0 && <ul className="import-issues" aria-label="Discovery notes">{prefill.warnings.map(w => <li key={w} className="issue-warning"><CircleHelp size={14} aria-hidden="true" /><span>{w}</span></li>)}</ul>}
+   </section>}
    <ol className="import-steps" aria-label="Import steps">
     <li className={preview ? 'done' : 'current'}><span>1</span>Describe the object</li>
     <li className={ready ? 'done' : preview ? 'current' : ''}><span>2</span>Review the new file</li>

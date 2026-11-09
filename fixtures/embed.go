@@ -1,7 +1,7 @@
 // Package fixtures contains explicitly synthetic data for tests and the fake engine.
 package fixtures
 
-import _ "embed"
+import "embed"
 
 //go:embed state.json
 var State []byte
@@ -99,3 +99,10 @@ var (
 	//go:embed compare/prod-renamed.json
 	CompareProdRenamed []byte
 )
+
+// AWS holds recorded, sanitized and fully synthetic AWS CLI v2 responses for cloud discovery
+// (M16): account 111122223333 (an AWS documentation example), canary values in tags and
+// fields Hclaro must never decode or show.
+//
+//go:embed aws/*.json
+var AWS embed.FS

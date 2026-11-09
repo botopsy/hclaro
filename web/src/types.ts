@@ -1108,3 +1108,123 @@ export type SourceReference = {
   reason: string;
 };
 export type EditorName = 'vscode' | 'cursor';
+// Cloud discovery (M16): existing AWS objects listed on request and labelled against the
+// launch workspace's recorded state. Labels are conservative; see docs/architecture.md.
+export type DiscoveryMatchStatus = 'already_tracked' | 'possibly_untracked' | 'unresolved' | 'unknown';
+export type DiscoveryResourceType = {
+  type: string;
+  service: string;
+  label: string;
+  global: boolean;
+  operation: string;
+  importIdFormat: string;
+  permission: string;
+};
+export type DiscoveryPin = {
+  projectId?: string;
+  profileId?: string;
+  profileName?: string;
+  contextFingerprint: string;
+  awsProfile?: string;
+  awsRegion?: string;
+  workspace: string;
+  engine: string;
+};
+export type CloudIdentity = {
+  id: string;
+  provider: 'aws';
+  account: string;
+  arn: string;
+  principalType: string;
+  partition: string;
+  region: string;
+  regionSource: 'profile' | 'environment' | 'default';
+  cliVersion: string;
+  verifiedAt: string;
+  expiresAt: string;
+  context: DiscoveryPin;
+};
+export type DiscoveryOptions = {
+  canScan: boolean;
+  reason?: string;
+  provider: 'aws';
+  types: DiscoveryResourceType[];
+  regions: string[];
+  defaultRegion: string;
+  regionSource: 'profile' | 'environment' | 'default';
+  limits: { maxRegions: number; maxPerType: number; defaultPerType: number; maxConcurrency: number; defaultConcurrency: number; pageSize: number };
+  project: string;
+  engine: string;
+  workspace: string;
+  backend: string;
+  stateStatus: string;
+  identity?: CloudIdentity;
+  projectId?: string;
+  context?: ExecutionSummary;
+  profileError?: string;
+};
+export type DiscoveryScope = { regions: string[]; types: string[]; maxPerType: number; concurrency: number };
+export type DiscoveryTask = {
+  type: string;
+  region: string;
+  status: 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
+  count: number;
+  pages: number;
+  retries: number;
+  truncated: boolean;
+  error?: string;
+  message?: string;
+};
+export type CloudResourceCandidate = {
+  id: string;
+  type: string;
+  service: string;
+  resourceId: string;
+  arn?: string;
+  region: string;
+  account: string;
+  name?: string;
+  tags: { key: string; value: string }[];
+  tagsOmitted?: number;
+  details: Record<string, string>;
+  importId?: string;
+  importIdStatus: 'verified' | 'unresolved';
+  importIdNote?: string;
+  observedAt: string;
+  seenInRegions: string[];
+  match: { status: DiscoveryMatchStatus; reason: string; addresses: string[]; resourceIds: string[] };
+};
+export type DiscoveryScan = {
+  id: string;
+  status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+  startedAt: string;
+  completedAt?: string;
+  scope: DiscoveryScope;
+  estimate: { tasks: number; minCalls: number; maxCalls: number };
+  calls: number;
+  identity: CloudIdentity;
+  context: DiscoveryPin;
+  tasks: DiscoveryTask[];
+  duplicatesMerged: number;
+  error?: string;
+  message?: string;
+  // Present on a single-scan read only.
+  results?: CloudResourceCandidate[];
+  summary?: Record<DiscoveryMatchStatus, number>;
+  current?: boolean;
+  staleReason?: string;
+  withheld?: boolean;
+};
+export type DiscoveryPrefill = {
+  token: string;
+  scanId: string;
+  candidateId: string;
+  type: string;
+  importId: string;
+  suggestedAddress: string;
+  region: string;
+  account: string;
+  match: DiscoveryMatchStatus;
+  warnings: string[];
+  expiresAt: string;
+};

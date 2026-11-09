@@ -1,0 +1,8 @@
+{
+  "Vpcs": [
+    {"VpcId": "vpc-0a1b2c3d4e5f60001", "OwnerId": "111122223333", "CidrBlock": "10.0.0.0/16", "IsDefault": false, "State": "available",
+     "Tags": [{"Key": "Name", "Value": "platform-core"}, {"Key": "team", "Value": "platform"}, {"Key": "deploy_token", "Value": "not-a-real-token"}, {"Key": "note", "Value": "DO_NOT_LEAK_HCLARO_TEST_SECRET"}]},
+    {"VpcId": "vpc-0a1b2c3d4e5f60002", "OwnerId": "111122223333", "CidrBlock": "172.31.0.0/16", "IsDefault": true, "State": "available", "Tags": []}
+  ],
+  "NextToken": "eyJOZXh0VG9rZW4iOiAicGFnZS0yIn0="
+}

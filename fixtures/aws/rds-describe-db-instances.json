@@ -1,0 +1,7 @@
+{
+  "DBInstances": [
+    {"DBInstanceIdentifier": "demo-database-000", "DBInstanceArn": "arn:aws:rds:eu-west-1:111122223333:db:demo-database-000", "Engine": "postgres", "DBInstanceClass": "db.t4g.micro", "DBInstanceStatus": "available",
+     "MasterUsername": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "Endpoint": {"Address": "demo-database-000.synthetic.eu-west-1.rds.amazonaws.com", "Port": 5432}, "TagList": [{"Key": "Name", "Value": "orders"}]},
+    {"DBInstanceIdentifier": "legacy-reporting", "DBInstanceArn": "arn:aws:rds:eu-west-1:111122223333:db:legacy-reporting", "Engine": "mysql", "DBInstanceClass": "db.t3.small", "DBInstanceStatus": "available", "TagList": []}
+  ]
+}

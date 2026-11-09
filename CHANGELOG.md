@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### AWS cloud discovery (M16, draft)
+
+- **Discovery** view for the launch project: verify the AWS context (CLI v2 and STS caller identity; account, principal type, region; never inferred from a profile name), preview a scan (types, up to 6 regions, limits, concurrency, request estimate, possible API charges) and confirm it, follow progress, cancel, and browse results labelled **Possibly untracked**, **Already tracked**, **Unknown** or **Unresolved** against the workspace's recorded state, with filters by label, service and text.
+- Supported types: `aws_vpc`, `aws_subnet`, `aws_security_group`, `aws_s3_bucket`, `aws_db_instance`. Pagination, throttling retries with backoff, per-service partial results (access denied is "missing, not empty"), expired SSO detection, multi-region de-duplication, limits and cancellation. Tags and names are sanitized; rules, policies, endpoints and DB configuration are never read.
+- **Prepare import** opens the Import wizard with the import ID and a suggested address after checking the account again; the import route re-checks the link (`discoveryToken`). No bulk import.
+- New routes under `/api/v1/discovery/…`; `POST /api/v1/imports` accepts `discoveryToken`. New package `internal/discovery` with an allowlisted read-only AWS CLI runner; synthetic fixtures in `fixtures/aws`, a synthetic `aws` CLI for `make demo` (`scripts/fake-aws`).
+
 ### Git-aware infrastructure (M15, draft)
 
 - **Git** view for the launch project and Hub workspaces: repository name, project path inside the repository, branch, HEAD, linked worktree, and the changed `.tf`, `.tf.json`, `.tofu`, `.tfvars` and lock files of the project root and its local modules, with warnings for a detached HEAD, a branch without commits, untracked IaC files and IaC changes elsewhere in a monorepo. A Git badge in the context bar shows branch and commit (read from `.git` files) and opens the view.

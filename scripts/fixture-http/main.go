@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"hclaro/fixtures"
 	"hclaro/internal/api"
+	"hclaro/internal/discovery"
+	"hclaro/internal/discovery/discoverytest"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/imports"
@@ -84,6 +86,32 @@ func main() {
 	}
 	next := 0
 	manager.NewID = func() string { next++; return fmt.Sprintf("%032x", next) }
+	// Cloud discovery answers from recorded synthetic AWS fixtures; no process or network.
+	// HCLARO_FIXTURE_DISCOVERY=1 recreates one verified context and one completed scan with
+	// deterministic IDs before handling the request, as for plans above.
+	svc := discovery.New(&discoverytest.Runner{})
+	svc.Sleep = func(context.Context, time.Duration) error { return nil }
+	svc.Now = func() time.Time { return time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC) }
+	discoveryID := 0
+	svc.NewID = func() string { discoveryID++; return fmt.Sprintf("%032x", 0xd000+discoveryID) }
+	manager.Discovery = svc
+	defer svc.Close(5 * time.Second)
+	// The developer's own AWS settings never reach the synthetic harness.
+	for _, name := range []string{"AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION"} {
+		_ = os.Unsetenv(name)
+	}
+	if os.Getenv("HCLARO_FIXTURE_DISCOVERY") == "1" {
+		pin := discovery.Pin{ContextFingerprint: "inherited", Workspace: "demo", Engine: "terraform"}
+		if id, err := svc.Verify(context.Background(), pin, []string{"AWS_REGION=eu-west-1"}); err == nil {
+			if scan, err := svc.Start(pin, nil, id.ID, discovery.DiscoveryScope{Regions: []string{"eu-west-1", "us-east-1"}, Types: []string{"aws_vpc", "aws_subnet", "aws_security_group", "aws_s3_bucket", "aws_db_instance"}}); err == nil {
+				for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+					if v, _ := svc.View(scan.ID, pin, store.Get()); v.Status != discovery.ScanRunning {
+						break
+					}
+				}
+			}
+		}
+	}
 	start := func() (operations.Operation, error) { return manager.StartPlan(nil, nil) }
 	if importing {
 		start = func() (operations.Operation, error) {

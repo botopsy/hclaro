@@ -30,12 +30,14 @@ func Token() (string, error) {
 // project; start a workspace comparison (opens two read contexts); read the Git status or
 // the redacted diff of one changed configuration file of the launch or a Hub project (they
 // run read-only `git` commands, which GET routes never do); open an approved file in VS
-// Code or Cursor. PATCH and DELETE edit or unregister one Hub project or one execution profile.
+// Code or Cursor; verify the AWS caller identity, start or cancel an AWS discovery scan and
+// prepare an import from one discovered object (they run allowlisted read-only AWS CLI calls).
+// PATCH and DELETE edit or unregister one Hub project or one execution profile.
 // The import preview and folder browse have no side effects; they are POSTs so the import
 // ID or a local path never appears in a URL. Project inspection, workspace review and
 // opening a context run read-only engine commands, which GET routes never do.
 var mutating = map[string]*regexp.Regexp{
-	http.MethodPost:   regexp.MustCompile(`^/api/v1/(workspace/reload|plans|drift-scans|graphs|plans/[0-9a-f]{32}/(preflight|approval|apply)|operations/[0-9a-f]{32}/cancel|imports|imports/preview|projects|projects/(order|browse)|projects/[0-9a-f]{32}/(inspect|operations/(init|workspace|validate|fmt-check|providers|outputs-metadata)|workspaces/review|execution-profiles|execution-profiles/default|execution-profiles/[0-9a-f]{32}/clone|git/(status|diff)|editor/open)|git/(status|diff)|editor/open|contexts|comparisons)$`),
+	http.MethodPost:   regexp.MustCompile(`^/api/v1/(workspace/reload|plans|drift-scans|graphs|plans/[0-9a-f]{32}/(preflight|approval|apply)|operations/[0-9a-f]{32}/cancel|imports|imports/preview|projects|projects/(order|browse)|projects/[0-9a-f]{32}/(inspect|operations/(init|workspace|validate|fmt-check|providers|outputs-metadata)|workspaces/review|execution-profiles|execution-profiles/default|execution-profiles/[0-9a-f]{32}/clone|git/(status|diff)|editor/open)|git/(status|diff)|editor/open|contexts|comparisons|discovery/(identity|scans|scans/[0-9a-f]{32}/(cancel|candidates/[0-9a-f]{32}/prepare)))$`),
 	http.MethodPatch:  regexp.MustCompile(`^/api/v1/(projects/[0-9a-f]{32}(/execution-profiles/[0-9a-f]{32})?|history/retention)$`),
 	http.MethodDelete: regexp.MustCompile(`^/api/v1/(projects/[0-9a-f]{32}(/execution-profiles/[0-9a-f]{32})?|history(/[0-9a-f]{32})?)$`),
 }

@@ -1,0 +1,6 @@
+{
+  "Subnets": [
+    {"SubnetId": "subnet-0f1e2d3c4b5a60001", "SubnetArn": "arn:aws:ec2:eu-west-1:111122223333:subnet/subnet-0f1e2d3c4b5a60001", "VpcId": "vpc-0a1b2c3d4e5f60001", "OwnerId": "111122223333", "CidrBlock": "10.0.1.0/24", "AvailabilityZone": "eu-west-1a", "Tags": [{"Key": "Name", "Value": "core-private-a"}]},
+    {"SubnetId": "subnet-0f1e2d3c4b5a60002", "SubnetArn": "arn:aws:ec2:eu-west-1:444455556666:subnet/subnet-0f1e2d3c4b5a60002", "VpcId": "vpc-0a1b2c3d4e5f69999", "OwnerId": "444455556666", "CidrBlock": "10.9.1.0/24", "AvailabilityZone": "eu-west-1b", "Tags": [{"Key": "Name", "Value": "shared-from-network-account"}]}
+  ]
+}

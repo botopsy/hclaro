@@ -203,3 +203,29 @@ func FromResolved(r profiles.Resolved) ExecutionContext {
 	}
 	return c
 }
+
+// ResolveProfile resolves a launch-project profile for work that is not an engine operation,
+// such as AWS discovery (M16). expected, when not empty, must equal the context fingerprint
+// the user reviewed. A profile that selects another engine or workspace is refused, as for a
+// plan. With no profile, the context is nil and environ is nil (Hclaro's own environment).
+func (m *Manager) ResolveProfile(profileID, expected string) (*ExecutionContext, []string, error) {
+	if profileID == "" {
+		return nil, nil, nil
+	}
+	if expected == "" {
+		if m.Binder == nil {
+			return nil, nil, reject("profiles_unavailable", "Execution profiles are not available for this project. Save it to the Hub first.")
+		}
+		b, err := m.Binder(profileID)
+		if err != nil {
+			return nil, nil, err
+		}
+		expected = b.Context.Fingerprint
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.bind(m.store.Get(), profileID, expected)
+}
+
+// Snapshot returns the current launch snapshot.
+func (m *Manager) Snapshot() workspace.Snapshot { return m.store.Get() }
