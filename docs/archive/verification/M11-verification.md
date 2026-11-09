@@ -2,7 +2,7 @@
 
 **Status: draft.** Dependency graphs are implemented for the project opened from the terminal (engine `Grapher`, `internal/graph`, operation manager, HTTP API, React **Graph** view, synthetic fixtures). They pass the automated suite and live loopback runs of the real binary against the synthetic CLI as Terraform and as OpenTofu (2026-11-06). **No graph has been generated with a real Terraform/OpenTofu engine, a real provider or a remote backend.** No real infrastructure, credentials or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#dependency-graphs), [security](../SECURITY.md), [README](../README.md#dependency-graph).
+Design and trade-offs: [architecture](../../architecture.md#dependency-graphs), [security](../../../SECURITY.md), [README](../../../README.md#dependency-graph).
 
 ## Scope decisions
 

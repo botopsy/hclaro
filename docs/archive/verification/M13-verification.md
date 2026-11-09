@@ -2,7 +2,7 @@
 
 **Status: draft.** Plan and execution history is implemented: `internal/history` (storage, retention, migrations, plan summary comparison, exports, Git identity), an `operations.Recorder` hook in both operation runners, HTTP routes under `/api/v1/history`, a `--export-history` command-line flag and a React **History** page. It passes the automated suite and a live loopback run of the real binary against the synthetic CLI (2026-11-06). **No operation was recorded from a real Terraform/OpenTofu engine, a real provider or a remote backend.** No real infrastructure, credentials or remote backends were used; the live run's `apply` went to the synthetic engine and its fixture state.
 
-Design and trade-offs: [architecture](architecture.md#operation-history), [security](../SECURITY.md), [README](../README.md#operation-history).
+Design and trade-offs: [architecture](../../architecture.md#operation-history), [security](../../../SECURITY.md), [README](../../../README.md#operation-history).
 
 ## Scope decisions
 

@@ -1,10 +1,10 @@
 # Hclaro brand: hollow cursor
 
-The identity introduced in M19. Source of truth: the supplied design mockup in
-[`reference/Cursor.dc.html`](reference/Cursor.dc.html) and its [`README`](reference/README.md).
-That file is a **reference artboard, not production code**: its `support.js` and `vendor/react*.js`
-preview runtime was deliberately not copied into this repository, and nothing from it is imported
-by the application (`internal/ui/embed_test.go` checks the embedded bundle).
+The identity introduced in M19. It was implemented from a design mockup supplied for the project
+(a reference artboard, not production code). The mockup itself is **not distributed** with this
+repository; every value taken from it (colours, geometry, sizes) is recorded in this document and in
+the code that uses it. Nothing from the mockup's preview runtime is part of the application
+(`internal/ui/embed_test.go` checks the embedded bundle).
 
 ![The shipped components rendered by the production stylesheet, laid out like the reference artboard](screenshots/brand-sheet.png)
 

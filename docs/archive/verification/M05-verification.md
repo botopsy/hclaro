@@ -2,7 +2,7 @@
 
 **Status: draft.** The Workspace Hub is implemented and passes the automated suite and a live loopback run of the real binary against the synthetic CLI (2026-11-05). **No Hub workspace has been read with a real Terraform/OpenTofu engine or a remote backend**, so `TF_WORKSPACE` handling is verified only against the synthetic CLI, which follows the documented behavior. No real infrastructure, cloud accounts or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#workspace-hub), [security](../SECURITY.md).
+Design and trade-offs: [architecture](../../architecture.md#workspace-hub), [security](../../../SECURITY.md).
 
 ## Evidence collected
 

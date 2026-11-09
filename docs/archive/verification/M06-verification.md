@@ -2,7 +2,7 @@
 
 **Status: draft.** Guided init is implemented and passes the automated suite and a live loopback run of the real binary against the synthetic CLI (2026-11-05). **No init has been run with a real Terraform/OpenTofu engine, registry or remote backend.** The `init -json` event shapes used for Terraform 1.9+ (`version`, `init_output`, `log`, `diagnostic`) and the human-output error texts are modeled on the documented formats, not certified. No real infrastructure, cloud accounts or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#initialization), [security](../SECURITY.md), [README](../README.md#initialize-a-project).
+Design and trade-offs: [architecture](../../architecture.md#initialization), [security](../../../SECURITY.md), [README](../../../README.md#initialize-a-project).
 
 ## Evidence collected
 

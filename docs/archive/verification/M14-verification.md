@@ -2,7 +2,7 @@
 
 **Status: draft.** Safe apply and preflight checks are implemented as a Preflight Engine on the existing saved-plan apply flow (M03/M04), not a second apply path: `internal/preflight` (typed checks, deterministic evaluation, versioned local policy, Git and AWS STS probes), `operations.Manager.Preflight` with a short-lived binding, a stricter `Approve`, a full re-evaluation inside `StartApply`, `POST /api/v1/plans/{id}/preflight`, and a rebuilt apply dialog.
 
-Design and trade-offs: [architecture](architecture.md#apply-preflight), [security](../SECURITY.md), [README](../README.md#replace-and-apply).
+Design and trade-offs: [architecture](../../architecture.md#apply-preflight), [security](../../../SECURITY.md), [README](../../../README.md#replace-and-apply).
 
 ## Scope decisions
 

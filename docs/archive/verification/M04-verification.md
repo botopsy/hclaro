@@ -2,7 +2,7 @@
 
 **Status: draft.** The import wizard is implemented and passes the automated suite and a live loopback run against the synthetic CLI (2026-11-05). **No import has been planned or applied with a real Terraform/OpenTofu engine.** Per `AGENTS.md`, that needs explicit approval from the product owner and a disposable test environment. No real infrastructure, cloud accounts or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#imports), [security](../SECURITY.md).
+Design and trade-offs: [architecture](../../architecture.md#imports), [security](../../../SECURITY.md).
 
 ## Evidence collected
 

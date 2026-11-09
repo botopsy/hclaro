@@ -2,7 +2,7 @@
 
 **Status: draft.** CLI workspace create, set-CLI-default and empty-workspace delete are implemented and pass the automated suite and a live loopback run of the real binary against the synthetic CLI (2026-11-05). **No workspace command has been run with a real Terraform/OpenTofu engine or a real backend.** The engine error texts used for classification (`already exists`, `doesn't exist`, `is your active workspace`, `currently tracking`, `workspaces not supported`, the `TF_WORKSPACE` override refusal) are modeled on the engines' documented and observed messages, not certified. No real infrastructure, cloud accounts or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#workspace-lifecycle), [security](../SECURITY.md), [README](../README.md#manage-cli-workspaces).
+Design and trade-offs: [architecture](../../architecture.md#workspace-lifecycle), [security](../../../SECURITY.md), [README](../../../README.md#manage-cli-workspaces).
 
 ## Evidence collected
 

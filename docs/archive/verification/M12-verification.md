@@ -2,7 +2,7 @@
 
 **Status: draft.** Workspace comparison is implemented for Hub workspaces (`internal/compare`, Hub comparison records, HTTP API, React **Compare** page, synthetic fixtures). It passes the automated suite and a live loopback run of the real binary against the synthetic CLI as Terraform and as OpenTofu (2026-11-06). **No comparison has been run with a real Terraform/OpenTofu engine, a real provider or a remote backend.** No real infrastructure, credentials or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#workspace-comparison), [security](../SECURITY.md), [README](../README.md#compare-workspaces).
+Design and trade-offs: [architecture](../../architecture.md#workspace-comparison), [security](../../../SECURITY.md), [README](../../../README.md#compare-workspaces).
 
 ## Scope decisions
 

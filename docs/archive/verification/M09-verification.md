@@ -2,7 +2,7 @@
 
 **Status: draft.** Execution profiles are implemented for launch plans, replacements, imports and applies, Hub read contexts, project tools, init and workspace commands. They pass the automated suite and a live loopback run of the real binary against the synthetic CLI (2026-11-06). **No profile has been used with a real Terraform/OpenTofu engine, a real AWS profile or a remote backend.** Nothing calls a cloud API, and identity verification is not implemented. No real infrastructure, credentials or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#execution-profiles), [security](../SECURITY.md), [README](../README.md#execution-profiles).
+Design and trade-offs: [architecture](../../architecture.md#execution-profiles), [security](../../../SECURITY.md), [README](../../../README.md#execution-profiles).
 
 ## Evidence collected
 

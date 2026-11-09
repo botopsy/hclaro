@@ -2,7 +2,7 @@
 
 **Status: draft.** Validate, format check, providers and output metadata are implemented. They pass the automated suite and a live loopback run of the real binary against the synthetic CLI (2026-11-05). **No project tool has been run with a real Terraform/OpenTofu engine.** The `validate -json` document, the `providers` tree and the error texts used for classification (`Missing required provider`, `Module not installed`, `Backend initialization required`, `flag provided but not defined`, …) are modeled on the engines' documented and observed formats, not certified. No real infrastructure, cloud accounts or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#project-tools), [security](../SECURITY.md), [README](../README.md#project-tools).
+Design and trade-offs: [architecture](../../architecture.md#project-tools), [security](../../../SECURITY.md), [README](../../../README.md#project-tools).
 
 ## Evidence collected
 

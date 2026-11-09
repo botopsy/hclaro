@@ -2,7 +2,7 @@
 
 **Status: draft.** Git-aware infrastructure is implemented as a new read-only package `internal/gitctx` (allowlisted Git runner, HEAD reader, status and diff parsers, IaC scope with local modules, line redaction, plan source fingerprints, best-effort source locations, editor URLs), Git routes for the launch project and Hub projects, a `git.source` preflight check on the existing M14 apply path, and a connected **Git** view, context-bar badge, plan source banner and resource **Configuration source** link in the UI.
 
-Design and trade-offs: [architecture](architecture.md#git-context), [security](../SECURITY.md), [README](../README.md#git-changes).
+Design and trade-offs: [architecture](../../architecture.md#git-context), [security](../../../SECURITY.md), [README](../../../README.md#git-changes).
 
 ## Scope decisions
 

@@ -2,7 +2,7 @@
 
 **Status: M2 plan visualizer implemented; local acceptance passed on the development machine (2026-11-05), CI passed on Linux, macOS and Windows.** No real infrastructure, cloud accounts or remote backends were used. Automated tests use synthetic fixtures through a Go test helper process, the in-process `engine.Fake`, or the synthetic CLI in `scripts/fake-engine`. A follow-up ran real Terraform 1.5.5 against a disposable local project with no providers to download ([real engine run](#real-engine-run)); nothing was applied.
 
-Design and trade-offs are documented in [architecture](architecture.md#plans-and-operations) and [security](../SECURITY.md).
+Design and trade-offs are documented in [architecture](../../architecture.md#plans-and-operations) and [security](../../../SECURITY.md).
 
 ## Evidence collected
 

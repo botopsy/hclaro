@@ -1,5 +1,5 @@
-// Hclaro brand components (M19). Geometry follows the reference mockup in
-// docs/design/reference/Cursor.dc.html exactly; docs/design/BRAND.md explains each value.
+// Hclaro brand components (M19). Geometry follows the M19 reference mockup exactly;
+// docs/design/BRAND.md records and explains each value.
 // Sizes are em-based, so a logo scales with its font-size and keeps its proportions.
 import type { CSSProperties } from 'react';
 

@@ -1,6 +1,6 @@
 # M19 implementation and verification
 
-**Status: draft.** The hollow-cursor identity from the supplied reference mockup is implemented in the real UI: a centralized light/dark token layer built on the five literal reference colours, reusable `HclaroLogo`/`HclaroMark` components, the sidebar (expanded and collapsed), a static loading mark, the Hub first-run state, a Settings "About" row, favicons and theme colour. Design documentation: [design/BRAND.md](design/BRAND.md).
+**Status: draft.** The hollow-cursor identity from the supplied reference mockup is implemented in the real UI: a centralized light/dark token layer built on the five literal reference colours, reusable `HclaroLogo`/`HclaroMark` components, the sidebar (expanded and collapsed), a static loading mark, the Hub first-run state, a Settings "About" row, favicons and theme colour. Design documentation: [design/BRAND.md](../../design/BRAND.md).
 
 M19 is independent of M18 (state refactoring studio), which is not on `master`; nothing here depends on it.
 

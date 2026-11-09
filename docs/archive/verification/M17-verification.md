@@ -2,7 +2,7 @@
 
 **Status: draft.** Cost impact estimation is implemented as a new package `internal/cost` (provider abstraction with an allowlisted Infracost CLI runner, plan minimization, exact-decimal report aggregation, session service with opt-in, cancellation and staleness, and a local aggregate store), cost routes for the launch project's plans, a `--strict-local` flag, and a connected **Cost estimate** tab in the plan review.
 
-Design and trade-offs: [architecture](architecture.md#cost-estimates), [security](../SECURITY.md), [README](../README.md#cost-estimates-infracost-optional).
+Design and trade-offs: [architecture](../../architecture.md#cost-estimates), [security](../../../SECURITY.md), [README](../../../README.md#cost-estimates-infracost-optional).
 
 ## Scope decisions
 

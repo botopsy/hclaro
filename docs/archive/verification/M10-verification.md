@@ -2,7 +2,7 @@
 
 **Status: draft.** Drift scans are implemented for the project opened from the terminal (Go engine adapter, `internal/drift`, operation manager, HTTP API, React **Drift** view, synthetic fixtures). They pass the automated suite and a live loopback run of the real binary against the synthetic CLI (2026-11-06). **No scan has been run with a real Terraform/OpenTofu engine, a real provider or a remote backend.** No real infrastructure, credentials or remote backends were used.
 
-Design and trade-offs: [architecture](architecture.md#drift-scans), [security](../SECURITY.md), [README](../README.md#drift-detection).
+Design and trade-offs: [architecture](../../architecture.md#drift-scans), [security](../../../SECURITY.md), [README](../../../README.md#drift-detection).
 
 ## Scope decisions
 

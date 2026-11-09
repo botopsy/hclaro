@@ -2,7 +2,7 @@
 
 **Status: draft.** AWS cloud discovery is implemented as a new package `internal/discovery` (allowlisted read-only AWS CLI runner, type catalogue and page parsers, scans with limits, retries and cancellation, exact matching against recorded state, context-pinned import preparation), discovery routes for the launch project, an optional `discoveryToken` on the existing M04 import route, and a connected **Discovery** view plus an import-wizard prefill in the UI.
 
-Design and trade-offs: [architecture](architecture.md#cloud-discovery), [security](../SECURITY.md), [README](../README.md#cloud-discovery-aws).
+Design and trade-offs: [architecture](../../architecture.md#cloud-discovery), [security](../../../SECURITY.md), [README](../../../README.md#cloud-discovery-aws).
 
 ## Scope decisions
 
