@@ -1,8 +1,7 @@
 name: CI
 # Pull requests and master are verified here. This workflow holds no secrets, never
 # publishes, and gives its token read access only; fork pull requests run with the same
-# read-only token. Releases still run on CircleCI (.circleci/config.yml) until the release
-# workflow moves (M25.07/M25.10).
+# read-only token. Releases are built by release.yml.
 #
 # - Pull requests: full suite and browser checks on Linux; Go and unit tests on Windows and
 #   macOS when Go code, go.mod, scripts/, fixtures/ or .github/ changed.
@@ -88,7 +87,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Same tests without -race (as on CircleCI), for platform behavior: paths, permissions,
+      # Same tests without -race, for platform behavior: paths, permissions,
       # CTRL_BREAK. Races are checked on Linux and macOS.
       - uses: ./.github/actions/verify
         with:

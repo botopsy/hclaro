@@ -1,7 +1,7 @@
 name: Release
 # Builds the release archives for a version tag and uploads them to a DRAFT GitHub release.
 # Publishing the draft is a manual maintainer step (docs/RELEASING.md). This is the only
-# release publisher: CircleCI no longer has a release workflow.
+# release publisher.
 #
 # - Tag push (v*): validate, build, native smoke tests, then create the draft. Only the
 #   publish job can write, with the job's own GITHUB_TOKEN; no other credential exists.
