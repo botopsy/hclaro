@@ -292,7 +292,7 @@ code, .mono {
   margin-bottom: 4px;
 }
 
-.alpha {
+.release-badge {
   letter-spacing: .9px;
   color: var(--muted);
   border: 1px solid var(--border);
@@ -671,7 +671,7 @@ code, .mono {
   margin: 0;
 }
 
-.sidebar-compact .brand-wordmark, .sidebar-compact .brand .alpha, .sidebar-compact .project-text, .sidebar-compact .project-chevron, .sidebar-compact .nav-label, .sidebar-compact .nav-text, .sidebar-compact .nav-count:not(.running-dot), .sidebar-compact .foot-version, .sidebar-compact .sidebar-foot .nav-text {
+.sidebar-compact .brand-wordmark, .sidebar-compact .brand .release-badge, .sidebar-compact .project-text, .sidebar-compact .project-chevron, .sidebar-compact .nav-label, .sidebar-compact .nav-text, .sidebar-compact .nav-count:not(.running-dot), .sidebar-compact .foot-version, .sidebar-compact .sidebar-foot .nav-text {
   display: none;
 }
 
@@ -2154,7 +2154,7 @@ kbd {
     font-size: 20px;
   }
 
-  .alpha {
+  .release-badge {
     font-size: 10px;
   }
 

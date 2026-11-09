@@ -51,7 +51,7 @@ CircleCI then:
 - Download one archive, verify it with the checksums file and run it on a real machine.
 - Edit the release notes if the generated ones are unclear; link `docs/BETA.md`.
 - If a release is broken, publish a new version. Do not move or reuse a tag.
-- Delete leftover **draft** releases (for example the duplicate `0.1.0-alpha.5` draft that exists today) from the Releases page.
+- Delete leftover **draft** releases from the Releases page.
 
 ## Reproducibility
 

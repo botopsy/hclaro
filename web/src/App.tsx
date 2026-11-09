@@ -600,7 +600,7 @@ function SettingsPanel({
   preferences: Preferences;
   changePreference: (change: Partial<Preferences>) => void;
 }) {
-  return <div className="settings-panel"><div className="setting-row about-row"><div><h2>About Hclaro</h2><p>A local workspace for Terraform and OpenTofu. Alpha release.</p></div><HclaroLogo /></div><div className="setting-row"><div><h2>Appearance</h2><p>Follow your system, or choose a theme.</p></div><div className="segmented">{(['system', 'light', 'dark'] as const).map((theme, i) => {
+  return <div className="settings-panel"><div className="setting-row about-row"><div><h2>About Hclaro</h2><p>A local workspace for Terraform and OpenTofu. Public beta.</p></div><HclaroLogo /></div><div className="setting-row"><div><h2>Appearance</h2><p>Follow your system, or choose a theme.</p></div><div className="segmented">{(['system', 'light', 'dark'] as const).map((theme, i) => {
           const Icon = [Monitor, Sun, Moon][i];
           return <button aria-pressed={preferences.theme === theme} key={theme} onClick={() => changePreference({
             theme

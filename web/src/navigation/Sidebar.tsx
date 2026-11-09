@@ -87,7 +87,7 @@ export function Sidebar({ id, context, compact, onToggleCompact, onCloseDrawer, 
     <a className="brand" href="/" onClick={e => {
       e.preventDefault();
       onHome();
-    }} aria-label="Hclaro overview"><HclaroLogo className="brand-wordmark" decorative /><HclaroMark className="brand-compact" size={40} decorative /><span className="alpha">ALPHA</span></a>
+    }} aria-label="Hclaro overview"><HclaroLogo className="brand-wordmark" decorative /><HclaroMark className="brand-compact" size={40} decorative /><span className="release-badge">BETA</span></a>
     <button type="button" className="sidebar-toggle" aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!compact} aria-controls={`${id}-nav`} onClick={onToggleCompact} onMouseEnter={e => showTip(e, 'Expand sidebar')} onMouseLeave={hideTip} onFocus={e => showTip(e, 'Expand sidebar')} onBlur={hideTip}>{compact ? <PanelLeftOpen size={16} aria-hidden="true" /> : <PanelLeftClose size={16} aria-hidden="true" />}</button>
     <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={onCloseDrawer}><X size={16} aria-hidden="true" /></button>
    </div>
@@ -102,7 +102,7 @@ export function Sidebar({ id, context, compact, onToggleCompact, onCloseDrawer, 
     <div className="sidebar-bottom">{group('utility')}</div>
    </nav>
    <div className="sidebar-meta">
-    <div className="sidebar-foot" title="Local by design: your state stays on your machine."><ShieldCheck size={14} aria-hidden="true" /><span className="nav-text">Local by design</span><span className="foot-version"><span className="dot" />Alpha · v0.1</span></div>
+    <div className="sidebar-foot" title="Local by design: your state stays on your machine."><ShieldCheck size={14} aria-hidden="true" /><span className="nav-text">Local by design</span><span className="foot-version"><span className="dot" />Beta · v0.1</span></div>
    </div>
    {tip && <div className="nav-tooltip" role="tooltip" style={{ top: tip.top, left: tip.left }}>{tip.text}</div>}
   </aside>;

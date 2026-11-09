@@ -1,5 +1,7 @@
 # M22 public beta checklist
 
+**M23 status (2026-11-09): PREPARED, NOT PUBLISHED.** Version bump and the GitHub settings that work on a private repository are done (rows 11–13, 17, 18). The repository stays private. Still open: CircleCI (row 16), going public and the settings that need a public repository (rows 14, 15, 23).
+
 **M22.1 status: READY WITH WARNINGS.** Local history cleanup and the remote synchronization of `master`, `m19-brand-identity` and `m21-navigation-ia` are complete and verified (CircleCI green, mockup path absent on GitHub, tags, releases and other branches unchanged; [M22.1](M22.1-remote-history-remediation.md)). Warnings: the closed PRs #36/#37 still expose the original commits (accepted risk), two merge commits lost GitHub's *Verified* badge, other clones need refreshing, and the M22 changes are not committed yet. Public beta publication remains a separate M23 decision.
 
 | # | Item | Owner | Action | Status |
@@ -16,17 +18,17 @@
 | 8 | Trademark notice | M22 | `TRADEMARKS.md` (decision 8). | Done |
 | 9 | Internal files | M22 | `tasks/`, `AGENTS.md`, `CLAUDE.md` untracked and ignored, kept locally; `CODEX_START_HERE.md` and the mockup deleted (decisions 2, 7). | Done |
 | 10 | Code of conduct | Maintainer | Deferred until a public contact channel exists (decision 9). | Deferred |
-| 11 | Commit and review M22 | Owner | After row 2b: commit on `m22-repository-cleanup`, push it as a new branch (no force), open a PR against `master`, merge after CircleCI passes ([order](M22.1-remote-history-remediation.md#order-of-operations)). On other clones, the M22 change removes `tasks/` and `AGENTS.md`; keep a copy first. | Open |
-| 12 | GitHub: pull requests | Maintainer | Set **Collaborators only** (decision 5); confirm a non-collaborator cannot open a PR. | Open |
-| 13 | GitHub: Discussions | Maintainer | Enable Discussions (decision 6) before going public; docs already link to it. | Open |
-| 14 | GitHub: security | Maintainer | Private vulnerability reporting (required by SECURITY.md), Dependabot alerts, secret scanning with push protection. | Open |
-| 15 | GitHub: rules and Actions | Maintainer | Not available while private on the Free plan (verified: HTTP 403). After going public: rulesets for `master` (PR, CircleCI checks, no force push/deletion) and `v*` tags; Actions token read-only; review collaborators. | Open |
+| 11 | Commit and review M22 | Owner | Merged as PR #38 (`c83da1a`). On other clones, the M22 change removes `tasks/` and `AGENTS.md`; keep a copy first. | **Done** |
+| 12 | GitHub: pull requests | Maintainer | **Collaborators only** set 2026-11-09 (M23, API: `pull_request_creation_policy=collaborators_only`). Still to do after going public: confirm a non-collaborator account cannot open a PR. | **Done** (verify after public) |
+| 13 | GitHub: Discussions | Maintainer | Enabled 2026-11-09 (M23) with the default categories, including **Ideas** and **Q&A**. Projects turned off (unused). | **Done** |
+| 14 | GitHub: security | Maintainer | Dependabot alerts: on (verified). Private vulnerability reporting (required by SECURITY.md) and secret scanning with push protection are not available on a private Free-plan repository (API 404/null); enable them **immediately after** going public, before announcing. | Partly done |
+| 15 | GitHub: rules and Actions | Maintainer | Actions token already read-only and cannot approve PRs (verified). Collaborators: `vidojeg` and `botopsy-admin`, both admin; confirm both are yours. Rulesets still return HTTP 403 while private: after going public, add rulesets for `master` (PR, CircleCI checks, no force push/deletion) and `v*` tags. | Partly done |
 | 16 | CircleCI | Maintainer | Fork-PR secrets off; restrict the `hclaro-release` context to tag builds; fine-grained release token with expiry. | Open |
-| 17 | Releases cleanup | Maintainer | Delete the duplicate draft `0.1.0-alpha.5`. | Open |
-| 18 | Version and changelog | Maintainer | Bump to `0.1.0-beta.1`, date the changelog (`docs/RELEASING.md`). | Open |
+| 17 | Releases cleanup | Maintainer | Duplicate draft `0.1.0-alpha.5` (release id 435875761) deleted 2026-11-09 (M23); the published pre-release and the tag are unchanged. | **Done** |
+| 18 | Version and changelog | Maintainer | Bumped to `0.1.0-beta.1` and changelog dated 2026-11-09 on branch `m23-public-beta-prep` (M23); UI says *Beta*. Merge through a PR; adjust the changelog date if the tag is pushed later. | **Done** (pending merge) |
 | 19 | Install path | Maintainer | After going public: download an archive logged out, verify the checksum, follow `docs/GETTING_STARTED.md` on a clean machine. | Open |
 | 20 | Screenshots | Maintainer | Optional: refresh or drop the pre-M19 manual screenshots. | Optional |
 | 21 | Beta announcement | Maintainer | Link `docs/BETA.md`; repeat the never-post-state/credentials warning. | Open |
 | 22 | Local audit data | M22 | `.cache/m22/` deleted after the scan reports and check logs were copied to the backup folder. | **Done** |
 | 22b | Local old objects | Maintainer | After GitHub sync: `git fetch --prune origin`, remove the `pull.ff only` safeguard if wanted, optionally expire reflogs and `gc` (see record). Keep the backup bundle access-restricted. | Open |
-| 23 | **Manual publish approval (M23)** | Owner | Only after rows 11–16 are done: make the repository public, then push the beta tag. | **Not approved** |
+| 23 | **Manual publish approval (M23)** | Owner | Remaining order: (1) merge the M23 PR, wait for green `master`; (2) row 16 in CircleCI; (3) make the repository public; (4) right away: private vulnerability reporting, secret scanning + push protection, rulesets (rows 14, 15), check row 12 with a non-collaborator; (5) push `v0.1.0-beta.1` (`docs/RELEASING.md`); (6) rows 19 and 21. | **Not approved** (M23 stopped at preparation by owner decision) |
