@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Releases include a CycloneDX SBOM (`hclaro_<version>_sbom.cdx.json`) and GitHub build-provenance attestations, and every package, including Linux arm64 and macOS Intel, is run natively before the draft is created. (M25.08)
+
 - CircleCI is retired: `.circleci/config.yml` is removed, and GitHub Actions runs all checks and releases. (M25.14)
 
 ## 0.1.0-beta.2 — 2026-11-09
