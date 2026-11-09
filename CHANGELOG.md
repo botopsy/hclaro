@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Navigation and information architecture (M21, draft)
+
+- The sidebar is grouped by task: project views (Overview, Resources, Modules, Providers), **Plan & analyze** (Plans, Drift detection, Dependency graph, Compare), **Manage** (Import & discovery, Operations, History) and Git, Tools and Settings at the bottom, with a compact *Local by design · Alpha* footer. Groups scroll on their own, so project context and Settings stay reachable in short windows.
+- A **project switcher** replaces the Projects item: current project and how it was opened, the terminal-opened project, recent Hub projects, the project's workspace page and **All projects**. The Terraform/OpenTofu **workspace** selector moved under it, separate from the project; the context bar still shows the workspace and the production-like hint.
+- **Import & discovery** is one entry with two separate workflows (**Import existing**, **Discover cloud resources**); the wizards, APIs and confirmations are unchanged.
+- **Collapsible sidebar**: an icon-only mode with keyboard-accessible tooltips, saved with the display preferences. Below 900 px the sidebar is a dismissible drawer instead of an icon rail.
+- **Tools** for the project opened from the terminal now explains that the tools run in the folder's Hub entry and offers **Open tools for workspace …** or **Open in new tab**, instead of switching the tab without warning.
+- Switching project asks first when it would discard a replacement selection or a discovery-prepared import. In Hub workspaces, back and forward now move between views. Typed navigation configuration in `web/src/navigation/`. No API, route, CLI, Terraform/OpenTofu or security behaviour changed.
+
 ### Brand identity: hollow cursor (M19, draft)
 
 - New **hollow-cursor identity**: a terminal-style chevron, lowercase `hclaro` in JetBrains Mono Bold and an unfilled cursor, in light, dark and lime (inverse) variants, plus a compact `h` + cursor app mark. Reusable `HclaroLogo` and `HclaroMark` components with one accessible name and decorative parts hidden.
