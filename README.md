@@ -1,8 +1,58 @@
-# Hclaro
+# hclaro
 
-A local, read-only workspace for Terraform and OpenTofu. Browse recorded resource instances, nested modules, and provider sources; search canonical addresses and inspect redacted attributes. No accounts, telemetry, external runtime assets, or infrastructure mutations.
+*By [BotOpsy](https://github.com/botopsy).* **A local-first workspace for Terraform and OpenTofu.** Hclaro is a single binary that starts a private web UI on your own machine (`127.0.0.1`) for the project you run it in. Browse recorded state, review plans before anything changes, and apply only a reviewed saved plan after an explicit confirmation. No accounts, telemetry, cloud service or external runtime assets.
 
-**Milestone 4 alpha (draft).** Browse state, run a plan and review every proposed change, plan the replacement of selected instances, import an existing object through a reviewed import block, and apply a reviewed saved plan after explicit confirmation (local execution only). The **Workspace Hub** (M5, draft) remembers several project roots and opens any of their CLI workspaces read-only, each in its own tab; a Hub project can be initialized (M6, draft) and its CLI workspaces created, set as CLI default or, when empty, deleted (M7, draft), each after a review and confirmation. Start with the synthetic demo. See verification status for [M1](docs/M01-verification.md), [M2](docs/M02-verification.md), [M3](docs/M03-verification.md), [M4](docs/M04-verification.md), [M5](docs/M05-verification.md), [M6](docs/M06-verification.md) and [M7](docs/M07-verification.md). Apply and import have not yet been run against a real engine. Real Terraform/OpenTofu certification is still open, so treat this as an alpha, not a release.
+> **Public beta, not production-certified.** Hclaro is free and open source under the [Apache License 2.0](LICENSE), for personal and commercial use. It is tested with synthetic fixtures and fake engines in CI; real Terraform has been exercised only against a disposable local project, and no cloud provider, remote backend or OpenTofu release is certified yet. Read [docs/BETA.md](docs/BETA.md) before pointing it at infrastructure you care about.
+
+![Hclaro resource explorer with the grouped sidebar](docs/screenshots/navigation-expanded-dark.png)
+
+## What it does
+
+| Area | What you get |
+| --- | --- |
+| **Explore** | Resource instances, nested modules and provider sources from recorded state; search, filters, an inspector with redacted attributes, and an overview. |
+| **Plan & analyze** | Plans with a visual review of every change; drift detection (refresh-only, never writes state); dependency graph and blast radius; comparison of two workspaces. |
+| **Change, with confirmation** | Replace selected instances and import existing objects through reviewed plans; apply only a reviewed saved plan, after preflight checks and a typed confirmation, for locally executed backends. |
+| **Manage** | Workspace Hub for several project roots, guided `init`, CLI workspace lifecycle, read-only project tools (`validate`, `fmt -check`, `providers`, output metadata), execution profiles, operation history and a Git view. |
+| **Optional, opt-in** | Read-only AWS cloud discovery through your AWS CLI; cost estimates through a local Infracost CLI (off by default; disabled by `--strict-local`). |
+
+Hclaro never runs `init`, `plan`, `refresh` or `apply` on its own, never runs `destroy`, `state rm/mv` or `force-unlock`, and redacts secrets on the server before data reaches the browser. Details: [SECURITY.md](SECURITY.md) and [docs/architecture.md](docs/architecture.md).
+
+## Install
+
+**Beta binaries.** Pre-releases are published on [GitHub Releases](https://github.com/botopsy/hclaro/releases) as `hclaro_<version>_<os>_<arch>` archives for macOS (arm64, amd64), Linux (amd64, arm64) and Windows (amd64), with a SHA-256 checksums file. Binaries are not signed or notarized, so macOS Gatekeeper and Windows SmartScreen warn on first launch. macOS arm64, Linux amd64 and Windows amd64 packages are smoke-tested natively in CI; Linux arm64 and macOS amd64 are cross-compiled only.
+
+```sh
+shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing
+```
+
+**From source:** Go 1.26+ and Make (see [Build from source](#build-from-source)); `make binary` produces `bin/hclaro` from the committed UI bundle without Node.
+
+You also need Terraform (1.5–1.17) or OpenTofu (1.6–1.13) on `PATH` and an initialized project. Step-by-step instructions, troubleshooting and uninstall: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+
+## Quick start
+
+```sh
+cd path/to/terraform-root
+hclaro                 # opens the project in your browser (read-only until you act)
+hclaro --hub           # Workspace Hub with your registered projects
+hclaro --strict-local  # disable every feature that sends data to a third party
+```
+
+## License and feedback
+
+Hclaro is licensed under the [Apache License, Version 2.0](LICENSE). You may use it, including commercially, modify it, fork it and redistribute it under that license. Bundled third-party components keep their own licenses; see [`internal/ui/dist/THIRD-PARTY-NOTICES.txt`](internal/ui/dist/THIRD-PARTY-NOTICES.txt). The license grants no trademark rights; see [TRADEMARKS.md](TRADEMARKS.md) for how to refer to the hclaro and BotOpsy names and logos.
+
+```text
+Copyright 2026 BotOpsy
+Licensed under the Apache License, Version 2.0
+```
+
+hclaro is published by BotOpsy, an independent software brand and the publishing name of hclaro's author. BotOpsy is not a company or a separate legal entity.
+
+Bug reports and feature requests are welcome as [GitHub Issues](https://github.com/botopsy/hclaro/issues); questions and ideas in [GitHub Discussions](https://github.com/botopsy/hclaro/discussions). During the beta the project does not accept external pull requests; see [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). **Never attach state, plans, variable files, credentials or real account identifiers.**
+
+The sections below are the detailed reference.
 
 ## Run the isolated demo
 
@@ -56,7 +106,7 @@ Launch runs only `version -json`, `workspace show`, and `show -json`. It never r
 
 The UI displays **one recorded snapshot**, not live provider inventory or drift detection. Browsing, searching, filtering, sorting, and opening details read process memory. Use **Read again** in the context bar (or restart Hclaro) to inspect the folder and reread state after an external change, such as running `init` in a terminal; it runs no init, plan or refresh and is unavailable while an operation runs. Inherited `TF_CLI_ARGS` settings are accepted only when they contain `-no-color`; other injected flags fail explicitly because they can redirect raw output or alter reads. `TF_DATA_DIR`, `TF_WORKSPACE`, CLI configuration, and credential settings are inherited. `TF_LOG*` and update checks are disabled for child reads to prevent secret-bearing log files and update telemetry.
 
-The private URL contains a random launch credential in its **fragment**, which is removed by the app before API use. Keep that URL private. The browser stores the credential in sessionStorage for reloads; state is never placed in localStorage. Only theme, density, and grouping preferences use localStorage. A stopped/restarted server requires its new URL.
+The private URL contains a random launch credential in its **fragment**, which is removed by the app before API use. Keep that URL private. The browser stores the credential in sessionStorage for reloads; state is never placed in localStorage. Only display preferences (theme, density, grouping, editor, sidebar mode) and the details-drawer width use localStorage. A stopped/restarted server requires its new URL.
 
 ## Workspace Hub
 
@@ -327,8 +377,6 @@ This starts the **synthetic** backend at `127.0.0.1:9273` and Vite at `127.0.0.1
 
 Brand colours, logo geometry and contrast results are documented in [`docs/design/BRAND.md`](docs/design/BRAND.md). Colours live once as tokens at the top of `web/src/styles.css`; components use the semantic tokens only. `make brand-assets` regenerates the committed favicon, touch icon and `docs/design/assets` from the reference geometry (offline, with the test Chromium).
 
-`scripts/build-offline-preview.mjs` is a legacy fallback for environments without npm access. It produces a labeled preview with substitute adapters, not the production build; do not commit its output.
-
 ## Cross-platform binaries
 
 After `make build`, run `make cross` for macOS amd64/arm64, Linux amd64/arm64, and Windows amd64. The frontend is embedded in each binary. End users need only that binary plus the chosen Terraform/OpenTofu CLI and its normal initialized workspace.
@@ -350,11 +398,11 @@ Cross-compilation is not OS runtime validation. Release signing, installers, and
 
 ### Continuous integration
 
-Pull requests, `master` and releases run on CircleCI (`.circleci/config.yml`). Pull requests run the full suite, the embedded-asset check and the synthetic browser checks on Linux. Go and unit tests run on Windows (without the race detector: the Windows image has no C compiler) and macOS only when a pull request changes Go code, `go.mod`, `scripts/`, `fixtures/` or `.circleci/`. Merges to `master` and releases always run the suite and browser checks on Linux, Windows and macOS. Changes that touch only `docs/`, `tasks/` or Markdown files skip the checks. Go and Node are downloaded at pinned versions and verified against pinned SHA-256 sums; no orbs are used.
+Pull requests, `master` and releases run on CircleCI (`.circleci/config.yml`). Pull requests run the full suite, the embedded-asset check and the synthetic browser checks on Linux. Go and unit tests run on Windows (without the race detector: the Windows image has no C compiler) and macOS only when a pull request changes Go code, `go.mod`, `scripts/`, `fixtures/` or `.circleci/`. Merges to `master` and releases always run the suite and browser checks on Linux, Windows and macOS. Changes that touch only `docs/` or Markdown files skip the checks. Go and Node are downloaded at pinned versions and verified against pinned SHA-256 sums; no orbs are used.
 
 ### Releases
 
-Pushing a tag such as `v0.2.0` or `v0.2.0-alpha.1` runs the `release` workflow on CircleCI. It reruns the full suite on all three OSes, rebuilds the frontend and checks it matches the committed embed, cross-compiles with the tag's version, and packages each target as `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) with the README, changelog, security policy and third-party notices, plus a SHA-256 checksums file. Linux amd64, macOS arm64 and Windows amd64 packages are then checksum-verified and run with `--version` natively; Linux arm64 and macOS amd64 are cross-compiled only. Finally it creates a GitHub release as a draft, attaches the archives and publishes it. Tags with a suffix (`-alpha.1`, `-rc.1`) are marked as pre-releases. Publishing uses `GITHUB_RELEASE_TOKEN` from the CircleCI context `hclaro-release`: a fine-grained token for this repository with **Contents: read and write**.
+Pushing a tag such as `v0.2.0` or `v0.2.0-alpha.1` runs the `release` workflow on CircleCI. It reruns the full suite on all three OSes, rebuilds the frontend and checks it matches the committed embed, cross-compiles with the tag's version, and packages each target as `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) with the license, README, changelog, security policy and third-party notices, plus a SHA-256 checksums file. Linux amd64, macOS arm64 and Windows amd64 packages are then checksum-verified and run with `--version` natively; Linux arm64 and macOS amd64 are cross-compiled only. Finally it creates a GitHub release as a draft, attaches the archives and publishes it. Tags with a suffix (`-alpha.1`, `-rc.1`) are marked as pre-releases. Publishing uses `GITHUB_RELEASE_TOKEN` from the CircleCI context `hclaro-release`: a fine-grained token for this repository with **Contents: read and write**.
 
 ```sh
 git tag v0.1.0-alpha.2 && git push origin v0.1.0-alpha.2
@@ -387,4 +435,4 @@ The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**,
 | Hub: project missing or path changed | Use **Repair path** with the folder's new location, or remove the entry. |
 | Redacted attributes | Values marked sensitive, secret-like attribute names (`password`, `token`, `private_key`, …) and credential-shaped or long random-looking values, including hex hashes, are masked on the server. There is no reveal/raw-state endpoint. |
 
-Metadata (addresses, module paths, provider sources) must not be used to store secrets. Redaction relies on markers and heuristics: a secret that is not marked sensitive, has an ordinary name and does not look random can be shown. See [security policy](SECURITY.md), [architecture](docs/architecture.md), and [M01 evidence and unresolved gates](docs/M01-verification.md).
+Metadata (addresses, module paths, provider sources) must not be used to store secrets. Redaction relies on markers and heuristics: a secret that is not marked sensitive, has an ordinary name and does not look random can be shown. See [security policy](SECURITY.md), [architecture](docs/architecture.md), and [M01 evidence and unresolved gates](docs/archive/verification/M01-verification.md).

@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first; a good problem statement helps more than a finished design. Do not include real infrastructure identifiers or configuration.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How could Hclaro help? Alternatives you considered are welcome.
+  - type: input
+    id: context
+    attributes:
+      label: Your setup
+      description: Engine, backend type and OS, if relevant.
+      placeholder: OpenTofu 1.8, s3 backend, Linux
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: My request does not need Hclaro to run plan, apply, import or other changes without an explicit user confirmation.
