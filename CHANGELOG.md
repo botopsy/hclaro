@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Configuration compatibility and distribution policy (M24.24):
+
+- Operation history no longer overwrites a `history.json` that a newer Hclaro rewrote while this one was running; history becomes read-only for the session instead. An older-schema rewrite during a session is also left alone until restart.
+- A future `history.json` schema upgrade first keeps the original as `history.json.schema-<n>-<time>`; without that copy the file is left unchanged and history is read-only.
+- `cost-estimates.json` written by a newer Hclaro is no longer replaced when an estimate completes.
+- New `docs/config-compatibility.md` (rules for every configuration file, upgrading, going back, backups), a distribution roadmap in `docs/RELEASING.md`, and upgrade, rollback and safer PATH instructions in `docs/GETTING_STARTED.md`. Versioned fixtures in `internal/{projects,profiles,history}/testdata/compat` pin the current formats.
+
 ## 0.1.0-beta.3 — 2026-11-09
 
 Release and supply-chain improvements; no change to Hclaro's behavior.

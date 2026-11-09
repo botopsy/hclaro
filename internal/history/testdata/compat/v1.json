@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "retention": {"maxEntries": 500, "maxAgeDays": 90, "maxBytes": 4194304},
+  "entries": [
+    {
+      "id": "00000000000000000000000000000001",
+      "kind": "plan",
+      "status": "succeeded",
+      "startedAt": "2026-11-05T10:00:00Z",
+      "finishedAt": "2026-11-05T10:00:05Z",
+      "durationMs": 5000,
+      "exitCode": 2,
+      "engine": "terraform",
+      "engineVersion": "1.9.8",
+      "projectId": "0123456789abcdef0123456789abcdef",
+      "projectName": "network",
+      "registered": true,
+      "workspace": "dev",
+      "context": {"fingerprint": "a1b2c3d4", "profileName": "dev", "profileRevision": 3},
+      "command": ["terraform", "plan", "-input=false", "-no-color"],
+      "outcome": {"result": "planned", "summary": "1 to add", "verified": false},
+      "excerpt": [{"time": "2026-11-05T10:00:04Z", "level": "info", "text": "Plan: 1 to add, 0 to change, 0 to destroy."}]
+    }
+  ]
+}

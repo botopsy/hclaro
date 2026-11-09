@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "fedcba9876543210fedcba9876543210",
+      "project_id": "0123456789abcdef0123456789abcdef",
+      "name": "dev",
+      "engine": "terraform",
+      "workspace": "dev",
+      "var_files": ["dev.tfvars"],
+      "options": {"parallelism": 4, "lock_timeout_seconds": 30},
+      "aws_profile": "sandbox",
+      "aws_region": "eu-west-1",
+      "env_names": ["TF_VAR_owner"],
+      "revision": 3,
+      "created_at": "2026-11-01T09:00:00Z",
+      "updated_at": "2026-11-04T12:00:00Z"
+    }
+  ],
+  "defaults": {"0123456789abcdef0123456789abcdef": "fedcba9876543210fedcba9876543210"}
+}

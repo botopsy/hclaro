@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "profiles": [
+    {"id": "fedcba9876543210fedcba9876543210", "project_id": "0123456789abcdef0123456789abcdef", "name": "dev", "variables": {"names": ["TF_VAR_owner"]}}
+  ],
+  "defaults": {}
+}

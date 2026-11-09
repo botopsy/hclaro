@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "0123456789abcdef0123456789abcdef",
+      "alias": "network",
+      "root_path": "{{ROOT}}",
+      "engine_preference": "terraform",
+      "pinned": true,
+      "added_at": "2026-11-01T09:00:00Z",
+      "last_opened_at": "2026-11-05T09:30:00Z",
+      "last_workspace": "dev"
+    }
+  ]
+}

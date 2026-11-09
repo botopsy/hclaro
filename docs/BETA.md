@@ -4,7 +4,7 @@ hclaro, published by [BotOpsy](https://github.com/botopsy), is in public beta. I
 
 ## What "beta" means here
 
-- Features may change, move or be removed between beta releases. Configuration files Hclaro writes (`projects.json`, `profiles.json`, `history.json`) are versioned and Hclaro refuses files it does not understand rather than overwriting them, but there is no migration promise yet.
+- Features may change, move or be removed between beta releases. Configuration files Hclaro writes (`projects.json`, `profiles.json`, `history.json`, `cost-estimates.json`) are versioned: Hclaro never overwrites a file written by a newer version and keeps a copy before any future format upgrade, but there is no automatic migration promise yet. See [config-compatibility.md](config-compatibility.md).
 - The software is provided "as is", without warranty, as stated in the license.
 - There is no support agreement or response-time commitment.
 
@@ -36,7 +36,7 @@ Full details: [SECURITY.md](../SECURITY.md).
 - Cloud discovery supports AWS only, five resource types.
 - Binaries are not code-signed or notarized.
 - A plan that contains an action combination Hclaro does not recognize can be reviewed but never applied from Hclaro; see [plan-actions.md](plan-actions.md).
-- Releases are distributed through [GitHub Releases](https://github.com/botopsy/hclaro/releases) only: no package managers, installers or auto-update.
+- Releases are distributed through [GitHub Releases](https://github.com/botopsy/hclaro/releases) only: no package managers, installers or auto-update, and Hclaro does not tell you when a new version exists. Upgrading is manual ([GETTING_STARTED.md](GETTING_STARTED.md#upgrade-go-back-and-back-up)); later channels and their conditions are in [RELEASING.md](RELEASING.md#distribution-roadmap).
 
 ## Giving feedback
 

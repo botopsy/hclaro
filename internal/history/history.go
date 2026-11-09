@@ -293,10 +293,20 @@ func (s *Store) load(now time.Time) {
 			_ = os.Remove(name)
 		}
 	}
-	doc, migrated, err := s.read()
+	doc, loaded, err := s.read()
 	var corrupt *corruptError
 	switch {
 	case err == nil:
+		if loaded.from != SchemaVersion {
+			// A schema upgrade rewrites the file. The original is copied aside first so a
+			// rollback to the older Hclaro can restore it; without a copy nothing is changed.
+			backup := fmt.Sprintf("%s.schema-%d-%s", s.path, loaded.from, now.UTC().Format("20060102T150405Z"))
+			if err := writeBackup(backup, loaded.original); err != nil {
+				s.status, s.notice = Unavailable, fmt.Sprintf("Operation history uses schema %d and must be upgraded to schema %d, but a backup copy could not be written, so the file was left unchanged and nothing new is recorded.", loaded.from, SchemaVersion)
+				return
+			}
+			s.notice = fmt.Sprintf("Operation history was upgraded from schema %d to schema %d. The previous file was kept as %s next to the history file.", loaded.from, SchemaVersion, filepath.Base(backup))
+		}
 		s.doc = doc
 	case errors.As(err, &corrupt):
 		backup := fmt.Sprintf("%s.corrupt-%s", s.path, now.UTC().Format("20060102T150405Z"))
@@ -320,7 +330,7 @@ func (s *Store) load(now time.Time) {
 			interrupted = true
 		}
 	}
-	if migrated || interrupted {
+	if loaded.rewrite || interrupted {
 		if err := s.write(s.doc); err != nil {
 			s.notice = "Operation history could not be updated: " + err.Error()
 		}
@@ -359,57 +369,68 @@ type corruptError struct{ reason string }
 func (e *corruptError) Error() string { return e.reason }
 
 // read returns the document on disk, migrated to SchemaVersion. A missing file is empty.
-func (s *Store) read() (doc document, migrated bool, err error) {
+// loadedFile describes how read obtained a document: the schema version on disk, its
+// original bytes when that version was upgraded, and whether the file needs rewriting.
+type loadedFile struct {
+	from     int
+	original []byte
+	rewrite  bool
+}
+
+func (s *Store) read() (doc document, loaded loadedFile, err error) {
 	doc = document{Version: SchemaVersion, Retention: DefaultPolicy, Entries: []HistoryEntry{}}
+	loaded.from = SchemaVersion
 	f, err := os.Open(s.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		s.stamp = fileStamp{}
-		return doc, false, nil
+		return doc, loaded, nil
 	}
 	if err != nil {
-		return doc, false, errors.New("Operation history cannot be read. Check the permissions of " + s.path + ". The file was not changed.")
+		return doc, loaded, errors.New("Operation history cannot be read. Check the permissions of " + s.path + ". The file was not changed.")
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
-		return doc, false, errors.New("Operation history is not a regular file. The file was not changed.")
+		return doc, loaded, errors.New("Operation history is not a regular file. The file was not changed.")
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
 	if err != nil {
-		return doc, false, errors.New("Operation history cannot be read. The file was not changed.")
+		return doc, loaded, errors.New("Operation history cannot be read. The file was not changed.")
 	}
 	if len(b) > maxFileBytes {
-		return doc, false, &corruptError{"the file is larger than the history size limit"}
+		return doc, loaded, &corruptError{"the file is larger than the history size limit"}
 	}
 	var version struct {
 		Version *int `json:"version"`
 	}
 	if json.Unmarshal(b, &version) != nil {
-		return doc, false, &corruptError{"the file is not valid JSON"}
+		return doc, loaded, &corruptError{"the file is not valid JSON"}
 	}
 	if version.Version == nil || *version.Version < 0 {
-		return doc, false, &corruptError{"the schema is not recognized"}
+		return doc, loaded, &corruptError{"the schema is not recognized"}
 	}
 	v := *version.Version
 	if v > SchemaVersion {
-		return doc, false, &newerError{v}
+		return doc, loaded, &newerError{v}
 	}
 	raw := json.RawMessage(b)
+	if v < SchemaVersion {
+		loaded.from, loaded.original, loaded.rewrite = v, b, true
+	}
 	for ; v < SchemaVersion; v++ {
 		migrate := s.Migrations[v]
 		if migrate == nil {
-			return doc, false, &corruptError{fmt.Sprintf("there is no upgrade from schema %d", v)}
+			return doc, loaded, &corruptError{fmt.Sprintf("there is no upgrade from schema %d", v)}
 		}
 		if raw, err = migrate(raw); err != nil {
-			return doc, false, &corruptError{fmt.Sprintf("the upgrade from schema %d failed", v)}
+			return doc, loaded, &corruptError{fmt.Sprintf("the upgrade from schema %d failed", v)}
 		}
-		migrated = true
 	}
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
 	var decoded document
 	if dec.Decode(&decoded) != nil || decoded.Version != SchemaVersion {
-		return doc, false, &corruptError{"the schema is not recognized"}
+		return doc, loaded, &corruptError{"the schema is not recognized"}
 	}
 	if decoded.Retention.Validate() != nil {
 		decoded.Retention = DefaultPolicy
@@ -424,11 +445,11 @@ func (s *Store) read() (doc document, migrated bool, err error) {
 		}
 	}
 	if len(kept) != len(decoded.Entries) {
-		migrated = true
+		loaded.rewrite = true
 	}
 	decoded.Entries = kept
 	s.stamp = fileStamp{fi.Size(), fi.ModTime()}
-	return decoded, migrated, nil
+	return decoded, loaded, nil
 }
 
 func valid(e HistoryEntry) bool {
@@ -477,6 +498,30 @@ func (s *Store) write(doc document) error {
 	return nil
 }
 
+// writeBackup writes a private copy of a file that is about to be rewritten. It never
+// replaces an existing file.
+func writeBackup(path string, b []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		_ = os.Remove(path)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		_ = os.Remove(path)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
+}
+
 // current returns the document, re-read from disk when another process changed it.
 // Caller holds mu.
 func (s *Store) current() document {
@@ -490,8 +535,19 @@ func (s *Store) current() document {
 	if errors.Is(err, fs.ErrNotExist) && s.stamp == (fileStamp{}) {
 		return s.doc
 	}
-	if doc, _, err := s.read(); err == nil {
+	doc, loaded, err := s.read()
+	var newer *newerError
+	switch {
+	case err == nil && loaded.from != SchemaVersion:
+		// An older Hclaro sharing the folder rewrote the file. Upgrading it again here would
+		// happen without a backup and race that process, so nothing more is recorded.
+		s.status, s.notice = ReadOnly, fmt.Sprintf("Operation history was rewritten by an older Hclaro (schema %d) while this one was running. The file was not changed and nothing new is recorded. Restart Hclaro to upgrade it with a backup.", loaded.from)
+	case err == nil:
 		s.doc = doc
+	case errors.As(err, &newer):
+		// A newer Hclaro sharing the folder replaced the file. Writing now would downgrade it,
+		// so history becomes read-only for the rest of this session.
+		s.status, s.notice = ReadOnly, err.Error()
 	}
 	return s.doc
 }
@@ -512,6 +568,9 @@ func (s *Store) mutate(change func(*document) error) error {
 		return ErrUnavailable
 	}
 	doc := cloneDoc(s.current())
+	if s.status != Ready {
+		return ErrUnavailable
+	}
 	if err := change(&doc); err != nil {
 		return err
 	}
