@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.0-beta.1 — 2026-11-09
+
+First public beta. Execution profiles, drift detection, the dependency graph, workspace comparison, history, safe apply, Git awareness, AWS discovery, cost estimation, the new brand and navigation are new since 0.1.0-alpha.6. They are tested with synthetic fixtures and fake engines only; see `docs/BETA.md` before using them on infrastructure you care about.
+
+### Public beta release (M23)
+
+- Version `0.1.0-beta.1`. The sidebar badge, footer and **Settings → About Hclaro** say *Beta* instead of *Alpha*. No API, CLI, Terraform/OpenTofu or security behaviour changed.
+
 ### Open-source public beta preparation (M22, draft)
 
 - hclaro is published by **BotOpsy** and licensed under the **Apache License 2.0** (`LICENSE`, official text): free for personal and commercial use, modification and redistribution. Release archives now include `LICENSE`.

@@ -402,10 +402,10 @@ Pull requests, `master` and releases run on CircleCI (`.circleci/config.yml`). P
 
 ### Releases
 
-Pushing a tag such as `v0.2.0` or `v0.2.0-alpha.1` runs the `release` workflow on CircleCI. It reruns the full suite on all three OSes, rebuilds the frontend and checks it matches the committed embed, cross-compiles with the tag's version, and packages each target as `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) with the license, README, changelog, security policy and third-party notices, plus a SHA-256 checksums file. Linux amd64, macOS arm64 and Windows amd64 packages are then checksum-verified and run with `--version` natively; Linux arm64 and macOS amd64 are cross-compiled only. Finally it creates a GitHub release as a draft, attaches the archives and publishes it. Tags with a suffix (`-alpha.1`, `-rc.1`) are marked as pre-releases. Publishing uses `GITHUB_RELEASE_TOKEN` from the CircleCI context `hclaro-release`: a fine-grained token for this repository with **Contents: read and write**.
+Pushing a tag such as `v0.2.0` or `v0.2.0-beta.1` runs the `release` workflow on CircleCI. It reruns the full suite on all three OSes, rebuilds the frontend and checks it matches the committed embed, cross-compiles with the tag's version, and packages each target as `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) with the license, README, changelog, security policy and third-party notices, plus a SHA-256 checksums file. Linux amd64, macOS arm64 and Windows amd64 packages are then checksum-verified and run with `--version` natively; Linux arm64 and macOS amd64 are cross-compiled only. Finally it creates a GitHub release as a draft, attaches the archives and publishes it. Tags with a suffix (`-beta.1`, `-rc.1`) are marked as pre-releases. Publishing uses `GITHUB_RELEASE_TOKEN` from the CircleCI context `hclaro-release`: a fine-grained token for this repository with **Contents: read and write**.
 
 ```sh
-git tag v0.1.0-alpha.2 && git push origin v0.1.0-alpha.2
+git tag -a v0.1.0-beta.1 -m "Hclaro 0.1.0-beta.1" && git push origin v0.1.0-beta.1
 ```
 
 Binaries are unsigned: macOS Gatekeeper and Windows SmartScreen will warn on first launch. Verify downloads with `shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing`.

@@ -8,9 +8,9 @@ Repository: `botopsy/hclaro`. Updated with the owner's decisions. Current state 
 | --- | --- | --- | --- |
 | Visibility | Public, **only after** the public-beta checklist is complete. A public repository can be forked by anyone under GitHub's terms, and the code is usable under Apache-2.0. | Settings → General → Danger zone | Manual, not during M22 |
 | Issues | **On** (owner decision 6), with the forms in `.github/ISSUE_TEMPLATE/` (blank issues disabled; contact links for private security reports and Discussions). Create the labels `bug` and `enhancement` if missing. | Settings → General → Features | On |
-| Discussions | **On** (owner decision 6). Keep the default "Ideas" and "Q&A" categories; `.github/DISCUSSION_TEMPLATE/ideas.yml` applies to Ideas. README, CONTRIBUTING, BETA and the issue chooser already link to `/discussions`, so enable it **before** going public or those links 404. | Settings → General → Features | Off today; **required** |
-| Pull requests | **Collaborators only** (owner decision 5): GitHub's pull-request access setting (February 2026) lets everyone see pull requests but only users with write access create them. It matches CONTRIBUTING.md and does not affect forking. Verify after enabling that a non-collaborator account cannot open a PR. | Settings → General → Pull requests | **Required** |
-| Wiki, Projects | Off unless used. | Features | Wiki off |
+| Discussions | **On** (owner decision 6). Keep the default "Ideas" and "Q&A" categories; `.github/DISCUSSION_TEMPLATE/ideas.yml` applies to Ideas. README, CONTRIBUTING, BETA and the issue chooser already link to `/discussions`, so enable it **before** going public or those links 404. | Settings → General → Features | **On** (M23, 2026-11-09) |
+| Pull requests | **Collaborators only** (owner decision 5): GitHub's pull-request access setting (February 2026) lets everyone see pull requests but only users with write access create them. It matches CONTRIBUTING.md and does not affect forking. Verify after enabling that a non-collaborator account cannot open a PR. | Settings → General → Pull requests | **Set** (M23); verify after public |
+| Wiki, Projects | Off unless used. | Features | Both off (Projects off in M23) |
 | Private vulnerability reporting | **On**: SECURITY.md and the issue-form contact link point to `/security/advisories/new`. | Settings → Code security | Manual, required |
 | Dependabot alerts and security updates | On. Version updates optional (would open PRs from Dependabot, which is fine under the contribution policy). | Settings → Code security | Manual |
 | Secret scanning and push protection | On (free for public repositories). | Settings → Code security | Manual |
@@ -19,7 +19,7 @@ Repository: `botopsy/hclaro`. Updated with the owner's decisions. Current state 
 | Tag protection | Ruleset restricting creation of `v*` tags to the maintainer, since a tag triggers a release. | Settings → Rules | Manual |
 | Actions | Default `GITHUB_TOKEN` permissions: read-only; do not allow Actions to create or approve pull requests; require approval for workflows from first-time/outside contributors. The only workflow is a manual fallback. | Settings → Actions → General | Manual |
 | Collaborators | Least privilege; review who has write/admin access before going public. | Settings → Collaborators | Manual |
-| Releases | Delete the leftover **draft** `Hclaro 0.1.0-alpha.5` (a published release with the same tag exists). Decide whether alpha pre-releases stay visible. | Releases page | Manual |
+| Releases | Delete the leftover **draft** `Hclaro 0.1.0-alpha.5` (a published release with the same tag exists). Decide whether alpha pre-releases stay visible. | Releases page | Draft deleted (M23); alpha visibility open |
 | Social preview, description, topics | Description such as "Local-first web UI for Terraform and OpenTofu"; topics `terraform`, `opentofu`, `infrastructure-as-code`, `local-first`; social preview from `docs/design/assets/hclaro-icon-512.png` or a screenshot. | Settings → General | Manual |
 | License detection | Automatic once `LICENSE` is on the default branch. | — | After merge |
 
