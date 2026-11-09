@@ -18,7 +18,8 @@ function rule(selector: string) {
 }
 
 // Vitest replaces CSS imports, even ?raw ones, so the stylesheet is read from disk.
-const css = readFileSync(path.join(import.meta.dirname, '../styles.css'), 'utf8');
+// Git may check it out with CRLF (Windows CI); the parser below expects LF.
+const css = readFileSync(path.join(import.meta.dirname, '../styles.css'), 'utf8').replace(/\r\n/g, '\n');
 
 const reference = { navy: '#0B1220', ivory: '#F4F4F0', stone: '#E8E8E1', lime: '#C6F432', olive: '#6A8F00' };
 
