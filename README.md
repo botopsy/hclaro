@@ -66,7 +66,7 @@ The private URL contains a random launch credential in its **fragment**, which i
 ./bin/hclaro --hub --path ./prod   # open the Hub with ./prod as the launch project
 ```
 
-**Projects** (in the sidebar on every screen) lists registered project roots. A project is one root folder plus an engine choice and a name; a CLI workspace is a state namespace inside it. The two are never treated as the same thing, and neither is a cloud account or profile.
+The **project switcher** at the top of the sidebar shows the current project and how it was opened, and offers the project opened from the terminal, recent Hub projects and **All projects**, which lists registered project roots. A project is one root folder plus an engine choice and a name; a CLI workspace is a state namespace inside it. The two are never treated as the same thing, and neither is a cloud account or profile.
 
 - **Add project** takes an absolute path or a folder picked with **Browse…**, which lists one folder's subfolders at a time (hidden folders skipped, never recursive). The path is resolved through symlinks and must contain `.tf`, `.tofu` or state files; the same folder cannot be added twice, including through a symlink. Names may repeat.
 - Rename, pin, reorder (arrow buttons) and **Remove** a project. Removing forgets the entry only; no file, data directory, state or backend is touched. A moved or deleted folder stays listed with its problem and a **Repair path** action.
@@ -92,7 +92,7 @@ Init writes the data directory and lock file in the project and can contact prov
 
 ### Manage CLI workspaces
 
-Choosing a workspace in Hclaro (a row on the project page, the **Workspace** switcher or **New tab**) changes only that browser tab and never the CLI default. Three separate actions do change workspaces; each first lists workspaces with the CLI, shows the exact command and its effects, and runs only after you confirm:
+Choosing a workspace in Hclaro (a row on the project page, the **Workspace** selector under the project switcher or **New tab**) changes only that browser tab and never the CLI default. Three separate actions do change workspaces; each first lists workspaces with the CLI, shows the exact command and its effects, and runs only after you confirm:
 
 | Action | Command | Effect | Confirmation |
 | --- | --- | --- | --- |
@@ -109,7 +109,7 @@ Choosing a workspace in Hclaro (a row on the project page, the **Workspace** swi
 
 ### Project tools
 
-Each Hub workspace tab has a **Tools** view (also reachable with **Project tools** on the project page, including for projects that are not initialized yet). For the project opened from the terminal, **Tools** in the sidebar opens the same view for that folder's Hub entry, in the workspace the launch view reads; if the folder is not saved in the Hub yet, it takes you to **Save to Hub** first. Four read-only commands run only when you click them, in that tab's project, engine and workspace:
+Each Hub workspace tab has a **Tools** view (also reachable with **Project tools** on the project page, including for projects that are not initialized yet). For the project opened from the terminal, **Tools** in the sidebar first explains that the tools run in that folder's Hub entry, in the workspace the launch view reads. **Open tools for workspace …** switches the tab to that read-only Hub context, and **Open in new tab** keeps the current view. If the folder is not saved in the Hub yet, the page offers **Go to Save to Hub** instead. Four read-only commands run only when you click them, in that tab's project, engine and workspace:
 
 | Tool | Command | Reads | Shows |
 | --- | --- | --- | --- |
@@ -173,6 +173,15 @@ Profiles are saved in `profiles.json` next to `projects.json` (schema `version: 
 
 History is saved in `history.json` next to `projects.json` (schema `version: 1`, atomic `0600` writes in a `0700` folder). A file that cannot be decoded is moved aside to `history.json.corrupt-<time>` and history starts empty; a file written by a newer Hclaro is left unchanged and nothing new is recorded. Two Hclaro processes sharing the folder merge their entries.
 
+## Navigation
+
+The sidebar follows the usual order of work: the **project switcher** and the Terraform/OpenTofu **workspace** on top, then the project's **Overview**, **Resources**, **Modules** and **Providers**; **Plan & analyze** (Plans, Drift detection, Dependency graph, Compare); **Manage** (Import & discovery, Operations, History); and **Git**, **Tools** and **Settings** at the bottom. Project, workspace and Git branch are shown separately and never stand in for each other; the workspace of the project opened from the terminal is shown but not switchable, because Hclaro never selects a CLI workspace for you.
+
+- **Import & discovery** opens two separate workflows, **Import existing** and **Discover cloud resources**, one click apart, and reopens the one you used last in the tab.
+- Items that do not apply are disabled with the reason as their tooltip, for example the workflows of a read-only Hub workspace.
+- Switching project never runs a command. If the switch would discard a replacement selection or an import prepared from discovery in this tab, Hclaro asks first.
+- **Collapse sidebar** keeps an icon-only rail with labels on hover and keyboard focus (Escape hides them); the choice is saved with the display preferences. Below 900 px the sidebar is a drawer opened from the menu button and closed with Escape, the close button or a click outside.
+
 ## Explorer
 
 - Resource table with 50-row pages, address sorting, and composable provider/type/mode/module filters.
@@ -183,7 +192,7 @@ History is saved in `history.json` next to `projects.json` (schema `version: 1`,
 
 ## Git changes
 
-**Git** in the sidebar (and the Git badge in the context bar, for example `main @ 1a2b3c4`) relates the project to its local Git repository. It works for the project opened from the terminal and for Hub workspaces. Hclaro only reads Git: it never runs `checkout`, `reset`, `pull`, `commit`, `push` or any other command that changes a repository.
+**Git** at the bottom of the sidebar (and the Git badge in the context bar, for example `main @ 1a2b3c4`) relates the project to its local Git repository. It works for the project opened from the terminal and for Hub workspaces. Hclaro only reads Git: it never runs `checkout`, `reset`, `pull`, `commit`, `push` or any other command that changes a repository.
 
 - **Badge.** Branch and HEAD commit, read from the repository's `.git` files without running Git. A detached HEAD is marked; once the Git view has run, a dot shows whether the project's IaC files are clean.
 - **Git view.** Opening it runs one `git status` (read-only, see [architecture](docs/architecture.md#git-context)). It shows the repository folder name, the project's path inside the repository (never the absolute path), branch, HEAD, linked-worktree status and the changed `.tf`, `.tf.json`, `.tofu`, `.tfvars` and `.terraform.lock.hcl` files in the project root and in its **local modules** (module sources such as `../modules/vpc`, read from the module manifest `init` writes). Changes elsewhere in the repository and non-IaC files are only counted. Warnings cover a detached HEAD, a branch without commits, untracked IaC files and IaC changes elsewhere in a monorepo.
@@ -212,7 +221,7 @@ Planning is available only for local execution (remote/cloud backends are refuse
 
 ## Drift detection
 
-Open **Drift** and choose **Check drift** to find objects that changed outside Terraform/OpenTofu. Nothing is scanned when the page opens. A dialog first explains that the scan queries provider APIs and the backend with your existing credentials (an expired SSO session or a missing VPN makes it fail), may lock the state, and writes no state. It shows the execution context and lets you choose variable files, as for a plan.
+Open **Drift detection** and choose **Check drift** to find objects that changed outside Terraform/OpenTofu. Nothing is scanned when the page opens. A dialog first explains that the scan queries provider APIs and the backend with your existing credentials (an expired SSO session or a missing VPN makes it fail), may lock the state, and writes no state. It shows the execution context and lets you choose variable files, as for a plan.
 
 Hclaro then runs `plan -input=false -json -out=<private temp file> -refresh-only` for the workspace the project reads, streams a sanitized log (cancellable), reads the file back with `show -json` and deletes it. The refresh-only plan is never kept, listed as a plan or applied, and Hclaro never runs `refresh`, `apply -refresh-only` or a state command. A scan is a refresh-only plan, **not** a normal plan: it compares what state records with what providers report now, not whether infrastructure matches your configuration. **Run a normal plan…** opens the plan dialog separately; a scan never starts one.
 
@@ -224,7 +233,7 @@ Drift scans are unavailable for remote or cloud execution backends (Hclaro canno
 
 ## Dependency graph
 
-Open **Graph** and choose **Generate graph** to see how resources, data sources and modules depend on each other. Nothing runs when the page opens. A dialog first shows the exact command (`terraform graph` or `tofu graph`, with no flags), explains that it reads configuration and provider schemas and may read state from the backend, and that it does not plan, refresh, apply or write state. It shows the execution context, as for a plan.
+Open **Dependency graph** and choose **Generate graph** to see how resources, data sources and modules depend on each other. Nothing runs when the page opens. A dialog first shows the exact command (`terraform graph` or `tofu graph`, with no flags), explains that it reads configuration and provider schemas and may read state from the backend, and that it does not plan, refresh, apply or write state. It shows the execution context, as for a plan.
 
 Terraform 1.7 and later print a resource-only graph; earlier Terraform and OpenTofu print the engine's full walk graph, with variables, locals, outputs, module calls and providers. Hclaro reads both. In the full graph, engine bookkeeping nodes (the root, `close`, `destroy` and count-boundary nodes) are left out, and internal nodes are hidden by default: two resources linked only through internal nodes are joined by a **derived** (dashed) link instead of a **declared** (solid) one. **Internal nodes** shows them. An arrow points from a resource to what it depends on.
 
@@ -263,7 +272,7 @@ The saved plan is deleted after one apply attempt, whatever the result, and also
 
 ## Cloud discovery (AWS)
 
-**Discovery** in the sidebar lists existing AWS objects in the account your local credentials belong to and labels each one against **this workspace's recorded state**, so you can bring an untracked object under management through the normal [Import](#import) flow. It is available for the project opened from the terminal. Hclaro only reads: it never creates, changes or deletes cloud objects and never writes state. Nothing contacts AWS when you open the page.
+**Import & discovery → Discover cloud resources** lists existing AWS objects in the account your local credentials belong to and labels each one against **this workspace's recorded state**, so you can bring an untracked object under management through the normal [Import](#import) flow. It is available for the project opened from the terminal. Hclaro only reads: it never creates, changes or deletes cloud objects and never writes state. Nothing contacts AWS when you open the page.
 
 1. **Verify AWS context.** Runs `aws --version` (AWS CLI v2 is required) and STS `GetCallerIdentity` with the tab's execution profile (its AWS profile and region) or the inherited environment. The banner shows the account ID, the principal (role name; an assumed-role session name is never shown), the default region and where it came from. Hclaro never infers an account from a profile name. A verification is valid for 30 minutes and only for the same profile, workspace and engine.
 2. **Scan…** opens a preview: resource types (each with the IAM permission it needs), up to 6 regions, objects per type and region (default 200, max 1000) and concurrent reads (default 2, max 4). It states how many AWS API requests the scan will make (for example *6–11*) and that some APIs can incur charges or count against rate limits; you must confirm before it starts. Each scan checks the account again and fails with *identity changed* if the credentials now belong to another account. Scans can be cancelled; throttled reads are retried with backoff; an expired SSO session stops the scan.
@@ -292,7 +301,7 @@ The **Cost estimate** tab of a reviewed plan shows a clearly labelled estimate o
 
 ## Import
 
-**Import** brings an object that already exists outside Terraform/OpenTofu into state. Enter the resource instance address (managed resources only, with its count index or for_each key if the block uses one), the provider's import ID, an optional provider reference such as `aws.west`, and the name of a **new** file in the root module. **Check and preview** writes nothing and runs nothing. It reports:
+**Import & discovery → Import existing** brings an object that already exists outside Terraform/OpenTofu into state. Enter the resource instance address (managed resources only, with its count index or for_each key if the block uses one), the provider's import ID, an optional provider reference such as `aws.west`, and the name of a **new** file in the root module. **Check and preview** writes nothing and runs nothing. It reports:
 
 - the address is already in state, or an object of the same type with that `id` is already managed elsewhere (both block the import);
 - a missing resource block (blocks the import unless the engine generates one), or a block that could not be verified;

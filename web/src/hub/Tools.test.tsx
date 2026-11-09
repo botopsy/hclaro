@@ -223,18 +223,31 @@ describe('Project tools', () => {
       }));
       const user = userEvent.setup();
       app('/');
+      const open = vi.spyOn(window, 'open').mockImplementation(() => null);
       const tools = await screen.findByRole('button', { name: 'Tools' });
       expect(tools).toBeEnabled();
-      await waitFor(() => expect(tools.title).toContain(registered ? 'workspace dev' : 'Save this project to the Hub'));
+      // Tools first explains where the tools run; the tab stays on this project.
       await user.click(tools);
+      expect(window.location.pathname).toBe('/');
+      expect(tools).toHaveAttribute('aria-current', 'page');
+      expect(await screen.findByRole('list', { name: 'Available tools' })).toHaveTextContent('Validate');
       if (registered) {
+        expect(screen.getByRole('heading', { name: 'Tools run in this folder’s Hub entry' })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Open in new tab' }));
+        expect(open).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^/projects/${id}/workspaces/dev/tools#session=`)), '_blank', 'noopener');
+        expect(window.location.pathname).toBe('/');
+        await user.click(screen.getByRole('button', { name: 'Open tools for workspace dev' }));
         expect(window.location.pathname).toBe(`/projects/${id}/workspaces/dev/tools`);
         expect(await screen.findByRole('heading', { name: 'Project tools' })).toBeInTheDocument();
       } else {
+        expect(screen.getByRole('heading', { name: 'Save this project to the Hub first' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Open tools/ })).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Go to Save to Hub' }));
         expect(window.location.pathname).toBe('/projects');
         expect(await screen.findByText(/Save this project to the Hub to run project tools/)).toBeInTheDocument();
       }
       expect(started()).toHaveLength(0);
+      open.mockRestore();
       cleanup();
       vi.unstubAllGlobals();
     }

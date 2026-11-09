@@ -46,6 +46,11 @@ export function parseRoute(pathname: string): Route {
   if (parts[2] !== 'workspaces' || !workspaceName.test(workspace) || !view || parts.length > 5) return { kind: 'project', projectId: parts[1] };
   return { kind: 'context', projectId: parts[1], workspace, view };
 }
+// Each project workspace gets its own workbench; every other route shares the launch one.
+// Moving between two different keys discards the in-memory state of the tab's workbench.
+export function workbenchKey(route: Route) {
+  return route.kind === 'context' ? `${route.projectId}/${route.workspace}` : 'launch';
+}
 export function comparePath() {
   return '/compare';
 }
