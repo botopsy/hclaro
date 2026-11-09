@@ -266,7 +266,6 @@ func TestAggregateFixture(t *testing.T) {
 		"aws_iam_role.legacy":                                                      {cost.StatusFree, "<nil>"},
 		"aws_security_group.web":                                                   {cost.StatusFree, "<nil>"},
 		"random_password.unused":                                                   {cost.StatusNotEstimated, "<nil>"},
-		"aws_lb.edge":                                                              {cost.StatusNotEstimated, "<nil>"},
 	}
 	if len(b.Items) != len(want) {
 		t.Logf("items: %+v", b.Items)
@@ -290,7 +289,7 @@ func TestAggregateFixture(t *testing.T) {
 		t.Errorf("first item %s", b.Items[0].Address)
 	}
 	c := b.Coverage
-	if c.Changed != 9 || c.Free != 3 || c.CostBearing != 6 || c.Estimated != 2 || c.Partial != 1 || c.UsageUnknown != 1 || c.NotEstimated != 2 || c.Percent == nil || *c.Percent != 50 {
+	if c.Changed != 8 || c.Free != 3 || c.CostBearing != 5 || c.Estimated != 2 || c.Partial != 1 || c.UsageUnknown != 1 || c.NotEstimated != 1 || c.Percent == nil || *c.Percent != 60 {
 		t.Errorf("coverage = %+v", c)
 	}
 	codes := []string{}
@@ -568,7 +567,7 @@ func TestEstimateEndToEnd(t *testing.T) {
 		t.Fatalf("latest = %+v %+v %v", latest, b, err)
 	}
 	records := s.Store.List(in.ProjectKey)
-	if len(records) != 1 || records[0].MonthlyDelta != "9.89" || records[0].Currency != "USD" || records[0].CoveragePercent == nil || *records[0].CoveragePercent != 50 {
+	if len(records) != 1 || records[0].MonthlyDelta != "9.89" || records[0].Currency != "USD" || records[0].CoveragePercent == nil || *records[0].CoveragePercent != 60 {
 		t.Fatalf("records = %+v", records)
 	}
 	if other := s.Store.List(cost.ProjectKey("/other")); len(other) != 0 {

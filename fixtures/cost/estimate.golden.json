@@ -11,7 +11,7 @@
         },
         {
           "code": "not_estimated",
-          "count": 2,
+          "count": 1,
           "message": "Some changed resources have no estimate (unsupported resource types or missing prices). They are not counted as zero cost."
         },
         {
@@ -37,13 +37,13 @@
       ],
       "changedDelta": "9.89",
       "coverage": {
-        "changed": 9,
-        "costBearing": 6,
+        "changed": 8,
+        "costBearing": 5,
         "estimated": 2,
         "free": 3,
-        "notEstimated": 2,
+        "notEstimated": 1,
         "partial": 1,
-        "percent": 50,
+        "percent": 60,
         "unsupported": 0,
         "unsupportedTypes": {},
         "usageUnknown": 1
@@ -148,18 +148,6 @@
           "unpricedComponents": 0
         },
         {
-          "action": "unknown",
-          "address": "aws_lb.edge",
-          "components": [],
-          "delta": null,
-          "monthly": null,
-          "note": "Unrecognized action; no estimate.",
-          "pastMonthly": null,
-          "resourceType": "aws_lb",
-          "status": "not_estimated",
-          "unpricedComponents": 0
-        },
-        {
           "action": "create",
           "address": "aws_s3_bucket.logs",
           "components": [
@@ -248,13 +236,6 @@
           "estimated": 2,
           "notEstimated": 0,
           "resourceType": "aws_instance"
-        },
-        {
-          "count": 1,
-          "delta": null,
-          "estimated": 0,
-          "notEstimated": 1,
-          "resourceType": "aws_lb"
         },
         {
           "count": 1,

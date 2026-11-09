@@ -21,6 +21,8 @@ func TestClassify(t *testing.T) {
 		"create": Create, "update": Update, "delete": Delete, "read": Read, "no-op": NoOp, "forget": Forget,
 		"delete,create": Replace, "create,delete": Replace,
 		"update,delete": Unknown, "delete,delete": Unknown, "create,create": Unknown, "": Unknown, "import": Unknown,
+		"no-op,create": Unknown, "delete,create,delete": Unknown, "create,delete,create": Unknown, "read,delete": Unknown,
+		"forget,create": Unknown, "invalid": Unknown, "Create": Unknown, "create ": Unknown, "update,frobnicate": Unknown,
 	} {
 		var list []string
 		if actions != "" {
@@ -34,7 +36,7 @@ func TestClassify(t *testing.T) {
 
 // The golden file pins the complete redacted review, including per-change details.
 func TestGoldenReview(t *testing.T) {
-	for name, input := range map[string][]byte{"all-actions": fixtures.PlanAllActions, "collateral": fixtures.PlanCollateral, "no-changes": fixtures.PlanNoChanges, "errored": fixtures.PlanErrored} {
+	for name, input := range map[string][]byte{"all-actions": fixtures.PlanAllActions, "collateral": fixtures.PlanCollateral, "no-changes": fixtures.PlanNoChanges, "errored": fixtures.PlanErrored, "unknown-actions": fixtures.PlanUnknownActions} {
 		review, err := Parse(input)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -80,17 +82,17 @@ func TestAllActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Changes) != 13 || len(r.Drift) != 1 || len(r.Outputs) != 5 {
+	if len(r.Changes) != 12 || len(r.Drift) != 1 || len(r.Outputs) != 5 {
 		t.Fatalf("every change must be kept: %d changes, %d drift, %d outputs", len(r.Changes), len(r.Drift), len(r.Outputs))
 	}
-	want := map[string]int{Create: 1, Update: 3, Delete: 2, Replace: 2, Read: 1, NoOp: 2, Forget: 1, Unknown: 1}
+	want := map[string]int{Create: 1, Update: 3, Delete: 2, Replace: 2, Read: 1, NoOp: 2, Forget: 1}
 	for k, v := range want {
 		if r.Summary[k] != v {
 			t.Errorf("summary %s = %d, want %d (%v)", k, r.Summary[k], v, r.Summary)
 		}
 	}
 	// CLI order is preserved, not re-sorted.
-	if r.Changes[0].Address != "aws_s3_bucket.logs" || r.Changes[len(r.Changes)-1].Address != "aws_lb.edge" {
+	if r.Changes[0].Address != "aws_s3_bucket.logs" || r.Changes[len(r.Changes)-1].Address != "random_password.unused" {
 		t.Fatal("change order not preserved")
 	}
 	c := byAddress(t, r)
@@ -151,8 +153,8 @@ func TestAllActions(t *testing.T) {
 	if !c["aws_vpc.imported"].Importing {
 		t.Fatal("import not flagged")
 	}
-	if c["aws_lb.edge"].Action != Unknown || len(r.Warnings) == 0 {
-		t.Fatal("unknown action combination must be flagged")
+	if r.Unsupported != 0 || r.Summary[Unknown] != 0 {
+		t.Fatalf("all-actions holds only supported combinations: %d unsupported", r.Unsupported)
 	}
 	if r.Drift[0].Address != "aws_s3_bucket.artifacts" || r.Drift[0].ID == c["aws_s3_bucket.artifacts"].ID {
 		t.Fatal("drift must be kept separately")
@@ -274,4 +276,70 @@ func FuzzParse(f *testing.F) {
 			t.Fatal("canary appeared from nowhere")
 		}
 	})
+}
+
+// M24.01: a plan with unsupported action combinations in resources or outputs is reviewable,
+// counted and warned about, without leaking values.
+func TestUnsupportedActionsAreCounted(t *testing.T) {
+	r, err := Parse(fixtures.PlanUnknownActions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Unsupported != 2 || r.Summary[Unknown] != 1 || len(r.Changes) != 2 || len(r.Outputs) != 1 || r.Outputs[0].Action != Unknown {
+		t.Fatalf("unsupported %d summary %v outputs %+v", r.Unsupported, r.Summary, r.Outputs)
+	}
+	if len(r.Warnings) != 1 || !strings.Contains(r.Warnings[0], "1 resource change(s) and 1 output change(s)") || !strings.Contains(r.Warnings[0], "Applying is disabled") {
+		t.Fatalf("warnings %v", r.Warnings)
+	}
+	if got, _ := json.Marshal(r); !bytes.Contains(got, []byte(`"unsupportedActions":2`)) || bytes.Contains(got, []byte(canary)) {
+		t.Fatalf("review JSON %s", got)
+	}
+}
+
+func TestUnsupportedActionTable(t *testing.T) {
+	doc := func(resource, output string) []byte {
+		return []byte(`{"format_version":"1.2","planned_values":{},"resource_changes":[{"address":"a.b","mode":"managed","type":"a","name":"b","change":{"actions":` + resource + `,"before":{},"after":{}}}],"output_changes":{"o":{"actions":` + output + `,"before":"x","after":"y"}}}`)
+	}
+	for name, tc := range map[string]struct {
+		resource, output string
+		resources, outs  int
+	}{
+		"known":                     {`["update"]`, `["update"]`, 0, 0},
+		"known replace":             {`["create","delete"]`, `["no-op"]`, 0, 0},
+		"resource update,delete":    {`["update","delete"]`, `["update"]`, 1, 0},
+		"resource unexpected name":  {`["update","frobnicate"]`, `["update"]`, 1, 0},
+		"resource unsafe name":      {`["up date"]`, `["update"]`, 1, 0},
+		"resource duplicated":       {`["delete","delete"]`, `["create"]`, 1, 0},
+		"output only update,delete": {`["update"]`, `["update","delete"]`, 0, 1},
+		"output empty":              {`["update"]`, `[]`, 0, 1},
+		"output missing":            {`["update"]`, `null`, 0, 1},
+		"both":                      {`["read","delete"]`, `["forget","create"]`, 1, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, err := Parse(doc(tc.resource, tc.output))
+			if err != nil {
+				t.Fatal(err)
+			}
+			resources, outs := Unsupported(r.Changes, r.Outputs)
+			if resources != tc.resources || outs != tc.outs || r.Unsupported != tc.resources+tc.outs {
+				t.Fatalf("got %d/%d (%d), want %d/%d", resources, outs, r.Unsupported, tc.resources, tc.outs)
+			}
+		})
+	}
+	// Resource changes with no, or too many, actions are rejected outright.
+	for _, actions := range []string{`[]`, `null`, `["create","delete","create","delete","create"]`} {
+		if _, err := Parse(doc(actions, `["update"]`)); err == nil {
+			t.Fatalf("%s accepted", actions)
+		}
+	}
+	// The stored category is not trusted: a category that disagrees with the action list counts.
+	tampered := []Change{{Actions: []string{"update", "delete"}, Action: Update}}
+	if resources, _ := Unsupported(tampered, nil); resources != 1 {
+		t.Fatal("mismatched category not counted")
+	}
+	for _, supported := range SupportedActions {
+		if Classify(supported) == Unknown {
+			t.Fatalf("%v listed as supported", supported)
+		}
+	}
 }

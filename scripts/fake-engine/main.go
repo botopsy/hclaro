@@ -1,5 +1,5 @@
 // This helper is a synthetic CLI, not Terraform. Never install it on a normal PATH.
-// HCLARO_FAKE_PLAN selects plan behavior: unset (success), "lock", "slow" or "fail". A project
+// HCLARO_FAKE_PLAN selects plan behavior: unset (success), "lock", "slow", "fail" or "unsupported" (M24.01: a plan with unsupported action combinations). A project
 // that declares an import block gets the import plan fixture; -generate-config-out writes
 // the generated configuration fixture.
 // `plan ... -refresh-only` is a drift scan; HCLARO_FAKE_DRIFT selects its result (see driftScan).
@@ -216,6 +216,10 @@ func plan(out, generate string) {
 		os.Exit(1)
 	}
 	document := fixtures.PlanAllActions
+	if os.Getenv("HCLARO_FAKE_PLAN") == "unsupported" {
+		// M24.01: a plan with unsupported action combinations; reviewable, never applied.
+		document = fixtures.PlanUnknownActions
+	}
 	if declaresImport() {
 		document = fixtures.PlanImport
 	}

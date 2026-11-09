@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The Go parser's golden output keeps the frontend honest about the API contract.
 import golden from '../../../fixtures/plan/all-actions.golden.json';
+import unsupportedGolden from '../../../fixtures/plan/unknown-actions.golden.json';
 import { PlansView } from './PlansView';
 import type { Approval, Operation, Plan, PlanOptions, PreflightCheck, PreflightReport } from '../types';
 
@@ -87,13 +88,13 @@ afterEach(() => {
 describe('Plans', () => {
   it('shows every planned change, including collateral, and offers no apply when unavailable', async () => {
     view();
-    expect(await screen.findByText(/11 resource changes and 4 output changes/)).toBeInTheDocument();
+    expect(await screen.findByText(/10 resource changes and 4 output changes/)).toBeInTheDocument();
     const counts = screen.getByRole('group', { name: 'Filter by action' });
-    for (const [label, count] of [['Create', '1'], ['Update', '3'], ['Replace', '2'], ['Delete', '2'], ['Read', '1'], ['Forget', '1'], ['Unknown', '1'], ['No change', '2']]) {
+    for (const [label, count] of [['Create', '1'], ['Update', '3'], ['Replace', '2'], ['Delete', '2'], ['Read', '1'], ['Forget', '1'], ['Unsupported', '0'], ['No change', '2']]) {
       expect(within(counts).getByRole('button', { name: new RegExp(`${label}\\s*${count}`) })).toBeInTheDocument();
     }
     const table = screen.getByRole('region', { name: 'Planned resource changes' });
-    expect(within(table).getAllByRole('row')).toHaveLength(12);
+    expect(within(table).getAllByRole('row')).toHaveLength(11);
     expect(within(table).getByText('aws_iam_role.legacy')).toBeInTheDocument();
     expect(within(table).getByText('The resource was removed from configuration')).toBeInTheDocument();
     expect(within(table).queryByText('module.network.aws_subnet.main[1]')).not.toBeInTheDocument();
@@ -102,8 +103,26 @@ describe('Plans', () => {
     expect(screen.getByRole('note')).toHaveTextContent('Review only');
     expect(screen.getByRole('note')).toHaveTextContent('Remote execution backends are read-only');
     expect(screen.queryByRole('button', { name: /apply/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('action combination Hclaro does not recognize');
+    // Every action in this plan is supported, so there is no unsupported-action warning.
+    expect(screen.queryByText(/does not support/)).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(canary);
+  });
+
+  it('marks unsupported actions, explains why apply is unavailable and offers no apply', async () => {
+    const { details: unsupportedDetails, ...unsupportedReview } = unsupportedGolden as typeof unsupportedGolden & { details: Record<string, unknown> };
+    const unsupported = { ...plan, ...unsupportedReview, apply: { available: false, artifactRetained: false, code: 'unknown_actions', reason: 'This plan contains 2 change(s) with an action combination Hclaro does not support (1 resource, 1 output).' } } as unknown as Plan;
+    serve(url => url.endsWith(`/plans/${planId}`) ? Response.json(unsupported) : undefined, url => { const m = url.match(/changes\/([0-9a-f]{32})$/); return m ? Response.json(unsupportedDetails[m[1]]) : undefined; });
+    view();
+    const banner = await screen.findByText('Apply unavailable: unsupported actions.');
+    expect(banner.closest('[role="alert"]')).toHaveTextContent('does not support (1 resource, 1 output)');
+    expect(screen.queryByRole('button', { name: /Review and apply/ })).not.toBeInTheDocument();
+    const counts = screen.getByRole('group', { name: 'Filter by action' });
+    expect(within(counts).getByRole('button', { name: /Unsupported\s*1/ })).toBeInTheDocument();
+    expect(screen.getAllByText(/does not support/).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByText('aws_lb.edge'));
+    expect(await screen.findByText(/Unsupported action combination\. Hclaro does not apply a plan containing it/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(canary);
+    expect(posts).toHaveLength(0);
   });
 
   it('filters by action and explains a replacement attribute by attribute', async () => {

@@ -9,14 +9,14 @@ export const actionMeta: Record<PlanAction, { label: string; icon: LucideIcon; t
   delete: { label: 'Delete', icon: Minus, tone: 'destroy' },
   read: { label: 'Read', icon: BookOpen, tone: 'neutral' },
   forget: { label: 'Forget', icon: Unlink, tone: 'warn' },
-  unknown: { label: 'Unknown', icon: CircleHelp, tone: 'warn' },
+  unknown: { label: 'Unsupported', icon: CircleHelp, tone: 'warn' },
   'no-op': { label: 'No change', icon: Equal, tone: 'muted' }
 };
 
 export const actionOrder: PlanAction[] = ['create', 'update', 'replace', 'delete', 'read', 'forget', 'unknown', 'no-op'];
 
 export function meta(action: string) {
-  return actionMeta[action as PlanAction] ?? { label: 'Unknown', icon: Ban, tone: 'warn' };
+  return actionMeta[action as PlanAction] ?? { label: 'Unsupported', icon: Ban, tone: 'warn' };
 }
 
 export function replaceOrder(actions: string[]) {

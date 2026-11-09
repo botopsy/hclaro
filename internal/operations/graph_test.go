@@ -104,7 +104,7 @@ func TestGraphGeneratesAnnotatesAndOverlaysAPlan(t *testing.T) {
 	if impact.DownstreamResources != 6 || impact.Plan == nil {
 		t.Fatalf("%+v", impact)
 	}
-	want := []string{"aws_db_instance.primary", "aws_instance.retired", "aws_lb.edge", "aws_security_group.web", "module.compute.aws_instance.main[0]", `module.compute.module.workers["blue.eu"].aws_instance.node["quote\"key"]`}
+	want := []string{"aws_db_instance.primary", "aws_instance.retired", "aws_security_group.web", "module.compute.aws_instance.main[0]", `module.compute.module.workers["blue.eu"].aws_instance.node["quote\"key"]`}
 	if got := addresses(impact.Plan.InImpact); !slices.Equal(got, want) {
 		t.Fatalf("in impact %v", got)
 	}

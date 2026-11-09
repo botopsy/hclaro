@@ -72,7 +72,6 @@ all_actions = doc([
     rc("aws_vpc.imported", ["no-op"], {"id": "vpc-1", "cidr_block": "10.0.0.0/16"}, {"id": "vpc-1", "cidr_block": "10.0.0.0/16"},
        importing={"id": "vpc-1"}),
     rc("random_password.unused", ["forget"], {"id": "none", "result": C}, None, provider=RND, bs={"result": True}),
-    rc("aws_lb.edge", ["update", "delete"], {"id": "lb-1", "name": "edge"}, {"id": "lb-1", "name": "edge2"}),
 ], outputs={
     "bucket_name": out_change(["create"], None, "hclaro-logs"),
     "db_password": out_change(["update"], C, C, bs=True, as_=True),
@@ -83,6 +82,16 @@ all_actions = doc([
     rc("aws_s3_bucket.artifacts", ["update"], {"id": "hclaro-demo-artifacts", "tags": {"env": "demo"}, "policy": C},
        {"id": "hclaro-demo-artifacts", "tags": {"env": "demo", "changed_by": "console"}, "policy": C}),
 ])
+
+# M24.01: action combinations Hclaro does not support, in a resource change and an output
+# change, next to an ordinary update. Such a plan is reviewable but never applied.
+unknown_actions = doc([
+    rc("aws_security_group.web", ["update"], {"id": "sg-1", "name": "web"}, {"id": "sg-1", "name": "web-public"}),
+    rc("aws_lb.edge", ["update", "delete"], {"id": "lb-1", "name": "edge", "token": C}, {"id": "lb-1", "name": "edge2", "token": C},
+       bs={"token": True}, as_={"token": True}),
+], outputs={
+    "edge_name": out_change(["update", "delete"], "edge", "edge2"),
+})
 
 # PRD fixture 5: two replacements plus collateral deletion.
 collateral = doc([
@@ -107,7 +116,7 @@ import_plan = doc([
        {"id": "hclaro-demo-artifacts", "tags": {"env": "demo", "owner": "platform"}}),
 ], outputs={})
 
-for name, d in [("all-actions", all_actions), ("collateral", collateral), ("no-changes", no_changes), ("errored", errored), ("import", import_plan)]:
+for name, d in [("all-actions", all_actions), ("collateral", collateral), ("no-changes", no_changes), ("errored", errored), ("import", import_plan), ("unknown-actions", unknown_actions)]:
     with open(os.path.join(out, name + ".json"), "w") as f:
         json.dump(d, f, indent=2); f.write("\n")
 

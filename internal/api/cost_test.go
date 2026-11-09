@@ -122,7 +122,7 @@ func TestCostAPIEndToEnd(t *testing.T) {
 	started := decode[cost.CostEstimate](t, w)
 	e := s.estimate(started.ID)
 	b := e.Breakdown
-	if e.Status != cost.Completed || e.Stale || b == nil || b.Currency != "USD" || b.MonthlyDelta != "9.89" || b.Coverage.Percent == nil || *b.Coverage.Percent != 50 || e.PlanID != planID {
+	if e.Status != cost.Completed || e.Stale || b == nil || b.Currency != "USD" || b.MonthlyDelta != "9.89" || b.Coverage.Percent == nil || *b.Coverage.Percent != 60 || e.PlanID != planID {
 		t.Fatalf("estimate = %+v", e)
 	}
 	if latest := decode[cost.CostEstimate](t, s.do("GET", "/api/v1/plans/"+planID+"/cost-estimate", "")); latest.ID != e.ID {
