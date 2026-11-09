@@ -1,6 +1,6 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRightLeft, Braces, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
+import { ArrowRightLeft, Ban, Braces, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
 import { api } from '../api';
 import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint } from '../types';
 import { Button } from '../components/ui/button';
@@ -64,7 +64,7 @@ export function PlanReview({ plan, copy, onApply, busy, onInspectImpact }: { pla
    </div>
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
-   {plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={15} /><div><strong>Ready to apply.</strong> Applying uses exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}. You confirm on the next screen.</div>{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}><Rocket size={14} />Review and apply…</Button>}</div> : <div className="apply-banner" role="note"><LockKeyhole size={15} /><div><strong>Review only.</strong> {plan.apply.reason}</div></div>}
+   {plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={15} /><div><strong>Ready to apply.</strong> Applying uses exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}. You confirm on the next screen.</div>{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}><Rocket size={14} />Review and apply…</Button>}</div> : plan.apply.code === 'unknown_actions' ? <div className="apply-banner apply-unsupported" role="alert"><Ban size={15} /><div><strong>Apply unavailable: unsupported actions.</strong> {plan.apply.reason} Changes marked <em>Unsupported</em> below use an action combination Hclaro does not recognize, so this plan can be reviewed but never applied here.</div></div> : <div className="apply-banner" role="note"><LockKeyhole size={15} /><div><strong>Review only.</strong> {plan.apply.reason}</div></div>}
    {plan.contextChanged && <div className="plan-warning" role="alert"><TriangleAlert size={15} />Configuration, variable files, the engine or the execution profile changed since this plan was created. Run a new plan to review current changes.</div>}
    {plan.sourceStatus?.state === 'changed' && <div className="plan-warning" role="alert"><GitBranch size={15} />{plan.sourceStatus.message}{plan.sourceStatus.filesChanged ? ' Run a new plan before applying.' : ' Applying needs your acknowledgement.'}</div>}
    {plan.sourceStatus?.state === 'unknown' && <div className="plan-warning" role="alert"><GitBranch size={15} />{plan.sourceStatus.message}</div>}
@@ -161,7 +161,7 @@ function ChangeInspector({ planId, changeId, close, copy }: { planId: string; ch
     <div className="inspector-title"><ActionBadge action={d.action} /><span className="mono muted">{d.actions.join(', ')}</span></div>
     <div className="address-box"><div className="label-row"><span>RESOURCE ADDRESS</span><Button variant="ghost" size="icon" aria-label="Copy change address" onClick={() => void copy(d.address, 'Address')}><Copy size={13} /></Button></div><code>{d.address}</code></div>
     {order && <p className="order-note"><TriangleAlert size={13} aria-hidden="true" />{order}.</p>}
-    {d.action === 'unknown' && <p className="plan-warning"><TriangleAlert size={14} />Unrecognized action combination. Treat it as potentially destructive and inspect it with the CLI.</p>}
+    {d.action === 'unknown' && <p className="plan-warning"><TriangleAlert size={14} />Unsupported action combination. Hclaro does not apply a plan containing it; treat it as potentially destructive and inspect it with the CLI.</p>}
     <dl className="metadata">
      {d.reason && <div><dt>Reason</dt><dd>{reasonLabel(d.reason)}</dd></div>}
      {d.previousAddress && <div><dt>Moved from</dt><dd className="mono">{d.previousAddress}</dd></div>}

@@ -1,0 +1,82 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_changes": [
+    {
+      "address": "aws_security_group.web",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "sg-1",
+          "name": "web"
+        },
+        "after": {
+          "id": "sg-1",
+          "name": "web-public"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "aws_lb.edge",
+      "mode": "managed",
+      "type": "aws_lb",
+      "name": "edge",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update",
+          "delete"
+        ],
+        "before": {
+          "id": "lb-1",
+          "name": "edge",
+          "token": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after": {
+          "id": "lb-1",
+          "name": "edge2",
+          "token": "DO_NOT_LEAK_HCLARO_TEST_SECRET"
+        },
+        "after_unknown": {},
+        "before_sensitive": {
+          "token": true
+        },
+        "after_sensitive": {
+          "token": true
+        }
+      }
+    }
+  ],
+  "configuration": {
+    "root_module": {}
+  },
+  "timestamp": "2026-11-05T09:00:00Z",
+  "applyable": true,
+  "complete": true,
+  "errored": false,
+  "output_changes": {
+    "edge_name": {
+      "actions": [
+        "update",
+        "delete"
+      ],
+      "before": "edge",
+      "after": "edge2",
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    }
+  }
+}

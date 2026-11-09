@@ -2974,6 +2974,16 @@ kbd {
   background: color-mix(in srgb, var(--destroy), #000 12%);
 }
 
+.apply-banner.apply-unsupported {
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn), transparent 70%);
+  background: color-mix(in srgb, var(--warn), transparent 93%);
+}
+
+.apply-banner.apply-unsupported strong {
+  color: inherit;
+}
+
 .apply-banner.apply-ready {
   border-color: color-mix(in srgb, var(--accent), transparent 55%);
   align-items: center;

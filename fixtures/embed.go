@@ -27,6 +27,10 @@ var (
 	ApplyLog []byte
 	//go:embed plan/import.json
 	PlanImport []byte
+	// PlanUnknownActions has unsupported action combinations in a resource and an output
+	// change (M24.01): reviewable, never applied.
+	//go:embed plan/unknown-actions.json
+	PlanUnknownActions []byte
 	//go:embed plan/import-generated.tf
 	ImportGenerated []byte
 	//go:embed tools/validate-valid.json

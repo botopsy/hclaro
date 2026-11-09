@@ -113,7 +113,8 @@ type Plan struct {
 	GeneratedConfigTruncated bool   `json:"generatedConfigTruncated,omitempty"`
 	ArtifactSHA256           string `json:"artifactSha256"`
 	Fingerprint              string `json:"fingerprint"`
-	// Destructive plans delete, replace or forget objects, or contain unrecognized actions.
+	// Destructive plans delete, replace or forget objects, or contain unrecognized actions
+	// (in resources or outputs). Unrecognized actions also make the plan ineligible to apply.
 	Destructive bool `json:"destructive"`
 	// Context is the execution profile context the plan was created with, if any.
 	Context *ExecutionContext `json:"executionContext,omitempty"`
@@ -581,7 +582,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
 		Import: e.op.Import, GeneratedConfig: generatedConfig, GeneratedConfigTruncated: generatedTruncated,
 		ArtifactSHA256: digest, Fingerprint: fingerprint, Context: bound.Clone(), Source: source,
-		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Summary[plan.Unknown] > 0,
+		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Unsupported > 0,
 		costInput:   costInput, costInputError: costInputError,
 	}
 	// The artifact holds secrets in plaintext. It is kept only when it could be applied;
