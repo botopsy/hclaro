@@ -100,7 +100,7 @@ func TestGraphAPI(t *testing.T) {
 	}
 	sg := nodeID(t, view, "aws_security_group.web")
 	impact := decode[operations.GraphImpact](t, s.do("GET", "/api/v1/graphs/"+view.ID+"/nodes/"+sg+"?planId="+planID, ""))
-	if impact.DownstreamResources != 6 || impact.Plan == nil || len(impact.Plan.InImpact) != 6 {
+	if impact.DownstreamResources != 6 || impact.Plan == nil || len(impact.Plan.InImpact) != 5 {
 		t.Fatalf("%+v", impact)
 	}
 	overlay := decode[graphView](t, s.do("GET", "/api/v1/graphs/"+view.ID+"?planId="+planID, ""))

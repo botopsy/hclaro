@@ -412,3 +412,93 @@ func TestSweepStaleKeepsARetainedPlan(t *testing.T) {
 		t.Fatalf("retained plan no longer applicable: %v", err)
 	}
 }
+
+// M24.01: a plan with an unsupported action combination is never applied. Destructive
+// confirmation cannot bypass the refusal, no saved plan file is kept, and the engine's apply
+// never runs.
+func TestUnknownActionsFailClosed(t *testing.T) {
+	outputOnly := []byte(`{"format_version":"1.2","terraform_version":"1.9.8","planned_values":{"root_module":{}},"applyable":true,"complete":true,"resource_changes":[{"address":"aws_vpc.main","mode":"managed","type":"aws_vpc","name":"main","change":{"actions":["update"],"before":{"id":"vpc-1"},"after":{"id":"vpc-2"}}}],"output_changes":{"vpc":{"actions":["update","delete"],"before":"vpc-1","after":"vpc-2"}}}`)
+	for name, document := range map[string][]byte{"resource and output": fixtures.PlanUnknownActions, "output only": outputOnly} {
+		t.Run(name, func(t *testing.T) {
+			fake := &engine.Fake{PlanJSON: document}
+			m, _ := setup(t, fake, workspace.Info{})
+			id := planned(t, m)
+			assertTempEmpty(t, m)
+			p, _ := m.Plan(id)
+			if p.Unsupported == 0 || !p.Destructive {
+				t.Fatalf("plan %+v", p.Review)
+			}
+			current, _ := m.currentFingerprint(p)
+			if s := m.ApplyStatus(p, current); s.Available || s.Code != "unknown_actions" || s.ArtifactRetained || !strings.Contains(s.Reason, "does not support") {
+				t.Fatalf("status %+v", s)
+			}
+			// Preflight explains the refusal and issues no binding.
+			report, err := m.Preflight(context.Background(), id, PreflightRequest{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !report.Blocked || report.Binding != "" {
+				t.Fatalf("preflight not blocked: %+v", report)
+			}
+			found := false
+			for _, c := range report.Checks {
+				if c.ID == preflight.CheckEligible {
+					found = c.Status == preflight.Fail && strings.Contains(c.Evidence, "does not support") && strings.Contains(c.Remediation, "docs/plan-actions.md")
+				}
+			}
+			if !found {
+				t.Fatalf("eligibility check: %+v", report.Checks)
+			}
+			if _, err := m.Approve(id, ApprovalRequest{Binding: "forged", Acknowledged: []string{preflight.CheckDestructive}}); rejected(err) != "unknown_actions" {
+				t.Fatalf("approve: %v", err)
+			}
+			// The destructive typed phrase does not help.
+			if _, err := m.StartApply(id, "forged", "apply demo"); rejected(err) != "approval_required" {
+				t.Fatalf("apply: %v", err)
+			}
+			if applyCalls(fake) != 0 {
+				t.Fatal("engine apply ran")
+			}
+		})
+	}
+}
+
+// A plan whose recorded actions change after approval (for example, a corrupted in-memory
+// record) is refused at apply time, and again immediately before the engine runs.
+func TestUnknownActionsRecheckedBeforeEngine(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	m, _ := setup(t, fake, workspace.Info{})
+	id := planned(t, m)
+	approval, err := approve(m, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := m.Plan(id)
+	m.mu.Lock()
+	original := p.Changes[0].Actions
+	p.Changes[0].Actions = []string{"update", "delete"}
+	m.mu.Unlock()
+	if _, err := m.StartApply(id, approval.Token, approval.Phrase); rejected(err) != "unknown_actions" {
+		t.Fatalf("apply: %v", err)
+	}
+	// The last gate inside the apply runner, reached directly.
+	m.mu.Lock()
+	a := m.artifact
+	m.mu.Unlock()
+	if a == nil {
+		t.Fatal("artifact not retained")
+	}
+	e := &entry{op: Operation{ID: "x", PlanID: id}, log: NewLog(logEvents, logBytes)}
+	if code, _, started := m.executeApply(context.Background(), e, a); code != "unknown_actions" || started {
+		t.Fatalf("executeApply = %s %v", code, started)
+	}
+	if applyCalls(fake) != 0 {
+		t.Fatal("engine apply ran")
+	}
+	m.mu.Lock()
+	p.Changes[0].Actions = original
+	m.mu.Unlock()
+	if code, _, started := m.executeApply(context.Background(), e, a); code == "unknown_actions" || !started {
+		t.Fatalf("supported plan refused: %s %v", code, started)
+	}
+}

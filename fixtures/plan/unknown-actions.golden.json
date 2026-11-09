@@ -1,0 +1,124 @@
+{
+  "formatVersion": "1.2",
+  "engineVersion": "1.9.8",
+  "timestamp": "2026-11-05T09:00:00Z",
+  "errored": false,
+  "summary": {
+    "unknown": 1,
+    "update": 1
+  },
+  "changes": [
+    {
+      "id": "7ee5dad366c17f0fbaeb4f7680aa8f87",
+      "address": "aws_security_group.web",
+      "module": "",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "web",
+      "provider": "registry.terraform.io/hashicorp/aws",
+      "actions": [
+        "update"
+      ],
+      "action": "update",
+      "attributeChanges": 1
+    },
+    {
+      "id": "bfc7e1530e3aebf11ca8e2a886601b0e",
+      "address": "aws_lb.edge",
+      "module": "",
+      "mode": "managed",
+      "type": "aws_lb",
+      "name": "edge",
+      "provider": "registry.terraform.io/hashicorp/aws",
+      "actions": [
+        "update",
+        "delete"
+      ],
+      "action": "unknown",
+      "attributeChanges": 1
+    }
+  ],
+  "drift": [],
+  "outputs": [
+    {
+      "name": "edge_name",
+      "actions": [
+        "update",
+        "delete"
+      ],
+      "action": "unknown",
+      "before": "edge",
+      "after": "edge2"
+    }
+  ],
+  "warnings": [
+    "1 resource change(s) and 1 output change(s) use an action combination Hclaro does not support. Applying is disabled for this plan; inspect these changes with the CLI."
+  ],
+  "imports": 0,
+  "unsupportedActions": 2,
+  "details": {
+    "7ee5dad366c17f0fbaeb4f7680aa8f87": {
+      "id": "7ee5dad366c17f0fbaeb4f7680aa8f87",
+      "address": "aws_security_group.web",
+      "module": "",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "web",
+      "provider": "registry.terraform.io/hashicorp/aws",
+      "actions": [
+        "update"
+      ],
+      "action": "update",
+      "attributeChanges": 1,
+      "attributes": [
+        {
+          "path": "name",
+          "before": "web",
+          "after": "web-public",
+          "kind": "changed"
+        }
+      ],
+      "before": {
+        "id": "sg-1",
+        "name": "web"
+      },
+      "after": {
+        "id": "sg-1",
+        "name": "web-public"
+      }
+    },
+    "bfc7e1530e3aebf11ca8e2a886601b0e": {
+      "id": "bfc7e1530e3aebf11ca8e2a886601b0e",
+      "address": "aws_lb.edge",
+      "module": "",
+      "mode": "managed",
+      "type": "aws_lb",
+      "name": "edge",
+      "provider": "registry.terraform.io/hashicorp/aws",
+      "actions": [
+        "update",
+        "delete"
+      ],
+      "action": "unknown",
+      "attributeChanges": 1,
+      "attributes": [
+        {
+          "path": "name",
+          "before": "edge",
+          "after": "edge2",
+          "kind": "changed"
+        }
+      ],
+      "before": {
+        "id": "lb-1",
+        "name": "edge",
+        "token": "[redacted]"
+      },
+      "after": {
+        "id": "lb-1",
+        "name": "edge2",
+        "token": "[redacted]"
+      }
+    }
+  }
+}

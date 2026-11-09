@@ -365,30 +365,6 @@
         },
         "after_sensitive": false
       }
-    },
-    {
-      "address": "aws_lb.edge",
-      "mode": "managed",
-      "type": "aws_lb",
-      "name": "edge",
-      "provider_name": "registry.terraform.io/hashicorp/aws",
-      "change": {
-        "actions": [
-          "update",
-          "delete"
-        ],
-        "before": {
-          "id": "lb-1",
-          "name": "edge"
-        },
-        "after": {
-          "id": "lb-1",
-          "name": "edge2"
-        },
-        "after_unknown": {},
-        "before_sensitive": {},
-        "after_sensitive": {}
-      }
     }
   ],
   "configuration": {

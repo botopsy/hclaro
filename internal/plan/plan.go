@@ -109,6 +109,9 @@ type Review struct {
 	Incomplete bool `json:"-"`
 	// Imports counts resource changes that import an existing object, whatever their action.
 	Imports int `json:"imports"`
+	// Unsupported counts resource and output changes whose action combination Hclaro does
+	// not recognize. Any such change makes the plan ineligible for apply (fail closed).
+	Unsupported int `json:"unsupportedActions"`
 }
 
 type rawChange struct {
@@ -165,6 +168,30 @@ func Classify(actions []string) string {
 		return Forget
 	}
 	return Unknown
+}
+
+// SupportedActions lists, in engine order, every action list Classify recognizes. Any other
+// list (empty, repeated, reordered beyond the two replacement orders, or with names Hclaro
+// does not know) is unsupported, and a plan containing one is never applied.
+var SupportedActions = [][]string{
+	{"create"}, {"update"}, {"delete"}, {"delete", "create"}, {"create", "delete"}, {"read"}, {"no-op"}, {"forget"},
+}
+
+// Unsupported reports the resource changes and outputs that use an action combination
+// Hclaro does not recognize. It reclassifies from the recorded action lists rather than
+// trusting the stored category, so a mismatched or tampered category also counts.
+func Unsupported(changes []Change, outputs []Output) (resources, outs int) {
+	for _, c := range changes {
+		if c.Action == Unknown || Classify(c.Actions) == Unknown || Classify(c.Actions) != c.Action {
+			resources++
+		}
+	}
+	for _, o := range outputs {
+		if o.Action == Unknown || Classify(o.Actions) == Unknown || Classify(o.Actions) != o.Action {
+			outs++
+		}
+	}
+	return resources, outs
 }
 
 // Parse fails closed on non-plan input, unknown major formats and unsafe metadata.
@@ -269,10 +296,23 @@ func Parse(input []byte) (Review, error) {
 		out.After = overlayUnknown(state.Redact(raw.After, raw.AfterSensitive, name), raw.AfterUnknown, 0)
 		review.Outputs = append(review.Outputs, out)
 	}
-	if review.Summary[Unknown] > 0 {
-		review.Warnings = append(review.Warnings, fmt.Sprintf("%d change(s) use an action combination Hclaro does not recognize. Treat them as potentially destructive and inspect them with the CLI.", review.Summary[Unknown]))
+	resources, outs := Unsupported(review.Changes, review.Outputs)
+	review.Unsupported = resources + outs
+	if review.Unsupported > 0 {
+		review.Warnings = append(review.Warnings, unsupportedWarning(resources, outs))
 	}
 	return review, nil
+}
+
+func unsupportedWarning(resources, outs int) string {
+	parts := []string{}
+	if resources > 0 {
+		parts = append(parts, fmt.Sprintf("%d resource change(s)", resources))
+	}
+	if outs > 0 {
+		parts = append(parts, fmt.Sprintf("%d output change(s)", outs))
+	}
+	return strings.Join(parts, " and ") + " use an action combination Hclaro does not support. Applying is disabled for this plan; inspect these changes with the CLI."
 }
 
 func actions(in []string) []string {

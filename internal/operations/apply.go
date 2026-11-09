@@ -42,8 +42,10 @@ type approval struct {
 
 // ApplyStatus reports, at request time, whether a plan's saved artifact can be applied.
 type ApplyStatus struct {
-	Available        bool   `json:"available"`
-	Reason           string `json:"reason,omitempty"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+	// Code is the stable refusal code when Available is false, such as unknown_actions.
+	Code             string `json:"code,omitempty"`
 	ArtifactRetained bool   `json:"artifactRetained"`
 	ExpiresAt        string `json:"expiresAt,omitempty"`
 }
@@ -80,8 +82,27 @@ func (e *RejectError) Error() string { return e.Reason }
 
 func reject(code, reason string) error { return &RejectError{code, reason} }
 
+// unsupportedReason explains why a plan with unrecognized action combinations can never be
+// applied, or returns "". It recomputes from the recorded action lists each time, so the
+// refusal does not depend on a cached summary. Destructive confirmation cannot override it.
+func unsupportedReason(p *Plan) string {
+	resources, outs := plan.Unsupported(p.Changes, p.Outputs)
+	if resources+outs == 0 {
+		return ""
+	}
+	return fmt.Sprintf("This plan contains %d change(s) with an action combination Hclaro does not support (%d resource, %d output). Hclaro never applies such a plan, even with destructive confirmation. Inspect it with the CLI.", resources+outs, resources, outs)
+}
+
+func unsupportedCount(p *Plan) int {
+	resources, outs := plan.Unsupported(p.Changes, p.Outputs)
+	return resources + outs
+}
+
 // ineligible returns why a plan can never be applied, or "" when it can.
 func ineligible(p *Plan) string {
+	if reason := unsupportedReason(p); reason != "" {
+		return reason
+	}
 	changes := 0
 	for action, n := range p.Summary {
 		if action != plan.NoOp && action != plan.Read {
@@ -189,7 +210,12 @@ func (m *Manager) applyStatus(p *Plan, currentFingerprint, profileReason string)
 	defer m.mu.Unlock()
 	if err := m.checkLocked(p, currentFingerprint, profileReason); err != nil {
 		retained := m.artifact != nil && m.artifact.planID == p.ID
-		return ApplyStatus{Reason: err.Error(), ArtifactRetained: retained}
+		status := ApplyStatus{Reason: err.Error(), ArtifactRetained: retained}
+		var r *RejectError
+		if errors.As(err, &r) {
+			status.Code = r.Code
+		}
+		return status
 	}
 	return ApplyStatus{Available: true, ArtifactRetained: true, ExpiresAt: m.artifact.created.Add(m.PlanMaxAge).UTC().Format(time.RFC3339)}
 }
@@ -199,6 +225,9 @@ func (m *Manager) applyStatus(p *Plan, currentFingerprint, profileReason string)
 func (m *Manager) checkLocked(p *Plan, currentFingerprint, profileReason string) error {
 	snap := m.store.Get()
 	a := m.artifact
+	if reason := unsupportedReason(p); reason != "" {
+		return reject("unknown_actions", reason)
+	}
 	switch {
 	case m.notes[p.ID] != "":
 		return reject("not_applicable", m.notes[p.ID])
@@ -349,6 +378,7 @@ var applyMessages = map[string]string{
 	"workspace_changed": "The active workspace no longer matches this plan. Nothing was applied.",
 	"workspace_error":   "The active workspace could not be confirmed. Nothing was applied.",
 	"artifact_changed":  "The saved plan file changed after review. Nothing was applied, and the file was deleted.",
+	"unknown_actions":   "The plan contains an action combination Hclaro does not support. Nothing was applied, and the saved file was deleted.",
 	"unsafe_cli_args":   "Inherited TF_CLI_ARGS or TF_CLI_ARGS_apply contains flags other than -no-color. Nothing was applied. Values were not logged.",
 	"stale_plan":        "The engine refused the saved plan because state changed after it was created. Nothing was applied. Run a new plan and review it again.",
 	"state_locked":      "The state is locked by another operation, so the engine did not apply. Hclaro never force-unlocks state.",
@@ -460,6 +490,11 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	m.stage(e, "Verifying saved plan")
 	if digest, err := sha256File(a.path); err != nil || digest != a.digest {
 		return "artifact_changed", nil, false
+	}
+	// Defensive: re-verify immediately before the engine runs that the reviewed plan has no
+	// unsupported action combination, independently of the earlier checks.
+	if p, ok := m.Plan(e.op.PlanID); !ok || p.ID != a.planID || unsupportedReason(p) != "" {
+		return "unknown_actions", nil, false
 	}
 	m.stage(e, "Applying")
 	label := engineLabel(a.engine)

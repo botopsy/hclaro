@@ -324,6 +324,9 @@ export type Plan = {
   kind: PlanKind;
   replace: string[];
   imports: number;
+  // Resource and output changes with an action combination Hclaro does not support (M24.01).
+  // Any such change makes the plan ineligible for apply; the server enforces this.
+  unsupportedActions?: number;
   import?: ImportTarget;
   // Redacted display copy of configuration the engine generated for an import.
   generatedConfig?: string;
@@ -341,6 +344,8 @@ export type Plan = {
 export type ApplyStatus = {
   available: boolean;
   reason?: string;
+  // Stable refusal code when unavailable, such as unknown_actions.
+  code?: string;
   artifactRetained: boolean;
   expiresAt?: string;
 };

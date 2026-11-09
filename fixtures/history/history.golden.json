@@ -18,7 +18,7 @@
       "apply",
       "-input=false",
       "-json",
-      "\u003creviewed saved plan 8fd04b5c44a5\u003e"
+      "\u003creviewed saved plan dafedb5eda52\u003e"
     ],
     "plan": {
       "planId": "00000000000000000000000000000002",
@@ -29,7 +29,6 @@
         "forget": 1,
         "read": 1,
         "replace": 2,
-        "unknown": 1,
         "update": 3
       },
       "changes": [
@@ -76,10 +75,6 @@
         {
           "address": "random_password.unused",
           "action": "forget"
-        },
-        {
-          "address": "aws_lb.edge",
-          "action": "unknown"
         }
       ],
       "outputs": 4,
@@ -203,10 +198,6 @@
       {
         "address": "random_password.unused",
         "action": "forget"
-      },
-      {
-        "address": "aws_lb.edge",
-        "action": "unknown"
       }
     ],
     "changed": [],
@@ -387,7 +378,7 @@
           "apply",
           "-input=false",
           "-json",
-          "\u003creviewed saved plan 8fd04b5c44a5\u003e"
+          "\u003creviewed saved plan dafedb5eda52\u003e"
         ],
         "plan": {
           "planId": "00000000000000000000000000000002",
@@ -398,7 +389,6 @@
             "forget": 1,
             "read": 1,
             "replace": 2,
-            "unknown": 1,
             "update": 3
           },
           "changes": [
@@ -445,10 +435,6 @@
             {
               "address": "random_password.unused",
               "action": "forget"
-            },
-            {
-              "address": "aws_lb.edge",
-              "action": "unknown"
             }
           ],
           "outputs": 4,
@@ -499,7 +485,6 @@
             "forget": 1,
             "read": 1,
             "replace": 2,
-            "unknown": 1,
             "update": 3
           },
           "changes": [
@@ -546,10 +531,6 @@
             {
               "address": "random_password.unused",
               "action": "forget"
-            },
-            {
-              "address": "aws_lb.edge",
-              "action": "unknown"
             }
           ],
           "outputs": 4,
@@ -616,7 +597,6 @@
         "forget": 1,
         "read": 1,
         "replace": 2,
-        "unknown": 1,
         "update": 3
       },
       "changes": [
@@ -663,10 +643,6 @@
         {
           "address": "random_password.unused",
           "action": "forget"
-        },
-        {
-          "address": "aws_lb.edge",
-          "action": "unknown"
         }
       ],
       "outputs": 4,
@@ -707,7 +683,7 @@
       {
         "time": "2026-11-06T10:00:00Z",
         "level": "info",
-        "text": "Plan ready for review: 13 resource change(s), 5 output change(s)."
+        "text": "Plan ready for review: 12 resource change(s), 5 output change(s)."
       }
     ],
     "live": true

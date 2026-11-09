@@ -261,7 +261,7 @@ Hclaro then runs `plan -input=false -json -out=<private temp file>` and streams 
 
 The review shows:
 
-- Counts per action (create, update, replace, delete, read, forget, unknown, no change), which also filter the list. Unknown action combinations are flagged as potentially destructive.
+- Counts per action (create, update, replace, delete, read, forget, unsupported, no change), which also filter the list. A plan with an unsupported action combination in a resource or output change can be reviewed but never applied: the server refuses it with `unknown_actions`, even with the destructive confirmation. See [Plan actions](docs/plan-actions.md).
 - Every resource change in engine order, including collateral deletions, data reads, moves, imports and deposed objects. Unchanged resources are behind a toggle.
 - Per change: the full address, the replacement order (destroy-then-create or create-then-destroy), the reason, and an attribute diff marking redacted, sensitive, `known after apply`, and `forces replacement` values. A change to a redacted value is still listed.
 - Output changes and changes made outside Terraform/OpenTofu (drift).

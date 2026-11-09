@@ -124,6 +124,9 @@ type Input struct {
 	ExpiresAt        time.Time
 	// Ineligible explains why the plan can never be applied ("" when it can).
 	Ineligible string
+	// Unsupported counts changes with an action combination Hclaro does not support; the
+	// plan is then ineligible and re-planning alone does not help.
+	Unsupported int
 	// Backend facts from the workspace snapshot.
 	Backend, ExecutionMode string
 	CanApply               bool
@@ -194,6 +197,8 @@ func Evaluate(in Input) []Check {
 		short = short[:16]
 	}
 	switch {
+	case in.Unsupported > 0:
+		out = append(out, check(CheckEligible, "The plan can be applied", Block, Fail, orDefault(in.Ineligible, "The plan contains unsupported action combinations."), "Inspect the unsupported changes with the CLI. Hclaro does not apply a plan with an action combination it does not recognize; see docs/plan-actions.md to report it."))
 	case in.Ineligible != "":
 		out = append(out, check(CheckEligible, "The plan can be applied", Block, Fail, in.Ineligible, rerun))
 	default:

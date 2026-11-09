@@ -136,7 +136,7 @@ func TestPlanSucceeds(t *testing.T) {
 		t.Fatal("plan not stored")
 	}
 	digest := sha256.Sum256(fixtures.PlanAllActions)
-	if p.ArtifactSHA256 != hex.EncodeToString(digest[:]) || p.Kind != "plan" || !p.Destructive || p.Workspace != "demo" || p.Fingerprint == "" || len(p.Changes) != 13 {
+	if p.ArtifactSHA256 != hex.EncodeToString(digest[:]) || p.Kind != "plan" || !p.Destructive || p.Workspace != "demo" || p.Fingerprint == "" || len(p.Changes) != 12 {
 		t.Fatalf("plan metadata: %+v", p)
 	}
 	// An applicable plan keeps exactly one private saved artifact.
