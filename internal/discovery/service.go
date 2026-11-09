@@ -534,8 +534,16 @@ func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 		}
 	}
 	// The account is checked again: credentials can change between verification and scan.
+	// It counts against the session-wide call limit like every other read of a scan.
+	select {
+	case s.calls <- struct{}{}:
+	case <-ctx.Done():
+		finish(ScanCancelled, KindCancelled)
+		return
+	}
 	s.countCall(scan)
 	account, _, _, _, err := s.callerIdentity(ctx, environ, scan.Identity.Region)
+	<-s.calls
 	switch {
 	case ctx.Err() != nil:
 		finish(ScanCancelled, KindCancelled)
