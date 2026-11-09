@@ -2,7 +2,7 @@
 
 :root {
   /* Raw brand palette: the five literal colours of the M19 reference mockup
-     (docs/design/reference/Cursor.dc.html). Never approximate or edit these; derive instead.
+     (recorded in docs/design/BRAND.md). Never approximate or edit these; derive instead.
      docs/design/BRAND.md documents every token below and its measured contrast. */
   --brand-navy: #0B1220;
   --brand-ivory: #F4F4F0;

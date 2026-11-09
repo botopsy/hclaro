@@ -1,5 +1,5 @@
 // Generates Hclaro's static brand assets (M19) from the reference geometry in
-// docs/design/reference/Cursor.dc.html. Run with `make brand-assets`; the output is committed.
+// the M19 reference mockup (not distributed; values in docs/design/BRAND.md). Run with `make brand-assets`; the output is committed.
 //
 // The browser UI renders the logo as live text (HclaroLogo/HclaroMark). Favicons, app icons and
 // the SVGs in docs/design/assets cannot rely on a web font, so here every glyph is a vector path.

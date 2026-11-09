@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Open-source public beta preparation (M22, draft)
+
+- hclaro is published by **BotOpsy** and licensed under the **Apache License 2.0** (`LICENSE`, official text): free for personal and commercial use, modification and redistribution. Release archives now include `LICENSE`.
+- New public documentation: README introduction (capabilities, install, quick start, license and feedback), `docs/GETTING_STARTED.md`, `docs/BETA.md`, `docs/RELEASING.md` (draft), a contribution policy (feedback via Issues; no external pull requests during the beta), a private vulnerability-reporting section in `SECURITY.md`, issue forms that ask for redacted reports, and a Discussions template.
+- Release builds no longer restore CI caches, and CI uses Go 1.27.3. `.gitignore` covers Terraform/OpenTofu plans, variable files, crash logs, CLI configuration, credentials and editor files.
+- Removed two broken legacy scripts (`scripts/build-offline-preview.mjs`, `scripts/offline-render-test.mjs`); milestone verification notes moved to `docs/archive/verification/`.
+- `TRADEMARKS.md` describes how to refer to the hclaro and BotOpsy names and logos; it does not limit Apache-2.0 rights. Questions and ideas go to GitHub Discussions.
+- Internal milestone task files, coding-agent instructions and the third-party design mockup are no longer part of the repository contents.
+- Audit reports in `docs/audits/`. No product behaviour changed.
+
 ### Navigation and information architecture (M21, draft)
 
 - The sidebar is grouped by task: project views (Overview, Resources, Modules, Providers), **Plan & analyze** (Plans, Drift detection, Dependency graph, Compare), **Manage** (Import & discovery, Operations, History) and Git, Tools and Settings at the bottom, with a compact *Local by design · Alpha* footer. Groups scroll on their own, so project context and Settings stay reachable in short windows.

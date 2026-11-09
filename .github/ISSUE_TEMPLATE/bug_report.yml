@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in Hclaro does not work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Do not paste state, plans or plan output, `.tfvars` contents, credentials, the private session URL (`#session=…`), or real account IDs, ARNs, hostnames or bucket names.** Replace them with placeholders such as `123456789012` or `example-bucket`.
+        Security vulnerabilities must be reported privately; see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Hclaro version
+      description: Output of `hclaro --version`.
+      placeholder: hclaro 0.1.0-beta.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS (Apple silicon), macOS (Intel), Linux (amd64), Linux (arm64), Windows (amd64), Other]
+    validations:
+      required: true
+  - type: input
+    id: engine
+    attributes:
+      label: Engine and version
+      description: Output of `terraform version` or `tofu version` (first line).
+      placeholder: Terraform v1.9.8
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Resources / explorer, Plans, Apply, Replace, Import, Drift detection, Dependency graph, Compare, Cloud discovery, Cost estimates, Workspace Hub, Init, Workspaces, Tools, Git, History, Navigation / UI, Installation, Other]
+    validations:
+      required: true
+  - type: input
+    id: backend
+    attributes:
+      label: Backend type
+      description: For example local, s3, azurerm, gcs, remote. The type only, no configuration.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A minimal synthetic configuration is ideal.
+      placeholder: |
+        1. Run `hclaro` in a project with …
+        2. Open …
+        3. Click …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Messages or screenshots (redacted)
+      description: Check every line for secrets and identifiers before posting.
+      render: text
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction
+      options:
+        - label: I removed credentials, state, plan output, variable values, session URLs and real infrastructure identifiers.
+          required: true

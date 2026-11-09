@@ -1,14 +1,54 @@
+# Build output and local caches
 .cache/
 /bin/
 /dist/
+/release/
 web/node_modules/
 web/*.tsbuildinfo
 web/test-results/
 web/playwright-report/
+coverage/
+
+# Terraform/OpenTofu working data. State, plans and variable files can hold secrets.
+# Keep .terraform.lock.hcl (dependency lock) and the synthetic fixtures under fixtures/.
 .terraform/
 *.tfstate
 *.tfstate.*
 !fixtures/backend/terraform.tfstate
 *.tfplan
+*.tfplan.json
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!fixtures/**/*.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Credentials and private environment files
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+.netrc
+
+# Editors and operating systems
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local planning and coding-agent instructions; kept on the maintainer's machine, not published.
+/tasks/
+/AGENTS.md
+/CLAUDE.md

@@ -4,7 +4,7 @@
 # - Pull requests: full suite and browser checks on Linux; Go and unit tests on Windows and
 #   macOS when Go code, fixtures, scripts or CI changed.
 # - master: full suite on Linux, Windows and macOS.
-# - Changes that touch only docs/, tasks/ or Markdown files stop after checkout.
+# - Changes that touch only docs/ or Markdown files stop after checkout.
 # - Tags like v1.2.3 or v1.2.3-alpha.1: full suite on all three OSes, then cross-compile,
 #   package, smoke-test the packages natively and publish a GitHub release.
 #
@@ -33,7 +33,7 @@ executors:
 parameters:
   go-version:
     type: string
-    default: "1.27.2"
+    default: "1.27.3"
   node-version:
     type: string
     default: "24.22.1"
@@ -71,7 +71,7 @@ commands:
               printf '%s\n' "$changed" | grep -E "$relevant" >/dev/null && exit 0
               echo "No Go code, fixtures, scripts or CI changed:"
             else
-              printf '%s\n' "$changed" | grep -Ev '^(docs/|tasks/)|\.md$' >/dev/null && exit 0
+              printf '%s\n' "$changed" | grep -Ev '^docs/|\.md$' >/dev/null && exit 0
               echo "Only documentation changed:"
             fi
             printf '  %s\n' $changed
@@ -94,7 +94,7 @@ commands:
                   set -euo pipefail
                   cd /tmp
                   curl -fsSLo go.tgz https://go.dev/dl/go<< pipeline.parameters.go-version >>.linux-amd64.tar.gz
-                  echo "ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5  go.tgz" | sha256sum -c -
+                  echo "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40  go.tgz" | sha256sum -c -
                   curl -fsSLo node.tgz https://nodejs.org/dist/v<< pipeline.parameters.node-version >>/node-v<< pipeline.parameters.node-version >>-linux-x64.tar.gz
                   echo "eb6728e77c576a35162c122c45ccadf224d89ff00abc8dae46cc2897c6002d7c  node.tgz" | sha256sum -c -
                   mkdir -p "$HOME/sdk/node"
@@ -114,7 +114,7 @@ commands:
                   set -euo pipefail
                   cd /tmp
                   curl -fsSLo go.tgz https://go.dev/dl/go<< pipeline.parameters.go-version >>.darwin-arm64.tar.gz
-                  echo "76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c4c5  go.tgz" | shasum -a 256 -c -
+                  echo "dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2  go.tgz" | shasum -a 256 -c -
                   curl -fsSLo node.tgz https://nodejs.org/dist/v<< pipeline.parameters.node-version >>/node-v<< pipeline.parameters.node-version >>-darwin-arm64.tar.gz
                   echo "89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7  node.tgz" | shasum -a 256 -c -
                   mkdir -p "$HOME/sdk/node"
@@ -132,7 +132,7 @@ commands:
                   set -euo pipefail
                   sdk="$HOME/sdk"; mkdir -p "$sdk"; cd "$sdk"
                   curl -fsSLo go.zip https://go.dev/dl/go<< pipeline.parameters.go-version >>.windows-amd64.zip
-                  echo "1314008898bd40df77af4b014f777f08873dbdfbcd3d92308728ee03304fe04f  go.zip" | sha256sum -c -
+                  echo "f26081f438319757f8a1b46d7d0b2c5ec7583d4038e485e0aa725cfde7885fff  go.zip" | sha256sum -c -
                   curl -fsSLo node.zip https://nodejs.org/dist/v<< pipeline.parameters.node-version >>/node-v<< pipeline.parameters.node-version >>-win-x64.zip
                   echo "d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5  node.zip" | sha256sum -c -
                   # Windows' own bsdtar reads zip archives; PowerShell's Expand-Archive takes minutes.
@@ -281,8 +281,8 @@ jobs:
             fi
       - toolchain:
           os: linux
-      - restore-caches:
-          os: linux
+      # No restore-caches here: release binaries are built from empty Go and npm caches, so
+      # a cache saved by a pull-request job can never feed into a published artifact.
       - run:
           name: Install frontend dependencies
           command: npm ci --prefix web --no-audit --no-fund
@@ -306,7 +306,8 @@ jobs:
               mkdir -p "$stage"
               exe=hclaro; case "$target" in windows-*) exe=hclaro.exe ;; esac
               cp "$bin" "$stage/$exe"
-              cp README.md SECURITY.md CHANGELOG.md internal/ui/dist/THIRD-PARTY-NOTICES.txt "$stage/"
+              # Apache-2.0 section 4(a): every redistributed copy carries the license.
+              cp LICENSE README.md SECURITY.md CHANGELOG.md internal/ui/dist/THIRD-PARTY-NOTICES.txt "$stage/"
               # Fixed mtimes and ownership keep archives reproducible for a given commit.
               find "$stage" -exec touch -d "@$(git log -1 --format=%ct)" {} +
               case "$target" in

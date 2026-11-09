@@ -1,0 +1,52 @@
+# M04 implementation and verification
+
+**Status: draft.** The import wizard is implemented and passes the automated suite and a live loopback run against the synthetic CLI (2026-11-05). **No import has been planned or applied with a real Terraform/OpenTofu engine.** Per `AGENTS.md`, that needs explicit approval from the product owner and a disposable test environment. No real infrastructure, cloud accounts or remote backends were used.
+
+Design and trade-offs: [architecture](../../architecture.md#imports), [security](../../../SECURITY.md).
+
+## Evidence collected
+
+Environment: macOS 13 amd64, Go 1.27.2, Node 24.2.0, Playwright 1.58 Chrome Headless Shell 145.
+
+| Check | Result |
+| --- | --- |
+| `make test` (`go test -race`, Vitest) | Passed: all Go packages including the new `internal/imports`; Vitest 25/25. One earlier run failed the first App test on a 1 s `findBy` wait under load; the shared Testing Library wait is now 4 s and three further full runs passed. |
+| `make lint` / `gofmt` | Passed: `go vet`, `tsc -b`, ESLint with zero warnings; gofmt clean. |
+| `make build` / `make cross` | Passed; five targets embed the bundle (JS 389 kB / 117 kB gzip). Canary absent from all binaries. |
+| `make browser-test` | Passed: previous checks plus the Import view against the real Go handler: `aws_s3_bucket.artifacts` is refused as already in state with no write offered; `aws_s3_bucket.legacy_logs` previews the new file, finds the block in `main.tf`, and **Write file and plan import** stays disabled until the consent box is ticked. Import review: a plan started through the real `StartImport` path with engine-generated configuration shows the requested import, the unrelated change and the generated file with `[redacted]` values; the canary appears in neither the page nor any API response. Screenshots: `import-wizard-dark.png`, `import-review-dark.png`. |
+| Address and HCL (`internal/imports`) | Root, indexed, quoted-key and nested-module addresses round-trip; data sources, bare modules, leading zeros, negative indexes, escapes, `${`/`%{` keys, trailing segments, flags, newlines and over-long input refused. IDs render with `"`, `\` escaped and template sequences doubled. |
+| Collision and configuration checks | Address already in state; same-type object with the same `id` in state; missing block (blocking unless generated); generation refused with an existing block, an instance key or in a module; existing destination or generated file; existing import/moved block for the address; `../`, override and `.tf.json` names; credential-shaped, multi-line and space-padded IDs; invalid provider reference; provider/type mismatch warning; `count`/`for_each` key warnings ignoring comments, nested blocks and heredocs; `.tf.json` module block found through `modules.json`; module directory outside the project not read; unreadable snapshot blocks. |
+| File writes | New file written with exact content; second write and existing files refused unchanged; traversal, subdirectory, hidden and non-`.tf` names refused; no temporary file left; dangling symlink at the destination refused without touching its target; project root reached through a symlink refused; generated file read refused through a symlink. |
+| Engine adapter (helper process) | `-generate-config-out=<name>` appended after `-var-file`; absolute, `../`, flag-like and non-`.tf` names, and combination with `-replace`, refused. |
+| Operations manager | Preview writes nothing; start writes exactly the previewed bytes, plans with no `-replace`/`-target`, stores `kind: import`, `imports: 1`; the import-only (no-op) plan is applicable and its approval requires `apply demo`; empty phrase refused; apply runs once, outcome `applied`, import file kept, temp dir empty. Generation: `-generate-config-out=legacy_generated.tf` in command and request; display copy contains `[redacted]` and no canary while the file on disk is untouched; plan stays applicable after the engine writes the file, becomes `context_changed` after an edit to it, and an edit to `main.tf` during the plan makes it `context_changed`. Refusals (stale, missing or mismatched preview digest, address in state, missing block, traversal, unknown var file, file created after preview) write nothing and never call the engine. Remote execution: `canImport: false` with a reason, preview and recipe still returned, start refused `import_unavailable`. A plan that does not import the target warns; a failed import plan keeps the file and never applies. |
+| Security guard | Import preview and start require session, exact Origin and CSRF (403 otherwise); other `/imports/…` POSTs 405. |
+| API over HTTP | Options report `canImport`, block and generation support; preview returns the block; a collision is a 200 with `blocked` and `address_in_state`; missing either acknowledgement 400; unknown field 400; stale digest 409 `preview_changed` with no file and no engine call; valid start 202 → plan `kind: import`, `imports: 1`, apply available; same request again 409 `import_blocked` (file exists). Canary absent from every response. |
+| Vitest | Wizard shows the new file before any write; write disabled until consent; start request carries the preview digest and both acknowledgements; editing a field discards the preview; a blocked preview offers no write; an unavailable workspace shows the reason and recipe. Import review shows the target, the other change and the redacted generated configuration; headline counts the import. |
+| Live loopback demo (`bin/hclaro` + synthetic CLI on a scratch copy of `fixtures/project`) | Import POST without CSRF 403. Preview found the block in `main.tf`, directory unchanged. Stale digest 409, directory unchanged. Start 202; `imports.tf` equals the preview byte for byte; spy shows `plan -input=false -json -out=<temp>/plan.tfplan` (no extra flags), plan `import` with 1 import and 1 unrelated update, apply available. Approval phrase `apply demo`; wrong phrase 409; apply with phrase → outcome `applied`, `stateReloaded: true`; spy shows `apply -input=false -json <temp>/plan.tfplan`. Repeating the import 409 (file exists). Generation for `aws_s3_bucket.generated`: spy shows `-generate-config-out=gen_generated.tf`, plan applicable with `contextChanged: false`, display copy redacted while the file on disk holds the planted canary. After Ctrl+C: no `hclaro-plan-*` temp directories; `imports.tf`, `gen.tf` and `gen_generated.tf` kept; canary 0 in all API responses and the server log. |
+| CI (PR #11) | Passed on ubuntu-24.04, macos-latest and windows-latest (run 42043943681). |
+
+## M04 acceptance mapping
+
+| Criterion | Evidence |
+| --- | --- |
+| Gather import ID, provider/type, target instance address, config location | Wizard form; the type is part of the address; the destination file is chosen and checked. |
+| Detect an existing address and whether import syntax is supported | `address_in_state` (blocking); `supportsImportBlocks`/`supportsGeneratedConfig` per engine and version; `canImport`/`importReason`. |
+| Preview the import block and, where supported, generated HCL; show the diff before writes | The new file is shown as added lines before consent. Generated configuration depends on the live object, so the engine writes it during the plan and the review shows it (redacted) before apply; the preview says so. |
+| Write only with explicit consent; atomic, no overwrite, path/symlink escape detection | Consent checkbox plus `acknowledgeWrite` and preview digest; temp file + hard link; symlink, traversal and swapped-root tests. |
+| Plan the full import operation, show imports and unrelated changes; saved-plan apply with exact review and confirmation | Ordinary full plan; import summary counts other changes and warns on deletions/replacements; M3 apply path with typed phrase for every import. |
+| Manual recipe for unsupported import-block semantics, no one-click `import` | Recipe in every preview, open by default when importing is unavailable; legacy command shown only as labeled text. No route or engine method runs `import`. |
+| Preserve user configuration; recovery steps after failed plan/apply | Files never deleted (tests); recovery panels for failed import plans and applies. |
+| No file, state or infrastructure modification before explicit approval | Preview has no side effects (tests); write only after consent and digest match; state/infrastructure only through the confirmed apply. |
+| Import collision and missing configuration block detected | Unit, manager and API tests above. |
+| New HCL diff visible; successful disposable import appears in explorer | Diff visible (Vitest, browser). After apply, state is re-read and explorer queries are invalidated (M3 path, live run `stateReloaded: true`). **Not shown with a real engine**: the synthetic CLI's state is a static fixture, so the imported resource does not actually appear. |
+| Errors never cause automatic state manipulation; sensitive IDs redacted if needed | Failed plans never apply (test); no state command exists. Credential-shaped IDs are refused rather than written; generated configuration is redacted for display; the ID is not stored in operation or plan metadata. |
+
+## Open items
+
+1. **No real-engine import.** Import blocks, `-generate-config-out` together with `-out`, the `importing` field and generated-file behavior are exercised only with synthetic output. A disposable run (for example Terraform 1.5.5 with `terraform_data` and the local backend, as in M2) needs product-owner approval. Until then "successful disposable import appears in explorer" is unresolved.
+2. **OpenTofu** generation output and diagnostics are unverified.
+3. **Textual configuration scan.** Resource blocks, `count`/`for_each` and existing `to =` lines are found with a scanner, not an HCL parser. Unusual formatting (block header split across lines, blocks inside `/* */`) can be missed or misread; key mismatches are therefore warnings, and the plan remains authoritative.
+4. **Duplicate-ID detection** compares against the redacted snapshot and only the `id` attribute of the same type; IDs hidden as secret-like, or providers whose import ID differs from `id`, are not detected.
+5. **Import IDs are shown** in the preview and can appear in engine diagnostics; only credential-shaped IDs are refused.
+6. **Generated configuration on disk is unredacted**, as the engine writes it; the display copy uses the same heuristics as state redaction.
+7. M03 open items 1–6 still apply.

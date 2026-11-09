@@ -1,0 +1,13 @@
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share an idea or a workflow you would like Hclaro to support. Do not post state, plans, credentials, session URLs or real infrastructure identifiers.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What problem would it solve, and for whom?
+    validations:
+      required: true
