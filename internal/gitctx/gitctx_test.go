@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -733,7 +734,15 @@ func TestOpenEditor(t *testing.T) {
 	if _, err := EditorURL("javascript", "/x", 1); !errors.Is(err, ErrEditor) {
 		t.Fatal(err)
 	}
-	if u, _ := EditorURL("vscode", `/C:/Users/a b/main.tf`, 2); u != "vscode://file/C:/Users/a%20b/main.tf:2" {
-		t.Fatalf("windows-like %s", u)
+	// A native absolute path: drive-letter paths on Windows become /C:/…, spaces are encoded.
+	native, want2 := "/Users/a b/main.tf", "vscode://file/Users/a%20b/main.tf:2"
+	if runtime.GOOS == "windows" {
+		native, want2 = `C:\Users\a b\main.tf`, "vscode://file/C:/Users/a%20b/main.tf:2"
+	}
+	if u, err := EditorURL("vscode", native, 2); err != nil || u != want2 {
+		t.Fatalf("native path %q: %s %v", native, u, err)
+	}
+	if _, err := EditorURL("vscode", "relative/main.tf", 2); err == nil {
+		t.Fatal("relative path accepted")
 	}
 }
