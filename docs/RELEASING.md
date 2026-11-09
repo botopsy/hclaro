@@ -1,6 +1,6 @@
 # Releasing hclaro (draft)
 
-hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub repository. They are built and published by CircleCI (`.circleci/config.yml`, workflow `release`) when a version tag is pushed. Distribution is **GitHub Releases only**; a Homebrew tap is deferred until the first non-pre-release. Nothing in this document has been run for a beta tag yet.
+hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub repository. They are built by GitHub Actions (`.github/workflows/release.yml`) when a version tag is pushed, uploaded to a **draft** release, and published by the maintainer after review. Distribution is **GitHub Releases only**; a Homebrew tap is deferred until the first non-pre-release. Nothing in this document has been run for a beta tag yet.
 
 ## Version scheme
 
@@ -22,7 +22,7 @@ hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub reposito
    make build              # rebuilds internal/ui/dist and bin/hclaro
    git diff --exit-code -- internal/ui/dist   # the committed bundle must match
    make browser-test       # needs: npm --prefix web exec -- playwright install chromium
-   make cross VERSION=0.1.0-beta.1
+   make cross VERSION=0.1.0-beta.2
    ./dist/hclaro-$(go env GOOS)-$(go env GOARCH) --version
    ```
 
@@ -33,18 +33,26 @@ hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub reposito
 Only the BotOpsy maintainer does this, after approving the release:
 
 ```sh
-git tag -a v0.1.0-beta.1 -m "Hclaro 0.1.0-beta.1"
-git push origin v0.1.0-beta.1
+git tag -a v0.1.0-beta.2 -m "Hclaro 0.1.0-beta.2"
+git push origin v0.1.0-beta.2
 ```
 
-CircleCI then:
+The `Release` workflow then:
 
-1. Reruns the full suite and browser checks on Linux, Windows and macOS.
+1. **Validates** (read-only): the tag is annotated and a semantic version; it points to a commit on `master`; `Makefile` and `cmd/hclaro/main.go` carry the same version; the latest `CI` runs of `linux`, `windows` and `macos` on that commit succeeded (the release does not rerun the suite); and no release exists for the tag. Any failure stops the release before anything is built.
 2. Rebuilds the web UI from empty caches and checks it matches the committed `internal/ui/dist`.
 3. Cross-compiles macOS amd64/arm64, Linux amd64/arm64 and Windows amd64 with `CGO_ENABLED=0 -trimpath -buildvcs=false`.
-4. Packages `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` for Windows) containing the binary, `LICENSE`, `README.md`, `SECURITY.md`, `CHANGELOG.md` and `THIRD-PARTY-NOTICES.txt`, with fixed modification times and owners, plus `hclaro_<version>_checksums.txt` (SHA-256).
+4. Packages `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` for Windows) containing the binary, `LICENSE`, `README.md`, `SECURITY.md`, `CHANGELOG.md` and `THIRD-PARTY-NOTICES.txt`, with fixed modification times and owners, plus `hclaro_<version>_checksums.txt` (SHA-256). The job summary lists the toolchain, commit and checksums.
 5. Verifies the checksum and runs `--version` natively for Linux amd64, macOS arm64 and Windows amd64. Linux arm64 and macOS amd64 are cross-compiled only.
-6. Creates a **draft** GitHub release with generated notes, uploads every file, then publishes it. This job alone uses `GITHUB_RELEASE_TOKEN` from the `hclaro-release` context (fine-grained token, this repository only, **Contents: read and write**).
+6. Creates a **draft** release (pre-release for any `-suffix` version) with generated notes and exactly the six files, then downloads them back and checks them against the checksums. Only this job can write, with the workflow's own `GITHUB_TOKEN` (`contents: write`); no personal access token is used.
+
+Then review the draft on the Releases page and publish it:
+
+```sh
+gh release edit v0.1.0-beta.2 --draft=false
+```
+
+A release is never overwritten. If the publish job fails after creating the draft, delete the draft on the Releases page and rerun the failed job. A dry run (`gh workflow run release.yml -f version=0.0.0-dryrun`, or any pull request that changes the workflow) validates, builds and smoke-tests without publishing.
 
 ## After publishing
 
@@ -55,7 +63,7 @@ CircleCI then:
 
 ## Reproducibility
 
-For a given commit, Go toolchain and target, `make cross` produces identical binaries: no cgo, no VCS stamping, trimmed paths, stripped symbols and a version passed by flag. Archives use the commit time for file times and numeric owner 0. The Vite bundle is deterministic for the same `web/package-lock.json`. To compare, rebuild at the tag with the Go version pinned in `.circleci/config.yml` (`go-version`) and compare SHA-256 sums.
+For a given commit, Go toolchain and target, `make cross` produces identical binaries: no cgo, no VCS stamping, trimmed paths, stripped symbols and a version passed by flag. Archives use the commit time for file times and numeric owner 0. The Vite bundle is deterministic for the same `web/package-lock.json`. To compare, rebuild at the tag with the Go version pinned in `.github/workflows/release.yml` (`go-version`) and compare SHA-256 sums.
 
 ## Not provided
 

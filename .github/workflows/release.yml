@@ -1,0 +1,230 @@
+name: Release
+# Builds the release archives for a version tag and uploads them to a DRAFT GitHub release.
+# Publishing the draft is a manual maintainer step (docs/RELEASING.md). This is the only
+# release publisher: CircleCI no longer has a release workflow.
+#
+# - Tag push (v*): validate, build, native smoke tests, then create the draft. Only the
+#   publish job can write, with the job's own GITHUB_TOKEN; no other credential exists.
+# - workflow_dispatch, or a pull request that changes this file: a dry run that validates,
+#   builds and smoke-tests under a placeholder version and never publishes.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+    paths: ['.github/workflows/release.yml']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version label for the dry run (nothing is tagged or published)
+        required: true
+        default: 0.0.0-dryrun
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: check
+        name: Validate version and source
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          semver='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          if [ "$EVENT" = push ]; then
+            tag="$REF_NAME"
+            version="${tag#v}"
+            [ "v$version" = "$tag" ] && printf '%s' "$version" | grep -Eq "$semver" || fail "Tag '$tag' is not a semantic version like v1.2.3 or v1.2.3-beta.1."
+            [ "$(gh api "repos/$REPO/git/ref/tags/$tag" --jq .object.type)" = tag ] || fail "Tag $tag is not annotated. Use git tag -a."
+            git merge-base --is-ancestor "$SHA" origin/master || fail "Tag $tag does not point to a commit on master."
+            grep -qx "VERSION ?= $version" Makefile || fail "Makefile VERSION does not match $version. Bump the version first."
+            grep -qx "var version = \"$version\"" cmd/hclaro/main.go || fail "cmd/hclaro/main.go version does not match $version."
+            # The commit must have passed CI on master: the latest linux, windows and macos runs.
+            runs=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.app.slug == "github-actions")] | group_by(.name) | map(max_by(.started_at)) | map("\(.name)=\(.conclusion)") | .[]')
+            for job in linux windows macos; do
+              printf '%s\n' "$runs" | grep -qx "$job=success" || fail "CI job '$job' did not succeed on $SHA (found: $(printf '%s ' $runs)). Tag a commit with green CI."
+            done
+            if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+              fail "A release for $tag already exists. Releases are never overwritten; use a new version."
+            fi
+          else
+            version="${INPUT_VERSION:-0.0.0-dryrun}"
+            printf '%s' "$version" | grep -Eq "$semver" || fail "Dry-run version '$version' is not a semantic version."
+            echo "Dry run ($EVENT): nothing will be published."
+          fi
+          prerelease=false; case "$version" in *-*) prerelease=true ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "version=$version prerelease=$prerelease"
+
+  build:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No caches: release binaries are built from empty Go and npm caches.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - name: Install frontend dependencies
+        run: npm ci --prefix web --no-audit --no-fund
+      - name: Embedded assets match a fresh build
+        run: npm --prefix web run build && git diff --exit-code -- internal/ui/dist
+      - name: Cross-compile
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: make cross VERSION="$VERSION"
+      - name: Package
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          for bin in dist/hclaro-*; do
+            target="${bin#dist/hclaro-}"; target="${target%.exe}"
+            name="hclaro_${VERSION}_${target//-/_}"
+            stage="release/stage/$name"
+            mkdir -p "$stage"
+            exe=hclaro; case "$target" in windows-*) exe=hclaro.exe ;; esac
+            cp "$bin" "$stage/$exe"
+            # Apache-2.0 section 4(a): every redistributed copy carries the license.
+            cp LICENSE README.md SECURITY.md CHANGELOG.md internal/ui/dist/THIRD-PARTY-NOTICES.txt "$stage/"
+            # Fixed mtimes and ownership keep archives reproducible for a given commit.
+            find "$stage" -exec touch -d "@$(git log -1 --format=%ct)" {} +
+            case "$target" in
+              windows-*) (cd release/stage && zip -qrX "../$name.zip" "$name") ;;
+              *) tar -C release/stage --sort=name --owner=0 --group=0 --numeric-owner -czf "release/$name.tar.gz" "$name" ;;
+            esac
+          done
+          rm -rf release/stage
+          (cd release && sha256sum hclaro_* > "hclaro_${VERSION}_checksums.txt")
+          {
+            echo "### Release archives ($VERSION)"
+            echo '```'
+            go version; echo "node $(node --version)"; echo "commit $(git rev-parse HEAD)"
+            cat "release/hclaro_${VERSION}_checksums.txt"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-archives
+          path: release/
+          retention-days: 7
+          if-no-files-found: error
+
+  smoke:
+    # Run each packaged binary natively. Linux arm64 and macOS amd64 are cross-compiled only.
+    needs: [validate, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: linux_amd64, ext: tar.gz }
+          - { os: macos-15, target: darwin_arm64, ext: tar.gz }
+          - { os: windows-2025, target: windows_amd64, ext: zip }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-archives
+          path: release
+      - name: Verify checksum and run --version
+        working-directory: release
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          TARGET: ${{ matrix.target }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          name="hclaro_${VERSION}_${TARGET}"
+          line=$(grep " $name.$EXT\$" "hclaro_${VERSION}_checksums.txt")
+          if command -v sha256sum >/dev/null; then echo "$line" | sha256sum -c -; else echo "$line" | shasum -a 256 -c -; fi
+          case "$EXT" in
+            # Windows' own bsdtar reads zip archives.
+            zip) "$(cygpath -u "$SYSTEMROOT")/System32/tar.exe" -xf "$name.zip"; exe="$name/hclaro.exe" ;;
+            *) tar -xzf "$name.tar.gz"; exe="$name/hclaro" ;;
+          esac
+          out="$("$exe" --version | tr -d '\r')"
+          echo "$out"
+          [ "$out" = "hclaro $VERSION" ]
+
+  publish:
+    # Only a validated tag push publishes, and only as a draft.
+    if: github.event_name == 'push'
+    needs: [validate, build, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-archives
+          path: release
+      - name: Create draft release
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          # Exactly the five archives and the checksums file, all matching.
+          expected="hclaro_${VERSION}_checksums.txt
+          hclaro_${VERSION}_darwin_amd64.tar.gz
+          hclaro_${VERSION}_darwin_arm64.tar.gz
+          hclaro_${VERSION}_linux_amd64.tar.gz
+          hclaro_${VERSION}_linux_arm64.tar.gz
+          hclaro_${VERSION}_windows_amd64.zip"
+          [ "$(cd release && ls | sort)" = "$(printf '%s\n' "$expected" | sed 's/^ *//' | sort)" ] || fail "Unexpected release files: $(ls release)"
+          (cd release && sha256sum -c "hclaro_${VERSION}_checksums.txt")
+          # Never overwrite: a rerun after a partial upload stops here. Delete the leftover
+          # draft on the Releases page, then rerun this job.
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            fail "A release for $TAG already exists (possibly a draft from an earlier attempt). Nothing was changed."
+          fi
+          flags=(--draft --verify-tag --title "Hclaro $VERSION" --generate-notes)
+          [ "$PRERELEASE" = true ] && flags+=(--prerelease)
+          gh release create "$TAG" --repo "$REPO" "${flags[@]}" release/*
+          # Read the uploaded assets back and check them against the checksums.
+          mkdir verify
+          gh release download "$TAG" --repo "$REPO" --dir verify
+          [ "$(cd verify && ls | sort)" = "$(cd release && ls | sort)" ] || fail "Uploaded assets differ from the built set."
+          (cd verify && sha256sum -c "hclaro_${VERSION}_checksums.txt")
+          echo "Draft release for $TAG created and verified. Review it, then publish: gh release edit $TAG --draft=false" | tee -a "$GITHUB_STEP_SUMMARY"
