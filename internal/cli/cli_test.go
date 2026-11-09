@@ -71,3 +71,12 @@ func TestExportHistory(t *testing.T) {
 		t.Fatalf("overwrote an existing export: %v", err)
 	}
 }
+
+func TestStrictLocalArgument(t *testing.T) {
+	if o, err := Parse([]string{}, io.Discard); err != nil || o.StrictLocal {
+		t.Fatalf("strict local by default: %+v %v", o, err)
+	}
+	if o, err := Parse([]string{"--strict-local"}, io.Discard); err != nil || !o.StrictLocal {
+		t.Fatalf("--strict-local: %+v %v", o, err)
+	}
+}

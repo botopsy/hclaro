@@ -1,0 +1,341 @@
+{
+  "version": "0.2",
+  "metadata": {
+    "infracostCommand": "breakdown"
+  },
+  "currency": "USD",
+  "projects": [
+    {
+      "name": "synthetic",
+      "metadata": {
+        "path": "plan.json",
+        "type": "terraform_plan_json"
+      },
+      "pastBreakdown": {
+        "resources": [
+          {
+            "name": "module.compute.aws_instance.main[0]",
+            "resourceType": "aws_instance",
+            "tags": {},
+            "metadata": {},
+            "hourlyCost": null,
+            "monthlyCost": null,
+            "costComponents": [
+              {
+                "name": "Instance usage (Linux/UNIX, on-demand, t3.micro)",
+                "unit": "hours",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "730",
+                "price": "0.0104",
+                "hourlyCost": null,
+                "monthlyCost": "7.592"
+              }
+            ],
+            "subresources": [
+              {
+                "name": "root_block_device",
+                "metadata": {},
+                "hourlyCost": null,
+                "monthlyCost": "0.8",
+                "costComponents": [
+                  {
+                    "name": "Storage (general purpose SSD, gp2)",
+                    "unit": "GB",
+                    "hourlyQuantity": null,
+                    "monthlyQuantity": "8",
+                    "price": "0.1",
+                    "hourlyCost": null,
+                    "monthlyCost": "0.8"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+            "resourceType": "aws_instance",
+            "tags": {},
+            "metadata": {},
+            "hourlyCost": null,
+            "monthlyCost": null,
+            "costComponents": [
+              {
+                "name": "Instance usage (Linux/UNIX, on-demand, t3.micro)",
+                "unit": "hours",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "730",
+                "price": "0.0104",
+                "hourlyCost": null,
+                "monthlyCost": "7.592"
+              }
+            ],
+            "subresources": [
+              {
+                "name": "root_block_device",
+                "metadata": {},
+                "hourlyCost": null,
+                "monthlyCost": "0.8",
+                "costComponents": [
+                  {
+                    "name": "Storage (general purpose SSD, gp2)",
+                    "unit": "GB",
+                    "hourlyQuantity": null,
+                    "monthlyQuantity": "8",
+                    "price": "0.1",
+                    "hourlyCost": null,
+                    "monthlyCost": "0.8"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "aws_db_instance.primary",
+            "resourceType": "aws_db_instance",
+            "metadata": {},
+            "hourlyCost": null,
+            "monthlyCost": null,
+            "costComponents": [
+              {
+                "name": "Database instance (on-demand, Single-AZ, db.t3.micro)",
+                "unit": "hours",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "730",
+                "price": "0.017",
+                "hourlyCost": null,
+                "monthlyCost": "12.41"
+              },
+              {
+                "name": "Storage (general purpose SSD, gp2)",
+                "unit": "GB",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "20",
+                "price": "0.115",
+                "hourlyCost": null,
+                "monthlyCost": "2.3"
+              },
+              {
+                "name": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+                "unit": "GB",
+                "hourlyQuantity": null,
+                "monthlyQuantity": null,
+                "price": null,
+                "hourlyCost": null,
+                "monthlyCost": null,
+                "usageBased": true
+              }
+            ]
+          }
+        ],
+        "totalHourlyCost": null,
+        "totalMonthlyCost": "31.494"
+      },
+      "breakdown": {
+        "resources": [
+          {
+            "name": "module.compute.aws_instance.main[0]",
+            "resourceType": "aws_instance",
+            "tags": {},
+            "metadata": {},
+            "hourlyCost": null,
+            "monthlyCost": null,
+            "costComponents": [
+              {
+                "name": "Instance usage (Linux/UNIX, on-demand, t3.small)",
+                "unit": "hours",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "730",
+                "price": "0.0208",
+                "hourlyCost": null,
+                "monthlyCost": "15.184"
+              }
+            ],
+            "subresources": [
+              {
+                "name": "root_block_device",
+                "metadata": {},
+                "hourlyCost": null,
+                "monthlyCost": "0.8",
+                "costComponents": [
+                  {
+                    "name": "Storage (general purpose SSD, gp2)",
+                    "unit": "GB",
+                    "hourlyQuantity": null,
+                    "monthlyQuantity": "8",
+                    "price": "0.1",
+                    "hourlyCost": null,
+                    "monthlyCost": "0.8"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+            "resourceType": "aws_instance",
+            "tags": {},
+            "metadata": {},
+            "hourlyCost": null,
+            "monthlyCost": null,
+            "costComponents": [
+              {
+                "name": "Instance usage (Linux/UNIX, on-demand, t3.micro)",
+                "unit": "hours",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "730",
+                "price": "0.0104",
+                "hourlyCost": null,
+                "monthlyCost": "7.592"
+              }
+            ],
+            "subresources": [
+              {
+                "name": "root_block_device",
+                "metadata": {},
+                "hourlyCost": null,
+                "monthlyCost": "0.8",
+                "costComponents": [
+                  {
+                    "name": "Storage (general purpose SSD, gp2)",
+                    "unit": "GB",
+                    "hourlyQuantity": null,
+                    "monthlyQuantity": "8",
+                    "price": "0.1",
+                    "hourlyCost": null,
+                    "monthlyCost": "0.8"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "aws_db_instance.primary",
+            "resourceType": "aws_db_instance",
+            "metadata": {},
+            "hourlyCost": null,
+            "monthlyCost": null,
+            "costComponents": [
+              {
+                "name": "Database instance (on-demand, Single-AZ, db.t3.micro)",
+                "unit": "hours",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "730",
+                "price": "0.017",
+                "hourlyCost": null,
+                "monthlyCost": "12.41"
+              },
+              {
+                "name": "Storage (general purpose SSD, gp2)",
+                "unit": "GB",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "40",
+                "price": "0.115",
+                "hourlyCost": null,
+                "monthlyCost": "4.6"
+              },
+              {
+                "name": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+                "unit": "GB",
+                "hourlyQuantity": null,
+                "monthlyQuantity": null,
+                "price": null,
+                "hourlyCost": null,
+                "monthlyCost": null,
+                "usageBased": true
+              }
+            ]
+          },
+          {
+            "name": "aws_s3_bucket.logs",
+            "resourceType": "aws_s3_bucket",
+            "metadata": {},
+            "hourlyCost": null,
+            "monthlyCost": null,
+            "costComponents": [],
+            "subresources": [
+              {
+                "name": "Standard",
+                "metadata": {},
+                "costComponents": [
+                  {
+                    "name": "Storage",
+                    "unit": "GB",
+                    "hourlyQuantity": null,
+                    "monthlyQuantity": null,
+                    "price": "0.0245",
+                    "hourlyCost": null,
+                    "monthlyCost": null,
+                    "usageBased": true
+                  },
+                  {
+                    "name": "PUT, COPY, POST, LIST requests",
+                    "unit": "1k requests",
+                    "hourlyQuantity": null,
+                    "monthlyQuantity": null,
+                    "price": "0.0054",
+                    "hourlyCost": null,
+                    "monthlyCost": null,
+                    "usageBased": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "aws_nat_gateway.ghost",
+            "resourceType": "aws_nat_gateway",
+            "metadata": {},
+            "costComponents": [
+              {
+                "name": "NAT gateway",
+                "unit": "hours",
+                "hourlyQuantity": null,
+                "monthlyQuantity": "730",
+                "price": "0.052",
+                "hourlyCost": null,
+                "monthlyCost": "37.96"
+              }
+            ]
+          }
+        ],
+        "totalHourlyCost": null,
+        "totalMonthlyCost": "79.346"
+      },
+      "summary": {
+        "totalDetectedResources": 12,
+        "totalSupportedResources": 6,
+        "totalUnsupportedResources": 1,
+        "totalUsageBasedResources": 2,
+        "totalNoPriceResources": 4,
+        "unsupportedResourceCounts": {
+          "aws_shield_protection": 1
+        },
+        "noPriceResourceCounts": {
+          "aws_iam_role": 1,
+          "aws_security_group": 1,
+          "aws_subnet": 2
+        }
+      }
+    }
+  ],
+  "totalHourlyCost": null,
+  "totalMonthlyCost": "79.346",
+  "pastTotalMonthlyCost": "31.494",
+  "diffTotalMonthlyCost": "47.852",
+  "timeGenerated": "2026-11-09T10:00:00Z",
+  "summary": {
+    "totalDetectedResources": 12,
+    "totalSupportedResources": 6,
+    "totalUnsupportedResources": 1,
+    "totalUsageBasedResources": 2,
+    "totalNoPriceResources": 4,
+    "unsupportedResourceCounts": {
+      "aws_shield_protection": 1
+    },
+    "noPriceResourceCounts": {
+      "aws_iam_role": 1,
+      "aws_security_group": 1,
+      "aws_subnet": 2
+    }
+  }
+}

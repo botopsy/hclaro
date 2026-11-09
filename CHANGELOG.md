@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Cost impact estimation (M17, draft)
+
+- **Cost estimate** tab in the plan review: projected recurring monthly change with currency, new/removed/changed split, priced configuration totals, coverage of cost-bearing changes, caveats (unsupported types, usage-based charges, free resources, forgotten resources, exchange rates, not a bill), a breakdown by resource type and per-resource line items with price components. Unpriced resources are labelled, never shown as zero.
+- Optional **Infracost CLI** v0.10 adapter behind a `cost.Runner` provider abstraction (`CanEstimate`, `Disclosure`, `Estimate`, cancellation). Off by default; an explicit data disclosure and opt-in per session are required, and nothing runs or is sent before it. Hclaro never installs Infracost or handles its API key.
+- The adapter receives a minimized plan in a private temporary file and an allowlisted environment without cloud credentials. Estimates are bound to the plan and its context fingerprint and marked out of date after a change; failures and cancellation never affect plans or applies.
+- New `--strict-local` flag: cost estimation is unavailable (*Not available in strict local-only mode*).
+- Sanitized aggregate totals are saved locally in `cost-estimates.json` and can be cleared.
+- New routes: `GET /api/v1/cost/provider`, `POST /api/v1/cost/opt-in`, `POST /api/v1/cost/opt-out`, `POST /api/v1/plans/{id}/cost-estimates`, `GET /api/v1/plans/{id}/cost-estimate`, `GET /api/v1/cost-estimates/{id}`, `POST /api/v1/cost-estimates/{id}/cancel`, `GET /api/v1/cost/history`, `POST /api/v1/cost/history/clear`. New package `internal/cost`; synthetic report `fixtures/cost`, a synthetic `infracost` CLI for `make demo` (`scripts/fake-infracost`).
+
 ### AWS cloud discovery (M16, draft)
 
 - **Discovery** view for the launch project: verify the AWS context (CLI v2 and STS caller identity; account, principal type, region; never inferred from a profile name), preview a scan (types, up to 6 regions, limits, concurrency, request estimate, possible API charges) and confirm it, follow progress, cancel, and browse results labelled **Possibly untracked**, **Already tracked**, **Unknown** or **Unresolved** against the workspace's recorded state, with filters by label, service and text.

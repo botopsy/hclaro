@@ -277,6 +277,19 @@ The saved plan is deleted after one apply attempt, whatever the result, and also
 
 Supported types (hashicorp/aws v5 import IDs): `aws_vpc` (VPC ID), `aws_subnet` (subnet ID), `aws_security_group` (group ID), `aws_s3_bucket` (bucket name; listed once for the account, filtered to the scanned regions when the CLI reports bucket regions) and `aws_db_instance` (DB instance identifier). Azure, GCP, other AWS types and organization-wide scans are not supported. Scans are kept in memory for the session only. The `make demo` target puts a synthetic `aws` CLI first on `PATH`, so the demo never uses your real credentials.
 
+## Cost estimates (Infracost, optional)
+
+The **Cost estimate** tab of a reviewed plan shows a clearly labelled estimate of the plan's **recurring monthly cost change**: the total `+/−` amount with its currency, the split between new, removed and changed resources, the priced configuration total before and after, a **coverage** figure (how many cost-bearing changes have a price), caveats, a breakdown by resource type and every changed resource with its price components. Resources without a price are labelled *Not estimated*, *Usage-based* or *No direct price*, never shown as zero. Estimates use public list prices and a 730-hour month; they are not your cloud bill and exclude discounts, savings plans, credits, free tiers and taxes.
+
+- **Off by default.** It needs the [Infracost CLI](https://www.infracost.io/docs/) v0.10, installed and authenticated by you (`infracost auth login`); Hclaro never installs it or asks for its API key. Without it the tab says *Infracost CLI not found*; plans and applies work as usual.
+- **Disclosure first.** Nothing runs and nothing is sent until you open **Review data disclosure…**, read what the CLI reads, what can leave the device (price lookups to `pricing.api.infracost.io`, or your `INFRACOST_PRICING_API_ENDPOINT`) and what is never sent, tick the confirmation and turn it on. That lasts for the Hclaro session (**Turn off** ends it); each estimate is still an explicit **Estimate cost** click.
+- **What Infracost gets.** A minimized copy of the plan in a private temporary file (deleted afterwards): resource types, actions and pricing attributes. Values marked sensitive, secret-named attributes, credential-shaped or random-looking strings, tags, descriptions, policies, user data, variables, outputs, state outputs, module sources and provider arguments other than the region are removed. The CLI receives no AWS/Azure/Google/Terraform Cloud variables and no execution profile environment.
+- **Bound to the plan.** An estimate belongs to one plan and its context fingerprint; after a context change it is marked *Out of date* and that plan cannot be estimated again. A failed or cancelled estimate never affects the plan or its apply.
+- **Saved totals.** Completed estimates keep only aggregate totals (amounts, currency, coverage, time, workspace) in `cost-estimates.json` in Hclaro's configuration folder; *Earlier estimates* lists them and **Clear saved estimates** removes them.
+- **Strict local-only mode.** `hclaro --strict-local` turns the feature off for the session (*Not available in strict local-only mode*): Infracost always prices through a remote API and Hclaro has no offline price source.
+
+`make demo` puts a synthetic `infracost` first on `PATH`; it prices the demo plan from a fixture and contacts nothing.
+
 ## Import
 
 **Import** brings an object that already exists outside Terraform/OpenTofu into state. Enter the resource instance address (managed resources only, with its count index or for_each key if the block uses one), the provider's import ID, an optional provider reference such as `aws.west`, and the name of a **new** file in the root module. **Check and preview** writes nothing and runs nothing. It reports:

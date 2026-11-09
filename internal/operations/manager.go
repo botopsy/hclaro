@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/cost"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
@@ -119,6 +120,10 @@ type Plan struct {
 	// Source is the Git commit and IaC file fingerprint the plan was made from, taken
 	// before the engine ran; nil when source tracking is off.
 	Source *gitctx.PlanSourceFingerprint `json:"source,omitempty"`
+	// costInput is the minimized plan document a cost estimate may use (M17), kept in
+	// memory only; costInputError explains why it is missing.
+	costInput      []byte
+	costInputError error
 }
 
 type entry struct {
@@ -173,12 +178,15 @@ type Manager struct {
 	// Discovery lists existing AWS objects for the launch workspace on request (M16); nil
 	// disables cloud discovery.
 	Discovery *discovery.Service
-	entries   []*entry
-	plans     []*Plan
-	scans     []*DriftScan
-	graphs    []*GraphRun
-	running   *entry
-	artifact  *artifact
+	// Cost estimates the monthly cost impact of reviewed plans on request (M17); nil
+	// disables cost estimation.
+	Cost     *cost.Service
+	entries  []*entry
+	plans    []*Plan
+	scans    []*DriftScan
+	graphs   []*GraphRun
+	running  *entry
+	artifact *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.
 	notes  map[string]string
 	base   context.Context
@@ -539,6 +547,9 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	if err != nil {
 		return nil, nil, "plan_format", &zero
 	}
+	// The cost input is derived now, while the raw document is in memory; it never holds
+	// sensitive or secret-shaped values (see cost.Minimize).
+	costInput, costInputError := cost.Minimize(document)
 	kind := "plan"
 	if len(e.op.Replace) > 0 {
 		kind = "replace"
@@ -571,6 +582,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		Import: e.op.Import, GeneratedConfig: generatedConfig, GeneratedConfigTruncated: generatedTruncated,
 		ArtifactSHA256: digest, Fingerprint: fingerprint, Context: bound.Clone(), Source: source,
 		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Summary[plan.Unknown] > 0,
+		costInput:   costInput, costInputError: costInputError,
 	}
 	// The artifact holds secrets in plaintext. It is kept only when it could be applied;
 	// otherwise the deferred cleanup removes it now.
@@ -705,6 +717,15 @@ func (m *Manager) Plans() []*Plan {
 		out = append(out, m.plans[i])
 	}
 	return out
+}
+
+// CostInput returns the minimized cost input of a stored plan (M17).
+func (m *Manager) CostInput(id string) ([]byte, error) {
+	p, ok := m.Plan(id)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return p.costInput, p.costInputError
 }
 
 func (m *Manager) Plan(id string) (*Plan, bool) {
