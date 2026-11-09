@@ -2,6 +2,26 @@
 
 Repository: `botopsy/hclaro`. Updated with the owner's decisions. Current state (read with `gh repo view`, nothing changed): **private**, default branch `master`, Issues on, Discussions off, Wiki off, no license detected (until `LICENSE` is merged). None of the settings below can be applied by files in the repository; each is a manual action by the maintainer.
 
+## Applied on 2026-11-09 (M25, owner-approved)
+
+Read back through the GitHub API after each change. The repository was made **public** on 2026-11-09; the tables below are the M22 proposal, kept for reference.
+
+| Setting | Live value |
+| --- | --- |
+| Visibility | Public. `v0.1.0-beta.1` (built while private) was turned back into a draft first; `v0.1.0-beta.2` is the first public release. |
+| Ruleset `master` (default branch) | Active, no bypass: no deletion, no force push, pull request required (0 approvals), required checks `changes`, `linux`, `windows`, `macos` from GitHub Actions (not strict). |
+| Ruleset `release tags` (`refs/tags/v*`) | Active, no bypass: no deletion, no update, no force push. |
+| Secret scanning / push protection | On / on. One alert (a synthetic `glpat-` value in `internal/state/state_test.go`) resolved as *used in tests*. |
+| Private vulnerability reporting | On. |
+| Dependabot | Alerts on; automatic security-update PRs off (decision open). |
+| Code scanning | Not configured (optional). |
+| Actions | Default token read-only, cannot approve pull requests; approval required for workflows from all external contributors. CI and releases run on GitHub Actions (`ci.yml`, `release.yml`). |
+| Collaborators | `vidojeg` (admin), `botopsy-admin` (admin). |
+| Features | Issues and Discussions on; Wiki and Projects off; forking allowed (Apache-2.0). |
+| CircleCI | No release workflow; `GITHUB_RELEASE_TOKEN` removed by the owner. Pull request/`master` workflows remain until retired (M25.14). |
+
+On the same day, the `Co-Authored-By` trailers of four commits were removed by a history rewrite of `master` from `88ad6d5`. The rulesets were disabled for a few minutes for that force push and the move of the then-unpublished `v0.1.0-beta.2` tag, then re-enabled. Code trees, authors and dates are unchanged. Closed PRs #40–#43 still show the original commits.
+
 ## Before making the repository public
 
 | Setting | Recommendation | Where | Status |
