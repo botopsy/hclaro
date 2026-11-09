@@ -4,7 +4,7 @@ This guide takes you from a clean machine to hclaro showing one of your Terrafor
 
 ## 1. Requirements
 
-- macOS, Linux or Windows. Release archives exist for macOS arm64/amd64, Linux amd64/arm64 and Windows amd64; macOS arm64, Linux amd64 and Windows amd64 are run natively in CI.
+- macOS, Linux or Windows. Release archives exist for macOS arm64/amd64, Linux amd64/arm64 and Windows amd64; every package is run natively in CI before a release, and the test suite runs on macOS arm64, Linux amd64 and Windows amd64.
 - Terraform **1.5–1.17** or OpenTofu **1.6–1.13** on `PATH`. Hclaro uses your installed engine; it does not download one.
 - An initialized project (`terraform init` / `tofu init` already run), or use Hclaro's guided init from the Workspace Hub.
 - A browser on the same machine. Hclaro listens only on `127.0.0.1`.
@@ -22,6 +22,7 @@ This guide takes you from a clean machine to hclaro showing one of your Terrafor
    ```
 
    On Windows: `Get-FileHash .\hclaro_<version>_windows_amd64.zip -Algorithm SHA256` and compare with the checksums file.
+   Optionally, with the GitHub CLI: `gh attestation verify <archive> -R botopsy/hclaro` checks that the file was built by hclaro's release workflow.
 3. Extract it and put `hclaro` (`hclaro.exe`) somewhere on your `PATH`, for example `~/.local/bin`.
 4. The binaries are not signed. On macOS, if Gatekeeper blocks the first launch, allow it in **System Settings → Privacy & Security**; on Windows, SmartScreen shows **More info → Run anyway**. Only do this for a binary whose checksum you verified.
 5. Check it: `hclaro --version`.

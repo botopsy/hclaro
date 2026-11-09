@@ -43,8 +43,9 @@ The `Release` workflow then:
 2. Rebuilds the web UI from empty caches and checks it matches the committed `internal/ui/dist`.
 3. Cross-compiles macOS amd64/arm64, Linux amd64/arm64 and Windows amd64 with `CGO_ENABLED=0 -trimpath -buildvcs=false`.
 4. Packages `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` for Windows) containing the binary, `LICENSE`, `README.md`, `SECURITY.md`, `CHANGELOG.md` and `THIRD-PARTY-NOTICES.txt`, with fixed modification times and owners, plus `hclaro_<version>_checksums.txt` (SHA-256). The job summary lists the toolchain, commit and checksums.
-5. Verifies the checksum and runs `--version` natively for Linux amd64, macOS arm64 and Windows amd64. Linux arm64 and macOS amd64 are cross-compiled only.
-6. Creates a **draft** release (pre-release for any `-suffix` version) with generated notes and exactly the six files, then downloads them back and checks them against the checksums. Only this job can write, with the workflow's own `GITHUB_TOKEN` (`contents: write`); no personal access token is used.
+5. Writes `hclaro_<version>_sbom.cdx.json`, a CycloneDX SBOM of the Go toolchain and modules and the npm packages bundled into the UI (`scripts/release-sbom.mjs`, the same list as `THIRD-PARTY-NOTICES.txt`; reproducible for a commit), included in the checksums file.
+6. Verifies the checksum and runs `--version` natively on all five targets: Linux amd64 and arm64, macOS arm64 and amd64 (Intel), Windows amd64.
+7. Attests build provenance for every release file with GitHub artifact attestations (Sigstore; the publish job alone gets an OIDC token), then creates a **draft** release (pre-release for any `-suffix` version) with generated notes and exactly the seven files, then downloads them back and checks them against the checksums. Only this job can write, with the workflow's own `GITHUB_TOKEN` (`contents: write`); no personal access token is used.
 
 Then review the draft on the Releases page and publish it:
 
@@ -65,8 +66,16 @@ A release is never overwritten. If the publish job fails after creating the draf
 
 For a given commit, Go toolchain and target, `make cross` produces identical binaries: no cgo, no VCS stamping, trimmed paths, stripped symbols and a version passed by flag. Archives use the commit time for file times and numeric owner 0. The Vite bundle is deterministic for the same `web/package-lock.json`. To compare, rebuild at the tag with the Go version pinned in `.github/workflows/release.yml` (`go-version`) and compare SHA-256 sums.
 
+## Verifying a download
+
+```sh
+shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing      # sha256sum on Linux
+gh attestation verify hclaro_<version>_darwin_arm64.tar.gz -R botopsy/hclaro
+```
+
+The attestation proves the file was built by this repository's `Release` workflow from the tagged commit. It is not a code signature; operating systems still treat the binaries as unsigned.
+
 ## Not provided
 
 - Code signing, macOS notarization and Windows Authenticode. No signing credentials exist; binaries are unsigned and the README says so.
 - Package managers (Homebrew, Scoop, apt, …), installers and auto-update.
-- SBOMs and build provenance attestations (possible future work).
