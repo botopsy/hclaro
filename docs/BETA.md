@@ -35,6 +35,8 @@ Full details: [SECURITY.md](../SECURITY.md).
 - Views of the project opened from the terminal are not deep-linkable; Hub workspace views are.
 - Cloud discovery supports AWS only, five resource types.
 - Binaries are not code-signed or notarized.
+- A plan that contains an action combination Hclaro does not recognize can be reviewed but never applied from Hclaro; see [plan-actions.md](plan-actions.md).
+- Releases are distributed through [GitHub Releases](https://github.com/botopsy/hclaro/releases) only: no package managers, installers or auto-update.
 
 ## Giving feedback
 
