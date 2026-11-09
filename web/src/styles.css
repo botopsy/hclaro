@@ -1,23 +1,49 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
-  --bg: #111516;
-  --sidebar: #141819;
-  --surface: #181d1e;
-  --surface-hover: #1e2425;
-  --surface-selected: #1c2e26;
-  --inset: #131819;
-  --border: #293031;
-  --border-soft: #22292a;
-  --text: #e5e9e7;
-  --muted: #939e9a;
-  --subtle: #697571;
-  --accent: #b0eac7;
-  --accent-dim: #2a4234;
-  --accent-text: #b0eac7;
-  --purple: #b3a5e5;
-  --shadow: 0 8px 28px #0002;
+  /* Raw brand palette: the five literal colours of the M19 reference mockup
+     (docs/design/reference/Cursor.dc.html). Never approximate or edit these; derive instead.
+     docs/design/BRAND.md documents every token below and its measured contrast. */
+  --brand-navy: #0B1220;
+  --brand-ivory: #F4F4F0;
+  --brand-stone: #E8E8E1;
+  --brand-lime: #C6F432;
+  --brand-olive: #6A8F00;
+
+  /* Semantic tokens. Each is light-dark(<light theme>, <dark theme>) and follows color-scheme:
+     "light dark" follows the system before any script runs (no flash of the wrong palette);
+     the saved preference pins data-theme. Components use only these names, never raw hex. */
+  color-scheme: light dark;
+  --bg: light-dark(var(--brand-ivory), var(--brand-navy));
+  --sidebar: light-dark(var(--brand-stone), #0E1626);
+  --surface: light-dark(#FBFBF8, #131C2D);
+  --surface-hover: light-dark(#EDEDE6, #1A2437);
+  --surface-selected: light-dark(#E6EDCF, #1E2B25);
+  --inset: light-dark(#EFEFE9, #0D1524);
+  --border: light-dark(#D6D6CD, #253047);
+  --border-soft: light-dark(#E3E3DB, #1A2436);
+  /* Form-control boundaries: at least 3:1 against the surfaces they sit on. */
+  --input: light-dark(#7E837A, #66728A);
+  --text: light-dark(var(--brand-navy), var(--brand-ivory));
+  --muted: light-dark(#4B5363, #A4ACB9);
+  --subtle: light-dark(#5D6573, #8891A0);
+  /* Brand accent for marks, indicators and selected borders (graphics, 3:1). In light mode this is
+     the reference olive; it is never used for small text, which takes --accent-text instead. */
+  --accent: light-dark(var(--brand-olive), var(--brand-lime));
+  --accent-dim: light-dark(#DDE8B8, #2D3B23);
+  --accent-text: light-dark(#4A6600, var(--brand-lime));
+  --accent-foreground: var(--brand-navy);
+  /* Primary actions: navy on light surfaces, lime on dark ones. */
+  --primary: light-dark(var(--brand-navy), var(--brand-lime));
+  --primary-hover: light-dark(#1E2A3F, #D4F75E);
+  --primary-foreground: light-dark(var(--brand-ivory), var(--brand-navy));
+  --ring: light-dark(#4A6600, var(--brand-lime));
+  --purple: light-dark(#6650A8, #B3A5E5);
+  /* Logo colours for the theme-following ("auto") wordmark; see HclaroLogo. */
+  --logo-text: light-dark(var(--brand-navy), var(--brand-ivory));
+  --logo-chevron: light-dark(var(--brand-olive), var(--brand-lime));
+  --logo-cursor: light-dark(var(--brand-navy), var(--brand-lime));
+  --shadow: 0 8px 28px light-dark(color-mix(in srgb, var(--brand-navy) 7%, transparent), #0003);
   background: var(--bg);
   color: var(--text);
   font-synthesis: none;
@@ -29,22 +55,10 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f8faf8;
-  --sidebar: #f0f3f1;
-  --surface: #fff;
-  --surface-hover: #f2f6f3;
-  --surface-selected: #e7f3eb;
-  --inset: #f5f8f6;
-  --border: #dce3de;
-  --border-soft: #e8ede9;
-  --text: #202c26;
-  --muted: #617269;
-  --subtle: #7c8b82;
-  --accent: #87cfa4;
-  --accent-dim: #d9efdf;
-  --accent-text: #28683e;
-  --purple: #7964b2;
-  --shadow: 0 8px 28px #233d2810;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * {
@@ -83,7 +97,7 @@ button, input, select, summary {
 }
 
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
-  outline: 2px solid var(--accent-text);
+  outline: 2px solid var(--ring);
   outline-offset: 3px;
 }
 
@@ -106,7 +120,7 @@ button {
 
 select {
   color: var(--muted);
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   background: var(--surface);
   border-radius: 6px;
   max-width: 210px;
@@ -139,41 +153,111 @@ code, .mono {
   inset: 0 auto 0 0;
 }
 
+/* M19 brand: wordmark and compact mark. Values are the reference geometry in em units. */
+.hclaro-logo, .hclaro-mark-glyph {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  letter-spacing: -.04em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.hclaro-logo {
+  color: var(--logo-text);
+  --logo-chevron-color: var(--logo-chevron);
+  --logo-cursor-color: var(--logo-cursor);
+  display: inline-block;
+}
+
+/* Pinned variants use the literal reference colours whatever the active theme. */
+.hclaro-logo.hclaro-light {
+  color: var(--brand-navy);
+  --logo-chevron-color: var(--brand-olive);
+  --logo-cursor-color: var(--brand-navy);
+}
+
+.hclaro-logo.hclaro-dark {
+  color: var(--brand-ivory);
+  --logo-chevron-color: var(--brand-lime);
+  --logo-cursor-color: var(--brand-lime);
+}
+
+.hclaro-logo.hclaro-inverse {
+  color: var(--brand-navy);
+  --logo-chevron-color: var(--brand-navy);
+  --logo-cursor-color: var(--brand-navy);
+}
+
+.hclaro-chevron {
+  color: var(--logo-chevron-color);
+  vertical-align: baseline;
+  width: .5em;
+  height: .7em;
+  margin-right: .22em;
+  display: inline-block;
+}
+
+/* Hollow, static and unfilled: deliberately not a blinking input caret. */
+.hclaro-cursor {
+  border: .09em solid var(--logo-cursor-color);
+  border-radius: .06em;
+  width: .52em;
+  height: .73em;
+  margin-left: .1em;
+  display: inline-block;
+}
+
+.hclaro-mark {
+  background: var(--brand-navy);
+  color: var(--brand-ivory);
+  --logo-cursor-color: var(--brand-lime);
+  flex-shrink: 0;
+  justify-content: center;
+  align-items: center;
+  display: inline-flex;
+}
+
+/* On the navy sidebar of the dark theme the navy tile keeps a hairline edge. */
+.sidebar .hclaro-mark {
+  box-shadow: 0 0 0 1px light-dark(transparent, var(--border));
+}
+
 .brand {
-  letter-spacing: -1px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  /* The height of the previous brand row, so the navigation below keeps its rhythm. */
+  min-height: 38px;
   padding: 0 10px;
-  font-size: 25px;
-  font-weight: 650;
+  font-size: 23px;
   display: flex;
 }
 
-.brand > span:last-child {
+.brand-compact {
+  display: none !important;
+}
+
+/* Static first paint inside #root until the bundle renders; no motion, so nothing to reduce. */
+.boot-splash {
+  background: var(--bg);
+  justify-content: center;
   align-items: center;
-  gap: 10px;
+  min-height: 100vh;
   display: flex;
 }
 
-.brand-mark {
-  align-items: center;
-  gap: 4px;
-  width: 27px;
-  height: 28px;
-  display: flex;
-  position: relative;
+.boot-splash .hclaro-mark {
+  border-radius: 16px;
+  width: 64px;
+  height: 64px;
+  font-size: 40px;
 }
 
-.brand-mark span {
-  background: var(--accent);
-  border-radius: 1px;
-  width: 6px;
-  height: 25px;
+.about-row .hclaro-logo {
+  font-size: 24px;
 }
 
-.brand-mark span:nth-child(2) {
-  width: 7px;
-  height: 6px;
+.empty-state > .hclaro-mark {
+  margin-bottom: 4px;
 }
 
 .alpha {
@@ -412,8 +496,12 @@ code, .mono {
 }
 
 .button-default {
-  background: var(--accent);
-  color: #183323;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.button-default:hover:not(:disabled) {
+  background: var(--primary-hover);
 }
 
 .button-ghost {
@@ -566,7 +654,7 @@ h1 {
 }
 
 .search-field {
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   background: var(--surface);
   min-width: 0;
   height: 35px;
@@ -1738,12 +1826,9 @@ kbd {
   }
 
   .brand {
-    padding: 0 5px;
-    font-size: 24px;
-  }
-
-  .brand > span:last-child {
     gap: 6px;
+    padding: 0 5px;
+    font-size: 19px;
   }
 
   .alpha {
@@ -1837,12 +1922,14 @@ kbd {
     padding: 0;
   }
 
-  .brand > span:last-child, .project-tile, .nav-label, .nav-item > span, .sidebar-bottom, .unavailable {
+  .brand-wordmark, .brand .alpha, .project-tile, .nav-label, .nav-item > span, .sidebar-bottom, .unavailable {
     display: none;
   }
 
-  .brand-mark {
-    margin-bottom: 45px;
+  /* The wordmark would be unreadable at this width; the compact mark carries the identity. */
+  .brand-compact {
+    margin-bottom: 33px;
+    display: inline-flex !important;
   }
 
   .nav-item {
@@ -1941,8 +2028,8 @@ kbd {
 
 .skip-link {
   z-index: 30;
-  background: var(--accent);
-  color: #183323;
+  background: var(--primary);
+  color: var(--primary-foreground);
   border-radius: 6px;
   padding: 12px 16px;
   position: fixed;
@@ -1956,17 +2043,12 @@ kbd {
 
 /* M2: plans and operations */
 :root {
-  --create: #8fdcab;
-  --update: #e3c27a;
-  --destroy: #f09a8f;
-  --warn: #e7b86a;
-}
-
-:root[data-theme="light"] {
-  --create: #22783f;
-  --update: #8a5c00;
-  --destroy: #b4372a;
-  --warn: #8f5a00;
+  /* Plan and operation statuses stay distinct from the lime brand accent and are always paired
+     with a text label or icon. Light values are darkened for 4.5:1 on every light surface. */
+  --create: light-dark(#1E6E3A, #8FDCAB);
+  --update: light-dark(#7F5400, #E3C27A);
+  --destroy: light-dark(#AE3326, #F09A8F);
+  --warn: light-dark(#835200, #E7B86A);
 }
 
 .sr-only {
@@ -2695,7 +2777,7 @@ kbd {
 }
 
 .phrase-field input {
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   background: var(--inset);
   color: var(--text);
   border-radius: 6px;
@@ -2705,7 +2787,7 @@ kbd {
 }
 
 .phrase-field input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
 
@@ -2814,7 +2896,7 @@ kbd {
 }
 
 .field input {
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   background: var(--inset);
   color: var(--text);
   border-radius: 6px;
@@ -2825,7 +2907,7 @@ kbd {
 }
 
 .field input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
 
@@ -3323,7 +3405,7 @@ kbd {
 }
 
 .hub-form input, .hub-form select, .workspace-switch {
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   background: var(--inset);
   color: var(--text);
   border-radius: 6px;
@@ -4003,7 +4085,7 @@ kbd {
 }
 
 .field input, .field select {
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   background: var(--surface);
   color: var(--text);
   font: inherit;
@@ -4196,7 +4278,7 @@ kbd {
 .graph-select select {
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   border-radius: 6px;
   padding: 5px 6px;
 }
@@ -4252,7 +4334,7 @@ kbd {
   touch-action: none;
 }
 .graph-canvas:active { cursor: grabbing; }
-.graph-canvas:focus-visible, .graph-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.graph-canvas:focus-visible, .graph-node:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .graph-edge {
   fill: none;
   stroke: var(--subtle);
@@ -4505,7 +4587,7 @@ kbd {
 }
 
 .rule-list input {
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   background: var(--inset);
   color: var(--text);
   border-radius: 6px;
@@ -5134,7 +5216,7 @@ kbd {
   font: inherit;
 }
 .git-badge:hover { background: var(--surface-hover); }
-.git-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.git-badge:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .git-badge strong { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .git-dirty-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
 .git-dirty-dot.dirty { background: var(--update); }
