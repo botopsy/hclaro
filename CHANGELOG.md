@@ -2,13 +2,17 @@
 
 ## Unreleased
 
+## 0.1.0-beta.2 — 2026-11-09
+
+First public beta, and the first release built on GitHub Actions. It contains everything listed under 0.1.0-beta.1, which was built but never published publicly, plus a safety fix. Features are tested with synthetic fixtures and fake engines only; see `docs/BETA.md` before using them on infrastructure you care about.
+
 - Plans with an action combination Hclaro does not support, in a resource or output change, can be reviewed but are never applied (`unknown_actions`), even with the destructive confirmation. See `docs/plan-actions.md`. (M24.01)
 - Pull requests and `master` are verified on GitHub Actions (Linux, Windows, macOS) instead of CircleCI. (M25.06)
 - Releases build on GitHub Actions (`.github/workflows/release.yml`): the tag must be annotated, on `master`, match the version in the source and have green CI; archives and checksums are unchanged; the result is a **draft** release the maintainer publishes. CircleCI no longer has a release workflow or a release token. (M25.07)
 
-## 0.1.0-beta.1 — 2026-11-09
+## 0.1.0-beta.1 — 2026-11-09 (not publicly released)
 
-First public beta. Execution profiles, drift detection, the dependency graph, workspace comparison, history, safe apply, Git awareness, AWS discovery, cost estimation, the new brand and navigation are new since 0.1.0-alpha.6. They are tested with synthetic fixtures and fake engines only; see `docs/BETA.md` before using them on infrastructure you care about.
+Built as a pre-release while the repository was private and withdrawn before it went public; use 0.1.0-beta.2. Execution profiles, drift detection, the dependency graph, workspace comparison, history, safe apply, Git awareness, AWS discovery, cost estimation, the new brand and navigation are new since 0.1.0-alpha.6. They are tested with synthetic fixtures and fake engines only; see `docs/BETA.md` before using them on infrastructure you care about.
 
 ### Public beta release (M23)
 
