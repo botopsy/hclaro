@@ -39,7 +39,9 @@ export default defineConfig({
   build: {
     outDir: '../internal/ui/dist',
     emptyOutDir: true,
-    sourcemap: false
+    sourcemap: false,
+    // The local CSP allows font-src/img-src 'self' only for fonts; never inline them as data: URIs.
+    assetsInlineLimit: 0
   },
   test: {
     environment: 'jsdom',

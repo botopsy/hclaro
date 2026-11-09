@@ -201,6 +201,22 @@ describe('Resource explorer', () => {
     expect(dialog).toHaveTextContent(resource.address);
     expect(screen.getByText('Changes only from a reviewed, confirmed plan')).toBeInTheDocument();
   });
+  it('shows the hollow-cursor brand once, with one accessible name', async () => {
+    app();
+    const home = screen.getByRole('link', { name: 'Hclaro overview' });
+    // The wordmark and the compact mark (shown in a collapsed sidebar) are both decorative here.
+    const wordmark = home.querySelector('.hclaro-logo')!;
+    expect(wordmark).toHaveAttribute('aria-hidden', 'true');
+    expect(wordmark).toHaveTextContent(/^hclaro$/);
+    expect(wordmark.querySelector('svg polyline')).toHaveAttribute('points', '2,2 8,7 2,12');
+    expect(wordmark.querySelector('.hclaro-cursor')).not.toBeNull();
+    expect(home.querySelector('.hclaro-mark.brand-compact')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(home).queryByRole('img')).not.toBeInTheDocument();
+    expect(home.querySelector('.brand-mark')).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(await screen.findByRole('img', { name: 'Hclaro' })).toHaveClass('hclaro-auto');
+  });
   it('stores only safe appearance settings and offers no apply workflow', async () => {
     app();
     const user = userEvent.setup();
