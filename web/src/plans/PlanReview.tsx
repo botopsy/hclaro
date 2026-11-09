@@ -1,8 +1,8 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRightLeft, Braces, Copy, Fingerprint, Import, LoaderCircle, LockKeyhole, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
+import { ArrowRightLeft, Braces, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
 import { api } from '../api';
-import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, PlanChange } from '../types';
+import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint } from '../types';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
@@ -23,6 +23,15 @@ function Value({ value, unknown, empty = '—' }: { value: unknown; unknown?: bo
   if (value === null || value === undefined) return <span className="muted">{empty}</span>;
   if (typeof value === 'object') return <code className="json-inline">{JSON.stringify(value)}</code>;
   return <code className={typeof value === 'string' ? 'json-string' : 'json-value'}>{String(value)}</code>;
+}
+
+// sourceLabel describes the Git source a plan was made from.
+export function sourceLabel(source?: PlanSourceFingerprint) {
+  if (!source) return 'Not recorded';
+  if (!source.repository) return 'Not in Git';
+  const at = source.commit ? source.commit.slice(0, 7) : 'no commits';
+  const where = source.detached ? `detached @ ${at}` : `${source.branch || 'branch'} @ ${at}`;
+  return source.dirtyKnown && source.dirty ? `${where} · ${source.dirtyFiles} uncommitted IaC file${source.dirtyFiles === 1 ? '' : 's'}` : where;
 }
 
 export function PlanReview({ plan, copy, onApply, busy, onInspectImpact }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; busy?: boolean; onInspectImpact?: (planId: string, address: string) => void }) {
@@ -49,12 +58,15 @@ export function PlanReview({ plan, copy, onApply, busy, onInspectImpact }: { pla
     <div><span className="muted">Workspace</span><strong>{plan.workspace}</strong></div>
     <div><span className="muted">Variable files</span><strong>{plan.varFiles.length ? plan.varFiles.join(', ') : 'Automatic only'}</strong></div>
     <div><span className="muted">Execution context</span><strong><RecordedContext context={plan.executionContext} /></strong></div>
+    <div><span className="muted">Source</span><strong className="mono" title={plan.source?.commit}><GitBranch size={12} /> {sourceLabel(plan.source)}</strong></div>
     <div><span className="muted">Saved plan SHA-256</span><button className="hash" onClick={() => void copy(plan.artifactSha256, 'Plan digest')} title={plan.artifactSha256} aria-label="Copy saved plan SHA-256"><Fingerprint size={12} />{plan.artifactSha256.slice(0, 12)}<Copy size={11} /></button></div>
    </div>
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
    {plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={15} /><div><strong>Ready to apply.</strong> Applying uses exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}. You confirm on the next screen.</div>{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}><Rocket size={14} />Review and apply…</Button>}</div> : <div className="apply-banner" role="note"><LockKeyhole size={15} /><div><strong>Review only.</strong> {plan.apply.reason}</div></div>}
    {plan.contextChanged && <div className="plan-warning" role="alert"><TriangleAlert size={15} />Configuration, variable files, the engine or the execution profile changed since this plan was created. Run a new plan to review current changes.</div>}
+   {plan.sourceStatus?.state === 'changed' && <div className="plan-warning" role="alert"><GitBranch size={15} />{plan.sourceStatus.message}{plan.sourceStatus.filesChanged ? ' Run a new plan before applying.' : ' Applying needs your acknowledgement.'}</div>}
+   {plan.sourceStatus?.state === 'unknown' && <div className="plan-warning" role="alert"><GitBranch size={15} />{plan.sourceStatus.message}</div>}
    {plan.warnings.map(w => <div className="plan-warning" key={w} role="alert"><TriangleAlert size={15} />{w}</div>)}
    <div className="summary-grid" role="group" aria-label="Filter by action">{actionOrder.filter(a => a !== 'no-op' || plan.summary['no-op']).map(a => {
     const { label, icon: Icon, tone } = meta(a);

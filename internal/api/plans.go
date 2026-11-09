@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"hclaro/internal/gitctx"
 	"hclaro/internal/operations"
 	"hclaro/internal/plan"
 	"hclaro/internal/profiles"
@@ -191,7 +192,8 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			EngineVersionLabel string                 `json:"currentEngineVersion"`
 			ContextChanged     bool                   `json:"contextChanged"`
 			Apply              operations.ApplyStatus `json:"apply"`
-		}{p, snap.Info.Version, changed, status})
+			SourceStatus       gitctx.SourceStatus    `json:"sourceStatus"`
+		}{p, snap.Info.Version, changed, status, manager.SourceStatus(p)})
 	})
 	// Preflight evaluates every apply check on the server. verifyIdentity runs the read-only
 	// AWS STS caller identity probe, which contacts AWS, and is false unless the user asks.

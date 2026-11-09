@@ -31,7 +31,8 @@ const messages: Record<string, string> = {
   preflight_blocked: 'A preflight check now blocks this apply. Nothing was applied.',
   preflight_changed: 'The preflight results changed. Review them again. Nothing was applied.',
   scan_not_found: 'This drift scan is no longer kept. Scan again.',
-  scan_not_started: 'The drift scan could not be started.'
+  scan_not_started: 'The drift scan could not be started.',
+  invalid_request: 'The request was refused. Reload the page and try again.'
 };
 export class ApiError extends Error {
   constructor(public code: string, message: string) {

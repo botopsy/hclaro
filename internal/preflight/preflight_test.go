@@ -358,3 +358,37 @@ func TestExamplePolicyFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSourceCheck(t *testing.T) {
+	base := func(src *SourceFacts) Check {
+		in := Input{Source: src}
+		for _, c := range Evaluate(in) {
+			if c.ID == CheckSource {
+				return c
+			}
+		}
+		return Check{}
+	}
+	if c := base(nil); c.ID != "" {
+		t.Fatalf("check without a fingerprint: %+v", c)
+	}
+	for name, tc := range map[string]struct {
+		src      SourceFacts
+		severity Severity
+		status   Status
+	}{
+		"unchanged":     {SourceFacts{Planned: "commit abc", Current: "commit abc"}, Block, Pass},
+		"files changed": {SourceFacts{FilesChanged: true}, Block, Fail},
+		"both changed":  {SourceFacts{FilesChanged: true, HeadChanged: true, Planned: "commit a", Current: "commit b"}, Block, Fail},
+		"head moved":    {SourceFacts{HeadChanged: true, Planned: "commit a", Current: "commit b"}, Warn, Fail},
+		"unknown":       {SourceFacts{Unknown: true}, Block, Unknown},
+	} {
+		c := base(&tc.src)
+		if c.Severity != tc.severity || c.Status != tc.status || c.Evidence == "" {
+			t.Fatalf("%s: %+v", name, c)
+		}
+		if tc.status != Pass && c.Remediation == "" {
+			t.Fatalf("%s: no remediation", name)
+		}
+	}
+}

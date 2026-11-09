@@ -139,6 +139,7 @@ func (m *Manager) facts(ctx context.Context, p *Plan, identity preflight.Identit
 	if m.GitProbe != nil {
 		in.Git = m.GitProbe(ctx, m.root)
 	}
+	in.Source = sourceFacts(m.SourceStatus(p))
 	in.Policy, in.PolicyInfo = preflight.LoadPolicy(m.root)
 	return in
 }
