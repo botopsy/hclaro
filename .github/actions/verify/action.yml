@@ -1,0 +1,71 @@
+name: Verify
+description: Install the pinned toolchains and run hclaro's checks. Shared by the CI jobs.
+inputs:
+  race:
+    description: Run Go tests with the race detector (needs a C toolchain).
+    default: 'true'
+  static:
+    description: Typecheck, lint, the production build and the embedded-asset check (OS-independent, run once on Linux).
+    default: 'false'
+  browser:
+    description: Build the binary and run the synthetic browser checks.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    # Actions are pinned to release commits; the comment names the release. Caches are off, so
+    # no cache written by another branch can feed a build.
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: '1.27.3'
+        cache: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24.22.1'
+        package-manager-cache: false
+    - name: Install frontend dependencies
+      shell: bash
+      run: npm ci --prefix web --no-audit --no-fund
+    - name: Go tests
+      shell: bash
+      env:
+        RACE: ${{ inputs.race }}
+      run: |
+        if [ "$RACE" = true ]; then race=-race; else race=; fi
+        go test $race ./cmd/... ./internal/... ./scripts/...
+    - name: Go vet
+      shell: bash
+      run: go vet ./cmd/... ./internal/... ./scripts/...
+    - name: Vitest
+      shell: bash
+      run: npm --prefix web test
+    - name: Typecheck and lint
+      if: inputs.static == 'true'
+      shell: bash
+      run: npm --prefix web run typecheck && npm --prefix web run lint
+    - name: Production build
+      if: inputs.static == 'true'
+      shell: bash
+      run: npm --prefix web run build
+    - name: Embedded assets match a fresh build
+      if: inputs.static == 'true'
+      shell: bash
+      run: git diff --exit-code -- internal/ui/dist
+    - name: Build embedded host binary
+      if: inputs.browser == 'true'
+      shell: bash
+      run: CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o bin/hclaro ./cmd/hclaro
+    - name: Install test browser
+      if: inputs.browser == 'true'
+      shell: bash
+      run: |
+        # --with-deps installs system libraries on Linux only.
+        if [ "$RUNNER_OS" = Linux ]; then deps=--with-deps; else deps=; fi
+        npm --prefix web exec -- playwright install $deps chromium
+    - name: Synthetic browser checks
+      if: inputs.browser == 'true'
+      shell: bash
+      run: |
+        suffix=""; if [ "$RUNNER_OS" = Windows ]; then suffix=".exe"; fi
+        go build -o "bin/fixture-http${suffix}" ./scripts/fixture-http
+        node scripts/browser-smoke.mjs
