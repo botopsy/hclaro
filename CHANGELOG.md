@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CircleCI is retired: `.circleci/config.yml` is removed, and GitHub Actions runs all checks and releases. (M25.14)
+
 ## 0.1.0-beta.2 — 2026-11-09
 
 First public beta, and the first release built on GitHub Actions. It contains everything listed under 0.1.0-beta.1, which was built but never published publicly, plus a safety fix. Features are tested with synthetic fixtures and fake engines only; see `docs/BETA.md` before using them on infrastructure you care about.
