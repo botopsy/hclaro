@@ -36,6 +36,11 @@ await context.route('**/*',async route=>{
  await route.fulfill({status:response.status,headers,body})
 })
 const page=await context.newPage()
+// M21: Import and Discovery are two workflows behind one sidebar entry.
+const openWorkflow=async tab=>{
+ await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Import & discovery',exact:true}).click()
+ await page.getByRole('navigation',{name:'Import and discovery'}).getByRole('button',{name:tab,exact:true}).click()
+}
 page.on('pageerror',error=>errors.push(error.message))
 page.on('console',message=>consoleOutput.push(message.text()))
 try{
@@ -167,7 +172,7 @@ try{
  await page.getByText(/Plan ready for review/).waitFor()
  assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in operation log')
  // Import wizard: preview against the real Go checks; nothing is written before consent.
- await page.getByRole('button',{name:'Import',exact:true}).click()
+ await openWorkflow('Import existing')
  await page.getByLabel('Resource instance address',{exact:true}).fill('aws_s3_bucket.artifacts')
  await page.getByLabel('Import ID',{exact:true}).fill('new-bucket')
  await page.getByRole('button',{name:'Check and preview'}).click()
@@ -225,12 +230,12 @@ try{
  gitMode=false
  // M16: Cloud discovery through the real Go handler with recorded synthetic AWS responses.
  await page.reload()
- await page.getByRole('button',{name:'Discovery',exact:true}).click()
+ await openWorkflow('Discover cloud resources')
  await page.getByRole('heading',{name:'AWS context not verified'}).waitFor()
  assert.equal(await page.getByRole('button',{name:/Scan…/}).count(),0,'scan offered before verification')
  discoveryMode=true
  await page.reload()
- await page.getByRole('button',{name:'Discovery',exact:true}).click()
+ await openWorkflow('Discover cloud resources')
  await page.getByRole('heading',{name:'AWS account 111122223333'}).waitFor()
  await page.getByText('Scan complete').waitFor()
  const mapping=page.getByRole('group',{name:'Filter by state mapping'})
@@ -253,6 +258,51 @@ try{
  await page.getByLabel('Contents of imports.tf').waitFor()
  await page.screenshot({path:'docs/screenshots/import-from-discovery-dark.png',fullPage:true})
  discoveryMode=false
+ // M21: grouped navigation, project switcher, compact sidebar, short window and narrow drawer.
+ await page.reload()
+ const nav=page.getByRole('navigation',{name:'Main'})
+ for(const label of ['Overview','Resources','Modules','Providers','Plans','Drift detection','Dependency graph','Compare','Import & discovery','Operations','History','Git','Tools','Settings']) await nav.getByRole('button',{name:label,exact:true}).waitFor()
+ assert.equal(await nav.getByRole('button',{name:'Resources',exact:true}).getAttribute('aria-current'),'page')
+ for(const group of ['Plan & analyze','Manage']) await nav.getByRole('group',{name:group}).waitFor()
+ await page.screenshot({path:'docs/screenshots/navigation-expanded-dark.png'})
+ const switcher=page.getByRole('button',{name:/Switch project/})
+ await switcher.click()
+ await page.getByRole('group',{name:'Switch project'}).getByRole('button',{name:/All projects/}).waitFor()
+ await page.screenshot({path:'docs/screenshots/navigation-switcher-dark.png'})
+ await page.keyboard.press('Escape')
+ assert.equal(await page.getByRole('group',{name:'Switch project'}).count(),0,'switcher stays open after Escape')
+ assert.equal(await switcher.evaluate(e=>e===document.activeElement),true,'focus not returned to the project switcher')
+ await page.getByRole('button',{name:'Collapse sidebar'}).click()
+ assert.equal(await page.locator('aside.sidebar').evaluate(e=>Math.round(e.getBoundingClientRect().width)),64,'compact sidebar width')
+ await nav.getByRole('button',{name:'Plans',exact:true}).focus()
+ assert.equal(await page.getByRole('tooltip').innerText(),'Plans','keyboard focus shows the compact label')
+ await page.keyboard.press('Escape')
+ assert.equal(await page.getByRole('tooltip').count(),0,'tooltip not dismissible')
+ await nav.getByRole('button',{name:'Overview',exact:true}).press('Enter')
+ await page.getByRole('heading',{name:'Workspace overview'}).waitFor()
+ assert.equal(await nav.getByRole('button',{name:'Overview',exact:true}).getAttribute('aria-current'),'page')
+ await page.screenshot({path:'docs/screenshots/navigation-compact-dark.png'})
+ await page.reload()
+ await page.getByRole('button',{name:'Expand sidebar'}).click()
+ await page.setViewportSize({width:1512,height:430})
+ const settings=nav.getByRole('button',{name:'Settings',exact:true})
+ assert(await settings.evaluate(e=>{const r=e.getBoundingClientRect();return r.bottom<=window.innerHeight&&r.top>=0}),'Settings unreachable in a short window')
+ assert(await page.locator('.sidebar-scroll').evaluate(e=>e.scrollHeight>e.clientHeight),'sidebar groups do not scroll in a short window')
+ await page.setViewportSize({width:760,height:1050})
+ assert.equal(await page.locator('aside.sidebar').isVisible(),false,'closed drawer still visible')
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'narrow horizontal overflow')
+ const menu=page.getByRole('button',{name:'Open navigation'})
+ await menu.click()
+ await nav.getByRole('button',{name:'Dependency graph',exact:true}).waitFor()
+ await page.screenshot({path:'docs/screenshots/navigation-drawer-dark.png'})
+ await page.keyboard.press('Escape')
+ assert.equal(await page.locator('aside.sidebar').isVisible(),false,'drawer stays open after Escape')
+ assert.equal(await menu.evaluate(e=>e===document.activeElement),true,'focus not returned to the menu button')
+ await menu.click()
+ await nav.getByRole('button',{name:'Providers',exact:true}).click()
+ await page.getByRole('heading',{name:'Providers'}).waitFor()
+ assert.equal(await page.locator('aside.sidebar').isVisible(),false,'drawer stays open after choosing a page')
+ await page.setViewportSize({width:1512,height:1050})
  // Exercise 1,000 resources through the same handler; rendering stays bounded to 50 rows.
  large=true
  await page.reload()
@@ -265,6 +315,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/changes/redacted diff/editor link/source reference/plan source, cloud discovery verification/scan preview/labels/redaction/prepared import, cost estimate opt-in gate/disclosure/coverage/redaction, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/changes/redacted diff/editor link/source reference/plan source, cloud discovery verification/scan preview/labels/redaction/prepared import, grouped navigation/project switcher/compact sidebar/short window/narrow drawer, cost estimate opt-in gate/disclosure/coverage/redaction, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

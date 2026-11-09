@@ -168,7 +168,7 @@ describe('Workspace Hub', () => {
     // Hub contexts are read-only: no replacement selection and no workflows.
     expect(screen.queryByLabelText(/for replacement/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Plans' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Import & discovery' })).toBeDisabled();
     let release!: () => void;
     hold = new Promise(r => {
       release = r;
@@ -191,10 +191,10 @@ describe('Workspace Hub', () => {
     stub(listing(projects));
     app('/projects');
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Compare workspaces' }));
+    await user.click(await screen.findByRole('button', { name: 'Compare' }));
     expect(window.location.pathname).toBe('/compare');
     expect(await screen.findByRole('heading', { name: 'Compare workspaces' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Compare workspaces' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Compare' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: /Compare…/ })).toBeDisabled();
     expect(calls.filter(c => c.method !== 'GET')).toHaveLength(0);
   });

@@ -137,17 +137,21 @@ code, .mono {
 }
 
 .app {
+  --sidebar-width: 232px;
   min-height: 100vh;
   display: flex;
 }
 
+/* M21: the sidebar is a fixed column: brand and project context on top, groups scroll in
+   the middle, utilities and the local note stay at the bottom. */
 .sidebar {
   border-right: 1px solid var(--border);
   background: var(--sidebar);
+  z-index: 25;
   flex-direction: column;
   flex-shrink: 0;
-  width: 222px;
-  padding: 29px 16px 0;
+  width: var(--sidebar-width);
+  padding: 16px 12px 0;
   display: flex;
   position: fixed;
   inset: 0 auto 0 0;
@@ -222,14 +226,42 @@ code, .mono {
   box-shadow: 0 0 0 1px light-dark(transparent, var(--border));
 }
 
+.sidebar-head {
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  display: flex;
+}
+
 .brand {
+  border-radius: 6px;
   align-items: center;
   gap: 8px;
-  /* The height of the previous brand row, so the navigation below keeps its rhythm. */
+  min-width: 0;
   min-height: 38px;
-  padding: 0 10px;
-  font-size: 23px;
+  padding: 0 6px;
+  font-size: 22px;
   display: flex;
+}
+
+.sidebar-toggle, .sidebar-close {
+  color: var(--muted);
+  border-radius: 6px;
+  flex-shrink: 0;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  display: grid;
+}
+
+.sidebar-toggle:hover, .sidebar-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.sidebar-close {
+  display: none;
 }
 
 .brand-compact {
@@ -269,53 +301,230 @@ code, .mono {
   font-size: 11px;
 }
 
+.project-switcher {
+  margin: 14px 0 0;
+  position: relative;
+}
+
 .project-tile {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  text-align: left;
   border: 1px solid var(--border);
   background: var(--inset);
   border-radius: 8px;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-  margin: 35px 0 31px;
-  padding: 12px 9px;
+  gap: 9px;
+  padding: 8px 8px 8px 7px;
   display: flex;
 }
 
-.project-tile > div {
+.project-tile:hover, .project-tile[aria-expanded="true"] {
+  border-color: var(--input);
+  background: var(--surface-hover);
+}
+
+.project-text {
+  flex: 1;
   min-width: 0;
 }
 
-.project-tile strong {
+.project-text > * {
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 137px;
-  font-size: 15px;
-  font-weight: 550;
   display: block;
   overflow: hidden;
 }
 
-.project-tile div > span {
+.project-kicker {
+  letter-spacing: .9px;
+  text-transform: uppercase;
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.project-text strong {
+  margin-top: 1px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.project-text > span:last-child {
   color: var(--muted);
-  margin-top: 4px;
-  font-size: 13px;
-  display: block;
+  margin-top: 1px;
+  font-size: 12px;
+}
+
+.project-chevron {
+  color: var(--subtle);
 }
 
 .project-icon {
-  width: 28px;
-  height: 31px;
+  width: 24px;
+  height: 28px;
   color: var(--purple);
   flex-shrink: 0;
   place-items: center;
   display: grid;
 }
 
-.nav-label {
-  letter-spacing: 1.2px;
+.status-missing .project-icon {
+  color: var(--update);
+}
+
+.switcher-popover {
+  z-index: 40;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  border-radius: 8px;
+  width: 260px;
+  max-height: min(70vh, 460px);
+  padding: 6px;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  overflow-y: auto;
+}
+
+.switcher-popover ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.switcher-label {
+  letter-spacing: .9px;
+  text-transform: uppercase;
   color: var(--subtle);
-  margin: 0 12px 12px;
+  padding: 8px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.switcher-option {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  text-align: left;
+  border-radius: 6px;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 8px;
+  display: flex;
+}
+
+.switcher-option > svg {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.switcher-option > span {
+  min-width: 0;
+}
+
+.switcher-option strong, .switcher-option span span {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  overflow: hidden;
+}
+
+.switcher-option strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.switcher-option span span {
+  color: var(--muted);
   font-size: 12px;
+}
+
+.switcher-option:hover {
+  background: var(--surface-hover);
+}
+
+.switcher-option[aria-current="page"] {
+  background: var(--surface-selected);
+}
+
+.switcher-popover > * + .switcher-all {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.switcher-workspace {
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 6px;
+  padding: 6px 4px 10px;
+}
+
+.sidebar-workspace {
+  margin: 6px 0 0;
+  padding: 0 2px 0 9px;
+}
+
+.workspace-control {
+  color: var(--muted);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  display: flex;
+}
+
+.workspace-control strong {
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+}
+
+.workspace-control .workspace-switch {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.sidebar-nav {
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+  display: flex;
+}
+
+/* Only the groups scroll, so the project context and utilities stay reachable. */
+.sidebar-scroll {
+  overscroll-behavior: contain;
+  flex: 1;
+  min-height: 0;
+  margin: 0 -12px;
+  padding: 2px 12px 8px;
+  overflow-y: auto;
+}
+
+.nav-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-group + .nav-group {
+  margin-top: 14px;
+}
+
+.nav-label {
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--subtle);
+  margin: 0 10px 5px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -325,12 +534,19 @@ code, .mono {
   text-align: left;
   border-radius: 6px;
   align-items: center;
-  gap: 11px;
-  margin-bottom: 4px;
-  padding: 10px 12px;
-  font-size: 15px;
+  gap: 10px;
+  margin-bottom: 1px;
+  padding: 7px 10px;
+  font-size: 14px;
   display: flex;
   position: relative;
+}
+
+.nav-text {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .nav-item:hover:not(:disabled) {
@@ -338,31 +554,33 @@ code, .mono {
   color: var(--text);
 }
 
+/* Active: tinted background, accent text, heavier weight and an edge marker, so the
+   state never depends on colour alone. */
 .nav-item.active {
   background: var(--surface-selected);
   color: var(--accent-text);
+  font-weight: 600;
 }
 
 .nav-item.active:before {
   content: "";
   background: var(--accent);
-  width: 2px;
+  border-radius: 0 2px 2px 0;
+  width: 3px;
   height: 18px;
   position: absolute;
-  left: -16px;
+  left: -12px;
 }
 
 .nav-count {
   background: var(--accent-dim);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
   border-radius: 4px;
   margin-left: auto;
-  padding: 1px 6px;
-  font-size: 13px;
-}
-
-.future-label {
-  margin-top: 31px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .soon {
@@ -379,44 +597,166 @@ code, .mono {
 }
 
 .sidebar-bottom {
-  margin-top: auto;
-  padding-top: 50px;
-}
-
-.local-note {
-  color: var(--accent-text);
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px 5px 24px;
-  display: flex;
-}
-
-.local-note strong {
-  font-size: 13px;
-  font-weight: 500;
-  display: block;
-}
-
-.local-note span {
-  color: var(--subtle);
-  margin-top: 5px;
-  font-size: 12px;
-  display: block;
+  border-top: 1px solid var(--border-soft);
+  padding: 8px 0 4px;
 }
 
 .sidebar-foot {
   color: var(--subtle);
   border-top: 1px solid var(--border);
-  justify-content: space-between;
-  padding: 16px 5px;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 12px;
   font-size: 12px;
   display: flex;
 }
 
-.sidebar-foot > span:first-child {
+.sidebar-foot > svg {
+  color: var(--accent-text);
+}
+
+.foot-version {
+  white-space: nowrap;
   align-items: center;
   gap: 5px;
+  margin-left: auto;
   display: flex;
+}
+
+/* Compact-mode labels: fixed so the sidebar's scroll area cannot clip them. */
+.nav-tooltip {
+  z-index: 50;
+  pointer-events: none;
+  background: var(--text);
+  color: var(--bg);
+  white-space: nowrap;
+  border-radius: 5px;
+  max-width: 360px;
+  padding: 5px 8px;
+  font-size: 12px;
+  position: fixed;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateY(-50%);
+}
+
+.nav-toggle {
+  display: none !important;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Desktop icon-only mode. */
+.app.sidebar-compact {
+  --sidebar-width: 64px;
+}
+
+.sidebar-compact .sidebar {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.sidebar-compact .sidebar-head {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-compact .brand {
+  padding: 0;
+}
+
+.sidebar-compact .sidebar-toggle {
+  margin: 0;
+}
+
+.sidebar-compact .brand-wordmark, .sidebar-compact .brand .alpha, .sidebar-compact .project-text, .sidebar-compact .project-chevron, .sidebar-compact .nav-label, .sidebar-compact .nav-text, .sidebar-compact .nav-count:not(.running-dot), .sidebar-compact .foot-version, .sidebar-compact .sidebar-foot .nav-text {
+  display: none;
+}
+
+.sidebar-compact .brand-compact {
+  display: inline-flex !important;
+}
+
+.sidebar-compact .project-tile {
+  justify-content: center;
+  padding: 6px 0;
+}
+
+.sidebar-compact .switcher-popover {
+  top: 0;
+  left: calc(100% + 12px);
+}
+
+.sidebar-compact .nav-item {
+  justify-content: center;
+  padding: 9px 0;
+}
+
+.sidebar-compact .nav-item.active:before {
+  left: -10px;
+}
+
+.sidebar-compact .running-dot {
+  padding: 0;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+
+.sidebar-compact .nav-group + .nav-group {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.sidebar-compact .sidebar-scroll {
+  margin: 0 -10px;
+  padding: 2px 10px 8px;
+}
+
+.sidebar-compact .sidebar-foot {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Import & discovery: two workflows behind one entry. */
+.subnav {
+  border-bottom: 1px solid var(--border-soft);
+  gap: 4px;
+  margin: -12px 0 22px;
+  display: flex;
+}
+
+.subnav > button {
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.subnav > button:hover {
+  color: var(--text);
+}
+
+.subnav > button.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.crumb-step {
+  align-items: center;
+  gap: 11px;
+  display: flex;
+}
+
+.switch-losses {
+  margin: 0;
+  padding-left: 20px;
 }
 
 .dot {
@@ -434,9 +774,9 @@ code, .mono {
 
 .workspace-shell {
   flex-direction: column;
-  width: calc(100% - 222px);
+  width: calc(100% - var(--sidebar-width));
   min-width: 0;
-  margin-left: 222px;
+  margin-left: var(--sidebar-width);
   display: flex;
 }
 
@@ -1778,23 +2118,12 @@ kbd {
     gap: 12px;
   }
 
-  .sidebar {
-    width: 202px;
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-
-  .workspace-shell {
-    width: calc(100% - 202px);
-    margin-left: 202px;
+  .app {
+    --sidebar-width: 216px;
   }
 
   .module-panel {
     width: 175px;
-  }
-
-  .nav-item.active:before {
-    left: -12px;
   }
 
   .directory-grid {
@@ -1816,36 +2145,17 @@ kbd {
     gap: 5px;
   }
 
-  .sidebar {
-    width: 178px;
-  }
-
-  .workspace-shell {
-    width: calc(100% - 178px);
-    margin-left: 178px;
+  .app {
+    --sidebar-width: 204px;
   }
 
   .brand {
     gap: 6px;
-    padding: 0 5px;
-    font-size: 19px;
+    font-size: 20px;
   }
 
   .alpha {
     font-size: 10px;
-  }
-
-  .project-tile {
-    gap: 5px;
-    padding: 9px 4px;
-  }
-
-  .project-tile strong {
-    max-width: 112px;
-  }
-
-  .project-tile div > span {
-    font-size: 11px;
   }
 
   .stats-grid {
@@ -1897,61 +2207,58 @@ kbd {
     font-size: 11px;
   }
 
-  .local-note {
-    gap: 4px;
-    padding-left: 0;
-  }
-
-  .local-note span {
-    font-size: 11px;
-  }
-
   .filter-count {
     font-size: 12px;
   }
 }
 
 @media (width <= 900px) {
+  /* Narrow screens: the sidebar becomes a labelled drawer over the content, opened from the
+     top bar. Closed, it is hidden (and out of the tab order) so the content keeps the full width. */
+  .app, .app.sidebar-compact {
+    --sidebar-width: 0px;
+  }
+
   .sidebar {
-    align-items: center;
-    width: 65px;
-    padding: 24px 9px 0;
+    visibility: hidden;
+    width: min(280px, 85vw);
+    box-shadow: var(--shadow);
+    transition: transform .18s, visibility .18s;
+    transform: translateX(-100%);
   }
 
-  .brand {
-    padding: 0;
+  .nav-open .sidebar {
+    visibility: visible;
+    transform: none;
   }
 
-  .brand-wordmark, .brand .alpha, .project-tile, .nav-label, .nav-item > span, .sidebar-bottom, .unavailable {
+  .sidebar-backdrop {
+    z-index: 24;
+    background: #0008;
+    display: block;
+    position: fixed;
+    inset: 0;
+  }
+
+  .sidebar-toggle {
     display: none;
   }
 
-  /* The wordmark would be unreadable at this width; the compact mark carries the identity. */
-  .brand-compact {
-    margin-bottom: 33px;
+  .sidebar-close {
+    display: grid;
+  }
+
+  .nav-toggle {
+    margin-right: 6px;
     display: inline-flex !important;
   }
 
-  .nav-item {
-    padding: 13px 14px;
+  .topbar {
+    justify-content: flex-start;
   }
 
-  .nav-item.active:before {
-    left: -9px;
-  }
-
-  .workspace-shell {
-    width: calc(100% - 65px);
-    margin-left: 65px;
-  }
-
-  .sidebar nav {
-    width: 100%;
-  }
-
-  .sidebar .nav-item svg {
-    width: 18px;
-    height: 18px;
+  .topbar-actions {
+    margin-left: auto;
   }
 
   .topbar {
@@ -5711,4 +6018,45 @@ kbd {
     display: block;
     overflow-x: auto;
   }
+}
+
+/* M21: Tools for the project opened from the terminal explains the Hub context first. */
+.launch-tools {
+  flex-direction: column;
+  gap: 18px;
+  max-width: 900px;
+  display: flex;
+}
+
+.launch-tools .surface {
+  flex-direction: column;
+  gap: 16px;
+  display: flex;
+}
+
+.launch-tools-list {
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+}
+
+.launch-tools-list li {
+  align-items: flex-start;
+  gap: 10px;
+  display: flex;
+}
+
+.launch-tools-list li > svg {
+  color: var(--accent-text);
+  margin-top: 2px;
+}
+
+.launch-tools-list li > span {
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  display: flex;
 }

@@ -164,7 +164,7 @@ describe('Resource explorer', () => {
     }));
     app();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Drift' }));
+    await user.click(await screen.findByRole('button', { name: 'Drift detection' }));
     expect(await screen.findByRole('heading', { name: 'Drift detection' })).toBeInTheDocument();
     expect(await screen.findByText('No drift scans yet')).toBeInTheDocument();
     expect(posts).toEqual([]);

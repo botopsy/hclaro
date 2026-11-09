@@ -18,7 +18,7 @@ type ToolInfo = {
 };
 
 // The argv here is for display; the server builds the real one from the tool name.
-const tools: ToolInfo[] = [{
+export const tools: ToolInfo[] = [{
   name: 'validate',
   title: 'Validate',
   icon: FileCheck2,
