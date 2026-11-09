@@ -106,3 +106,9 @@ var (
 //
 //go:embed aws/*.json
 var AWS embed.FS
+
+// CostInfracost is a synthetic Infracost v0.10 `breakdown --format json` report for the
+// all-actions plan (M17). Prices are illustrative; a canary sits in one component name.
+//
+//go:embed cost/infracost-breakdown.json
+var CostInfracost []byte

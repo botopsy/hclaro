@@ -1,0 +1,376 @@
+{
+  "estimate": {
+    "artifactDigest": "\u003cdigest\u003e",
+    "basis": "monthly, 730 hours",
+    "breakdown": {
+      "addedMonthly": "0.00",
+      "caveats": [
+        {
+          "code": "not_a_bill",
+          "message": "Estimates use public list prices and a 730-hour month. They exclude discounts, savings plans, reserved capacity, credits, free tiers, taxes and support plans, and are not your cloud bill."
+        },
+        {
+          "code": "not_estimated",
+          "count": 2,
+          "message": "Some changed resources have no estimate (unsupported resource types or missing prices). They are not counted as zero cost."
+        },
+        {
+          "code": "usage_based",
+          "count": 2,
+          "message": "Usage-based charges (requests, data transfer, storage growth and similar) are not priced: no usage file is used. Affected totals cover fixed charges only."
+        },
+        {
+          "code": "free",
+          "count": 3,
+          "message": "Some changed resources have no direct price according to the provider (for example IAM objects). Related usage can still cost money."
+        },
+        {
+          "code": "forget",
+          "count": 1,
+          "message": "Forgotten resources are removed from state only; they keep running and billing."
+        },
+        {
+          "code": "unattributed",
+          "count": 1,
+          "message": "The provider priced items that do not match an address of this plan. They are left out of every amount shown here."
+        }
+      ],
+      "changedDelta": "9.89",
+      "coverage": {
+        "changed": 9,
+        "costBearing": 6,
+        "estimated": 2,
+        "free": 3,
+        "notEstimated": 2,
+        "partial": 1,
+        "percent": 50,
+        "unsupported": 0,
+        "unsupportedTypes": {},
+        "usageUnknown": 1
+      },
+      "currency": "USD",
+      "items": [
+        {
+          "action": "replace",
+          "address": "module.compute.aws_instance.main[0]",
+          "components": [
+            {
+              "monthlyCost": "15.18",
+              "monthlyQuantity": "730",
+              "name": "Instance usage (Linux/UNIX, on-demand, t3.small)",
+              "price": "0.0208",
+              "unit": "hours"
+            },
+            {
+              "monthlyCost": "0.80",
+              "monthlyQuantity": "8",
+              "name": "Storage (general purpose SSD, gp2)",
+              "price": "0.1",
+              "unit": "GB"
+            }
+          ],
+          "delta": "7.59",
+          "monthly": "15.98",
+          "pastMonthly": "8.39",
+          "resourceType": "aws_instance",
+          "status": "estimated",
+          "unpricedComponents": 0
+        },
+        {
+          "action": "update",
+          "address": "aws_db_instance.primary",
+          "components": [
+            {
+              "monthlyCost": "12.41",
+              "monthlyQuantity": "730",
+              "name": "Database instance (on-demand, Single-AZ, db.t3.micro)",
+              "price": "0.017",
+              "unit": "hours"
+            },
+            {
+              "monthlyCost": "4.60",
+              "monthlyQuantity": "40",
+              "name": "Storage (general purpose SSD, gp2)",
+              "price": "0.115",
+              "unit": "GB"
+            },
+            {
+              "monthlyCost": null,
+              "monthlyQuantity": null,
+              "name": "[withheld]",
+              "price": null,
+              "unit": "GB",
+              "usageBased": true
+            }
+          ],
+          "delta": "2.30",
+          "monthly": "17.01",
+          "pastMonthly": "14.71",
+          "resourceType": "aws_db_instance",
+          "status": "partial",
+          "unpricedComponents": 2
+        },
+        {
+          "action": "replace",
+          "address": "module.compute.module.workers[\"blue.eu\"].aws_instance.node[\"quote\\\"key\"]",
+          "components": [
+            {
+              "monthlyCost": "7.59",
+              "monthlyQuantity": "730",
+              "name": "Instance usage (Linux/UNIX, on-demand, t3.micro)",
+              "price": "0.0104",
+              "unit": "hours"
+            },
+            {
+              "monthlyCost": "0.80",
+              "monthlyQuantity": "8",
+              "name": "Storage (general purpose SSD, gp2)",
+              "price": "0.1",
+              "unit": "GB"
+            }
+          ],
+          "delta": "0.00",
+          "monthly": "8.39",
+          "pastMonthly": "8.39",
+          "resourceType": "aws_instance",
+          "status": "estimated",
+          "unpricedComponents": 0
+        },
+        {
+          "action": "delete",
+          "address": "aws_iam_role.legacy",
+          "components": [],
+          "delta": null,
+          "monthly": null,
+          "pastMonthly": null,
+          "resourceType": "aws_iam_role",
+          "status": "free",
+          "unpricedComponents": 0
+        },
+        {
+          "action": "unknown",
+          "address": "aws_lb.edge",
+          "components": [],
+          "delta": null,
+          "monthly": null,
+          "note": "Unrecognized action; no estimate.",
+          "pastMonthly": null,
+          "resourceType": "aws_lb",
+          "status": "not_estimated",
+          "unpricedComponents": 0
+        },
+        {
+          "action": "create",
+          "address": "aws_s3_bucket.logs",
+          "components": [
+            {
+              "monthlyCost": null,
+              "monthlyQuantity": null,
+              "name": "Storage",
+              "price": "0.0245",
+              "unit": "GB",
+              "usageBased": true
+            },
+            {
+              "monthlyCost": null,
+              "monthlyQuantity": null,
+              "name": "PUT, COPY, POST, LIST requests",
+              "price": "0.0054",
+              "unit": "1k requests",
+              "usageBased": true
+            }
+          ],
+          "delta": null,
+          "monthly": null,
+          "pastMonthly": null,
+          "resourceType": "aws_s3_bucket",
+          "status": "usage_unknown",
+          "unpricedComponents": 2
+        },
+        {
+          "action": "update",
+          "address": "aws_security_group.web",
+          "components": [],
+          "delta": null,
+          "monthly": null,
+          "pastMonthly": null,
+          "resourceType": "aws_security_group",
+          "status": "free",
+          "unpricedComponents": 0
+        },
+        {
+          "action": "update",
+          "address": "module.network.aws_subnet.main[0]",
+          "components": [],
+          "delta": null,
+          "monthly": null,
+          "pastMonthly": null,
+          "resourceType": "aws_subnet",
+          "status": "free",
+          "unpricedComponents": 0
+        },
+        {
+          "action": "forget",
+          "address": "random_password.unused",
+          "components": [],
+          "delta": null,
+          "monthly": null,
+          "note": "Removed from state only: the object keeps running and billing outside this configuration.",
+          "pastMonthly": null,
+          "resourceType": "random_password",
+          "status": "not_estimated",
+          "unpricedComponents": 0
+        }
+      ],
+      "monthlyDelta": "9.89",
+      "pastMonthly": "31.49",
+      "projectedMonthly": "41.39",
+      "removedMonthly": "0.00",
+      "truncated": false,
+      "types": [
+        {
+          "count": 1,
+          "delta": "2.30",
+          "estimated": 1,
+          "notEstimated": 0,
+          "resourceType": "aws_db_instance"
+        },
+        {
+          "count": 1,
+          "delta": null,
+          "estimated": 0,
+          "notEstimated": 0,
+          "resourceType": "aws_iam_role"
+        },
+        {
+          "count": 2,
+          "delta": "7.59",
+          "estimated": 2,
+          "notEstimated": 0,
+          "resourceType": "aws_instance"
+        },
+        {
+          "count": 1,
+          "delta": null,
+          "estimated": 0,
+          "notEstimated": 1,
+          "resourceType": "aws_lb"
+        },
+        {
+          "count": 1,
+          "delta": null,
+          "estimated": 0,
+          "notEstimated": 1,
+          "resourceType": "aws_s3_bucket"
+        },
+        {
+          "count": 1,
+          "delta": null,
+          "estimated": 0,
+          "notEstimated": 0,
+          "resourceType": "aws_security_group"
+        },
+        {
+          "count": 1,
+          "delta": null,
+          "estimated": 0,
+          "notEstimated": 0,
+          "resourceType": "aws_subnet"
+        },
+        {
+          "count": 1,
+          "delta": null,
+          "estimated": 0,
+          "notEstimated": 1,
+          "resourceType": "random_password"
+        }
+      ]
+    },
+    "cancelRequested": false,
+    "engine": "terraform",
+    "fingerprint": "\u003cfingerprint\u003e",
+    "finishedAt": "2026-11-09T09:00:00Z",
+    "id": "00000000000000000000000000000003",
+    "planId": "00000000000000000000000000000002",
+    "pricingSource": "pricing.api.infracost.io",
+    "provider": "infracost",
+    "providerVersion": "0.10.39",
+    "stale": false,
+    "startedAt": "2026-11-09T09:00:00Z",
+    "status": "completed",
+    "workspace": "demo"
+  },
+  "providerOff": {
+    "provider": "infracost",
+    "state": "off",
+    "installed": true,
+    "enabled": false,
+    "canEstimate": false,
+    "reason": "Cost estimation is off. Review the data disclosure and turn it on for this session first.",
+    "strictLocal": false,
+    "offlineAvailable": false,
+    "disclosure": {
+      "provider": "infracost",
+      "providerName": "Infracost CLI",
+      "version": "1",
+      "externalCalls": true,
+      "offline": false,
+      "endpoint": "pricing.api.infracost.io",
+      "reads": [
+        "A minimized copy of the reviewed plan, written to a private temporary file (owner-only) for the duration of the estimate and deleted afterwards.",
+        "Infracost's own configuration: its API key and, if you set one, a custom pricing endpoint and currency."
+      ],
+      "sentOffDevice": [
+        "Price lookups to the pricing API: cloud provider, region, resource type and the attributes that select a price (for example instance type, storage size or database engine).",
+        "Infracost can add its own run metadata (CLI version, operating system, resource counts) to these requests. Hclaro switches off update checks, Infracost Cloud uploads and the dashboard, but cannot inspect what the CLI sends."
+      ],
+      "neverSent": [
+        "State, state outputs, plan outputs and variable values.",
+        "Values marked sensitive, attributes with secret-like names, and credential-shaped or random-looking strings: they are removed before the file is written.",
+        "Tags, descriptions, policies, user data, scripts and other free text; module sources and provider arguments other than the region.",
+        "Cloud credentials: the CLI gets no AWS, Azure, Google or Terraform Cloud variables, and no execution profile environment.",
+        "Project paths and file names."
+      ],
+      "authentication": "Infracost's own API key, which the Infracost CLI reads from INFRACOST_API_KEY or from its credentials file (`infracost auth login`). Hclaro never asks for, shows or stores it.",
+      "storage": "Small aggregate totals (amounts, currency, coverage, time, workspace and plan ID; no addresses or line items) are saved locally in cost-estimates.json in Hclaro's configuration folder. You can clear them.",
+      "documentation": "https://www.infracost.io/docs/faq/"
+    }
+  },
+  "providerReady": {
+    "provider": "infracost",
+    "state": "ready",
+    "installed": true,
+    "enabled": true,
+    "canEstimate": true,
+    "cliVersion": "0.10.39",
+    "optedInAt": "2026-11-09T09:00:00Z",
+    "strictLocal": false,
+    "offlineAvailable": false,
+    "disclosure": {
+      "provider": "infracost",
+      "providerName": "Infracost CLI",
+      "version": "1",
+      "externalCalls": true,
+      "offline": false,
+      "endpoint": "pricing.api.infracost.io",
+      "reads": [
+        "A minimized copy of the reviewed plan, written to a private temporary file (owner-only) for the duration of the estimate and deleted afterwards.",
+        "Infracost's own configuration: its API key and, if you set one, a custom pricing endpoint and currency."
+      ],
+      "sentOffDevice": [
+        "Price lookups to the pricing API: cloud provider, region, resource type and the attributes that select a price (for example instance type, storage size or database engine).",
+        "Infracost can add its own run metadata (CLI version, operating system, resource counts) to these requests. Hclaro switches off update checks, Infracost Cloud uploads and the dashboard, but cannot inspect what the CLI sends."
+      ],
+      "neverSent": [
+        "State, state outputs, plan outputs and variable values.",
+        "Values marked sensitive, attributes with secret-like names, and credential-shaped or random-looking strings: they are removed before the file is written.",
+        "Tags, descriptions, policies, user data, scripts and other free text; module sources and provider arguments other than the region.",
+        "Cloud credentials: the CLI gets no AWS, Azure, Google or Terraform Cloud variables, and no execution profile environment.",
+        "Project paths and file names."
+      ],
+      "authentication": "Infracost's own API key, which the Infracost CLI reads from INFRACOST_API_KEY or from its credentials file (`infracost auth login`). Hclaro never asks for, shows or stores it.",
+      "storage": "Small aggregate totals (amounts, currency, coverage, time, workspace and plan ID; no addresses or line items) are saved locally in cost-estimates.json in Hclaro's configuration folder. You can clear them.",
+      "documentation": "https://www.infracost.io/docs/faq/"
+    }
+  }
+}

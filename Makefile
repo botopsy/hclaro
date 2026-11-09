@@ -26,7 +26,7 @@ lint:
 	npm --prefix web run typecheck
 	npm --prefix web run lint
 fmt:
-	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fixture-http scripts/hub-demo
+	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fake-infracost scripts/fixture-http scripts/hub-demo
 
 bin/mock/terraform$(EXE): scripts/fake-engine/main.go fixtures/state.json
 	go build -trimpath -buildvcs=false -o bin/mock/terraform$(EXE) ./scripts/fake-engine
@@ -39,7 +39,11 @@ bin/mock/tofu$(EXE): scripts/fake-engine/main.go fixtures/state.json
 bin/mock/aws$(EXE): scripts/fake-aws/main.go $(wildcard fixtures/aws/*.json)
 	go build -trimpath -buildvcs=false -o bin/mock/aws$(EXE) ./scripts/fake-aws
 
-demo: binary bin/mock/terraform$(EXE) bin/mock/aws$(EXE)
+# A synthetic Infracost CLI for cost estimates (M17); no pricing API is contacted.
+bin/mock/infracost$(EXE): scripts/fake-infracost/main.go fixtures/cost/infracost-breakdown.json
+	go build -trimpath -buildvcs=false -o bin/mock/infracost$(EXE) ./scripts/fake-infracost
+
+demo: binary bin/mock/terraform$(EXE) bin/mock/aws$(EXE) bin/mock/infracost$(EXE)
 	PATH="$(CURDIR)/bin/mock:$$PATH" TF_DATA_DIR="$(CURDIR)/fixtures/backend" HCLARO_CONFIG_DIR="$(CURDIR)/.cache/demo/config" ./bin/hclaro$(EXE) --engine terraform --path fixtures/project --no-browser
 
 # Synthetic Hub projects and a registry under .cache/hub-demo; the real registry is untouched.

@@ -12,7 +12,7 @@ const {chromium}=await import(pathToFileURL(path.join(modules,'playwright/index.
 const browser=await chromium.launch({headless:true,...(process.env.HCLARO_CHROME ? {executablePath:process.env.HCLARO_CHROME} : {}),args:['--no-sandbox','--disable-background-networking','--disable-component-update']})
 const token='a'.repeat(64), host='http://127.0.0.1:9273', canary='DO_NOT_LEAK_HCLARO_TEST_SECRET'
 const errors=[],consoleOutput=[],external=[]
-let large=false,importReview=false,gitMode=false,discoveryMode=false
+let large=false,importReview=false,gitMode=false,discoveryMode=false,costMode=false
 // A disposable synthetic Git repository for the Git view (setup only; Hclaro itself never writes to Git).
 const gitFixture=path.resolve('.cache/git-fixture')
 await fs.rm(gitFixture,{recursive:true,force:true})
@@ -29,7 +29,7 @@ await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:host
 await context.route('**/*',async route=>{
  const req=route.request(),url=new URL(req.url())
  if(url.origin!==host){external.push(url.origin);await route.abort();return}
- const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':'',HCLARO_FIXTURE_IMPORT:importReview?'1':'',HCLARO_FIXTURE_GIT:gitMode?gitFixture:'',HCLARO_FIXTURE_DISCOVERY:discoveryMode?'1':''},maxBuffer:8<<20}))
+ const response=JSON.parse(execFileSync(path.resolve('bin/fixture-http'+(process.platform==='win32'?'.exe':'')),{input:JSON.stringify({Method:req.method(),Path:url.pathname+url.search,Headers:req.headers(),Body:req.postData()||''}),env:{...process.env,HCLARO_FIXTURE_LARGE:large?'1':'',HCLARO_FIXTURE_IMPORT:importReview?'1':'',HCLARO_FIXTURE_GIT:gitMode?gitFixture:'',HCLARO_FIXTURE_DISCOVERY:discoveryMode?'1':'',HCLARO_FIXTURE_COST:costMode?'1':''},maxBuffer:8<<20}))
  const body=Buffer.from(response.body,'base64')
  if(url.pathname.startsWith('/api/')) assert(!body.includes(Buffer.from(canary)),'secret crossed actual API boundary')
  const headers=Object.fromEntries(Object.entries(response.headers).map(([k,v])=>[k,v.join(', ')]))
@@ -132,6 +132,31 @@ try{
  await page.getByText('Destroy the existing object, then create a replacement.').waitFor()
  assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in plan review')
  await page.screenshot({path:'docs/screenshots/plans-dark.png',fullPage:true})
+ // M17: the Cost tab is off until the disclosure is accepted; a completed estimate shows
+ // coverage and caveats, and unpriced resources carry labels, not amounts.
+ await page.getByRole('tab',{name:'Cost estimate'}).click()
+ await page.getByRole('heading',{name:'Cost estimation is off'}).waitFor()
+ assert.equal(await page.getByRole('button',{name:/Estimate cost/}).count(),0,'estimate offered before opt-in')
+ await page.getByRole('button',{name:/Review data disclosure/}).click()
+ const disclosure=page.getByRole('dialog',{name:/Infracost CLI/})
+ await disclosure.getByText(/This calls an external pricing API/).waitFor()
+ assert(await disclosure.getByRole('button',{name:'Turn on for this session'}).isDisabled(),'opt-in enabled before consent')
+ await page.screenshot({path:'docs/screenshots/cost-disclosure-dark.png'})
+ await page.keyboard.press('Escape')
+ await disclosure.waitFor({state:'detached'})
+ costMode=true
+ await page.reload()
+ await page.getByRole('button',{name:'Plans',exact:true}).click()
+ await page.getByRole('tab',{name:'Cost estimate'}).click()
+ await page.getByText('+9.89 USD / month').waitFor()
+ await page.getByText(/Covers 3 of 6 cost-bearing changes \(50%\)/).waitFor()
+ const costText=await page.locator('body').innerText()
+ assert(!costText.includes(canary)&&!costText.includes('aws_nat_gateway.ghost'),'secret or unattributed item rendered in cost estimate')
+ await page.screenshot({path:'docs/screenshots/cost-estimate-dark.png',fullPage:true})
+ costMode=false
+ await page.reload()
+ await page.getByRole('button',{name:'Plans',exact:true}).click()
+ await page.getByText(/11 resource changes and 4 output changes/).waitFor()
  await page.getByRole('button',{name:'Run plan',exact:true}).first().click()
  await page.getByRole('dialog',{name:'Run a plan'}).waitFor()
  await page.screenshot({path:'docs/screenshots/plan-preflight-dark.png'})
@@ -240,6 +265,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/changes/redacted diff/editor link/source reference/plan source, cloud discovery verification/scan preview/labels/redaction/prepared import, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/changes/redacted diff/editor link/source reference/plan source, cloud discovery verification/scan preview/labels/redaction/prepared import, cost estimate opt-in gate/disclosure/coverage/redaction, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

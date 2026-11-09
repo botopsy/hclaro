@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"hclaro/internal/api"
+	"hclaro/internal/cost"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
@@ -36,6 +37,9 @@ type Options struct {
 	Hub, PathSet bool
 	// ExportHistory writes the redacted operation history to a new file and exits.
 	ExportHistory string
+	// StrictLocal refuses features that send data to a third-party service; today that is
+	// cost estimation (M17).
+	StrictLocal bool
 }
 
 func Parse(args []string, output io.Writer) (Options, error) {
@@ -48,6 +52,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.BoolVar(&o.NoBrowser, "no-browser", false, "Print URL without opening a browser")
 	flags.BoolVar(&o.Version, "version", false, "Print version and exit")
 	flags.BoolVar(&o.Hub, "hub", false, "Open the Workspace Hub; the current directory is not read unless --path is given")
+	flags.BoolVar(&o.StrictLocal, "strict-local", false, "Strict local-only mode: disable features that send data to third-party services (cost estimation)")
 	flags.StringVar(&o.ExportHistory, "export-history", "", "Write the redacted operation history to a new .json or .md `file` and exit")
 	flags.Usage = func() {
 		fmt.Fprintln(output, "Hclaro — local Terraform & OpenTofu explorer\n\nUsage: hclaro [flags]\n\nRun inside a Terraform/OpenTofu root to open it; elsewhere, or with --hub, the Workspace\nHub opens with your registered projects.")
@@ -207,6 +212,13 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager.IdentityProbe = preflight.AWSIdentity
 	// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
 	manager.Discovery = discovery.New(discovery.Exec{})
+	// Cost estimation (M17): off until the user opts in after the disclosure; never in
+	// strict local-only mode. Only sanitized aggregates are saved in the config folder.
+	manager.Cost = cost.New(cost.Exec{}, o.StrictLocal)
+	if dir, err := projects.ConfigDir(); err == nil {
+		manager.Cost.Store = cost.OpenStore(dir)
+	}
+	cost.SweepStale("", time.Now())
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
 	}
@@ -265,6 +277,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	// A running plan or init is interrupted and its private temp files removed before exit.
 	manager.Close(20 * time.Second)
 	manager.Discovery.Close(5 * time.Second)
+	manager.Cost.Close(5 * time.Second)
 	hub.Inits.Close(20 * time.Second)
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()

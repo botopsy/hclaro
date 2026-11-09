@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"hclaro/fixtures"
 	"hclaro/internal/api"
+	"hclaro/internal/cost"
+	"hclaro/internal/cost/costtest"
 	"hclaro/internal/discovery"
 	"hclaro/internal/discovery/discoverytest"
 	"hclaro/internal/engine"
@@ -123,6 +125,32 @@ func main() {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 			if current, _, _ := manager.Operation(op.ID); current.Status != operations.Running {
 				break
+			}
+		}
+	}
+	// Cost estimation answers from the synthetic Infracost report; no process or network.
+	// It is off, as in a new session, unless HCLARO_FIXTURE_COST=1 opts in and estimates the
+	// plan with deterministic IDs before handling the request.
+	costs := cost.New(costtest.New(), false)
+	costs.Environ = func() []string { return []string{"PATH=/usr/bin"} }
+	costs.Now = func() time.Time { return time.Date(2026, 11, 9, 9, 5, 0, 0, time.UTC) }
+	costID := 0
+	costs.NewID = func() string { costID++; return fmt.Sprintf("%032x", 0xc000+costID) }
+	costs.TempDir = temp
+	manager.Cost = costs
+	defer costs.Close(5 * time.Second)
+	if os.Getenv("HCLARO_FIXTURE_COST") == "1" {
+		if _, err := costs.OptIn(context.Background(), cost.DisclosureVersion); err == nil {
+			if plans := manager.Plans(); len(plans) > 0 {
+				p := plans[0]
+				input, _ := manager.CostInput(p.ID)
+				if est, err := costs.Start(cost.Input{Binding: cost.Binding{PlanID: p.ID, ArtifactSHA256: p.ArtifactSHA256, Fingerprint: p.Fingerprint, Engine: p.Engine, Workspace: p.Workspace}, Document: input, Changes: cost.ChangesOf(p.Review)}); err == nil {
+					for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+						if e, _, _ := costs.Get(est.ID); e.Status != cost.Running {
+							break
+						}
+					}
+				}
 			}
 		}
 	}
