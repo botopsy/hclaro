@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "retention": {"maxEntries": 500, "maxAgeDays": 90, "maxBytes": 4194304, "archive": true},
+  "entries": [
+    {"id": "00000000000000000000000000000001", "kind": "plan", "status": "succeeded", "startedAt": "2026-11-05T10:00:00Z", "labels": ["future"]}
+  ]
+}

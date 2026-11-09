@@ -702,9 +702,31 @@ func TestSweepStale(t *testing.T) {
 	}
 }
 
+func TestStoreNeverReplacesANewerFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cost-estimates.json")
+	newer := `{"version":2,"records":[{"id":"future","extra":true}]}`
+	if err := os.WriteFile(path, []byte(newer), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := cost.OpenStore(dir)
+	if got := store.List("x"); len(got) != 0 {
+		t.Fatalf("records = %v", got)
+	}
+	if err := store.Add(cost.AggregateRecord{ID: "1", ProjectKey: "x", Currency: "USD"}); !errors.Is(err, cost.ErrNewerStore) {
+		t.Fatalf("add over a newer file: %v", err)
+	}
+	if n, err := store.Clear("x"); n != 0 || err != nil {
+		t.Fatal(n, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != newer {
+		t.Fatal("newer cost-estimates.json replaced")
+	}
+}
+
 func TestStoreIgnoresUnreadableFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "cost-estimates.json"), []byte(`{"version":9,"records":[]}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "cost-estimates.json"), []byte(`{"version":1,"records":[{"unknown":1}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store := cost.OpenStore(dir)

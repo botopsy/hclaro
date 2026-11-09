@@ -239,7 +239,7 @@ func TestMigrationUpgradesOlderSchema(t *testing.T) {
 		return json.Marshal(doc)
 	}}
 	s := OpenWith(dir, t0, migrations)
-	if status, notice, _ := s.Status(); status != Ready || notice != "" {
+	if status, notice, _ := s.Status(); status != Ready || !strings.Contains(notice, "upgraded from schema 0 to schema 1") {
 		t.Fatal(status, notice)
 	}
 	e, ok := s.Get(id(1))

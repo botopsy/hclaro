@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "projects": [
+    {"id": "0123456789abcdef0123456789abcdef", "alias": "network", "root": {"path": "/future/layout"}, "tags": ["prod"]}
+  ]
+}

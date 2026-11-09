@@ -1,10 +1,12 @@
 package cost
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -75,24 +77,39 @@ func aggregateOf(e CostEstimate, in Input) AggregateRecord {
 	}
 }
 
+// ErrNewerStore refuses to replace a file written by a newer Hclaro.
+var ErrNewerStore = errors.New("saved estimates were written by a newer Hclaro and are left unchanged")
+
 // read returns the records on disk. A missing, oversized or unreadable file is empty; it is
-// replaced on the next write.
-func (s *AggregateStore) read() []AggregateRecord {
+// replaced on the next write. A file from a newer schema is also shown as empty, but newer
+// reports it so that it is never replaced.
+func (s *AggregateStore) read() (records []AggregateRecord, newer bool) {
 	f, err := os.Open(s.path)
 	if err != nil {
-		return []AggregateRecord{}
+		return []AggregateRecord{}, false
 	}
 	defer f.Close()
-	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() || info.Size() > maxStoreFile {
-		return []AggregateRecord{}
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxStoreFile {
+		return []AggregateRecord{}, false
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxStoreFile+1))
+	if err != nil {
+		return []AggregateRecord{}, false
+	}
+	var version struct {
+		Version int `json:"version"`
+	}
+	if json.Unmarshal(b, &version) == nil && version.Version > storeVersion {
+		return []AggregateRecord{}, true
 	}
 	var doc storeDoc
-	dec := json.NewDecoder(f)
+	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if dec.Decode(&doc) != nil || doc.Version != storeVersion || doc.Records == nil {
-		return []AggregateRecord{}
+		return []AggregateRecord{}, false
 	}
-	return doc.Records
+	return doc.Records, false
 }
 
 func (s *AggregateStore) write(records []AggregateRecord) error {
@@ -127,7 +144,11 @@ func (s *AggregateStore) write(records []AggregateRecord) error {
 func (s *AggregateStore) Add(r AggregateRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	records := append(s.read(), r)
+	records, newer := s.read()
+	if newer {
+		return ErrNewerStore
+	}
+	records = append(records, r)
 	if len(records) > maxRecords {
 		records = records[len(records)-maxRecords:]
 	}
@@ -139,7 +160,7 @@ func (s *AggregateStore) List(projectKey string) []AggregateRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := []AggregateRecord{}
-	records := s.read()
+	records, _ := s.read()
 	for i := len(records) - 1; i >= 0; i-- {
 		if records[i].ProjectKey == projectKey {
 			out = append(out, records[i])
@@ -152,7 +173,8 @@ func (s *AggregateStore) List(projectKey string) []AggregateRecord {
 func (s *AggregateStore) Clear(projectKey string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	records := s.read()
+	// A newer file reads as empty, so nothing is removed and it is never written.
+	records, _ := s.read()
 	kept := records[:0]
 	for _, r := range records {
 		if r.ProjectKey != projectKey {

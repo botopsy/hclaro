@@ -23,7 +23,14 @@ This guide takes you from a clean machine to hclaro showing one of your Terrafor
 
    On Windows: `Get-FileHash .\hclaro_<version>_windows_amd64.zip -Algorithm SHA256` and compare with the checksums file.
    Optionally, with the GitHub CLI: `gh attestation verify <archive> -R botopsy/hclaro` checks that the file was built by hclaro's release workflow.
-3. Extract it and put `hclaro` (`hclaro.exe`) somewhere on your `PATH`, for example `~/.local/bin`.
+3. Extract it and put `hclaro` (`hclaro.exe`) in a folder on your `PATH` that only your user can write:
+
+   ```sh
+   mkdir -p ~/.local/bin && tar -xzf hclaro_<version>_<os>_<arch>.tar.gz -C ~/.local/bin hclaro
+   # if needed, add to ~/.zshrc or ~/.bashrc:  export PATH="$HOME/.local/bin:$PATH"
+   ```
+
+   On Windows (PowerShell): `Expand-Archive .\hclaro_<version>_windows_amd64.zip $env:LOCALAPPDATA\Programs\hclaro`, then add that folder to your user `Path` in **Settings → System → About → Advanced system settings → Environment Variables** (user variables, not system). Avoid folders that other users or installers can write to, and do not run Hclaro as root or Administrator.
 4. The binaries are not signed. On macOS, if Gatekeeper blocks the first launch, allow it in **System Settings → Privacy & Security**; on Windows, SmartScreen shows **More info → Run anyway**. Only do this for a binary whose checksum you verified.
 5. Check it: `hclaro --version`.
 
@@ -86,6 +93,14 @@ The sidebar shows the current **project** and **workspace** at the top, then the
 | Plan unavailable | The Plans view says why (for example a remote execution backend). Hclaro plans and applies only locally executed workspaces. |
 
 More cases: [Compatibility and troubleshooting](../README.md#compatibility-and-troubleshooting).
+
+## Upgrade, go back and back up
+
+There is no installer or auto-update: Hclaro never checks for new versions. Watch [GitHub Releases](https://github.com/botopsy/hclaro/releases) (**Watch → Custom → Releases**) and read the changelog in the release notes.
+
+- **Upgrade:** quit every running Hclaro, then repeat steps 1–3 of Option A with the new archive, replacing the old binary.
+- **Go back:** install the older archive the same way. An older Hclaro opens configuration files written by a newer one read-only and never overwrites them; [config-compatibility.md](config-compatibility.md#upgrading-and-going-back) explains how to restore a backup or start fresh.
+- **Back up:** quit Hclaro and copy its configuration folder (see below). It holds no credentials or state, but it does list folder paths, resource addresses and profile names: keep the copy private.
 
 ## Uninstall and clean up
 
