@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 
+	"hclaro/internal/engine"
 	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
 )
@@ -47,7 +48,7 @@ func (h *Hub) execution(p Record, profileID string) (preference string, environ 
 	}
 	environ, err = profiles.Compose(base, resolved)
 	if err != nil {
-		return "", nil, nil, &ProfileRefusal{"unsafe_cli_args", "Inherited TF_CLI_ARGS settings add flags other than -no-color. Restart Hclaro without them."}
+		return "", nil, nil, &ProfileRefusal{"unsafe_cli_args", "Inherited TF_CLI_ARGS settings add flags other than -no-color. " + engine.UnsafeArgsHelp(base)}
 	}
 	c := operations.FromResolved(resolved)
 	preference = profile.Engine

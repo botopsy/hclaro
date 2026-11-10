@@ -24,8 +24,8 @@ const statuses: Record<MatchStatus, { label: string; short: string; icon: Lucide
 const order: MatchStatus[] = ['attribute-different', 'only-left', 'only-right', 'unknown', 'uncomparable', 'same'];
 const statusHelp: Record<MatchStatus, string> = {
   'attribute-different': 'Matched on both sides; at least one visible attribute value differs.',
-  'only-left': 'Recorded only in the left workspace.',
-  'only-right': 'Recorded only in the right workspace.',
+  'only-left': 'Recorded only in the left workspace. Addresses match exactly: a renamed address shows here and as only-right unless a mapping rule pairs them.',
+  'only-right': 'Recorded only in the right workspace. Addresses match exactly: a renamed address shows here and as only-left unless a mapping rule pairs them.',
   unknown: 'No visible difference, but redacted values were not compared, so equality cannot be confirmed.',
   uncomparable: 'Matched by address, but the type, mode or provider differs, or a mapping rule conflicts.',
   same: 'Every compared attribute value is equal, after your rules.'
@@ -326,6 +326,7 @@ function ComparisonResult({ id, copy, compareAgain, canCompare }: { id: string; 
     })}</div>
     <p className="info-line compare-facts"><span>{s.left.managed} managed / {s.left.data} data on the left</span><span>{s.right.managed} managed / {s.right.data} data on the right</span>{s.mapped > 0 && <span>{s.mapped} paired by mapping rules</span>}{s.ignoredAttributes > 0 && <span>{count(s.ignoredAttributes, 'value')} ignored by rules</span>}{s.normalized > 0 && <span>{count(s.normalized, 'value')} equal after substitution</span>}{s.notCompared > 0 && <span><LockKeyhole size={11} />{count(s.notCompared, 'redacted value')} not compared</span>}</p>
     {c.rules.length > 0 && <ul className="rule-hits" aria-label="Rule matches">{c.rules.map((r, i) => <li key={i}><span className="rule-number">{i + 1}</span>{ruleText(r)}<span className="muted">{count(s.ruleHits[i] ?? 0, r.kind === 'map' ? 'address' : 'value', r.kind === 'map' ? 'addresses' : 'values')}{r.kind === 'map' ? ' mapped' : ''}</span></li>)}</ul>}
+    {counts('only-left') > 0 && counts('only-right') > 0 && <p className="info-line" role="note"><ListFilter size={13} />Addresses match exactly. If some of the {counts('only-left')} only-left and {counts('only-right')} only-right rows are the same object under a renamed address, add a <strong>Map renamed address</strong> rule and compare again; rule matches are counted above before you rely on them. <em>Unknown</em> rows are different: they matched, but redacted values were deliberately not compared.</p>}
     {c.warnings.map(w => <div className="plan-warning" key={w} role="note"><TriangleAlert size={15} />{w}</div>)}
     <div className="compare-tabs-row">
      <div className="segmented" role="tablist" aria-label="Comparison views">{(['Resources', 'Modules', 'Providers'] as Tab[]).map(t => <button key={t} role="tab" aria-selected={tab === t} aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</button>)}</div>

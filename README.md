@@ -280,7 +280,7 @@ The review shows:
 - Output changes and changes made outside Terraform/OpenTofu (drift).
 - Metadata: engine, workspace, variable files, plan SHA-256, the Git source (branch, commit, uncommitted IaC files), and a warning when configuration or the source revision changed since the plan.
 
-Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans and applies with status, duration, exit code and their logs; this list is in memory only. Redacted metadata of every operation is also kept in [Operation history](#operation-history).
+Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans and applies with status, duration, exit code and their logs; this list is in memory only (the last 100 operations, logs of the last 10). Redacted metadata of every operation is also kept in [Operation history](#operation-history).
 
 ## Drift detection
 
@@ -331,7 +331,9 @@ Apply stays disabled while anything blocks. Each warning has its own acknowledge
 
 To tune the advisory rules for a project, add `.hclaro/policy.json` (see [`fixtures/preflight/policy.json`](fixtures/preflight/policy.json) and [architecture](docs/architecture.md#apply-preflight)). It is data only (version 1, strict schema); an invalid file blocks applies until fixed, and it cannot relax the built-in blocking checks.
 
-The saved plan is deleted after one apply attempt, whatever the result, and also when it expires, when a newer plan replaces it, and when Hclaro stops. There is no automatic re-plan: if the engine reports the plan as stale, run a new one. After an apply, Hclaro re-reads state and reports the outcome separately from the process status: **applied**, **not applied**, or **uncertain** when an apply failed or was interrupted after starting.
+The saved plan is deleted after one apply attempt, whatever the result, and also when it expires, when a newer plan replaces it, and when Hclaro stops. There is no automatic re-plan: if the engine reports the plan as stale, run a new one. A saved plan stays applicable for 1 hour; a refused apply names the reason (newer plan, expired, no changes, errored/incomplete/deferred/unsupported actions, changed configuration, variable files, engine, workspace, profile or backend, changed saved file, missing approval). A replace plan never uses `-target`: the whole saved plan is applied, including unrelated changes, and zero downtime is never promised.
+
+After an apply, the result lists three things separately: what the **engine** reported (**applied**, **not applied**, or **uncertain** when an apply failed or was interrupted after starting), whether **state** was read again, and **resource health**, which Hclaro never checks (it has no health probe). An engine success whose state read failed is shown as a warning, not a success. An uncertain outcome lists manual checks (state list and a new plan in your terminal, the provider console, any remaining lock) and is never retried; the saved plan is gone.
 
 ## Cloud discovery (AWS)
 
@@ -440,8 +442,8 @@ The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**,
 | Loopback permission denied | Run in an environment permitting listeners on 127.0.0.1. |
 | Plan unavailable | The Plans view states why: remote execution backend, unverified backend type, missing engine or workspace error. An unverified backend usually means a `backend` block that was not initialized: run `init` yourself, then **Read again**. |
 | State locked | Another operation holds the lock. Wait, or investigate with your CLI. Hclaro never force-unlocks. |
-| Plan credentials/network errors | Refresh SSO or credentials in your terminal, check VPN, then run the plan again. |
-| `TF_CLI_ARGS_plan` refused | Remove injected flags other than `-no-color`; they could change what a reviewed plan contains. |
+| Plan credentials/network errors | The message says whether the sign-in expired (refresh SSO), no credentials were found (check the profile or environment) or access was denied (wrong identity or missing permission). Check VPN for network errors, then run the plan again. |
+| `TF_CLI_ARGS_plan` / `TF_CLI_ARGS_apply` refused | The message names the variable and flag names (never values). Unset them in the shell that starts Hclaro and restart it; an execution profile cannot override them. They could change what a reviewed plan contains. |
 | Hub: "TF_DATA_DIR is an absolute path" | Restart Hclaro without `TF_DATA_DIR`, or with a relative value, to read Hub workspaces. |
 | Hub: workspace mismatch | The engine reported a different workspace than the one selected, so nothing was shown. Check that your engine and backend honor `TF_WORKSPACE`. |
 | Hub: registry read-only | The notice says why (unreadable, or written by a newer Hclaro). Fix or move the file named there, then restart. |

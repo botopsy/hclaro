@@ -276,6 +276,21 @@ func Classify(text string) string {
 	return ""
 }
 
+// CredentialKind narrows a "credentials" failure: expired (an expired token or SSO session),
+// missing (no credentials found) or denied (authenticated but refused), or "".
+func CredentialKind(text string) string {
+	lower := strings.ToLower(text)
+	switch {
+	case containsAny(lower, "expiredtoken", "token has expired", "token is expired", "expired token", "sso session", "session has expired", "failed to refresh cached credentials", "sso token"):
+		return "expired"
+	case containsAny(lower, "no valid credential sources", "unable to locate credentials", "could not load credentials", "no credentials", "credentials not found", "could not find default credentials"):
+		return "missing"
+	case containsAny(lower, "access denied", "accessdenied", "forbidden", "unauthorized", "not authorized"):
+		return "denied"
+	}
+	return ""
+}
+
 // boundedTail keeps the last max bytes written; it never fails the writer.
 type boundedTail struct {
 	b   []byte

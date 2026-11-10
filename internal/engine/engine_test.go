@@ -89,6 +89,7 @@ func TestFakeExecutable(t *testing.T) {
 		t.Fatal("cancellation failed")
 	}
 }
+
 // A failed read is classified for the user; the stderr text never leaves the adapter.
 func TestReadFailureIsClassifiedWithoutStderr(t *testing.T) {
 	t.Setenv("HCLARO_TEST_HELPER", "1")

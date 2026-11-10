@@ -59,6 +59,7 @@ describe('Drift', () => {
     expect(within(list).getByText('Not found during scan')).toBeInTheDocument();
     expect(screen.getByText(/data source record/)).toBeInTheDocument();
     expect(screen.queryByText('No drift found')).not.toBeInTheDocument();
+    expect(screen.getByText(/The last 10 scan results are kept in memory for up to 12 hours/)).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(canary);
   });
 
