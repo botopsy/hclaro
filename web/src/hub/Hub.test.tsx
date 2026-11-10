@@ -157,6 +157,20 @@ describe('Workspace Hub', () => {
     expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/resources`);
     expect(await screen.findByRole('button', { name: /dev_logs/ })).toBeInTheDocument();
   });
+  it('offers a separate session only as an optional, copyable command', async () => {
+    stub(listing(projects));
+    app(`/projects/${network}`);
+    const summary = await screen.findByText('Open in a separate session (optional)');
+    expect(summary.closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText("hclaro --path '/infra/network'")).toBeInTheDocument();
+    expect(screen.getByText(/do not coordinate/)).toBeInTheDocument();
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: 'Copy command' }));
+    expect(writeText).toHaveBeenCalledWith("hclaro --path '/infra/network'");
+    expect(await screen.findByText('Command copied')).toBeInTheDocument();
+    expect(calls.filter(c => c.method === 'POST').map(c => c.url)).toEqual([`/api/v1/projects/${network}/inspect`]);
+  });
   it('scopes a workspace view to its own context and never shows the previous one', async () => {
     stub(listing(projects));
     app(`/projects/${network}/workspaces/dev/resources`);

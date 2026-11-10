@@ -371,6 +371,7 @@ export function ProjectView({ id }: { id: string }) {
    <section className="surface"><div className="surface-heading"><div><h2>{current.alias} {productionLike(current.alias) && <ProductionBadge />}</h2><p className="mono">{current.rootPath}</p></div>{current.status === 'ready' ? <div className="hub-actions"><Button size="small" variant="outline" onClick={() => navigate(contextPath(id, toolsWorkspace, 'Tools'))} title={`Validate, format check, providers and outputs. Opens in workspace ${toolsWorkspace}.`}><Wrench size={13} />Project tools</Button><Button size="small" variant={current.initialized ? 'outline' : 'default'} onClick={() => setInitOpen(true)} disabled={!!current.busy && current.busy !== 'init'}><Play size={13} />{current.initialized ? 'Run init again…' : 'Initialize…'}</Button></div> : <FolderOpen size={18} />}</div>
     {current.status === 'ready' && <div className="project-profile"><ContextSelector projectId={id} selection={profile} workspaces={inspection?.workspaces} /></div>}
     <dl className="metadata"><div><dt>Engine</dt><dd>{inspection?.engine ? `${engineName(inspection.engine)} ${inspection.version || ''}` : engineName(current.enginePreference)}</dd></div><div><dt>Initialized</dt><dd>{current.initialized ? 'Yes' : 'Not detected'}</dd></div><div><dt>Backend type</dt><dd>{current.backend}</dd></div><div><dt>Execution mode</dt><dd>{current.executionMode}</dd></div><div><dt>Data directory</dt><dd className="mono">{env?.dataDir || '.terraform'}</dd></div><div><dt>Provider lockfile</dt><dd>{current.providerLock ? 'Present' : 'Not detected'}</dd></div></dl>
+    {current.status === 'ready' && <SeparateSession rootPath={current.rootPath} engine={current.enginePreference} />}
    </section>
    <section aria-labelledby="workspaces-title"><div className="workspace-heading"><h2 className="hub-section" id="workspaces-title">CLI workspaces</h2>{current.status === 'ready' && <><label className="workspace-advanced"><input type="checkbox" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />Advanced actions</label><Button size="small" variant="outline" disabled={!current.workspaceActions?.change || !!current.busy || !inspection || !!inspection.diagnostic} title={current.workspaceActions?.change ? undefined : current.workspaceActions?.reason} onClick={() => setWorkspaceDialog({ action: 'new' })}><Plus size={13} />New workspace…</Button></>}</div>
     {current.status !== 'ready' ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{statusLabel[current.status]}</h2><p>{current.problem}</p><Button variant="outline" onClick={() => navigate('/projects')}>Repair or remove in the Hub</Button></div> : inspect.isPending || inspect.isFetching && !inspection ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Listing workspaces</h2><p>Running <code>workspace list</code> through the local CLI. This may contact the backend. No workspace is selected or created.</p></div> : inspect.error ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>Workspaces unavailable</h2><p>{message(inspect.error)}</p><Button variant="outline" onClick={() => void inspect.refetch()}>Try again</Button></div> : inspection?.diagnostic ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{inspection.diagnostic.code === 'uninitialized' ? 'Initialize this project first' : inspection.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspaces unavailable'}</h2><p>{inspection.diagnostic.code === 'uninitialized' ? 'Backend initialization was not detected. Review and run init here, or run it yourself in a terminal. Nothing was initialized automatically.' : inspection.diagnostic.message}</p>{inspection.diagnostic.code === 'uninitialized' && <Button onClick={() => setInitOpen(true)}><Play size={14} />Review and initialize…</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing was initialized or changed.</span></div> : inspection && inspection.workspaces.length === 0 ? <div className="empty-state"><Layers3 size={24} /><h2>No workspaces listed</h2><p>The CLI returned no workspace names Hclaro can display.</p></div> : inspection && <>
@@ -400,4 +401,22 @@ export function ProjectView({ id }: { id: string }) {
         void client.invalidateQueries({ queryKey: ['projects'] });
       }} onFinished={initFinished} />}
   </div>;
+}
+
+// Windows paths cannot contain a double quote; POSIX paths are single-quoted.
+function shellQuote(path: string) {
+  return /^[A-Za-z]:\\|^\\\\/.test(path) ? `"${path}"` : `'${path.replaceAll("'", `'\\''`)}'`;
+}
+
+// An optional fallback: a second Hclaro process opened from one folder. It is not the Hub's
+// execution path and shares no tabs, approvals or root claims with this session.
+function SeparateSession({ rootPath, engine }: { rootPath: string; engine?: string }) {
+  const [note, setNote] = useState('');
+  const command = `hclaro --path ${shellQuote(rootPath)}${engine === 'terraform' || engine === 'tofu' ? ` --engine ${engine}` : ''}`;
+  return <details className="separate-session">
+   <summary>Open in a separate session (optional)</summary>
+   <p>Starts another Hclaro process for this folder only, pinned to its CLI default workspace. It is an optional fallback; Hub tabs keep their own workspace and profile and are not affected.</p>
+   <p><strong>The two sessions do not coordinate.</strong> Do not plan, apply, init or change workspaces of this folder in both at the same time.</p>
+   <div className="init-command"><code>{command}</code><Button size="small" variant="outline" onClick={() => void navigator.clipboard.writeText(command).then(() => setNote('Command copied'), () => setNote('Clipboard is unavailable. Select and copy the command manually.'))}><Terminal size={13} />Copy command</Button><span className="muted" role="status">{note}</span></div>
+  </details>;
 }

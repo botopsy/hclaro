@@ -3863,6 +3863,20 @@ kbd {
   font-size: 14px;
 }
 
+.separate-session {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.separate-session > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.separate-session .init-command > button {
+  align-self: flex-start;
+}
+
 .init-notices {
   color: var(--warn);
   flex-direction: column;

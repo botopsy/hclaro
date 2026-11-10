@@ -12,6 +12,9 @@ name: CI
 on:
   pull_request:
     branches: [master]
+    # edited: a stacked pull request retargeted to master gets checks without a new push.
+    # Title or description edits also rerun it; the newer run cancels the older one.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [master]
   workflow_dispatch:

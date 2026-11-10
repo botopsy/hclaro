@@ -156,6 +156,7 @@ Choosing a workspace in Hclaro (a row on the project page, the **Workspace** sel
 - `remote`/`cloud` backends, backends without multiple-workspace support, unknown backends and uninitialized projects cannot change workspaces here; the project page says why.
 - If the workspace list or CLI default changes between review and confirmation (for example in a terminal), nothing runs and you review again. One command at a time per project folder, shared with init and plans.
 - The result shows the exit code and the CLI default before and after. If the engine succeeded but workspaces cannot be listed afterwards, the result is **not confirmed**: list workspaces again before repeating anything. Nothing is retried or undone automatically.
+- Optional fallback: **Open in a separate session** on the project page shows `hclaro --path '<folder>'` to copy. That second process reads only that folder in its CLI default workspace and does not coordinate with this session (no shared tabs, approvals or per-folder claims), so do not run plans, applies, init or workspace commands of the same folder in both at once.
 
 ### Project tools
 
