@@ -164,6 +164,11 @@ export type DriftOptions = {
   projectId?: string;
   context?: ExecutionSummary;
   profileError?: string;
+  // Hub workspaces (M24.09): the scope the run is bound to, and the fingerprint to send back.
+  code?: string;
+  scope?: ScopeView;
+  executionContext?: ExecutionContext | null;
+  contextFingerprint?: string;
 };
 // changed: values differ from state; missing: the remote object no longer exists;
 // cannot_verify: values were unknown during the scan; unrecognized: never treated as safe.
@@ -868,6 +873,11 @@ export type GraphOptions = {
   projectId?: string;
   context?: ExecutionSummary;
   profileError?: string;
+  // Hub workspaces (M24.09): the scope the run is bound to, and the fingerprint to send back.
+  code?: string;
+  scope?: ScopeView;
+  executionContext?: ExecutionContext | null;
+  contextFingerprint?: string;
 };
 
 // Workspace comparison (M12). Both sides are recorded state; "different" is never drift.

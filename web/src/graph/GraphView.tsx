@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Boxes, CircleAlert, CircleX, Copy, FileDiff, History, List, LoaderCircle, Maximize, Play, Repeat, Search, ShieldCheck, Target, TriangleAlert, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react';
-import { api, post } from '../api';
+import { api, ApiError, post } from '../api';
 import type { DependencyGraph, GraphImpact, GraphNode, GraphOptions, Operation, PlannedChange, PlanSummary } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
@@ -9,6 +9,8 @@ import { OperationLog } from '../plans/OperationLog';
 import { ActionBadge } from '../plans/PlanReview';
 import { clock, engineLabel } from '../plans/labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
+import { ScopeSummary } from '../plans/PreflightDialog';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 import { internalKinds, layout, moduleAncestors, NODE_H, NODE_W, nodeForAddress, project, typePrefix, type Point, type Projection, type VisEdge, type VisNode } from './layout';
 
 const kindLabels: Record<string, string> = {
@@ -36,6 +38,8 @@ type Focus = { planId: string; address: string };
 type Mode = 'canvas' | 'list';
 
 export function GraphView({
+  scope = launchScope,
+  reopen,
   project: projectName,
   profileId = '',
   workspaceStatus,
@@ -44,6 +48,10 @@ export function GraphView({
   openPlan,
   copy
 }: {
+  // A Hub workspace generates and overlays in its own context only (M24.09); no launch fallback.
+  scope?: PlanScope;
+  // Opens a closed Hub workspace again.
+  reopen?: () => void;
   project: string;
   profileId?: string;
   workspaceStatus?: string;
@@ -59,19 +67,21 @@ export function GraphView({
   const [startError, setStartError] = useState('');
   const [graphId, setGraphId] = useState<string>();
   const [planId, setPlanId] = useState(() => focus?.planId ?? '');
-  const options = useQuery({ queryKey: ['graph-options', workspaceStatus, profileId], queryFn: () => api<GraphOptions>(`graphs/options${profileId ? `?profileId=${profileId}` : ''}`) });
-  const graphs = useQuery({ queryKey: ['graphs', workspaceStatus], queryFn: () => api<{ graphs: DependencyGraph[] }>('graphs') });
-  const plans = useQuery({ queryKey: ['plans'], queryFn: () => api<{ plans: PlanSummary[] }>('plans') });
+  const scoped = scope.kind === 'context';
+  const key = scopeKey(scope);
+  const options = useQuery({ queryKey: ['graph-options', key, workspaceStatus, profileId], queryFn: () => api<GraphOptions>(scoped ? scopedPath(scope, 'graphs/options') : `graphs/options${profileId ? `?profileId=${profileId}` : ''}`) });
+  const graphs = useQuery({ queryKey: ['graphs', key, workspaceStatus], queryFn: () => api<{ graphs: DependencyGraph[] }>(scopedPath(scope, 'graphs')) });
+  const plans = useQuery({ queryKey: ['plans', key], queryFn: () => api<{ plans: PlanSummary[] }>(scopedPath(scope, 'plans')) });
   const operations = useQuery({
-    queryKey: ['operations'],
-    queryFn: () => api<{ operations: Operation[] }>('operations'),
+    queryKey: ['operations', key],
+    queryFn: () => api<{ operations: Operation[] }>(scopedPath(scope, 'operations')),
     refetchInterval: q => q.state.data?.operations.some(o => o.status === 'running') ? 2000 : false
   });
   const running = operations.data?.operations.find(o => o.status === 'running');
   const shownId = graphId ?? graphs.data?.graphs[0]?.id;
   const graph = useQuery({
-    queryKey: ['graph', shownId, planId, workspaceStatus],
-    queryFn: () => api<DependencyGraph>(`graphs/${shownId}${planId ? `?planId=${planId}` : ''}`),
+    queryKey: ['graph', key, shownId, planId, workspaceStatus],
+    queryFn: () => api<DependencyGraph>(scopedPath(scope, `graphs/${shownId}${planId ? `?planId=${planId}` : ''}`)),
     enabled: !!shownId,
     retry: false
   });
@@ -84,7 +94,9 @@ export function GraphView({
     setStarting(true);
     setStartError('');
     try {
-      const started = await post<{ operation: Operation; graph: DependencyGraph }>('graphs', { acknowledgeEngineRun: true, ...(contextFingerprint ? { profileId, contextFingerprint } : {}) });
+      // A Hub workspace's graph is bound to the scope its options described; it takes no profile.
+      const body = scoped ? { acknowledgeEngineRun: true, contextFingerprint: options.data?.contextFingerprint ?? '' } : { acknowledgeEngineRun: true, ...(contextFingerprint ? { profileId, contextFingerprint } : {}) };
+      const started = await post<{ operation: Operation; graph: DependencyGraph }>(scopedPath(scope, 'graphs'), body);
       setPreflight(false);
       setGraphId(started.graph.id);
       await client.invalidateQueries({ queryKey: ['operations'] });
@@ -100,6 +112,7 @@ export function GraphView({
   const latest = graphs.data?.graphs[0];
   const shown = graphs.data?.graphs.find(g => g.id === shownId);
   const planChoices = (plans.data?.plans ?? []).filter(p => !shown || p.workspace === shown.workspace);
+  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{options.error.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing ran.</span></div>;
   return <div className="plans graph-page">
    <div className="plans-toolbar">
     <Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canGenerate} title={running && running.kind !== 'graph' ? 'Another operation is running.' : undefined}><Waypoints size={14} />Generate graph</Button>
@@ -109,9 +122,9 @@ export function GraphView({
    </div>
    <p className="info-line drift-explainer"><ShieldCheck size={13} />Generated with <strong>{options.data?.command.join(' ') || 'graph'}</strong>. Links show what configuration depends on. <strong>Potential impact</strong> is what can be reached through those links; only a plan shows <strong>confirmed planned changes</strong>.</p>
    {workspaceStatus === 'loading' && !running ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace…</div> : options.data && !options.data.canGenerate && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Graphs are unavailable here.</strong> {options.data.reason}</span></div>}
-   {running && running.kind === 'graph' && <OperationLog key={running.id} operation={running} onFinished={finished} />}
+   {running && running.kind === 'graph' && <OperationLog key={running.id} scope={scope} operation={running} onFinished={finished} />}
    {running && running.kind !== 'graph' && <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Another operation is running in this project. Generating a graph is available when it finishes.</div>}
-   {graph.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading graph…</p></div> : graph.error ? <div className="empty-state error-state" role="alert"><p>{graph.error.message}</p>{planId && <Button variant="outline" size="small" onClick={() => setPlanId('')}>Show dependencies without the plan</Button>}</div> : graph.data && graph.data.status !== 'running' ? <GraphResult key={`${graph.data.id}:${planId}`} graph={graph.data} planId={planId} focus={focus} regenerate={() => setPreflight(true)} canGenerate={canGenerate} openResource={openResource} openPlan={openPlan} copy={copy} /> : !running && !shownId && <div className="empty-state"><Waypoints size={30} /><h2>No dependency graph yet</h2><p>Generate a graph to explore how resources, modules and data sources depend on each other. It runs <code>graph</code> only when you ask.</p>{options.data?.canGenerate && <Button variant="outline" onClick={() => setPreflight(true)}><Waypoints size={14} />Generate graph</Button>}</div>}
+   {graph.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading graph…</p></div> : graph.error ? <div className="empty-state error-state" role="alert"><p>{graph.error.message}</p>{planId && <Button variant="outline" size="small" onClick={() => setPlanId('')}>Show dependencies without the plan</Button>}</div> : graph.data && graph.data.status !== 'running' ? <GraphResult key={`${graph.data.id}:${planId}`} scope={scope} graph={graph.data} planId={planId} focus={focus} regenerate={() => setPreflight(true)} canGenerate={canGenerate} openResource={openResource} openPlan={openPlan} copy={copy} /> : !running && !shownId && <div className="empty-state"><Waypoints size={30} /><h2>No dependency graph yet</h2><p>Generate a graph to explore how resources, modules and data sources depend on each other. It runs <code>graph</code> only when you ask.</p>{options.data?.canGenerate && <Button variant="outline" onClick={() => setPreflight(true)}><Waypoints size={14} />Generate graph</Button>}</div>}
    {preflight && options.data && <GraphPreflight options={options.data} project={projectName} busy={starting} error={startError} onConfirm={fp => void start(fp)} onClose={() => { setPreflight(false); setStartError(''); }} />}
   </div>;
 }
@@ -130,7 +143,7 @@ function GraphPreflight({ options, project, busy, error, onConfirm, onClose }: {
      <li><Waypoints size={16} /><span><strong>Reads configuration and provider schemas</strong> from the initialized working directory. It may read state from the {options.backend} backend, using your existing credentials.</span></li>
      <li><ShieldCheck size={16} /><span><strong>Does not plan, refresh, apply or write state.</strong> No flags are passed, and no saved plan is read. Only a redacted summary of the graph is kept, in memory.</span></li>
     </ul>
-    {summary ? <ContextSummary summary={summary} title="The graph will use" /> : options.profileError ? <p className="dialog-error" role="alert">{options.profileError}</p> : <p className="muted">No execution profile: the engine runs with the environment Hclaro was started with.</p>}
+    {summary ? <ContextSummary summary={summary} title="The graph will use" /> : options.scope ? <ScopeSummary scope={options.scope} executionContext={options.executionContext} title="The graph will use" /> : options.profileError ? <p className="dialog-error" role="alert">{options.profileError}</p> : <p className="muted">No execution profile: the engine runs with the environment Hclaro was started with.</p>}
     {error && <p className="dialog-error" role="alert">{error}</p>}
     <div className="dialog-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button ref={confirm} onClick={() => onConfirm(summary?.context.profileId ? summary.context.fingerprint : undefined)} disabled={busy || blocked || !!options.profileError}><Play size={14} />{busy ? 'Starting…' : 'Generate graph'}</Button></div>
    </div>
@@ -145,7 +158,8 @@ function Failure({ graph }: { graph: DependencyGraph }) {
   </section>;
 }
 
-function GraphResult({ graph, planId, focus, regenerate, canGenerate, openResource, openPlan, copy }: {
+function GraphResult({ scope, graph, planId, focus, regenerate, canGenerate, openResource, openPlan, copy }: {
+  scope: PlanScope;
   graph: DependencyGraph;
   planId: string;
   focus?: Focus;
@@ -172,8 +186,8 @@ function GraphResult({ graph, planId, focus, regenerate, canGenerate, openResour
   const query = search.trim().toLowerCase();
   const matches = useMemo(() => query ? view.nodes.filter(n => `${n.label} ${n.node?.type ?? ''} ${n.node?.modulePath ?? ''}`.toLowerCase().includes(query)) : [], [view.nodes, query]);
   const impact = useQuery({
-    queryKey: ['graph-impact', graph.id, selected, planId],
-    queryFn: () => api<GraphImpact>(`graphs/${graph.id}/nodes/${selected}${planId ? `?planId=${planId}` : ''}`),
+    queryKey: ['graph-impact', scopeKey(scope), graph.id, selected, planId],
+    queryFn: () => api<GraphImpact>(scopedPath(scope, `graphs/${graph.id}/nodes/${selected}${planId ? `?planId=${planId}` : ''}`)),
     enabled: !!selected && byId.has(selected) && graph.current,
     retry: false
   });

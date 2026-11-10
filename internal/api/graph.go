@@ -90,31 +90,46 @@ func graphRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations
 		writeJSON(w, 200, map[string]any{"graphs": manager.Graphs()})
 	})
 	mux.HandleFunc("GET /api/v1/graphs/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id, planID := r.PathValue("id"), r.URL.Query().Get("planId")
-		if !idPattern.MatchString(id) || planID != "" && !idPattern.MatchString(planID) {
-			errorJSON(w, 404, "graph_not_found")
-			return
-		}
-		view, err := manager.Graph(id, planID)
-		if err != nil {
-			graphError(w, err)
-			return
-		}
-		writeJSON(w, 200, view)
+		serveGraph(w, r, manager)
 	})
 	mux.HandleFunc("GET /api/v1/graphs/{id}/nodes/{node}", func(w http.ResponseWriter, r *http.Request) {
-		id, node, planID := r.PathValue("id"), r.PathValue("node"), r.URL.Query().Get("planId")
-		if !idPattern.MatchString(id) || !nodePattern.MatchString(node) || planID != "" && !idPattern.MatchString(planID) {
-			errorJSON(w, 404, "node_not_found")
-			return
-		}
-		impact, err := manager.GraphImpact(id, node, planID)
-		if err != nil {
-			graphError(w, err)
-			return
-		}
-		writeJSON(w, 200, impact)
+		serveGraphImpact(w, r, manager)
 	})
+}
+
+// graphSource is the launch manager or a Hub workspace's execution scope. A plan overlay
+// names a plan of the same source only.
+type graphSource interface {
+	Graph(id, planID string) (operations.GraphView, error)
+	GraphImpact(id, node, planID string) (operations.GraphImpact, error)
+}
+
+func serveGraph(w http.ResponseWriter, r *http.Request, src graphSource) {
+	id, planID := r.PathValue("id"), r.URL.Query().Get("planId")
+	if !idPattern.MatchString(id) || planID != "" && !idPattern.MatchString(planID) {
+		errorJSON(w, 404, "graph_not_found")
+		return
+	}
+	view, err := src.Graph(id, planID)
+	if err != nil {
+		graphError(w, err)
+		return
+	}
+	writeJSON(w, 200, view)
+}
+
+func serveGraphImpact(w http.ResponseWriter, r *http.Request, src graphSource) {
+	id, node, planID := r.PathValue("id"), r.PathValue("node"), r.URL.Query().Get("planId")
+	if !idPattern.MatchString(id) || !nodePattern.MatchString(node) || planID != "" && !idPattern.MatchString(planID) {
+		errorJSON(w, 404, "node_not_found")
+		return
+	}
+	impact, err := src.GraphImpact(id, node, planID)
+	if err != nil {
+		graphError(w, err)
+		return
+	}
+	writeJSON(w, 200, impact)
 }
 
 func graphError(w http.ResponseWriter, err error) {

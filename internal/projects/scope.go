@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"hclaro/internal/drift"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/imports"
@@ -268,6 +269,71 @@ func (s *Scope) StartImport(ctx context.Context, req imports.Request, previewSHA
 		return operations.Operation{}, err
 	}
 	return s.manager.StartImport(operations.ImportRequest{Request: req, PreviewSHA256: previewSHA256, VarFiles: varFiles, ProfileID: s.id.profileID, ContextFingerprint: s.id.profileFingerprint})
+}
+
+// reviewedContext refuses a request whose profile fingerprint is not the scope's own.
+func (s *Scope) reviewedContext(reviewed, again string) error {
+	if reviewed != s.id.profileFingerprint {
+		return &operations.RejectError{Code: "context_changed", Reason: "The execution context of this workspace is not the one you reviewed. " + again}
+	}
+	return nil
+}
+
+// DriftCapability reports whether a drift scan can run in this scope and, if not, why.
+func (s *Scope) DriftCapability() (bool, string) { return s.manager.DriftCapability() }
+
+// StartDriftScan starts a refresh-only scan of this workspace only (M24.09). reviewed is the
+// profile fingerprint the user was shown, as for StartReviewedPlan; the scope is revalidated
+// first and again with the root claim held. The scan never writes state and its plan file is
+// never kept or applicable.
+func (s *Scope) StartDriftScan(ctx context.Context, varFiles []string, reviewed string) (operations.Operation, operations.DriftScan, error) {
+	if err := s.reviewedContext(reviewed, "Review the scan options again."); err != nil {
+		return operations.Operation{}, operations.DriftScan{}, err
+	}
+	if err := s.checked(ctx); err != nil {
+		return operations.Operation{}, operations.DriftScan{}, err
+	}
+	return s.manager.StartDriftScan(operations.DriftStart{VarFiles: varFiles, ProfileID: s.id.profileID, ContextFingerprint: s.id.profileFingerprint})
+}
+
+// DriftScans lists this scope's scans, newest first. A scope keeps at most as many scans
+// as the launch project, for as long, and drops them all when it is closed or evicted.
+func (s *Scope) DriftScans() []operations.DriftScanView { return s.manager.DriftScans() }
+
+// DriftScan returns one of this scope's scans; a scan of another scope is not found.
+func (s *Scope) DriftScan(id string) (operations.DriftScanView, bool) { return s.manager.DriftScan(id) }
+
+// DriftDetail returns one resource of one of this scope's current scans.
+func (s *Scope) DriftDetail(id, change string) (drift.Detail, error) {
+	return s.manager.DriftDetail(id, change)
+}
+
+// GraphCapability reports whether a graph can be generated in this scope and, if not, why.
+func (s *Scope) GraphCapability() (bool, string) { return s.manager.GraphCapability() }
+
+// StartGraph runs `graph` for this workspace only (M24.09), after the same checks as
+// StartDriftScan. It never plans, refreshes or applies.
+func (s *Scope) StartGraph(ctx context.Context, reviewed string) (operations.Operation, operations.GraphRun, error) {
+	if err := s.reviewedContext(reviewed, "Review the graph options again."); err != nil {
+		return operations.Operation{}, operations.GraphRun{}, err
+	}
+	if err := s.checked(ctx); err != nil {
+		return operations.Operation{}, operations.GraphRun{}, err
+	}
+	return s.manager.StartGraph(operations.GraphStart{ProfileID: s.id.profileID, ContextFingerprint: s.id.profileFingerprint})
+}
+
+// Graphs lists this scope's graphs, newest first; see DriftScans for retention.
+func (s *Scope) Graphs() []operations.GraphView { return s.manager.Graphs() }
+
+// Graph returns one of this scope's graphs, overlaid with one of this scope's plans.
+func (s *Scope) Graph(id, planID string) (operations.GraphView, error) {
+	return s.manager.Graph(id, planID)
+}
+
+// GraphImpact returns one node's neighbourhood in one of this scope's graphs.
+func (s *Scope) GraphImpact(id, node, planID string) (operations.GraphImpact, error) {
+	return s.manager.GraphImpact(id, node, planID)
 }
 
 // VarFiles lists the variable files of the scope's root that a plan may select.

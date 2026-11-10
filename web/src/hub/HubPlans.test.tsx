@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import golden from '../../../fixtures/plan/all-actions.golden.json';
+import driftGolden from '../../../fixtures/drift/mixed.golden.json';
+import graphGolden from '../../../fixtures/graph/terraform.golden.json';
 import App from '../App';
 import { contextPath, parseRoute } from '../router';
-import type { Operation, Plan, PreflightReport, Project, ProjectList, ScopedPlanOptions, Workspace } from '../types';
+import type { DependencyGraph, DriftScan, Operation, Plan, PreflightReport, Project, ProjectList, ScopedPlanOptions, Workspace } from '../types';
 
 // M24.07: plans and applies of a Hub workspace go only to that workspace's own context.
 const network = 'a'.repeat(32);
@@ -286,5 +288,99 @@ describe('Hub import and replace (M24.08)', { timeout: 20000 }, () => {
     app(contextPath(network, 'dev', 'Resources'));
     await screen.findByText('aws_s3_bucket.b1');
     expect(screen.queryByRole('checkbox', { name: /for replacement/ })).toBeNull();
+  });
+});
+
+describe('Hub drift scans and graphs (M24.09)', { timeout: 20000 }, () => {
+  const scan = { ...(driftGolden.scan as unknown as DriftScan), workspace: 'dev' };
+  const graph = { ...(graphGolden.graph as unknown as DependencyGraph), workspace: 'dev', plan: undefined };
+  const analysisOptions = (cid: string) => ({ engine: 'terraform', version: '1.9.8', workspace: wsOf(cid), backend: 'local', executionMode: 'local-cli', scope: options(cid).scope, executionContext: null, contextFingerprint: '' });
+  // A/dev has one scan and one graph; prod has none. Identical resource addresses in both.
+  function serveAnalysis() {
+    override = (path, method) => {
+      const m = path.match(/^contexts\/([0-9a-f]{32})\/((drift-scans|graphs).*)$/);
+      if (!m) return undefined;
+      const [, cid, rest] = m;
+      const dev = wsOf(cid) === 'dev';
+      if (rest === 'drift-scans/options') return Response.json({ ...analysisOptions(cid), canScan: true, varFiles: [] });
+      if (rest === 'graphs/options') return Response.json({ ...analysisOptions(cid), canGenerate: true, command: ['terraform', 'graph'] });
+      if (rest === 'drift-scans' && method === 'GET') return Response.json({ scans: dev ? [scan] : [] });
+      if (rest === 'graphs' && method === 'GET') return Response.json({ graphs: dev ? [graph] : [] });
+      if (rest === 'drift-scans' && method === 'POST') return Response.json({ operation: { ...finished, kind: 'drift', status: 'running' }, scan }, { status: 202 });
+      if (rest === 'graphs' && method === 'POST') return Response.json({ operation: { ...finished, kind: 'graph', status: 'running' }, graph }, { status: 202 });
+      if (dev && rest === `drift-scans/${scan.id}`) return Response.json(scan);
+      if (dev && rest === `graphs/${graph.id}`) return Response.json(graph);
+      return Response.json({ error: rest.startsWith('graphs') ? 'graph_not_found' : 'scan_not_found' }, { status: 404 });
+    };
+  }
+  const launchAnalysis = () => calls.filter(c => /^\/api\/v1\/(drift-scans|graphs|plans|operations)(\/|$|\?)/.test(c.url));
+
+  it('scans drift in A/dev through its own context only and shows nothing of it in prod', async () => {
+    serveAnalysis();
+    app(contextPath(network, 'dev', 'Drift'));
+    const user = userEvent.setup();
+    expect(await screen.findByLabelText('Scan history')).toBeInTheDocument();
+    // Opening the view runs nothing.
+    expect(calls.filter(c => c.method === 'POST' && c.url !== '/api/v1/contexts')).toEqual([]);
+    await user.click(screen.getAllByRole('button', { name: 'Check drift' })[0]);
+    const dialog = await screen.findByRole('dialog', { name: 'Check drift' });
+    const uses = within(dialog).getByLabelText('This scan will use');
+    expect(uses).toHaveTextContent('/infra/network');
+    expect(uses).toHaveTextContent('dev');
+    await user.click(within(dialog).getByRole('button', { name: 'Check drift' }));
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/drift-scans`)).toBe(true));
+    expect(calls.find(c => c.method === 'POST' && c.url.endsWith('/drift-scans'))!.body).toEqual({ acknowledgeProviderAccess: true, varFiles: [], contextFingerprint: '' });
+
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    expect(window.location.pathname).toBe(`/projects/${network}/workspaces/prod/drift`);
+    expect(await screen.findByText('No drift scans yet')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Scan history')).not.toBeInTheDocument();
+    expect(calls.some(c => c.url.includes(`contexts/${ctx.prod}/drift-scans/${scan.id}`))).toBe(false);
+    expect(launchAnalysis()).toEqual([]);
+  });
+
+  it('generates and shows a graph of A/dev from its own context, with its own plans only', async () => {
+    serveAnalysis();
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    app(contextPath(network, 'dev', 'Graph'));
+    const user = userEvent.setup();
+    expect(await screen.findByLabelText('Graph history')).toBeInTheDocument();
+    await waitFor(() => expect(calls.some(c => c.url === `/api/v1/contexts/${ctx.dev}/graphs/${graph.id}`)).toBe(true));
+    expect(calls.some(c => c.url === `/api/v1/contexts/${ctx.dev}/plans`)).toBe(true);
+    await user.click(screen.getAllByRole('button', { name: 'Generate graph' })[0]);
+    const dialog = await screen.findByRole('dialog', { name: 'Generate dependency graph' });
+    expect(within(dialog).getByLabelText('The graph will use')).toHaveTextContent('/infra/network');
+    await user.click(within(dialog).getByRole('button', { name: 'Generate graph' }));
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/graphs`)).toBe(true));
+    expect(calls.find(c => c.method === 'POST' && c.url.endsWith('/graphs'))!.body).toEqual({ acknowledgeEngineRun: true, contextFingerprint: '' });
+
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    expect(await screen.findByText('No dependency graph yet')).toBeInTheDocument();
+    expect(launchAnalysis()).toEqual([]);
+  });
+
+  it('asks to open a closed workspace again before scanning', async () => {
+    serveAnalysis();
+    const inner = override!;
+    override = (path, method) => path === `contexts/${ctx.dev}/drift-scans/options` ? Response.json({ error: 'context_closed', reason: 'This workspace view is no longer open. Open the workspace again.' }, { status: 404 }) : inner(path, method);
+    app(contextPath(network, 'dev', 'Drift'));
+    expect(await screen.findByRole('heading', { name: 'Open this workspace again' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Check drift' })).not.toBeInTheDocument();
+    expect(launchAnalysis()).toEqual([]);
+  });
+
+  it('keeps drift and graph closed in Hub workspaces while scoped execution is off', async () => {
+    gate = false;
+    serveAnalysis();
+    app(contextPath(network, 'dev', 'Drift'));
+    expect(await screen.findByText('Hub workspaces are read-only in this session')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Drift detection' })).toBeDisabled();
+    expect(calls.some(c => /drift-scans|graphs/.test(c.url))).toBe(false);
+  });
+
+  it('parses drift and graph deep links', () => {
+    expect(parseRoute(`/projects/${network}/workspaces/dev/drift`)).toEqual({ kind: 'context', projectId: network, workspace: 'dev', view: 'Drift' });
+    expect(parseRoute(`/projects/${network}/workspaces/dev/graph`)).toEqual({ kind: 'context', projectId: network, workspace: 'dev', view: 'Graph' });
+    expect(parseRoute(`/projects/${network}/workspaces/dev/graph/${planId}`)).toEqual({ kind: 'project', projectId: network });
   });
 });

@@ -311,6 +311,9 @@ func TestHubClientRoutesServeTheAppShellOnly(t *testing.T) {
 		"/projects/" + id + "/workspaces/prod/plans":                  200,
 		"/projects/" + id + "/workspaces/prod/plans/" + id:            200,
 		"/projects/" + id + "/workspaces/prod/import":                 200,
+		"/projects/" + id + "/workspaces/prod/drift":                  200,
+		"/projects/" + id + "/workspaces/prod/graph":                  200,
+		"/projects/" + id + "/workspaces/prod/graph/" + id:            404,
 		"/projects/" + id + "/workspaces/prod/discovery":              404,
 		"/projects/" + id + "/workspaces/prod/plans/x":                404,
 		"/projects/" + id + "/workspaces/prod/plans/" + id + "/apply": 404,
@@ -319,9 +322,9 @@ func TestHubClientRoutesServeTheAppShellOnly(t *testing.T) {
 		"/projects/" + id + "/workspaces/prod":                        200,
 		"/projects/" + id + "/workspaces/a%2Fb/resources":             404,
 		"/projects/" + id + "/workspaces/prod/state":                  404,
-		"/projects/notanid":              404,
-		"/projects/../index.html":        200,
-		"/api/v1/projects/unknown/route": 404,
+		"/projects/notanid":                                           404,
+		"/projects/../index.html":                                     200,
+		"/api/v1/projects/unknown/route":                              404,
 	} {
 		r := httptest.NewRequest("GET", "http://"+host+path, nil)
 		w := httptest.NewRecorder()

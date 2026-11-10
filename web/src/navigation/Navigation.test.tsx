@@ -107,10 +107,11 @@ describe('Navigation model', () => {
     const hub = context({ route: parseRoute(`/projects/${hubId}/workspaces/dev/plans`), mode: 'hub-workspace', view: 'Plans', scopedExecution: true });
     expect(navState(navItem('plans'), hub)).toEqual({ enabled: true, active: true });
     expect(navState(navItem('operations'), hub).enabled).toBe(true);
-    // M24.08: Import runs in the Hub workspace too; drift and graph stay launch-only (M24.09).
-    expect(navState(navItem('import-discovery'), hub).enabled).toBe(true);
-    expect(navState(navItem('import-discovery'), { ...hub, scopedExecution: false }).enabled).toBe(false);
-    for (const id of ['drift', 'graph']) expect(navState(navItem(id), hub)).toMatchObject({ enabled: false, reason: expect.stringContaining('imports, replacements and applies only') });
+    // M24.08: Import runs in the Hub workspace too; M24.09: drift scans and graphs as well.
+    for (const id of ['import-discovery', 'drift', 'graph']) {
+      expect(navState(navItem(id), hub).enabled).toBe(true);
+      expect(navState(navItem(id), { ...hub, scopedExecution: false }).enabled).toBe(false);
+    }
     expect(navState(navItem('plans'), { ...hub, scopedExecution: false }).enabled).toBe(false);
     const page = context({ route: parseRoute(`/projects/${hubId}`), mode: 'hub-project', scopedExecution: true });
     expect(navState(navItem('plans'), page).enabled).toBe(false);

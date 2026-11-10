@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Braces, CircleCheck, CircleDashed, CircleHelp, CircleX, CloudCog, Copy, History, LoaderCircle, LockKeyhole, Minus, Pencil, Play, ScanSearch, Search, ShieldCheck, TriangleAlert, X, type LucideIcon } from 'lucide-react';
-import { api, post } from '../api';
+import { api, ApiError, post } from '../api';
 import type { DriftClassification, DriftDetail, DriftOptions, DriftResource, DriftScan, Operation } from '../types';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
@@ -10,6 +10,8 @@ import { useModal } from '../components/useModal';
 import { OperationLog } from '../plans/OperationLog';
 import { clock, engineLabel } from '../plans/labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
+import { ScopeSummary } from '../plans/PreflightDialog';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 
 // Classifications are distinguished by icon and text, never by color alone.
@@ -37,6 +39,8 @@ function ago(time?: string) {
 }
 
 export function DriftView({
+  scope = launchScope,
+  reopen,
   project,
   profileId = '',
   workspaceStatus,
@@ -44,6 +48,10 @@ export function DriftView({
   runPlan,
   copy
 }: {
+  // A Hub workspace scans in its own context only (M24.09); there is no launch fallback.
+  scope?: PlanScope;
+  // Opens a closed Hub workspace again.
+  reopen?: () => void;
   project: string;
   profileId?: string;
   workspaceStatus?: string;
@@ -58,16 +66,18 @@ export function DriftView({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   const [scanId, setScanId] = useState<string>();
-  const options = useQuery({ queryKey: ['drift-options', workspaceStatus, profileId], queryFn: () => api<DriftOptions>(`drift-scans/options${profileId ? `?profileId=${profileId}` : ''}`) });
-  const scans = useQuery({ queryKey: ['drift-scans', workspaceStatus], queryFn: () => api<{ scans: DriftScan[] }>('drift-scans') });
+  const scoped = scope.kind === 'context';
+  const key = scopeKey(scope);
+  const options = useQuery({ queryKey: ['drift-options', key, workspaceStatus, profileId], queryFn: () => api<DriftOptions>(scoped ? scopedPath(scope, 'drift-scans/options') : `drift-scans/options${profileId ? `?profileId=${profileId}` : ''}`) });
+  const scans = useQuery({ queryKey: ['drift-scans', key, workspaceStatus], queryFn: () => api<{ scans: DriftScan[] }>(scopedPath(scope, 'drift-scans')) });
   const operations = useQuery({
-    queryKey: ['operations'],
-    queryFn: () => api<{ operations: Operation[] }>('operations'),
+    queryKey: ['operations', key],
+    queryFn: () => api<{ operations: Operation[] }>(scopedPath(scope, 'operations')),
     refetchInterval: q => q.state.data?.operations.some(o => o.status === 'running') ? 2000 : false
   });
   const running = operations.data?.operations.find(o => o.status === 'running');
   const shownId = scanId ?? scans.data?.scans[0]?.id;
-  const scan = useQuery({ queryKey: ['drift-scan', shownId, workspaceStatus], queryFn: () => api<DriftScan>(`drift-scans/${shownId}`), enabled: !!shownId });
+  const scan = useQuery({ queryKey: ['drift-scan', key, shownId, workspaceStatus], queryFn: () => api<DriftScan>(scopedPath(scope, `drift-scans/${shownId}`)), enabled: !!shownId });
   const finished = useCallback(() => {
     void client.invalidateQueries({ queryKey: ['operations'] });
     void client.invalidateQueries({ queryKey: ['drift-scans'] });
@@ -77,7 +87,9 @@ export function DriftView({
     setStarting(true);
     setStartError('');
     try {
-      const started = await post<{ operation: Operation; scan: DriftScan }>('drift-scans', { acknowledgeProviderAccess: true, varFiles, ...(contextFingerprint ? { profileId, contextFingerprint } : {}) });
+      // A Hub workspace's scan is bound to the scope its options described; it takes no profile.
+      const body = scoped ? { acknowledgeProviderAccess: true, varFiles, contextFingerprint: options.data?.contextFingerprint ?? '' } : { acknowledgeProviderAccess: true, varFiles, ...(contextFingerprint ? { profileId, contextFingerprint } : {}) };
+      const started = await post<{ operation: Operation; scan: DriftScan }>(scopedPath(scope, 'drift-scans'), body);
       setPreflight(false);
       setScanId(started.scan.id);
       await client.invalidateQueries({ queryKey: ['operations'] });
@@ -91,6 +103,7 @@ export function DriftView({
   }
   const canScan = !!options.data?.canScan && !running;
   const latest = scans.data?.scans[0];
+  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{options.error.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing ran.</span></div>;
   return <div className="plans drift">
    <div className="plans-toolbar">
     <Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canScan} title={running && running.kind !== 'drift' ? 'Another operation is running.' : undefined}><ScanSearch size={14} />Check drift</Button>
@@ -99,9 +112,9 @@ export function DriftView({
    </div>
    <p className="info-line drift-explainer"><ShieldCheck size={13} />A drift scan runs a <strong>refresh-only plan</strong>: it compares what state records with what providers report now. It is not a normal plan, so it does not show whether infrastructure matches your configuration, and it never writes state.</p>
    {workspaceStatus === 'loading' && !running ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace before scanning is available…</div> : options.data && !options.data.canScan && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Drift scans are unavailable here.</strong> {options.data.reason}</span></div>}
-   {running && running.kind === 'drift' && <OperationLog key={running.id} operation={running} onFinished={finished} />}
+   {running && running.kind === 'drift' && <OperationLog key={running.id} scope={scope} operation={running} onFinished={finished} />}
    {running && running.kind !== 'drift' && <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Another operation is running in this project. Scanning is available when it finishes.</div>}
-   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <div className="empty-state error-state" role="alert"><p>{scan.error.message}</p></div> : scan.data && scan.data.status !== 'running' ? <ScanResult key={scan.data.id} scan={scan.data} openResource={openResource} runPlan={runPlan} rescan={() => setPreflight(true)} canScan={canScan} copy={copy} /> : !running && !shownId && <div className="empty-state"><ScanSearch size={30} /><h2>No drift scans yet</h2><p>Check drift to compare the objects recorded in state with what providers report. It may contact provider APIs and the backend, so it only runs when you ask.</p>{options.data?.canScan && <Button variant="outline" onClick={() => setPreflight(true)}><ScanSearch size={14} />Check drift</Button>}</div>}
+   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <div className="empty-state error-state" role="alert"><p>{scan.error.message}</p></div> : scan.data && scan.data.status !== 'running' ? <ScanResult key={scan.data.id} scope={scope} scan={scan.data} openResource={openResource} runPlan={runPlan} rescan={() => setPreflight(true)} canScan={canScan} copy={copy} /> : !running && !shownId && <div className="empty-state"><ScanSearch size={30} /><h2>No drift scans yet</h2><p>Check drift to compare the objects recorded in state with what providers report. It may contact provider APIs and the backend, so it only runs when you ask.</p>{options.data?.canScan && <Button variant="outline" onClick={() => setPreflight(true)}><ScanSearch size={14} />Check drift</Button>}</div>}
    {preflight && options.data && <DriftPreflight options={options.data} project={project} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={() => { setPreflight(false); setStartError(''); }} />}
   </div>;
 }
@@ -125,7 +138,7 @@ function DriftPreflight({ options, project, busy, error, onConfirm, onClose }: {
   onConfirm: (varFiles: string[], contextFingerprint?: string) => void;
   onClose: () => void;
 }) {
-  const choice = useVarFileChoice(options);
+  const choice = useVarFileChoice({ ...options, executionContext: options.executionContext ?? undefined });
   const summary = options.context;
   const blocked = !!summary && summary.issues.length > 0;
   const confirm = useRef<HTMLButtonElement>(null);
@@ -141,7 +154,7 @@ function DriftPreflight({ options, project, busy, error, onConfirm, onClose }: {
      <li><LockKeyhole size={16} /><span><strong>May lock the state</strong> while scanning, if the backend supports locking. Other operations wait until the scan finishes or is cancelled.</span></li>
      <li><ShieldCheck size={16} /><span><strong>Writes no state and changes no infrastructure.</strong> Hclaro never runs <code>refresh</code> or applies a refresh-only plan; the plan file is deleted as soon as its redacted result is read.</span></li>
     </ul>
-    {summary ? <ContextSummary summary={summary} title="This scan will use" /> : options.profileError ? <p className="dialog-error" role="alert">{options.profileError}</p> : <p className="muted">No execution profile: the scan uses the environment Hclaro was started with. Save this project to the Hub to choose a profile.</p>}
+    {summary ? <ContextSummary summary={summary} title="This scan will use" /> : options.scope ? <ScopeSummary scope={options.scope} executionContext={options.executionContext} title="This scan will use" /> : options.profileError ? <p className="dialog-error" role="alert">{options.profileError}</p> : <p className="muted">No execution profile: the scan uses the environment Hclaro was started with. Save this project to the Hub to choose a profile.</p>}
     <VarFileChoice choice={choice} />
     {error && <p className="dialog-error" role="alert">{error}</p>}
     <div className="dialog-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button ref={confirm} onClick={() => onConfirm(choice.chosen, summary?.context.profileId ? summary.context.fingerprint : undefined)} disabled={busy || blocked || !!options.profileError} title={blocked ? 'Resolve the execution context issues first.' : undefined}><Play size={14} />{busy ? 'Starting…' : 'Check drift'}</Button></div>
@@ -167,7 +180,7 @@ function Outcome({ scan }: { scan: DriftScan }) {
   </section>;
 }
 
-function ScanResult({ scan, openResource, runPlan, rescan, canScan, copy }: { scan: DriftScan; openResource: (id: string) => void; runPlan: () => void; rescan: () => void; canScan: boolean; copy: (value: string, label: string) => Promise<void> }) {
+function ScanResult({ scope, scan, openResource, runPlan, rescan, canScan, copy }: { scope: PlanScope; scan: DriftScan; openResource: (id: string) => void; runPlan: () => void; rescan: () => void; canScan: boolean; copy: (value: string, label: string) => Promise<void> }) {
   const [filter, setFilter] = useState<DriftClassification[]>([]);
   const [search, setSearch] = useState('');
   const [grouping, setGrouping] = useState<Grouping>('module');
@@ -219,7 +232,7 @@ function ScanResult({ scan, openResource, runPlan, rescan, canScan, copy }: { sc
         </tr>)}</tbody></table>
        </div>)}
       </section>
-      {selected && <DriftInspector scanId={scan.id} changeId={selected} close={() => setSelected(undefined)} openResource={openResource} copy={copy} />}
+      {selected && <DriftInspector scope={scope} scanId={scan.id} changeId={selected} close={() => setSelected(undefined)} openResource={openResource} copy={copy} />}
      </div>
     </>}
    </>}
@@ -235,8 +248,8 @@ function Observed({ value, kind, side }: { value: unknown; kind: string; side: '
   return <code className={typeof value === 'string' ? 'json-string' : 'json-value'}>{String(value)}</code>;
 }
 
-function DriftInspector({ scanId, changeId, close, openResource, copy }: { scanId: string; changeId: string; close: () => void; openResource: (id: string) => void; copy: (value: string, label: string) => Promise<void> }) {
-  const detail = useQuery({ queryKey: ['drift-detail', scanId, changeId], queryFn: () => api<DriftDetail>(`drift-scans/${scanId}/resources/${changeId}`) });
+function DriftInspector({ scope, scanId, changeId, close, openResource, copy }: { scope: PlanScope; scanId: string; changeId: string; close: () => void; openResource: (id: string) => void; copy: (value: string, label: string) => Promise<void> }) {
+  const detail = useQuery({ queryKey: ['drift-detail', scopeKey(scope), scanId, changeId], queryFn: () => api<DriftDetail>(scopedPath(scope, `drift-scans/${scanId}/resources/${changeId}`)) });
   const d = detail.data;
   return <Drawer label="Drift details" onClose={close}>
    <div className="inspector-header"><span><Braces size={15} />Drift details</span><Button variant="ghost" size="icon" aria-label="Close drift details" onClick={close}><X size={16} /></Button></div>
