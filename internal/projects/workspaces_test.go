@@ -275,9 +275,9 @@ func TestWorkspaceRefusalsRunNothing(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	os.Unsetenv("TF_DATA_DIR")
-	// Backends: remote-exec and unknown backends refuse every change; s3 refuses deletion.
+	// Backends: remote-exec, unlisted and unreadable (artifactory → unknown) backends refuse every change; s3 refuses deletion.
 	dir := root(t, hub, network)
-	for _, c := range [][2]string{{"remote", "workspaces_unsupported"}, {"http", "workspaces_unsupported"}, {"s3", "delete_unsupported"}} {
+	for _, c := range [][2]string{{"remote", "workspaces_unsupported"}, {"cloud", "workspaces_unsupported"}, {"http", "workspaces_unsupported"}, {"artifactory", "workspaces_unsupported"}, {"s3", "delete_unsupported"}} {
 		backend, code := c[0], c[1]
 		meta := `{"version":3,"backend":{"type":"` + backend + `","config":{}}}`
 		if err := os.WriteFile(filepath.Join(dir, ".terraform", "terraform.tfstate"), []byte(meta), 0o644); err != nil {
