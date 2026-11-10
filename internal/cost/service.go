@@ -196,7 +196,7 @@ func (s *Service) Disclosure() ExternalDataDisclosure {
 		storage = "Small aggregate totals (amounts, currency, coverage, time, workspace and plan ID; no addresses or line items) are saved locally in cost-estimates.json in Hclaro's configuration folder. You can clear them."
 	}
 	return ExternalDataDisclosure{
-		Provider: ProviderInfracost, ProviderName: "Infracost CLI", Version: DisclosureVersion,
+		Provider: ProviderInfracost, ProviderName: "Infracost CLI v0.10", Version: DisclosureVersion,
 		ExternalCalls: true, Offline: false, Endpoint: Endpoint(s.environ()),
 		Reads: []string{
 			"A minimized copy of the reviewed plan, written to a private temporary file (owner-only) for the duration of the estimate and deleted afterwards.",
@@ -212,6 +212,7 @@ func (s *Service) Disclosure() ExternalDataDisclosure {
 			"Tags, descriptions, policies, user data, scripts and other free text; module sources and provider arguments other than the region.",
 			"Cloud credentials: the CLI gets no AWS, Azure, Google or Terraform Cloud variables, and no execution profile environment.",
 			"Project paths and file names.",
+			"AWS account IDs in attribute values (ARNs, URLs, names): every 12-digit number there is replaced with 000000000000. Resource addresses are kept as they are, so a for_each key that is an account ID stays in the local input file.",
 		},
 		Authentication: "Infracost's own API key, which the Infracost CLI reads from INFRACOST_API_KEY or from its credentials file (`infracost auth login`). Hclaro never asks for, shows or stores it.",
 		Storage:        storage,
