@@ -92,9 +92,10 @@ export function ImportView({
     try {
       const reviewed = { ...request, address: request.address.trim(), varFiles: choice.chosen, previewSha256: preview.sha256, acknowledgeWrite: true, acknowledgeBackendAccess: true };
       // A Hub workspace's import is bound to the scope its options described; the server
-      // refuses it if anything in that scope changed since. It takes no profile or discovery link.
+      // refuses it if anything in that scope changed since. It takes no profile; a discovery
+      // link must come from this same workspace's discovery (M24.09).
       let operation: Operation;
-      if (scoped) operation = await post<Operation>(scopedPath(scope, 'imports'), { ...reviewed, contextFingerprint: o?.contextFingerprint ?? '' });
+      if (scoped) operation = await post<Operation>(scopedPath(scope, 'imports'), { ...reviewed, contextFingerprint: o?.contextFingerprint ?? '', ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });
       else {
         const bound = summary?.context.profileId ? { profileId, contextFingerprint: summary.context.fingerprint } : {};
         operation = await post<Operation>('imports', { ...reviewed, ...bound, ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });

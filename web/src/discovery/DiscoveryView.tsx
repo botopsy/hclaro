@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, BadgeCheck, CircleCheck, CircleDashed, CircleHelp, CircleSlash, CircleX, Cloud, CloudCog, Copy, History, Import, LoaderCircle, Play, Radar, Search, ShieldCheck, Square, TriangleAlert, X, type LucideIcon } from 'lucide-react';
-import { api, post } from '../api';
+import { api, ApiError, post } from '../api';
 import type { CloudIdentity, CloudResourceCandidate, DiscoveryMatchStatus, DiscoveryOptions, DiscoveryPrefill, DiscoveryScan, DiscoveryScope } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { clock } from '../plans/labels';
 import { ContextSummary } from '../profiles/ContextSummary';
+import { ScopeSummary } from '../plans/PreflightDialog';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 
 // Labels are distinguished by icon and text, never by color alone.
 const labels: Record<DiscoveryMatchStatus, { label: string; icon: LucideIcon; tone: string; hint: string }> = {
@@ -26,19 +28,32 @@ function query(profileId: string) {
   return profileId ? `?profileId=${profileId}` : '';
 }
 
-// The reviewed context: only a profile-bound request carries its fingerprint.
-function bound(options: DiscoveryOptions | undefined, profileId: string) {
+// A request path: a Hub workspace uses only its own context's routes (M24.09).
+function at(scope: PlanScope, path: string) {
+  return scopedPath(scope, `discovery/${path}`);
+}
+
+// The reviewed context: a Hub workspace's request carries the fingerprint its options
+// described and no profile; a launch request only when it is profile-bound.
+function bound(options: DiscoveryOptions | undefined, profileId: string, scope: PlanScope) {
+  if (scope.kind === 'context') return { contextFingerprint: options?.contextFingerprint ?? '' };
   const fingerprint = options?.context?.context.profileId ? options.context.context.fingerprint : undefined;
   return fingerprint ? { profileId, contextFingerprint: fingerprint } : {};
 }
 
 export function DiscoveryView({
+  scope = launchScope,
+  reopen,
   profileId = '',
   workspaceStatus,
   onPrepared,
   openResource,
   copy
 }: {
+  // A Hub workspace discovers in its own context only (M24.09); there is no launch fallback.
+  scope?: PlanScope;
+  // Opens a closed Hub workspace again.
+  reopen?: () => void;
   profileId?: string;
   workspaceStatus?: string;
   // Opens the import wizard with a prepared candidate.
@@ -49,13 +64,16 @@ export function DiscoveryView({
   const client = useQueryClient();
   // Opening this page reads options and the in-memory scan list only. AWS is contacted only
   // by Verify, Scan and Prepare import.
-  const options = useQuery({ queryKey: ['discovery-options', profileId, workspaceStatus], queryFn: () => api<DiscoveryOptions>(`discovery/options${query(profileId)}`) });
-  const scans = useQuery({ queryKey: ['discovery-scans'], queryFn: () => api<{ scans: DiscoveryScan[] }>('discovery/scans'), enabled: !!options.data?.canScan });
+  const scoped = scope.kind === 'context';
+  const key = scopeKey(scope);
+  const q = scoped ? '' : query(profileId);
+  const options = useQuery({ queryKey: ['discovery-options', key, profileId, workspaceStatus], queryFn: () => api<DiscoveryOptions>(at(scope, 'options') + q) });
+  const scans = useQuery({ queryKey: ['discovery-scans', key], queryFn: () => api<{ scans: DiscoveryScan[] }>(at(scope, 'scans')), enabled: !!options.data?.canScan });
   const [scanId, setScanId] = useState<string>();
   const shownId = scanId ?? scans.data?.scans[0]?.id;
   const scan = useQuery({
-    queryKey: ['discovery-scan', shownId, profileId, workspaceStatus],
-    queryFn: () => api<DiscoveryScan>(`discovery/scans/${shownId}${query(profileId)}`),
+    queryKey: ['discovery-scan', key, shownId, profileId, workspaceStatus],
+    queryFn: () => api<DiscoveryScan>(at(scope, `scans/${shownId}`) + q),
     enabled: !!shownId,
     refetchInterval: q => q.state.data?.status === 'running' ? 800 : false
   });
@@ -73,7 +91,7 @@ export function DiscoveryView({
     setVerifying(true);
     setVerifyError('');
     try {
-      await post<CloudIdentity>('discovery/identity', bound(o, profileId));
+      await post<CloudIdentity>(at(scope, 'identity'), bound(o, profileId, scope));
       await options.refetch();
     } catch (e) {
       setVerifyError(e instanceof Error ? e.message : 'The AWS context could not be verified.');
@@ -83,24 +101,25 @@ export function DiscoveryView({
   }
   async function cancel(id: string) {
     try {
-      await post(`discovery/scans/${id}/cancel`, {});
+      await post(at(scope, `scans/${id}/cancel`), {});
     } finally {
       void scan.refetch();
     }
   }
+  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{options.error.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing ran.</span></div>;
   if (options.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading cloud discovery…</p></div>;
   if (options.error || !o) return <div className="empty-state error-state" role="alert"><p>{options.error?.message || 'Cloud discovery is unavailable.'}</p></div>;
   return <div className="plans discovery">
    <p className="info-line drift-explainer"><ShieldCheck size={13} />Cloud discovery lists existing AWS objects of {o.types.length} supported types in the account your credentials belong to, and compares them with <strong>this workspace’s recorded state</strong>. It never creates, changes or deletes cloud objects, and never writes state. Nothing is contacted until you ask.</p>
    {!o.canScan && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Cloud discovery is unavailable here.</strong> {o.reason}</span></div>}
    {o.canScan && <IdentityBanner options={o} identity={identity} busy={verifying} blocked={blocked} error={verifyError} onVerify={() => void verify()} onScan={() => setPreview(true)} running={running} />}
-   {o.canScan && (o.context ? <details className="discovery-context"><summary>Execution context</summary><ContextSummary summary={o.context} title="Discovery uses" /></details> : o.profileError ? <p className="dialog-error" role="alert">{o.profileError}</p> : null)}
+   {o.canScan && (o.scope ? <details className="discovery-context"><summary>Execution context</summary><ScopeSummary scope={o.scope} executionContext={o.executionContext} title="Discovery uses" /></details> : o.context ? <details className="discovery-context"><summary>Execution context</summary><ContextSummary summary={o.context} title="Discovery uses" /></details> : o.profileError ? <p className="dialog-error" role="alert">{o.profileError}</p> : null)}
    {scans.data && scans.data.scans.length > 0 && <div className="plans-toolbar">
     <label className="history-select"><History size={14} /><span className="sr-only">Scan history</span><select aria-label="Scan history" value={shownId} onChange={e => setScanId(e.target.value)}>{scans.data.scans.map((s, i) => <option key={s.id} value={s.id}>{i === 0 ? 'Latest · ' : ''}{clock(s.startedAt)} · {s.identity.account} · {s.scope.regions.join(', ')} · {s.status}</option>)}</select></label>
     {running && scan.data && <Button variant="outline" size="small" onClick={() => void cancel(scan.data!.id)}><Square size={12} />Cancel scan</Button>}
    </div>}
-   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <div className="empty-state error-state" role="alert"><p>{scan.error.message}</p></div> : scan.data ? <ScanResult key={scan.data.id} scan={scan.data} options={o} profileId={profileId} onPrepared={onPrepared} openResource={openResource} copy={copy} /> : o.canScan && <div className="empty-state"><Radar size={30} /><h2>No discovery scan yet</h2><p>Verify the AWS context, then choose regions and resource types to scan. Each scan calls AWS list APIs with your local credentials, only when you ask.</p></div>}
-   {preview && identity && <ScanPreview options={o} identity={identity} profileId={profileId} onClose={() => setPreview(false)} onStarted={s => {
+   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <div className="empty-state error-state" role="alert"><p>{scan.error.message}</p></div> : scan.data ? <ScanResult key={scan.data.id} scope={scope} scan={scan.data} options={o} profileId={profileId} onPrepared={onPrepared} openResource={openResource} copy={copy} /> : o.canScan && <div className="empty-state"><Radar size={30} /><h2>No discovery scan yet</h2><p>Verify the AWS context, then choose regions and resource types to scan. Each scan calls AWS list APIs with your local credentials, only when you ask.</p></div>}
+   {preview && identity && <ScanPreview target={scope} options={o} identity={identity} profileId={profileId} onClose={() => setPreview(false)} onStarted={s => {
      setPreview(false);
      setScanId(s.id);
      void client.invalidateQueries({ queryKey: ['discovery-scans'] });
@@ -135,7 +154,7 @@ function IdentityBanner({ options, identity, busy, blocked, error, onVerify, onS
 }
 
 // The scan preview states the scope, the request bounds and the possible cost before anything runs.
-function ScanPreview({ options, identity, profileId, onClose, onStarted }: { options: DiscoveryOptions; identity: CloudIdentity; profileId: string; onClose: () => void; onStarted: (scan: DiscoveryScan) => void }) {
+function ScanPreview({ target, options, identity, profileId, onClose, onStarted }: { target: PlanScope; options: DiscoveryOptions; identity: CloudIdentity; profileId: string; onClose: () => void; onStarted: (scan: DiscoveryScan) => void }) {
   const [scope, setScope] = useState<DiscoveryScope>({ regions: [identity.region], types: options.types.map(t => t.type), maxPerType: options.limits.defaultPerType, concurrency: options.limits.defaultConcurrency });
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -158,7 +177,7 @@ function ScanPreview({ options, identity, profileId, onClose, onStarted }: { opt
     setBusy(true);
     setError('');
     try {
-      onStarted(await post<DiscoveryScan>('discovery/scans', { identityId: identity.id, scope, acknowledgeApiCalls: true, ...bound(options, profileId) }));
+      onStarted(await post<DiscoveryScan>(at(target, 'scans'), { identityId: identity.id, scope, acknowledgeApiCalls: true, ...bound(options, profileId, target) }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The scan could not be started.');
     } finally {
@@ -211,7 +230,7 @@ function Outcome({ scan, options }: { scan: DiscoveryScan; options: DiscoveryOpt
   </section>;
 }
 
-function ScanResult({ scan, options, profileId, onPrepared, openResource, copy }: { scan: DiscoveryScan; options: DiscoveryOptions; profileId: string; onPrepared: (p: DiscoveryPrefill) => void; openResource: (id: string) => void; copy: (value: string, label: string) => Promise<void> }) {
+function ScanResult({ scope, scan, options, profileId, onPrepared, openResource, copy }: { scope: PlanScope; scan: DiscoveryScan; options: DiscoveryOptions; profileId: string; onPrepared: (p: DiscoveryPrefill) => void; openResource: (id: string) => void; copy: (value: string, label: string) => Promise<void> }) {
   const [filter, setFilter] = useState<DiscoveryMatchStatus[]>([]);
   const [service, setService] = useState('');
   const [search, setSearch] = useState('');
@@ -224,7 +243,7 @@ function ScanResult({ scan, options, profileId, onPrepared, openResource, copy }
     setPreparing(c.id);
     setError('');
     try {
-      onPrepared(await post<DiscoveryPrefill>(`discovery/scans/${scan.id}/candidates/${c.id}/prepare`, { ...bound(options, profileId), acknowledgeUnknownMapping }));
+      onPrepared(await post<DiscoveryPrefill>(at(scope, `scans/${scan.id}/candidates/${c.id}/prepare`), { ...bound(options, profileId, scope), acknowledgeUnknownMapping }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The import could not be prepared.');
     } finally {

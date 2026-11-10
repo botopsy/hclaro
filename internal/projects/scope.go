@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"hclaro/internal/discovery"
 	"hclaro/internal/drift"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
@@ -334,6 +335,35 @@ func (s *Scope) Graph(id, planID string) (operations.GraphView, error) {
 // GraphImpact returns one node's neighbourhood in one of this scope's graphs.
 func (s *Scope) GraphImpact(id, node, planID string) (operations.GraphImpact, error) {
 	return s.manager.GraphImpact(id, node, planID)
+}
+
+// DiscoveryPin returns the AWS discovery context of this scope and the environment its AWS
+// CLI calls use (nil: Hclaro's own). It runs nothing. With check set, for a request that
+// contacts AWS, the reviewed fingerprint must be the scope's and the scope is revalidated
+// first, as for a drift scan; a changed scope closes the context.
+func (s *Scope) DiscoveryPin(ctx context.Context, check bool, reviewed string) (discovery.Pin, []string, error) {
+	if check {
+		if err := s.reviewedContext(reviewed, "Review the discovery context again."); err != nil {
+			return discovery.Pin{}, nil, err
+		}
+		if err := s.checked(ctx); err != nil {
+			return discovery.Pin{}, nil, err
+		}
+	}
+	p, err := s.hub.Registry.Get(s.id.projectID)
+	if err != nil || p.RootPath != s.id.root {
+		return discovery.Pin{}, nil, changed(DetailRootChanged)
+	}
+	_, environ, execution, err := s.hub.execution(p, s.id.profileID)
+	if err != nil || (execution == nil) != (s.id.profileID == "") || execution != nil && execution.Fingerprint != s.id.profileFingerprint {
+		return discovery.Pin{}, nil, changed(DetailProfileChanged)
+	}
+	pin := discovery.Pin{Context: s.ContextID, ProjectID: s.id.projectID, Workspace: s.id.workspace, Engine: s.id.engine, ContextFingerprint: "inherited"}
+	if execution != nil {
+		pin.ProfileID, pin.ProfileName, pin.ContextFingerprint = execution.ProfileID, execution.ProfileName, execution.Fingerprint
+		pin.AWSProfile, pin.AWSRegion = execution.AWSProfile, execution.AWSRegion
+	}
+	return pin, environ, nil
 }
 
 // VarFiles lists the variable files of the scope's root that a plan may select.
@@ -749,6 +779,9 @@ func (h *Hub) closeScopeLocked(cid string) {
 	}
 	delete(h.scopes, cid)
 	h.scopeOrder = slices.DeleteFunc(h.scopeOrder, func(id string) bool { return id == cid })
+	if h.Discovery != nil {
+		h.Discovery.Drop(cid)
+	}
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()

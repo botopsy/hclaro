@@ -237,6 +237,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	hub.GitProbe, hub.IdentityProbe = preflight.GitStatus, preflight.AWSIdentity
 	// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
 	manager.Discovery = discovery.New(discovery.Exec{})
+	hub.Discovery = manager.Discovery
 	// Cost estimation (M17): off until the user opts in after the disclosure; never in
 	// strict local-only mode. Only sanitized aggregates are saved in the config folder.
 	manager.Cost = cost.New(cost.Exec{}, o.StrictLocal)

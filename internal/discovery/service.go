@@ -78,6 +78,9 @@ var (
 // Terraform workspace and engine of the snapshot. Two pins with any difference never share a
 // verification, a scan's results or a prepared import.
 type Pin struct {
+	// Context is the Hub read context ID of a Hub workspace, "" for the launch project.
+	// Verifications, scans and prepared imports are never shared between contexts.
+	Context            string `json:"contextId,omitempty"`
 	ProjectID          string `json:"projectId,omitempty"`
 	ProfileID          string `json:"profileId,omitempty"`
 	ProfileName        string `json:"profileName,omitempty"`
@@ -91,6 +94,8 @@ type Pin struct {
 // differs returns why current does not match p, or "".
 func (p Pin) differs(current Pin) string {
 	switch {
+	case p.Context != current.Context || p.ProjectID != current.ProjectID:
+		return "This was made for another project or workspace."
 	case p.ProfileID != current.ProfileID:
 		return "This tab now uses another execution profile than the one this was made with."
 	case p.ContextFingerprint != current.ContextFingerprint:
@@ -767,12 +772,16 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
-// Scans lists scans, newest first, without results.
-func (s *Service) Scans() []Scan {
+// Scans lists the scans of a context ("" for the launch project), newest first, without
+// results.
+func (s *Service) Scans(context string) []Scan {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]Scan, 0, len(s.scans))
 	for i := len(s.scans) - 1; i >= 0; i-- {
+		if s.scans[i].Pin.Context != context {
+			continue
+		}
 		c := s.copyScan(s.scans[i])
 		c.Candidates = nil
 		out = append(out, c)
@@ -780,9 +789,10 @@ func (s *Service) Scans() []Scan {
 	return out
 }
 
-func (s *Service) find(id string) *Scan {
+// find returns scan id of context; a scan of another context is not found.
+func (s *Service) find(id, context string) *Scan {
 	for _, scan := range s.scans {
-		if scan.ID == id {
+		if scan.ID == id && scan.Pin.Context == context {
 			return scan
 		}
 	}
@@ -792,7 +802,7 @@ func (s *Service) find(id string) *Scan {
 // View returns scan id with candidates labelled against snap, for a client in context pin.
 func (s *Service) View(id string, pin Pin, snap workspace.Snapshot) (ScanView, error) {
 	s.mu.Lock()
-	scan := s.find(id)
+	scan := s.find(id, pin.Context)
 	if scan == nil {
 		s.mu.Unlock()
 		return ScanView{}, ErrNotFound
@@ -818,11 +828,11 @@ func (s *Service) View(id string, pin Pin, snap workspace.Snapshot) (ScanView, e
 	return view, nil
 }
 
-// Cancel stops a running scan.
-func (s *Service) Cancel(id string) (Scan, error) {
+// Cancel stops a running scan of context.
+func (s *Service) Cancel(id, context string) (Scan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	scan := s.find(id)
+	scan := s.find(id, context)
 	if scan == nil {
 		return Scan{}, ErrNotFound
 	}
@@ -859,7 +869,7 @@ func suggestAddress(c CloudResourceCandidate) string {
 // and a reviewed plan.
 func (s *Service) Prepare(ctx context.Context, scanID, candidateID string, pin Pin, environ []string, snap workspace.Snapshot, acknowledgeUnknown bool) (Prefill, error) {
 	s.mu.Lock()
-	scan := s.find(scanID)
+	scan := s.find(scanID, pin.Context)
 	if scan == nil {
 		s.mu.Unlock()
 		return Prefill{}, ErrNotFound
@@ -928,7 +938,7 @@ func (s *Service) CheckImport(token string, pin Pin, req imports.Request) error 
 	if !ok || !s.Now().Before(p.expires) || p.pin.differs(pin) != "" || req.ID != p.ImportID {
 		return ErrPreparedStale
 	}
-	scan := s.find(p.ScanID)
+	scan := s.find(p.ScanID, pin.Context)
 	if scan == nil || scan.Pin.differs(pin) != "" {
 		return ErrPreparedStale
 	}
@@ -944,4 +954,29 @@ func (s *Service) Consume(token string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.prepared, token)
+}
+
+// Drop cancels the running scans of a Hub context and forgets its verifications, scans and
+// prepared imports. It is called when the context's execution scope closes.
+func (s *Service) Drop(context string) {
+	if context == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scans = slices.DeleteFunc(s.scans, func(scan *Scan) bool {
+		if scan.Pin.Context != context {
+			return false
+		}
+		if scan.cancel != nil {
+			scan.cancel()
+		}
+		return true
+	})
+	s.identities = slices.DeleteFunc(s.identities, func(id *CloudIdentity) bool { return id.Pin.Context == context })
+	for token, p := range s.prepared {
+		if p.pin.Context == context {
+			delete(s.prepared, token)
+		}
+	}
 }

@@ -1215,6 +1215,11 @@ export type DiscoveryOptions = {
   projectId?: string;
   context?: ExecutionSummary;
   profileError?: string;
+  // Hub workspaces (M24.09): the scope discovery is bound to, and the fingerprint to send back.
+  code?: string;
+  scope?: ScopeView;
+  executionContext?: ExecutionContext | null;
+  contextFingerprint?: string;
 };
 export type DiscoveryScope = { regions: string[]; types: string[]; maxPerType: number; concurrency: number };
 export type DiscoveryTask = {
