@@ -15,7 +15,8 @@
 // HCLARO_FAKE_SPY, when set, names a file that receives each invocation's argv, one
 // NUL-separated line per call, so tests can assert exact flags. With HCLARO_FAKE_SPY_ENV
 // also set, the line is prefixed with "TF_WORKSPACE=<value or unset>" and a NUL; a value
-// other than "1" is a comma-separated list of further names logged the same way.
+// other than "1" is a comma-separated list of further names logged the same way; the name
+// "CWD" logs the working directory instead of a variable.
 //
 // Workspaces: a ".fake-workspaces" file in the working directory holds the exact
 // `workspace list` output (the "* " line is the CLI default); without one the list is
@@ -68,6 +69,10 @@ func main() {
 				if names != "1" {
 					for _, name := range strings.Split(names, ",") {
 						value, ok := os.LookupEnv(name)
+						if name == "CWD" {
+							value, _ = os.Getwd()
+							ok = true
+						}
 						if !ok {
 							value = "<unset>"
 						}

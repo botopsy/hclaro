@@ -23,7 +23,18 @@ func reasonJSON(w http.ResponseWriter, code int, name, reason string) {
 func projectError(w http.ResponseWriter, hub *projects.Hub, err error) {
 	var path *projects.PathError
 	var refusal *projects.ProfileRefusal
+	var scope *projects.ScopeError
 	switch {
+	case errors.As(err, &scope):
+		status := 409
+		if scope.Code == projects.CodeScopedDisabled {
+			status = 404
+		}
+		if scope.Detail != "" {
+			writeJSON(w, status, map[string]string{"error": scope.Code, "detail": scope.Detail, "reason": scope.Message})
+			return
+		}
+		reasonJSON(w, status, scope.Code, scope.Message)
 	case errors.As(err, &refusal):
 		status := 409
 		if refusal.Code == "profile_not_found" {
@@ -218,6 +229,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 				"workspace_deleted": "This workspace was deleted from the project.",
 				"profile_changed":   "The execution profile of this view was edited. Open the workspace again to use the current profile.",
 				"profile_removed":   "The execution profile of this view was deleted. Choose another profile.",
+				"scope_changed":     "The project, engine, execution profile, environment or backend of this workspace changed, so it was closed. Open the workspace again.",
 			}[reason]
 			if message == "" {
 				message = "This workspace view is no longer open. Open the workspace again."

@@ -220,8 +220,8 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 	if name != c.Engine || executable != c.Executable {
 		return operations.Operation{}, ErrContextChanged
 	}
-	rootInfo, statErr := os.Stat(p.RootPath)
-	exeInfo, exeErr := os.Stat(executable)
+	rootInfo, statErr := statIdentity(p.RootPath)
+	exeInfo, exeErr := statIdentity(executable)
 	if statErr != nil || exeErr != nil {
 		return operations.Operation{}, ErrContextChanged
 	}

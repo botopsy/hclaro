@@ -276,8 +276,8 @@ func (h *Hub) StartInitWith(id, expected, profileID string) (operations.Operatio
 		release()
 		return operations.Operation{}, &InitRefusal{"missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine."}
 	}
-	rootInfo, statErr := os.Stat(p.RootPath)
-	exeInfo, exeErr := os.Stat(executable)
+	rootInfo, statErr := statIdentity(p.RootPath)
+	exeInfo, exeErr := statIdentity(executable)
 	if statErr != nil || exeErr != nil || contextID(p, name, executable, environ, profile) != expected {
 		release()
 		return operations.Operation{}, ErrContextChanged

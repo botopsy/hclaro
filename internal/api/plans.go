@@ -83,7 +83,9 @@ func launchContext(hub *projects.Hub, snap workspace.Snapshot, profileID string)
 
 func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, inits *operations.Inits, hub *projects.Hub, csrf, version string) {
 	mux.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]string{"csrfToken": csrf, "version": version})
+		// Capabilities tell the UI which optional features the server enables; the server
+		// still enforces each one on every request.
+		writeJSON(w, 200, map[string]any{"csrfToken": csrf, "version": version, "capabilities": map[string]bool{"scopedExecution": hub != nil && hub.ScopedExecution}})
 	})
 	mux.HandleFunc("GET /api/v1/plans/options", func(w http.ResponseWriter, r *http.Request) {
 		profileID := r.URL.Query().Get("profileId")

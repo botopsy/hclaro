@@ -181,7 +181,12 @@ type Manager struct {
 	Discovery *discovery.Service
 	// Cost estimates the monthly cost impact of reviewed plans on request (M17); nil
 	// disables cost estimation.
-	Cost     *cost.Service
+	Cost *cost.Service
+	// Verify, when set, revalidates the execution scope of a Hub workspace (M24.04) with the
+	// project root claim held, immediately before an operation's first engine command; kind
+	// is "plan", "drift", "graph" or "apply". A non-nil Diagnostic stops the operation before
+	// the engine runs (code scope_changed). The launch manager leaves it nil.
+	Verify   func(ctx context.Context, kind string) *Diagnostic
 	entries  []*entry
 	plans    []*Plan
 	scans    []*DriftScan
@@ -376,6 +381,30 @@ var messages = map[string]string{
 	"plan_read":       "The saved plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
 	"plan_format":     "The plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No plan data was returned.",
 	"shutdown":        "Hclaro stopped while the plan was running. No plan was kept.",
+	"scope_changed":   scopeChangedMessage,
+}
+
+// scopeChangedMessage explains a failed scope revalidation; the log has the specific reason.
+const scopeChangedMessage = "The project, engine, execution profile, environment or backend of this workspace changed since it was opened, so nothing ran. Open the workspace again."
+
+// verify runs the Verify hook. It reports false, with the reason in the log, when the
+// operation must stop before the engine runs.
+func (m *Manager) verify(ctx context.Context, e *entry, kind string) bool {
+	if m.Verify == nil {
+		return true
+	}
+	if d := m.Verify(ctx, kind); d != nil {
+		e.log.Append("error", d.Message)
+		return false
+	}
+	return true
+}
+
+// Running reports whether an operation is running or being cancelled.
+func (m *Manager) Running() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.running != nil
 }
 
 func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
@@ -448,6 +477,12 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	planner := m.bound(e.environ, snap.Info.Workspace)
 	if bound != nil {
 		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
+	}
+	if !m.verify(ctx, e, "plan") {
+		if ctx.Err() != nil {
+			return nil, nil, stopped(), nil
+		}
+		return nil, nil, "scope_changed", nil
 	}
 	name, err := planner.Workspace(ctx)
 	if ctx.Err() != nil {

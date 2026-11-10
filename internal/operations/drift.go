@@ -103,6 +103,7 @@ var driftMessages = map[string]string{
 	"plan_format":       "The refresh-only plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No scan data was returned.",
 	"not_refresh_only":  "The engine returned a plan that proposes resource changes, which a refresh-only plan never does. The result cannot be trusted as a drift scan and was discarded.",
 	"shutdown":          "Hclaro stopped while the scan was running. No result was kept.",
+	"scope_changed":     scopeChangedMessage,
 	"workspace_changed": "The active workspace changed since Hclaro read this project. Read the project again before scanning.",
 }
 
@@ -311,6 +312,12 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 	planner := m.bound(e.environ, snap.Info.Workspace)
 	if bound != nil {
 		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
+	}
+	if !m.verify(ctx, e, "drift") {
+		if ctx.Err() != nil {
+			return nil, "", false, stopped(), nil
+		}
+		return nil, "", false, "scope_changed", nil
 	}
 	name, err := planner.Workspace(ctx)
 	switch {
