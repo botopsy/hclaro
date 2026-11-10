@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -156,21 +157,40 @@ var riskyKeyParts = []string{
 	"kubeconfig", "kube_config", "authorization", "auth_header", "sas_url", "sas_token",
 }
 
-// RiskyKey reports attribute names that are always redacted, whatever their value.
+// RiskyKey reports attribute names that are always redacted, whatever their value. Names
+// are compared as lower-case letters and digits only, so privateKey, x-api-key and names
+// with invisible separators match like private_key and api_key.
 func RiskyKey(key string) bool {
-	key = strings.ToLower(key)
+	key = alnum(key)
 	for _, part := range riskyKeyParts {
-		if strings.Contains(key, part) {
+		if strings.Contains(key, alnum(part)) {
 			return true
 		}
 	}
 	return false
 }
 
+func alnum(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + 'a' - 'A'
+		}
+		return -1
+	}, s)
+}
+
 var (
 	awsAccessKeyID = regexp.MustCompile(`(^|[^A-Z0-9])(AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[A-Z0-9]{16}([^A-Z0-9]|$)`)
 	urlUserinfo    = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://[^/\s@]*:[^/\s@]*@`)
 	tokenRun       = regexp.MustCompile(`[A-Za-z0-9+/=_]{20,}`)
+	// quotedSecretKey is a secret-named key inside JSON text, also when the JSON is escaped
+	// in another string: "password": or \"db_token\":.
+	quotedSecretKey = regexp.MustCompile(`(?i)["'][a-z0-9_.-]*(passw(or)?d|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[a-z0-9_.-]*\\*["']\s*:`)
+	// basicAuth is a whole value that is an HTTP Basic credential.
+	basicAuth = regexp.MustCompile(`(?i)^\s*basic\s+[A-Za-z0-9+/]+={0,2}\s*$`)
 )
 
 // knownTokenPrefixes are well-known vendor credential prefixes.
@@ -195,13 +215,13 @@ func Suspicious(value string) bool {
 	if strings.Count(value, ".") == 2 && strings.HasPrefix(value, "eyJ") {
 		return true
 	}
-	return awsAccessKeyID.MatchString(value) || urlUserinfo.MatchString(value)
+	return awsAccessKeyID.MatchString(value) || urlUserinfo.MatchString(value) || quotedSecretKey.MatchString(value)
 }
 
 // LooksSecret is Suspicious plus long random-looking strings: generated secrets that no
 // provider marked sensitive. It decides whether an attribute value is shown.
 func LooksSecret(value string) bool {
-	if Suspicious(value) {
+	if Suspicious(value) || basicAuth.MatchString(value) {
 		return true
 	}
 	for _, run := range tokenRun.FindAllString(value, -1) {
@@ -279,10 +299,22 @@ func redact(value, marker any, key string, depth int) any {
 	case map[string]any:
 		out := map[string]any{}
 		masks, _ := marker.(map[string]any)
+		// A name/value pair ({"name": "DB_PASSWORD", "value": …}, as in container and
+		// function environments) takes its risk from the sibling name.
+		pair := false
+		for k, item := range v {
+			if name, ok := item.(string); ok && (strings.EqualFold(k, "name") || strings.EqualFold(k, "key")) && RiskyKey(name) {
+				pair = true
+			}
+		}
 		for k, item := range v {
 			// Unknown map keys can themselves be secrets (e.g. for_each or arbitrary tags).
 			if Suspicious(k) || len(k) > 128 {
 				out["[redacted key]"] = Redacted
+				continue
+			}
+			if pair && strings.EqualFold(k, "value") {
+				out[k] = Redacted
 				continue
 			}
 			out[k] = redact(item, masks[k], k, depth+1)
@@ -302,11 +334,28 @@ func redact(value, marker any, key string, depth int) any {
 	case nil:
 		return nil
 	case string:
-		if len(v) <= maxShownString && !LooksSecret(v) {
+		if len(v) <= maxShownString && !LooksSecret(v) && !embeddedSecret(v, key, depth) {
 			return v
 		}
 	case bool, json.Number:
 		return v
 	}
 	return Redacted
+}
+
+// embeddedSecret reports a string holding a JSON document (a container definition, a policy,
+// a serialized environment) in which the redaction policy would hide anything. The whole
+// string is then hidden, since it is displayed as one value.
+func embeddedSecret(v, key string, depth int) bool {
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" || trimmed[0] != '{' && trimmed[0] != '[' {
+		return false
+	}
+	d := json.NewDecoder(strings.NewReader(trimmed))
+	d.UseNumber()
+	var doc any
+	if d.Decode(&doc) != nil {
+		return false
+	}
+	return !reflect.DeepEqual(doc, redact(doc, nil, key, depth+1))
 }

@@ -180,3 +180,56 @@ func TestMutatingRequests(t *testing.T) {
 		})
 	}
 }
+
+// A page served from another localhost port (same site, different origin) or a rebound DNS
+// name tries to read the session's CSRF token, read the snapshot and start an apply (M24.12).
+// It never has the bearer token, which lives only in the private URL's fragment and the
+// tab's sessionStorage; even a guessed token is refused because its Origin or Host differs.
+// No response grants CORS, so a browser would not let it read anything either.
+func TestMaliciousLocalPage(t *testing.T) {
+	token, csrf := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	reached := false
+	handler := Guard("127.0.0.1:9273", token, csrf, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached = true }))
+	apply := "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply"
+	for _, tc := range []struct {
+		name, method, host, path, origin, site, auth string
+		code                                         int
+	}{
+		{"read csrf token without session", "GET", "127.0.0.1:9273", "/api/v1/session", "http://127.0.0.1:8000", "same-site", "", 403},
+		{"read csrf token no-cors", "GET", "127.0.0.1:9273", "/api/v1/session", "", "same-site", "", 401},
+		{"read snapshot with guessed token", "GET", "127.0.0.1:9273", "/api/v1/workspace", "http://127.0.0.1:8000", "same-site", token, 403},
+		{"localhost alias", "GET", "127.0.0.1:9273", "/api/v1/session", "http://localhost:9273", "same-site", token, 403},
+		{"dns rebinding", "GET", "evil.example:9273", "/api/v1/session", "", "", token, 403},
+		{"rebinding to localhost name", "GET", "localhost:9273", "/api/v1/session", "", "", token, 403},
+		{"apply from other port", "POST", "127.0.0.1:9273", apply, "http://127.0.0.1:8000", "same-site", token, 403},
+		{"apply from null origin", "POST", "127.0.0.1:9273", apply, "null", "cross-site", token, 403},
+		{"cors preflight", "OPTIONS", "127.0.0.1:9273", apply, "http://127.0.0.1:8000", "same-site", "", 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reached = false
+			r := httptest.NewRequest(tc.method, "http://"+tc.host+tc.path, strings.NewReader(map[bool]string{true: "{}"}[tc.method == "POST"]))
+			r.Host = tc.host
+			for k, v := range map[string]string{"Origin": tc.origin, "Sec-Fetch-Site": tc.site, "X-Hclaro-CSRF": csrf, "Content-Type": "application/json", "Access-Control-Request-Method": "POST"} {
+				if v != "" && (tc.method != "GET" || k == "Origin" || k == "Sec-Fetch-Site") {
+					r.Header.Set(k, v)
+				}
+			}
+			if tc.auth != "" {
+				r.Header.Set("Authorization", "Bearer "+tc.auth)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+			if w.Code != tc.code || reached {
+				t.Fatalf("status %d (reached %v), want %d", w.Code, reached, tc.code)
+			}
+			for k := range w.Header() {
+				if strings.HasPrefix(k, "Access-Control-") {
+					t.Fatalf("CORS header %s", k)
+				}
+			}
+			if strings.Contains(w.Body.String(), csrf) || strings.Contains(w.Body.String(), token) {
+				t.Fatal("token in refusal")
+			}
+		})
+	}
+}

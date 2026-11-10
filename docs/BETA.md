@@ -23,7 +23,7 @@ hclaro, published by [BotOpsy](https://github.com/botopsy), is in public beta. I
 
 - Hclaro runs only on your machine and listens only on `127.0.0.1` with a per-launch credential. It has no telemetry, accounts or update checks.
 - It reads state through your Terraform/OpenTofu CLI, which may contact your backend and load provider plugins. It reaches AWS only through your `aws` CLI when you start a discovery, and Infracost only when you opt in to cost estimates (`--strict-local` disables that).
-- Secrets are redacted on the server before anything reaches the browser, using sensitivity markers and heuristics. **Heuristics can miss secrets**, for example a short password stored under an ordinary attribute name. Treat what you see as potentially sensitive.
+- Secrets are redacted on the server before anything reaches the browser, using sensitivity markers and heuristics. **Heuristics can miss secrets**, for example a short password stored under an ordinary attribute name, and they hide some ordinary values to be safe. Treat what you see as potentially sensitive. Saved plan files are plaintext and can contain secrets; they live only in a private temp folder and are deleted after apply, on expiry, on cancel and on shutdown (see [SECURITY.md](../SECURITY.md#limits)).
 - Saved plans can contain plaintext secrets. Hclaro keeps them in a private temporary folder, deletes them after use, and never writes them to your project.
 
 Full details: [SECURITY.md](../SECURITY.md).
