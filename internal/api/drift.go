@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"hclaro/internal/drift"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 	"hclaro/internal/workspace"
@@ -90,32 +91,46 @@ func driftRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations
 		writeJSON(w, 200, map[string]any{"scans": manager.DriftScans()})
 	})
 	mux.HandleFunc("GET /api/v1/drift-scans/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if !idPattern.MatchString(id) {
-			errorJSON(w, 404, "scan_not_found")
-			return
-		}
-		scan, ok := manager.DriftScan(id)
-		if !ok {
-			errorJSON(w, 404, "scan_not_found")
-			return
-		}
-		writeJSON(w, 200, scan)
+		serveDriftScan(w, r, manager)
 	})
 	mux.HandleFunc("GET /api/v1/drift-scans/{id}/resources/{change}", func(w http.ResponseWriter, r *http.Request) {
-		id, change := r.PathValue("id"), r.PathValue("change")
-		if !idPattern.MatchString(id) || !idPattern.MatchString(change) {
-			errorJSON(w, 404, "change_not_found")
-			return
-		}
-		detail, err := manager.DriftDetail(id, change)
-		switch {
-		case errors.Is(err, operations.ErrScanStale):
-			writeJSON(w, 409, map[string]string{"error": "scan_stale", "reason": "This scan no longer matches the current workspace or context. Scan again to see current drift."})
-		case err != nil:
-			errorJSON(w, 404, "change_not_found")
-		default:
-			writeJSON(w, 200, detail)
-		}
+		serveDriftDetail(w, r, manager)
 	})
+}
+
+// driftSource is the launch manager or a Hub workspace's execution scope.
+type driftSource interface {
+	DriftScan(id string) (operations.DriftScanView, bool)
+	DriftDetail(id, change string) (drift.Detail, error)
+}
+
+func serveDriftScan(w http.ResponseWriter, r *http.Request, src driftSource) {
+	id := r.PathValue("id")
+	if !idPattern.MatchString(id) {
+		errorJSON(w, 404, "scan_not_found")
+		return
+	}
+	scan, ok := src.DriftScan(id)
+	if !ok {
+		errorJSON(w, 404, "scan_not_found")
+		return
+	}
+	writeJSON(w, 200, scan)
+}
+
+func serveDriftDetail(w http.ResponseWriter, r *http.Request, src driftSource) {
+	id, change := r.PathValue("id"), r.PathValue("change")
+	if !idPattern.MatchString(id) || !idPattern.MatchString(change) {
+		errorJSON(w, 404, "change_not_found")
+		return
+	}
+	detail, err := src.DriftDetail(id, change)
+	switch {
+	case errors.Is(err, operations.ErrScanStale):
+		writeJSON(w, 409, map[string]string{"error": "scan_stale", "reason": "This scan no longer matches the current workspace or context. Scan again to see current drift."})
+	case err != nil:
+		errorJSON(w, 404, "change_not_found")
+	default:
+		writeJSON(w, 200, detail)
+	}
 }

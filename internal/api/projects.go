@@ -223,6 +223,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	toolRoutes(mux, hub)
 	scopedRoutes(mux, hub)
 	scopedImportRoutes(mux, hub)
+	scopedAnalysisRoutes(mux, hub)
 	mux.HandleFunc("GET /api/v1/contexts/{cid}", func(w http.ResponseWriter, r *http.Request) {
 		if c := contextOf(w, r); c != nil {
 			writeJSON(w, 200, workspaceBody(c.Snapshot(), c))
