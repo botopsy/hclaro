@@ -9,6 +9,7 @@ import { JsonTree } from '../components/JsonTree';
 import { actionOrder, clock, engineLabel, meta, reasonLabel, replaceOrder } from './labels';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { CostTab } from './CostTab';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from './routes';
 
 type Tab = 'changes' | 'outputs' | 'drift' | 'cost';
 const pageSize = 200;
@@ -35,7 +36,7 @@ export function sourceLabel(source?: PlanSourceFingerprint) {
   return source.dirtyKnown && source.dirty ? `${where} · ${source.dirtyFiles} uncommitted IaC file${source.dirtyFiles === 1 ? '' : 's'}` : where;
 }
 
-export function PlanReview({ plan, copy, onApply, busy, onInspectImpact }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; busy?: boolean; onInspectImpact?: (planId: string, address: string) => void }) {
+export function PlanReview({ plan, copy, onApply, busy, onInspectImpact, scope = launchScope }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; busy?: boolean; onInspectImpact?: (planId: string, address: string) => void; scope?: PlanScope }) {
   const [tab, setTab] = useState<Tab>('changes');
   const [actions, setActions] = useState<PlanAction[]>([]);
   const [showNoOp, setShowNoOp] = useState(false);
@@ -89,7 +90,7 @@ export function PlanReview({ plan, copy, onApply, busy, onInspectImpact }: { pla
       {visible.length === 0 ? <div className="empty-state"><Braces size={26} /><h2>{source.length ? 'No matching changes' : tab === 'drift' ? 'No drift detected' : 'No resource changes'}</h2></div> : <table className="resources-table changes-table"><thead><tr><th scope="col">Action</th><th scope="col">Resource</th><th scope="col">Why</th></tr></thead><tbody>{visible.slice(0, limit).map(c => <ChangeRow key={c.id} change={c} selected={selected === c.id} onSelect={() => setSelected(c.id)} />)}</tbody></table>}
       {visible.length > limit && <div className="pagination"><span>Showing {limit} of {visible.length}</span><Button variant="outline" size="small" onClick={() => setLimit(limit + pageSize)}>Show more</Button></div>}
      </section>
-     {selected && <ChangeInspector planId={plan.id} changeId={selected} close={() => setSelected(undefined)} copy={copy} />}
+     {selected && <ChangeInspector scope={scope} planId={plan.id} changeId={selected} close={() => setSelected(undefined)} copy={copy} />}
     </div>
    </>}
   </div>;
@@ -151,8 +152,8 @@ function ChangeRow({ change: c, selected, onSelect }: { change: PlanChange; sele
   </tr>;
 }
 
-function ChangeInspector({ planId, changeId, close, copy }: { planId: string; changeId: string; close: () => void; copy: (value: string, label: string) => Promise<void> }) {
-  const detail = useQuery({ queryKey: ['plan-change', planId, changeId], queryFn: () => api<ChangeDetail>(`plans/${planId}/changes/${changeId}`) });
+function ChangeInspector({ scope, planId, changeId, close, copy }: { scope: PlanScope; planId: string; changeId: string; close: () => void; copy: (value: string, label: string) => Promise<void> }) {
+  const detail = useQuery({ queryKey: ['plan-change', scopeKey(scope), planId, changeId], queryFn: () => api<ChangeDetail>(scopedPath(scope, `plans/${planId}/changes/${changeId}`)) });
   const d = detail.data;
   const order = d && replaceOrder(d.actions);
   return <Drawer label="Change details" onClose={close}>

@@ -1,0 +1,219 @@
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import golden from '../../../fixtures/plan/all-actions.golden.json';
+import App from '../App';
+import { contextPath, parseRoute } from '../router';
+import type { Operation, Plan, PreflightReport, Project, ProjectList, ScopedPlanOptions, Workspace } from '../types';
+
+// M24.07: plans and applies of a Hub workspace go only to that workspace's own context.
+const network = 'a'.repeat(32);
+const planId = 'b'.repeat(32);
+const opId = 'e'.repeat(32);
+// One open context per workspace (and per profile); "Open again" yields a new one.
+const ctx: Record<string, string> = { dev: '1'.repeat(32), prod: '2'.repeat(32), reopened: '3'.repeat(32) };
+const project: Project = {
+  id: network, alias: 'network', rootPath: '/infra/network', enginePreference: '', pinned: false, addedAt: '2026-11-05T10:00:00Z', status: 'ready', initialized: true, backend: 'local', executionMode: 'local-cli', providerLock: false, launch: false, workspaceActions: { change: true, delete: true },
+  lastWorkspace: 'dev', inspection: { engine: 'terraform', version: '1.9.8', workspaces: ['default', 'dev', 'prod'], cliDefault: 'default', hiddenWorkspaces: 0, inspectedAt: '2026-11-05T11:00:00Z' }
+};
+const listing: ProjectList = { projects: [project], registry: { status: 'ready', notice: '', path: '/config/hclaro/projects.json' }, environment: { dataDir: '.terraform', dataDirShared: false, workspaceInherited: false, cliArgsInherited: false } };
+const wsOf = (cid: string) => Object.keys(ctx).find(k => ctx[k] === cid) === 'prod' ? 'prod' : 'dev';
+function snapshot(cid: string): Workspace {
+  const ws = wsOf(cid);
+  return {
+    status: 'ready', capturedAt: '2026-11-05T12:00:00Z',
+    context: { id: cid, projectId: network, alias: 'network', rootPath: '/infra/network', engine: 'terraform', workspace: ws, dataDir: '.terraform', createdAt: '2026-11-05T12:00:00Z' },
+    info: { project: 'network', engine: 'terraform', version: '1.9.8', workspace: ws, backend: 'local', executionMode: 'local-cli', initialized: true, providerLock: true, warnings: [], capabilities: { canReadState: true, canPlan: true, canApplySavedPlan: true, supportsImportBlocks: true, supportsGeneratedConfig: true, canImport: false } },
+    managed: 0, data: 0, modules: [{ address: '', parent: '', count: 0 }], providers: {}, types: {}
+  };
+}
+const review: Record<string, unknown> = { ...golden };
+delete review.details;
+const plan = (ws: string) => ({ ...review, id: planId, operationId: opId, createdAt: '2026-11-05T12:05:00Z', engine: 'terraform', currentEngineVersion: '1.9.8', workspace: ws, varFiles: [], kind: 'plan', replace: [], destructive: true, artifactSha256: 'c'.repeat(64), fingerprint: 'd'.repeat(64), contextChanged: false, apply: { available: true, artifactRetained: true, expiresAt: '2026-11-05T13:00:00Z' } }) as unknown as Plan;
+const options = (cid: string): ScopedPlanOptions => ({ canPlan: true, scope: { contextId: cid, projectId: network, alias: 'network', rootPath: '/infra/network', engine: 'terraform', version: '1.9.8', workspace: wsOf(cid), profile: null, backend: 'local', executionMode: 'local-cli' }, backendAccessRequired: true, varFiles: ['dev.tfvars'], executionContext: null, contextFingerprint: '' });
+const finished: Operation = { id: opId, kind: 'plan', status: 'succeeded', stage: 'Finished', startedAt: '2026-11-05T12:04:00Z', durationMs: 900, exitCode: 0, command: ['terraform', 'plan'], varFiles: [], replace: [], planId, stateReloaded: false, engineDiagnostics: [], cancelRequested: false, logDropped: 0, logRetained: true };
+const report = (ws: string): PreflightReport => ({
+  planId, generatedAt: '2026-11-05T12:06:00Z', expiresAt: '2026-11-05T12:16:00Z',
+  context: { project: 'network', engine: 'terraform', engineVersion: '1.9.8', workspace: ws, backend: 'local', executionMode: 'local-cli', planKind: 'plan', planCreatedAt: '2026-11-05T12:05:00Z', artifactSha256: 'c'.repeat(64), fingerprint: 'd'.repeat(16), varFiles: [] },
+  checks: [{ id: 'context.production', title: 'Not a production-like context', severity: 'warn', status: 'fail', evidence: `Production-like label: workspace ${ws}.`, source: 'policy' }],
+  blocked: false, blockers: 0, acknowledge: ['context.production'],
+  impact: { summary: { delete: 1 }, total: 1, destructive: 1, imports: 0, requested: [], extra: 0, highRisk: [], changes: [], truncated: false },
+  policy: { source: 'default', version: 1, valid: true }, identity: { state: 'not_requested' },
+  binding: 'f'.repeat(64), phrase: `apply ${ws}`, command: ['terraform', 'apply', '<reviewed saved plan>']
+});
+
+type Call = { url: string; method: string; body?: Record<string, unknown> };
+let calls: Call[];
+let gate: boolean;
+let override: ((path: string, method: string) => Response | undefined) | undefined;
+function stub() {
+  calls = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+    const method = init.method || 'GET';
+    const body = init.body ? JSON.parse(init.body as string) : undefined;
+    calls.push({ url, method, body });
+    const path = url.replace('/api/v1/', '').split('?')[0];
+    const special = override?.(path, method);
+    if (special) return special;
+    if (path === 'session') return Response.json({ csrfToken: 'c'.repeat(64), capabilities: { scopedExecution: gate } });
+    if (path === 'projects') return Response.json(listing);
+    if (path === 'contexts') return Response.json(snapshot(body.reload ? ctx.reopened : ctx[body.workspace]).context);
+    if (path === 'workspace') return Response.json({ ...snapshot(ctx.dev), context: undefined, status: 'error', diagnostic: { code: 'no_launch_project', message: 'No project.' } });
+    const m = path.match(/^contexts\/([0-9a-f]{32})(?:\/(.*))?$/);
+    if (!m) return Response.json({ error: 'route_not_found' }, { status: 404 });
+    const [, cid, rest = ''] = m;
+    const ws = wsOf(cid);
+    if (rest === '') return Response.json(snapshot(cid));
+    if (rest === 'plans/options') return Response.json(options(cid));
+    if (rest === 'plans' && method === 'GET') return Response.json({ plans: ws === 'dev' ? [{ id: planId, createdAt: '2026-11-05T12:05:00Z', changes: 11 }] : [], scope: null });
+    if (rest === 'plans' && method === 'POST') return Response.json({ ...finished, status: 'running' }, { status: 202 });
+    if (rest === `plans/${planId}` && ws === 'dev') return Response.json(plan(ws));
+    if (rest === 'operations') return Response.json({ operations: ws === 'dev' ? [finished] : [] });
+    if (rest === `operations/${opId}/events`) return new Response('event: log\ndata: {"seq":1,"time":"2026-11-05T12:04:00Z","level":"info","text":"Planning in dev"}\n\nevent: end\ndata: {}\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+    if (rest === `plans/${planId}/preflight`) return Response.json(report(ws));
+    if (rest === `plans/${planId}/approval`) return Response.json({ confirmationToken: '9'.repeat(64) });
+    if (rest === `plans/${planId}/apply`) return Response.json({ ...finished, kind: 'apply', status: 'running' }, { status: 202 });
+    return Response.json({ error: 'plan_not_found' }, { status: 404 });
+  }));
+}
+function app(path: string) {
+  window.history.pushState(null, '', path);
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><App /></QueryClientProvider>);
+}
+// No Hub request may reach the launch project's plan, operation or apply routes.
+const launchCalls = () => calls.filter(c => /^\/api\/v1\/(plans|operations)(\/|$|\?)/.test(c.url));
+beforeEach(() => {
+  gate = true;
+  override = undefined;
+  localStorage.clear();
+  sessionStorage.clear();
+  stub();
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  window.history.pushState(null, '', '/');
+});
+
+// The full flows click and type through several dialogs; parallel suites slow them down.
+describe('Hub plan flow (M24.07)', { timeout: 20000 }, () => {
+  it('plans, reviews and applies in A/dev through its own context only', async () => {
+    app(contextPath(network, 'dev', 'Plans'));
+    const user = userEvent.setup();
+    const run = await screen.findByRole('button', { name: 'Run plan' });
+    await waitFor(() => expect(run).toBeEnabled());
+    await user.click(run);
+    const preflight = await screen.findByRole('dialog', { name: 'Run a plan' });
+    const uses = within(preflight).getByLabelText('This plan will use');
+    expect(uses).toHaveTextContent('network');
+    expect(uses).toHaveTextContent('/infra/network');
+    expect(uses).toHaveTextContent('dev');
+    expect(uses).toHaveTextContent('the CLI default is not changed');
+    await user.click(within(preflight).getByRole('button', { name: 'Run plan' }));
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/plans`)).toBe(true));
+    expect(calls.find(c => c.url === `/api/v1/contexts/${ctx.dev}/plans` && c.method === 'POST')!.body).toEqual({ acknowledgeBackendAccess: true, varFiles: [], replace: [], contextFingerprint: '' });
+
+    // Review: choosing a plan makes it a deep link.
+    await user.selectOptions(await screen.findByLabelText('Plan history'), planId);
+    expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/plans/${planId}`);
+    await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Apply to network / dev' });
+    await within(dialog).findByText(/Production-like label/);
+    await user.click(within(dialog).getByRole('checkbox'));
+    await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply dev');
+    await user.click(within(dialog).getByRole('button', { name: 'Apply plan' }));
+    await waitFor(() => expect(calls.some(c => c.url.endsWith('/apply'))).toBe(true));
+    expect(calls.filter(c => c.method === 'POST' && c.url !== '/api/v1/contexts').map(c => c.url)).toEqual([
+      `/api/v1/contexts/${ctx.dev}/plans`,
+      `/api/v1/contexts/${ctx.dev}/plans/${planId}/preflight`,
+      `/api/v1/contexts/${ctx.dev}/plans/${planId}/approval`,
+      `/api/v1/contexts/${ctx.dev}/plans/${planId}/apply`
+    ]);
+    expect(launchCalls()).toEqual([]);
+    // Nothing asks the CLI to select a workspace.
+    expect(calls.some(c => JSON.stringify(c.body || {}).includes('select'))).toBe(false);
+  });
+
+  it('restores a deep-linked review on load and clears all A/dev state when switching to prod', async () => {
+    app(contextPath(network, 'dev', 'Plans', planId));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
+    expect(await screen.findByRole('dialog', { name: 'Apply to network / dev' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    expect(window.location.pathname).toBe(`/projects/${network}/workspaces/prod/plans`);
+    expect(await screen.findByText('No plans yet')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Review and apply…' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(calls.some(c => c.url.startsWith(`/api/v1/contexts/${ctx.prod}/plans`))).toBe(true);
+    // Back returns to the dev review, read again from dev's context.
+    window.history.back();
+    await screen.findByRole('button', { name: 'Review and apply…' });
+    expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/plans/${planId}`);
+    expect(launchCalls()).toEqual([]);
+  });
+
+  it('lists a workspace\'s operations and streams their logs from its context', async () => {
+    app(contextPath(network, 'dev', 'Operations'));
+    const user = userEvent.setup();
+    await user.click(within(await screen.findByRole('table')).getByRole('button', { name: /^Plan/ }));
+    expect(await screen.findByText('Planning in dev')).toBeInTheDocument();
+    expect(calls.some(c => c.url.startsWith(`/api/v1/contexts/${ctx.dev}/operations/${opId}/events`))).toBe(true);
+    await user.click(screen.getByRole('button', { name: /Review plan/ }));
+    expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/plans/${planId}`);
+    expect(launchCalls()).toEqual([]);
+  });
+
+  it('keeps Hub workspaces read-only when the server does not enable scoped execution', async () => {
+    gate = false;
+    app(contextPath(network, 'dev', 'Plans'));
+    expect(await screen.findByText('Hub workspaces are read-only in this session')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Plans' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Run plan' })).not.toBeInTheDocument();
+    expect(calls.some(c => /contexts\/[0-9a-f]{32}\/(plans|operations)/.test(c.url))).toBe(false);
+    expect(launchCalls()).toEqual([]);
+  });
+
+  it('asks to open a closed workspace again instead of acting on another context', async () => {
+    override = (path, method) => method === 'GET' && path === `contexts/${ctx.dev}/plans/options` ? Response.json({ error: 'context_closed', reason: 'The project, engine, execution profile, environment or backend of this workspace changed, so it was closed. Open the workspace again.' }, { status: 404 }) : undefined;
+    app(contextPath(network, 'dev', 'Plans'));
+    expect(await screen.findByRole('heading', { name: 'Open this workspace again' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Run plan' })).not.toBeInTheDocument();
+    override = undefined;
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open again' }));
+    await waitFor(() => expect(calls.some(c => c.url === '/api/v1/contexts' && c.body?.reload === true)).toBe(true));
+    expect(await screen.findByRole('button', { name: 'Run plan' })).toBeInTheDocument();
+    expect(calls.some(c => c.url.startsWith(`/api/v1/contexts/${ctx.reopened}/plans`))).toBe(true);
+    expect(launchCalls()).toEqual([]);
+  });
+
+  it('explains a stale plan link and never looks it up elsewhere', async () => {
+    const stale = 'd'.repeat(32);
+    app(contextPath(network, 'dev', 'Plans', stale));
+    expect(await screen.findByText(/This plan is not kept here/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Show the latest plan' }));
+    expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/plans`);
+    expect(calls.filter(c => c.url.includes(stale)).map(c => c.url)).toEqual([`/api/v1/contexts/${ctx.dev}/plans/${stale}`]);
+    expect(launchCalls()).toEqual([]);
+  });
+
+  it('explains why planning is unavailable for a remote or uninitialized workspace', async () => {
+    override = (path) => path === `contexts/${ctx.dev}/plans/options` ? Response.json({ canPlan: false, code: 'execution_unsupported', reason: 'This workspace uses remote execution.', scope: null, backendAccessRequired: true, varFiles: [], executionContext: null, contextFingerprint: '' }) : undefined;
+    app(contextPath(network, 'dev', 'Plans'));
+    expect(await screen.findByText(/This workspace uses remote execution\..*remote and cloud execution stay read-only/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Run plan' })[0]).toBeDisabled();
+  });
+
+  it('parses plan and operation deep links strictly', () => {
+    expect(parseRoute(`/projects/${network}/workspaces/dev/plans`)).toEqual({ kind: 'context', projectId: network, workspace: 'dev', view: 'Plans' });
+    expect(parseRoute(`/projects/${network}/workspaces/dev/plans/${planId}`)).toEqual({ kind: 'context', projectId: network, workspace: 'dev', view: 'Plans', planId });
+    expect(parseRoute(`/projects/${network}/workspaces/dev/operations`)).toEqual({ kind: 'context', projectId: network, workspace: 'dev', view: 'Operations' });
+    for (const bad of [`plans/${planId}/apply`, 'plans/..', 'plans/XYZ', `operations/${planId}`, `resources/${planId}`]) {
+      expect(parseRoute(`/projects/${network}/workspaces/dev/${bad}`)).toEqual({ kind: 'project', projectId: network });
+    }
+    expect(contextPath(network, 'dev', 'Plans', '../x')).toBe(`/projects/${network}/workspaces/dev/plans`);
+    expect(contextPath(network, 'dev', 'Resources', planId)).toBe(`/projects/${network}/workspaces/dev/resources`);
+  });
+});

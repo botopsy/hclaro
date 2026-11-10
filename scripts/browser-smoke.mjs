@@ -117,7 +117,7 @@ try{
  await page.getByText(/10 resource changes and 4 output changes/).waitFor()
  // The fixture workspace executes locally, so the reviewed plan can be applied after confirmation.
  await page.getByRole('button',{name:'Review and apply…'}).click()
- const applyDialog=page.getByRole('dialog',{name:'Apply this plan'})
+ const applyDialog=page.getByRole('dialog',{name:/^Apply to .+ \/ demo$/})
  await applyDialog.getByText('apply demo',{exact:true}).waitFor()
  assert(await applyDialog.getByRole('button',{name:'Apply plan'}).isDisabled(),'apply enabled before typed confirmation')
  // M14: the server preflight shows the context identity, per-warning acknowledgements and the whole plan's impact.

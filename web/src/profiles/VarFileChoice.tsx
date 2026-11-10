@@ -4,9 +4,10 @@ import type { PlanOptions } from '../types';
 // Variable files a launch operation may use: optional files in the project root, plus the
 // files the selected profile approved. The profile's files start checked; unchecking one is a
 // per-operation override that does not change the profile.
-export function useVarFileChoice(options?: Pick<PlanOptions, 'varFiles' | 'context'>) {
-  const approved = options?.context?.context.varFiles.map(f => f.ref) || [];
-  const key = options?.context?.context.fingerprint || '';
+export function useVarFileChoice(options?: Pick<PlanOptions, 'varFiles' | 'context' | 'executionContext' | 'contextFingerprint'>) {
+  // A Hub workspace's options carry the recorded profile context instead of a summary.
+  const approved = options?.context?.context.varFiles.map(f => f.ref) || options?.executionContext?.varFiles || [];
+  const key = options?.context?.context.fingerprint || options?.contextFingerprint || '';
   const [state, setState] = useState<{ key: string; chosen: string[] }>({ key, chosen: approved });
   // A different profile or revision resets the choice to that profile's files.
   const chosen = state.key === key ? state.chosen : approved;

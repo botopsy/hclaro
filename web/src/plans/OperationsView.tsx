@@ -7,12 +7,14 @@ import { Button } from '../components/ui/button';
 import { OperationLog } from './OperationLog';
 import { clock, duration } from './labels';
 import { historyPath, navigate } from '../router';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from './routes';
 
-export function OperationsView({ openPlan }: { openPlan: (id: string) => void }) {
+// scope names the project or Hub workspace whose operations are listed.
+export function OperationsView({ openPlan, scope = launchScope }: { openPlan: (id: string) => void; scope?: PlanScope }) {
   const [selected, setSelected] = useState<string>();
   const operations = useQuery({
-    queryKey: ['operations'],
-    queryFn: () => api<{ operations: Operation[] }>('operations'),
+    queryKey: ['operations', scopeKey(scope)],
+    queryFn: () => api<{ operations: Operation[] }>(scopedPath(scope, 'operations')),
     refetchInterval: q => q.state.data?.operations.some(o => o.status === 'running') ? 2000 : false
   });
   if (operations.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading operations…</p></div>;
@@ -28,7 +30,7 @@ export function OperationsView({ openPlan }: { openPlan: (id: string) => void })
     <td>{duration(o.durationMs)}</td>
     <td>{o.kind === 'apply' ? <span className={o.outcome === 'uncertain' ? 'tone-warn' : 'muted'}>{o.outcome === 'applied' ? 'Applied' : o.outcome === 'uncertain' ? 'Outcome uncertain' : 'Not applied'}{o.diagnostic && ` · ${o.diagnostic.code.replaceAll('_', ' ')}`}</span> : o.planId ? <Button variant="ghost" size="small" onClick={() => openPlan(o.planId!)}>Review plan<ArrowRight size={13} /></Button> : <span className="muted">{o.diagnostic?.code.replaceAll('_', ' ') || '—'}{o.exitCode !== undefined && ` · exit ${o.exitCode}`}</span>}</td>
    </tr>)}</tbody></table>
-   {current && (current.logRetained ? <OperationLog key={current.id} operation={current} /> : <p className="muted">The log for this operation is no longer kept. Only the 10 most recent logs are retained.</p>)}
+   {current && (current.logRetained ? <OperationLog key={current.id} operation={current} scope={scope} /> : <p className="muted">The log for this operation is no longer kept. Only the 10 most recent logs are retained.</p>)}
    <p className="info-line">This list and its logs are kept in memory and disappear when Hclaro stops. Logs contain sanitized summaries, not raw engine output. <Button variant="ghost" size="small" onClick={() => navigate(historyPath())}><History size={13} />Operation history</Button></p>
   </div>;
 }
