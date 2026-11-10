@@ -105,6 +105,10 @@ describe('Compare workspaces', () => {
     expect(screen.getByText(/Not live cloud inventory/)).toBeInTheDocument();
     expect(screen.getByText(/matched no left address/)).toBeInTheDocument();
     expect(screen.getByLabelText('Rule matches')).toHaveTextContent('Ignore region1 value');
+    // Exact matching: a rename is two one-sided rows, distinct from redacted Unknown rows.
+    const hint = screen.getByText(/Addresses match exactly. If some of the 1 only-left and 2 only-right rows/);
+    expect(hint).toHaveTextContent('Map renamed address');
+    expect(hint).toHaveTextContent('redacted values were deliberately not compared');
     const table = await screen.findByRole('table');
     expect(within(table).getAllByRole('row')).toHaveLength(page.matches.length + 1);
     await user.click(within(table).getByRole('button', { name: /aws_db_instance\.main/ }));

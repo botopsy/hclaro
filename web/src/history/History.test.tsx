@@ -62,6 +62,8 @@ describe('Operation history', () => {
     expect(planRow).toBeTruthy();
     expect(within(planRow).getByTitle(/to create/)).toBeInTheDocument();
     expect(screen.getByText(`${page.total} of ${page.stored}`)).toBeInTheDocument();
+    // Retention and fidelity: metadata only, nothing applicable.
+    expect(screen.getByText(/no state, plan files or attribute values, so nothing here can re-run an operation or apply a plan/)).toHaveTextContent(/operations for \d+ days within [\d.]+ MiB/);
     expect(document.body.textContent).not.toContain(canary);
     // Nothing is written while browsing.
     expect(mutations()).toHaveLength(0);
