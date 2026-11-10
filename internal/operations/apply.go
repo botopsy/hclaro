@@ -499,8 +499,8 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	}
 	// A Hub workspace's scope is revalidated last, with the root claim held: project folder,
 	// engine binary and version, profile, environment, data directory and backend.
-	if !m.verify(ctx, e, "apply") {
-		if ctx.Err() != nil {
+	if ok, changed := m.verify(ctx, e, "apply"); !ok {
+		if !changed {
 			return stopped(), nil, false
 		}
 		return "scope_changed", nil, false

@@ -389,18 +389,29 @@ var messages = map[string]string{
 // scopeChangedMessage explains a failed scope revalidation; the log has the specific reason.
 const scopeChangedMessage = "The project, engine, execution profile, environment or backend of this workspace changed since it was opened, so nothing ran. Open the workspace again."
 
-// verify runs the Verify hook. It reports false, with the reason in the log, when the
-// operation must stop before the engine runs.
-func (m *Manager) verify(ctx context.Context, e *entry, kind string) bool {
+// verify runs the Verify hook. ok is false when the operation must stop before the engine
+// runs; a scope change is logged.
+//
+// changed is true only when the hook reported a scope change (code scope_changed). Any other
+// diagnostic means the operation's context ended first (cancel, timeout, shutdown); the
+// caller then reports why it stopped. The hook decides, not a later ctx.Err() check: a scope
+// change closes the scope, which cancels ctx, possibly before the caller looks at it.
+func (m *Manager) verify(ctx context.Context, e *entry, kind string) (ok, changed bool) {
 	if m.Verify == nil {
-		return true
+		return true, false
 	}
 	if d := m.Verify(ctx, kind); d != nil {
+		if d.Code != scopeChangedCode {
+			return false, false
+		}
 		e.log.Append("error", d.Message)
-		return false
+		return false, true
 	}
-	return true
+	return true, false
 }
+
+// scopeChangedCode is the Verify diagnostic code of a real scope change.
+const scopeChangedCode = "scope_changed"
 
 // Running reports whether an operation is running or being cancelled.
 func (m *Manager) Running() bool {
@@ -480,8 +491,8 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	if bound != nil {
 		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
 	}
-	if !m.verify(ctx, e, "plan") {
-		if ctx.Err() != nil {
+	if ok, changed := m.verify(ctx, e, "plan"); !ok {
+		if !changed {
 			return nil, nil, stopped(), nil
 		}
 		return nil, nil, "scope_changed", nil

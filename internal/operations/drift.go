@@ -313,8 +313,8 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 	if bound != nil {
 		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
 	}
-	if !m.verify(ctx, e, "drift") {
-		if ctx.Err() != nil {
+	if ok, changed := m.verify(ctx, e, "drift"); !ok {
+		if !changed {
 			return nil, "", false, stopped(), nil
 		}
 		return nil, "", false, "scope_changed", nil

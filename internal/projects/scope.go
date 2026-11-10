@@ -210,7 +210,9 @@ func (s *Scope) ContextStatus(p *operations.Plan) (bool, operations.ApplyStatus)
 }
 
 // SourceStatus compares a plan's source fingerprint with the scope's root now.
-func (s *Scope) SourceStatus(p *operations.Plan) gitctx.SourceStatus { return s.manager.SourceStatus(p) }
+func (s *Scope) SourceStatus(p *operations.Plan) gitctx.SourceStatus {
+	return s.manager.SourceStatus(p)
+}
 
 // Holder names the kind of exclusive operation holding the scope's root, or "".
 func (s *Scope) Holder() string {
@@ -547,7 +549,9 @@ func (s *Scope) revalidate(ctx context.Context, depth int) error {
 }
 
 // verify is the manager's Verify hook: it runs with the root claim held, before the first
-// engine command of an operation. A failure closes the context, so it cannot be used again.
+// engine command of an operation. A scope change (code scope_changed) closes the context, so
+// it cannot be used again; a failure after the operation's context ended is reported with
+// another code and closes nothing.
 func (s *Scope) verify(ctx context.Context, kind string) *operations.Diagnostic {
 	depth := checkEngine
 	if kind == "apply" {
@@ -562,10 +566,14 @@ func (s *Scope) verify(ctx context.Context, kind string) *operations.Diagnostic 
 	if errors.As(err, &scopeErr) {
 		message = scopeErr.Message
 	}
-	if ctx.Err() == nil {
-		// Closing waits for this operation, so it cannot run on the operation's goroutine.
-		go s.hub.closeContext(s.ContextID, CodeScopeChanged)
+	if ctx.Err() != nil {
+		// The operation was cancelled, timed out or shut down while revalidating; the
+		// failure says nothing about the scope.
+		return &operations.Diagnostic{Code: "stopped", Message: "The operation stopped before the engine ran."}
 	}
+	// Closing waits for this operation, so it cannot run on the operation's goroutine. It
+	// cancels the operation's context, so the result is decided here, before that.
+	go s.hub.closeContext(s.ContextID, CodeScopeChanged)
 	return &operations.Diagnostic{Code: CodeScopeChanged, Message: message}
 }
 
