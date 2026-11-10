@@ -202,3 +202,53 @@ func TestOrdinaryMetadataAccepted(t *testing.T) {
 		t.Fatalf("%+v", idx.Resources)
 	}
 }
+
+// Adversarial synthetic fixtures (M24.12): secrets under mundane or reformatted names, in
+// name/value pairs, inside JSON-encoded strings (escaped once or twice), in arrays, and as
+// HTTP Basic credentials. Each leaked before M24.12. Ambiguous values are hidden.
+func TestAdversarialSecretShapes(t *testing.T) {
+	var doc map[string]any
+	d := json.NewDecoder(strings.NewReader(`{
+		"privateKey": "hunter2pass", "apiKey": "abc12345", "accessKey": "qwerty", "x-api-key": "k1",
+		"Client.Secret": "s1", "pass​word": "zero-width", "PASSWORD": "upper",
+		"env": [{"name": "DB_PASSWORD", "value": "hunter2"}, {"Name": "api-token", "Value": "tok"}, {"key": "SigningKey", "value": "k"}],
+		"container_definitions": "[{\"environment\":[{\"name\":\"DB_PASSWORD\",\"value\":\"hunter2\"}]}]",
+		"policy": "{\"password\":\"hunter2\"}",
+		"nested": "{\"a\":\"[{\\\"auth_token\\\":\\\"t\\\"}]\"}",
+		"escaped": "{\\\"db_password\\\": \\\"hunter2\\\"}",
+		"headers": [{"name": "Authorization", "value": "Basic dXNlcjpwYXNz"}],
+		"auth": "basic dXNlcjpwYXNz=="
+	}`))
+	d.UseNumber()
+	if err := d.Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(Redact(doc, nil, ""))
+	for _, leak := range []string{"hunter2", "abc12345", "qwerty", `"k1"`, `"s1"`, "zero-width", "upper", `"tok"`, `"k"`, `\"t\"`, "dXNlcjpwYXNz"} {
+		if strings.Contains(string(b), leak) {
+			t.Errorf("%s leaked: %s", leak, b)
+		}
+	}
+	// The names stay visible: only values are hidden.
+	if !strings.Contains(string(b), `"name":"DB_PASSWORD"`) {
+		t.Errorf("pair name hidden: %s", b)
+	}
+	for key, value := range map[string]string{
+		"container_definitions": `[{"name":"app","image":"nginx:1.27","environment":[{"name":"LOG_LEVEL","value":"info"}]}]`,
+		"policy":                `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`,
+		"description":           "Basic tier for the SecurityGroupIngress2024Rule",
+		"tags_json":             `{"Name":"app-a"}`,
+		"not_json":              "{ shown as text",
+		"key_name":              "deployer",
+		"keep_alive":            "30s",
+	} {
+		if got := Redact(value, nil, key); got != value {
+			t.Errorf("%s=%q hidden as %v", key, value, got)
+		}
+	}
+	// Ordinary environment pairs stay visible.
+	env := Redact([]any{map[string]any{"name": "LOG_LEVEL", "value": "info"}}, nil, "env").([]any)
+	if env[0].(map[string]any)["value"] != "info" {
+		t.Errorf("%v", env)
+	}
+}

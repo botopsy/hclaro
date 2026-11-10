@@ -44,10 +44,14 @@ Launch is read-only. Since M2, a user can explicitly start a **plan**, which con
 - Saved plans are written only to a private `0700` OS temp directory, set to `0600`, hashed, read back and deleted immediately — and on failure, cancellation, timeout and shutdown. They are never written to the project.
 - Plan values and outputs are redacted with the state policy after diffing. Progress logs are rebuilt from typed engine events; free text is sanitized line by line; stderr is never returned.
 - Same-origin CSP, no framing or referrers, no external runtime assets, no raw-state endpoint.
-- Redaction before snapshot publication: engine sensitivity markers at any depth, secret-like attribute names, and credential-shaped or random-looking values are hidden. Other values are shown, as `terraform plan` would show them.
+- Redaction before snapshot publication: engine sensitivity markers at any depth, secret-like attribute names (compared without case or separators, so `privateKey` and `x-api-key` count), the value of a name/value pair whose name is secret-like (`{"name": "DB_PASSWORD", "value": …}`), strings holding JSON (also escaped) in which anything would be hidden (for example a container definition), HTTP Basic credentials, and credential-shaped or random-looking values are hidden. Ambiguous values are hidden rather than shown, so some ordinary values (such as an IAM policy that mentions a token condition key) appear as `[redacted]`. Other values are shown, as `terraform plan` would show them.
 - No raw diagnostics or state persisted by Hclaro. Child TF_LOG output and checkpoint checks are disabled; unsafe injected CLI flags fail explicitly.
 
 ### Limits
+
+**Network access.** Hclaro itself listens only on 127.0.0.1 and makes no network requests of its own. The programs it starts do: the opt-in Infracost CLI sends the minimized plan to its pricing API (see Cost estimates above), and reading state, `init`, plan and apply load provider plugins and contact the configured backend, registries and cloud APIs with the credentials in your environment or execution profile, as they would in your terminal. The AWS CLI runs only for an explicit discovery or identity check.
+
+**The private session URL is a credential.** Its fragment (`#session=…`) holds the bearer token for this launch. Fragments are not sent to servers or in referrers; the page moves the token to the tab's `sessionStorage` and removes it from the address bar and history at once. The terminal output and any shell history, screen recording or log that captured it still contain it. Anyone with it can use the session until Hclaro stops; stop Hclaro (Ctrl+C) to revoke it.
 
 A local process that can inspect memory, modify executables, or read terminal/browser session credentials is outside the threat model. Existing IaC engines, provider plugins, selected directories and inherited credential configuration are trusted local inputs; state inspection can load plugins and contact the configured backend. This does not turn existing provider behavior into a security sandbox.
 

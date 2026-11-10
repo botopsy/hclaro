@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+Secret handling (M24.12):
+
+- Fix: redaction missed secrets that a provider does not mark sensitive in common shapes: camelCase or dashed names (`privateKey`, `apiKey`, `x-api-key`), name/value environment pairs (`{"name": "DB_PASSWORD", "value": …}` in container and function definitions), JSON-encoded strings such as `container_definitions` (also escaped twice), and HTTP Basic credentials. These values are now hidden in state, plans, drift, comparisons, history and logs. Some ordinary values are now hidden too, for example an IAM policy whose condition key names a token or secret.
+- `SECURITY.md` explains Hclaro's network access and that the private session URL is a credential; the beta notes say saved plan files are plaintext and when they are deleted.
+
 Support qualification (M24.11):
 
 - New [support matrix](docs/support-matrix.md): every engine version, platform, backend, provider and operation with PASS/FAIL/NOT_TESTED/BLOCKED. Only the Terraform 1.5.5 local-backend plan run is PASS; a test refuses PASS rows without dated, real, recorded evidence.
