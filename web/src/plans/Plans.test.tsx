@@ -244,6 +244,7 @@ describe('Plans', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Plan a replacement' });
     expect(dialog).toHaveTextContent('module.compute.aws_instance.main[0]');
     expect(dialog).toHaveTextContent('not a targeted one');
+    expect(dialog).toHaveTextContent('Hclaro never uses -target');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Plan replacement' }));
     await waitFor(() => expect(posts).toHaveLength(1));
     // Addresses never leave the browser as command input; the server resolves IDs from state.
@@ -259,6 +260,7 @@ describe('Plans', () => {
     expect(within(summary).getByText('aws_instance.gone').closest('li')).toHaveTextContent('not in plan');
     expect(summary).toHaveTextContent(/other changes are part of this plan, including \d+ deletions or replacements you did not select/);
     expect(summary).toHaveTextContent('expect downtime');
+    expect(summary).toHaveTextContent('never uses -target');
   });
 
   it('offers Inspect impact for a replace plan and starts nothing', async () => {
@@ -294,6 +296,7 @@ describe('Plans', () => {
     expect(dialog).toHaveTextContent('cannot guarantee zero downtime');
     // The full plan, not only the selection: collateral changes are listed.
     expect(dialog).toHaveTextContent('The plan also changes 2 other resource instances');
+    expect(dialog).toHaveTextContent('Hclaro never uses -target');
     expect(within(dialog).getByRole('list', { name: 'High-risk resources' })).toHaveTextContent('aws_lb_target_group_attachment.web[2]');
     expect(within(dialog).getByRole('list', { name: 'Planned changes' })).toHaveTextContent('aws_route53_record.www');
     // Opening the dialog runs the preflight only; the identity probe is not requested.
@@ -316,8 +319,10 @@ describe('Plans', () => {
     expect(posts.filter(p => p.url.endsWith('/approval'))).toHaveLength(0);
     await user.click(boxes[1]);
     expect(apply).toBeEnabled();
-    await user.click(apply);
+    // A double click approves and applies once; nothing is retried.
+    await user.dblClick(apply);
     await waitFor(() => expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(1));
+    expect(posts.filter(p => p.url.endsWith('/approval'))).toHaveLength(1);
     const approvalSent = posts.find(p => p.url.endsWith('/approval'))!;
     expect(JSON.parse(approvalSent.init.body as string)).toEqual({ preflightBinding: report.binding, acknowledged: ['git.worktree', 'plan.scope'] });
     const sent = posts.find(p => p.url.endsWith('/apply'))!;
@@ -444,8 +449,24 @@ describe('Plans', () => {
     view();
     const alert = await screen.findByText(/State could not be read again after the apply/);
     expect(alert).toBeInTheDocument();
-    expect(screen.getByText(/does not check that your services are healthy/)).toBeInTheDocument();
-    expect(screen.queryByText(/State was re-read/)).not.toBeInTheDocument();
+    // Engine success with a failed state read is a warning, never a clean success.
+    expect(screen.getByRole('heading', { name: 'Apply finished, state not confirmed' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Apply finished' })).not.toBeInTheDocument();
+    const status = screen.getByLabelText('Apply status');
+    expect(status).toHaveTextContent('reported the apply as finished');
+    expect(status).toHaveTextContent('could not be read again');
+    expect(status).toHaveTextContent('Resource healthnot checked');
+  });
+
+  it('separates engine success, state read and health on a clean apply', async () => {
+    const applied: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [applied, operation] }) : undefined);
+    view();
+    expect(await screen.findByRole('heading', { name: 'Apply finished' })).toBeInTheDocument();
+    const status = screen.getByLabelText('Apply status');
+    expect(status).toHaveTextContent('read again at');
+    expect(status).toHaveTextContent('Hclaro has no health probe');
+    expect(screen.queryByText(/healthy|verified/i)).not.toBeInTheDocument();
   });
 
   it('reports an interrupted apply as an uncertain outcome', async () => {
@@ -453,9 +474,13 @@ describe('Plans', () => {
     serve(url => url.endsWith('/operations') ? Response.json({ operations: [interrupted, operation] }) : undefined);
     view();
     const [alert] = await screen.findAllByRole('alert');
-    expect(alert).toHaveTextContent('Apply interrupted');
+    expect(alert).toHaveTextContent('Apply interrupted · outcome uncertain');
     expect(alert).toHaveTextContent('may be partly changed');
-    expect(alert).toHaveTextContent('State was re-read');
+    expect(alert).toHaveTextContent('read again at');
     expect(alert).toHaveTextContent('cannot be applied again');
+    // Manual inspection steps, and no invitation to apply again.
+    expect(alert).toHaveTextContent('Do not apply again from Hclaro');
+    expect(alert).toHaveTextContent('never force-unlocks');
+    expect(screen.queryByRole('button', { name: /apply/i })).not.toBeInTheDocument();
   });
 });

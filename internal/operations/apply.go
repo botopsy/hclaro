@@ -180,7 +180,7 @@ func (m *Manager) retainLocked(p *Plan, kept *artifact) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if m.artifact == kept && !kept.applying {
-			m.releaseLocked("This plan expired and its saved file was deleted. Run a new plan; infrastructure may have changed since.")
+			m.releaseLocked(expiredReason(m.PlanMaxAge) + " Its saved file was deleted.")
 		}
 	})
 }
@@ -242,7 +242,7 @@ func (m *Manager) checkLocked(p *Plan, currentFingerprint, profileReason string)
 	case !snap.Info.Capabilities.CanApply:
 		return reject("not_applicable", snap.Info.Capabilities.ApplyReason)
 	case time.Since(a.created) >= m.PlanMaxAge:
-		return reject("plan_expired", "This plan expired. Run a new plan; infrastructure may have changed since.")
+		return reject("plan_expired", expiredReason(m.PlanMaxAge))
 	case profileReason != "":
 		return reject("context_changed", profileReason)
 	case snap.Info.Engine != a.engine || snap.Info.Version != a.version || snap.Info.Workspace != a.workspace:
@@ -251,6 +251,15 @@ func (m *Manager) checkLocked(p *Plan, currentFingerprint, profileReason string)
 		return reject("context_changed", "Configuration, variable files, the lock file or the planning environment changed since this plan was created. Run a new plan.")
 	}
 	return nil
+}
+
+// expiredReason names the age limit, so "expired" is not a mystery.
+func expiredReason(limit time.Duration) string {
+	age := fmt.Sprintf("%d minutes", int(limit.Minutes()))
+	if limit == time.Hour {
+		age = "1 hour"
+	}
+	return "This plan is older than " + age + ", the longest a saved plan stays applicable. Run a new plan; infrastructure may have changed since."
 }
 
 func applyCommand(a *artifact) []string {
@@ -453,6 +462,12 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	}
 	if code == "applied" && !reloaded {
 		message = "Apply finished. The engine reported success."
+	}
+	switch code {
+	case "unsafe_cli_args":
+		message += " " + engine.UnsafeArgsHelp(environOr(e.environ), "apply", "workspace")
+	case "credentials":
+		message += credentialHint(e)
 	}
 	if code != "applied" {
 		o.Diagnostic = &Diagnostic{Code: code, Message: message}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -50,6 +51,51 @@ func (c *CLI) WithEnvironment(environ []string, workspace string) *CLI {
 }
 
 var ErrUnsafeArgs = errors.New("inherited TF_CLI_ARGS contains unsupported arguments; only -no-color is accepted")
+
+// flagName matches a bare flag name; anything after "=" is a value and is never reported.
+var flagName = regexp.MustCompile(`^--?[A-Za-z][A-Za-z0-9_-]{0,40}$`)
+
+// UnsafeArgsHelp explains which inherited TF_CLI_ARGS variables block the commands (none
+// means any TF_CLI_ARGS*) and how to remove them. It names variables and flag names only, never values;
+// arguments that are not a plain flag are counted, not shown. It returns "" when none block.
+// shortcut: a secret passed space-separated after a flag and itself shaped like "-name" would
+// be named; such values are not expected from TF_CLI_ARGS.
+func UnsafeArgsHelp(environ []string, commands ...string) string {
+	found, unset := []string{}, []string{}
+	for _, item := range environ {
+		key, value, _ := strings.Cut(item, "=")
+		upper := strings.ToUpper(key)
+		relevant := upper == "TF_CLI_ARGS" || len(commands) == 0 && strings.HasPrefix(upper, "TF_CLI_ARGS_")
+		for _, c := range commands {
+			relevant = relevant || upper == strings.ToUpper("TF_CLI_ARGS_"+c)
+		}
+		if !relevant {
+			continue
+		}
+		names, other := []string{}, 0
+		for _, arg := range strings.Fields(value) {
+			name, _, _ := strings.Cut(arg, "=")
+			switch {
+			case arg == "-no-color":
+			case flagName.MatchString(name):
+				names = append(names, name)
+			default:
+				other++
+			}
+		}
+		if other > 0 {
+			names = append(names, fmt.Sprintf("%d other argument(s)", other))
+		}
+		if len(names) > 0 {
+			found = append(found, key+" adds "+strings.Join(names, ", "))
+			unset = append(unset, key)
+		}
+	}
+	if len(found) == 0 {
+		return ""
+	}
+	return "Found: " + strings.Join(found, "; ") + ". Hidden flags such as -target, -replace, -lock=false or -auto-approve would change what runs without appearing in the reviewed command, so only -no-color is accepted. Unset them in the shell or environment that starts Hclaro (for example `unset " + strings.Join(unset, " ") + "`) and restart Hclaro. An execution profile cannot override inherited TF_CLI_ARGS settings, and Hclaro never removes them for you."
+}
 
 const readTimeout = 45 * time.Second
 
