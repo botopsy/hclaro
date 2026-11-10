@@ -54,6 +54,20 @@ func droppedKey(key string) bool {
 
 var regionValue = regexp.MustCompile(`^[a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-[0-9]{1,2}$|^[a-z]+-[a-z]+[0-9]{1,2}$|^[a-z]+[a-z0-9-]{0,30}$`)
 
+// digitRun finds runs of digits; a run of exactly 12 is treated as an AWS account ID.
+var digitRun = regexp.MustCompile(`[0-9]+`)
+
+// maskAccounts replaces every 12-digit run (an AWS account ID in an ARN, ECR or SQS URL,
+// bucket name, owner field…) with zeros. Prices never depend on it; the rest is kept.
+func maskAccounts(s string) string {
+	return digitRun.ReplaceAllStringFunc(s, func(d string) string {
+		if len(d) == 12 {
+			return "000000000000"
+		}
+		return d
+	})
+}
+
 // referencePattern bounds a configuration reference (an address such as var.region or
 // aws_instance.web.id). Anything else is dropped.
 var referencePattern = regexp.MustCompile(`^[A-Za-z0-9_.\[\]"-]{1,256}$`)
@@ -71,7 +85,7 @@ func clean(value, marker any, key string, depth int) (any, bool) {
 		if len(v) > maxValueString || state.LooksSecret(v) || strings.ContainsAny(v, "\x00\r\n") {
 			return nil, false
 		}
-		return v, true
+		return maskAccounts(v), true
 	case map[string]any:
 		masks, _ := marker.(map[string]any)
 		out := map[string]any{}

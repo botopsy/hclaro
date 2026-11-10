@@ -87,7 +87,7 @@ export function CostTab({ plan }: { plan: Plan }) {
    {caps.state === 'cli_missing' && <Unavailable icon={CircleSlash} title="Infracost CLI not found" reason={caps.reason} />}
    {caps.state === 'off' && <div className="cost-gate">
     <h2><ShieldCheck size={16} />Cost estimation is off</h2>
-    <p>Estimates use the Infracost CLI you installed ({caps.disclosure?.endpoint ? <>prices come from <code>{caps.disclosure.endpoint}</code></> : 'a remote pricing API'}). Nothing is run or sent until you review what leaves this device and turn it on for this session.</p>
+    <p>Estimates use the Infracost CLI v0.10 you installed ({caps.disclosure?.endpoint ? <>prices come from <code>{caps.disclosure.endpoint}</code></> : 'a remote pricing API'}). Nothing is run or sent until you review what leaves this device and turn it on for this session.</p>
     <Button onClick={() => setDisclosing(true)}><ShieldCheck size={14} />Review data disclosure…</Button>
    </div>}
    {caps.state === 'ready' && !caps.canEstimate && <Unavailable icon={CircleSlash} title="Cost estimates are not available here" reason={caps.reason} />}

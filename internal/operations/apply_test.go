@@ -545,3 +545,74 @@ func TestUnknownActionsRecheckedBeforeEngine(t *testing.T) {
 		t.Fatalf("supported plan refused: %s %v", code, started)
 	}
 }
+
+// A TF_CLI_ARGS refusal names the variable and flag names, never values, and says how to
+// remove them, for plan and apply alike. Nothing is applied and nothing is retried.
+func TestUnsafeArgsRefusalNamesFlagsNotValues(t *testing.T) {
+	t.Setenv("TF_CLI_ARGS_init", "-upgrade") // not used by plan or apply: not named
+	secret := []string{"hunter2", "aws_db_instance.secret", "s3cr3t-value"}
+	check := func(t *testing.T, message, variable, names string) {
+		t.Helper()
+		for _, want := range []string{variable + " adds " + names, "unset " + variable, "restart Hclaro", "cannot override"} {
+			if !strings.Contains(message, want) {
+				t.Fatalf("missing %q in %q", want, message)
+			}
+		}
+		for _, leak := range append(secret, "TF_CLI_ARGS_init") {
+			if strings.Contains(message, leak) {
+				t.Fatalf("leaked %q in %q", leak, message)
+			}
+		}
+	}
+	t.Run("plan", func(t *testing.T) {
+		t.Setenv("TF_CLI_ARGS_plan", "-no-color -target=aws_db_instance.secret -var=password=hunter2 s3cr3t-value")
+		m, _ := setup(t, &engine.Fake{PlanErr: engine.ErrUnsafeArgs}, workspace.Info{})
+		op, err := m.StartPlan(nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := wait(t, m, op.ID)
+		if done.Diagnostic == nil || done.Diagnostic.Code != "unsafe_cli_args" {
+			t.Fatalf("%+v", done)
+		}
+		check(t, done.Diagnostic.Message, "TF_CLI_ARGS_plan", "-target, -var, 1 other argument(s)")
+	})
+	t.Run("apply", func(t *testing.T) {
+		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyErr: engine.ErrUnsafeArgs}
+		m, _ := setup(t, fake, workspace.Info{})
+		id := planned(t, m)
+		t.Setenv("TF_CLI_ARGS_apply", "-auto-approve -var=token=hunter2")
+		done := wait(t, m, approveAndApply(t, m, id).ID)
+		if done.Diagnostic == nil || done.Diagnostic.Code != "unsafe_cli_args" || done.Outcome != "not_applied" {
+			t.Fatalf("%+v %+v", done, done.Diagnostic)
+		}
+		check(t, done.Diagnostic.Message, "TF_CLI_ARGS_apply", "-auto-approve, -var")
+		assertTempEmpty(t, m)
+	})
+}
+
+// Expired sign-in, missing credentials and denied access read differently; the stable code
+// stays "credentials".
+func TestCredentialHints(t *testing.T) {
+	for text, want := range map[string]string{
+		"Error: ExpiredToken: The security token included in the request is expired": "expired credentials or an expired SSO session",
+		"the SSO session associated with this profile has expired":                   "expired credentials or an expired SSO session",
+		"Error: No valid credential sources found":                                     "found no credentials",
+		"AccessDenied: User is not authorized to perform s3:GetObject":                 "was denied access",
+		"Error: something else about credentials":                                      "",
+	} {
+		hint := credentialHint(&entry{op: Operation{Diagnostics: []EngineDiagnostic{{Summary: text}}}})
+		if want == "" && hint != "" || !strings.Contains(hint, want) {
+			t.Fatalf("%q: %q", text, hint)
+		}
+	}
+	fake := &engine.Fake{PlanErr: &engine.ExitError{Code: 1}, Lines: [][]byte{[]byte(`{"@level":"error","@message":"Error: SSO session expired","type":"diagnostic","diagnostic":{"severity":"error","summary":"refresh failed: the SSO session associated with this profile has expired","detail":""}}`)}}
+	m, _ := setup(t, fake, workspace.Info{})
+	op, err := m.StartPlan(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := wait(t, m, op.ID).Diagnostic; d == nil || d.Code != "credentials" || !strings.Contains(d.Message, "sign in again") {
+		t.Fatalf("%+v", d)
+	}
+}

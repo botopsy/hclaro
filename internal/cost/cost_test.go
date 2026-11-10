@@ -42,7 +42,9 @@ const richPlan = `{
         "address": "aws_instance.web", "mode": "managed", "type": "aws_instance", "name": "web",
         "provider_name": "registry.terraform.io/hashicorp/aws", "schema_version": 1,
         "values": {
-          "instance_type": "m5.large", "ami": "ami-0abc1234",
+          "instance_type": "m5.large", "ami": "ami-0abc1234", "owner_id": "444455556666",
+          "iam_instance_profile": "arn:aws:iam::444455556666:instance-profile/web", "placement_group": "arn:aws:ec2:eu-west-1:444455556666:placement-group/pg",
+          "image_uri": "444455556666.dkr.ecr.eu-west-1.amazonaws.com/app:1", "queue": "https://sqs.eu-west-1.amazonaws.com/444455556666/q", "bucket": "logs-444455556666-777788889999", "build": "1234567890123",
           "tags": {"Owner": "DO_NOT_LEAK_HCLARO_TEST_SECRET"}, "description": "free text DO_NOT_LEAK",
           "user_data": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "marked": "hidden-by-marker-value",
           "random": "kX9fQ2LmZp7RtY4vBn8WcE3s", "long": "` + "%LONG%" + `",
@@ -99,12 +101,12 @@ func TestMinimizeKeepsPricingDataAndDropsSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(out)
-	for _, leak := range []string{canary, "DO_NOT_LEAK", "hidden-by-marker-value", "kX9fQ2LmZp7RtY4vBn8WcE3s", "aaaaaaaaaa", "example.com", "variables", "output_changes", "resource_drift", "relevant_attributes", "checks", "outputs", "assume_role", "access_key", "kms_key_id", "free text"} {
+	for _, leak := range []string{canary, "DO_NOT_LEAK", "hidden-by-marker-value", "kX9fQ2LmZp7RtY4vBn8WcE3s", "aaaaaaaaaa", "example.com", "variables", "output_changes", "resource_drift", "relevant_attributes", "checks", "outputs", "assume_role", "access_key", "kms_key_id", "free text", "444455556666", "777788889999"} {
 		if strings.Contains(text, leak) {
 			t.Errorf("minimized input contains %q:\n%s", leak, text)
 		}
 	}
-	for _, keep := range []string{`"m5.large"`, `"t3.large"`, `"db.r6g.large"`, `"eu-west-1"`, `"aws_instance.web.id"`, `"volume_size":50`, `"gp3"`, `"postgres"`, `"module.db.aws_db_instance.main"`, `"actions":["update"]`, `"ami-0abc1234"`} {
+	for _, keep := range []string{`"m5.large"`, `"t3.large"`, `"db.r6g.large"`, `"eu-west-1"`, `"aws_instance.web.id"`, `"volume_size":50`, `"gp3"`, `"postgres"`, `"module.db.aws_db_instance.main"`, `"actions":["update"]`, `"ami-0abc1234"`, `"owner_id":"000000000000"`, `"arn:aws:ec2:eu-west-1:000000000000:placement-group/pg"`, `"000000000000.dkr.ecr.eu-west-1.amazonaws.com/app:1"`, `"https://sqs.eu-west-1.amazonaws.com/000000000000/q"`, `"logs-000000000000-000000000000"`, `"1234567890123"`} {
 		if !strings.Contains(text, keep) {
 			t.Errorf("minimized input lost %s:\n%s", keep, text)
 		}
