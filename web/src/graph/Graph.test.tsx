@@ -76,6 +76,11 @@ describe('Graph', () => {
     const legend = screen.getByLabelText('Legend');
     expect(legend).toHaveTextContent('Depends on (declared by the engine)');
     expect(legend).toHaveTextContent('Derived through internal nodes');
+    // Fidelity and retention are stated, not implied.
+    const limits = document.querySelector('.graph-limits')!;
+    expect(limits).toHaveTextContent('Terraform 1.7 and later print a resource-only graph');
+    expect(limits).toHaveTextContent('16 MiB, 20,000 nodes or 200,000 edges is refused');
+    expect(limits).toHaveTextContent('The last 5 graphs are kept in memory for up to 12 hours');
   });
 
   it('shows potential impact as reachability only until a plan is chosen', async () => {

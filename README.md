@@ -268,7 +268,7 @@ The review shows:
 - Output changes and changes made outside Terraform/OpenTofu (drift).
 - Metadata: engine, workspace, variable files, plan SHA-256, the Git source (branch, commit, uncommitted IaC files), and a warning when configuration or the source revision changed since the plan.
 
-Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans and applies with status, duration, exit code and their logs; this list is in memory only. Redacted metadata of every operation is also kept in [Operation history](#operation-history).
+Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans and applies with status, duration, exit code and their logs; this list is in memory only (the last 100 operations, logs of the last 10). Redacted metadata of every operation is also kept in [Operation history](#operation-history).
 
 ## Drift detection
 
