@@ -1205,7 +1205,7 @@ export type DiscoveryOptions = {
   regions: string[];
   defaultRegion: string;
   regionSource: 'profile' | 'environment' | 'default';
-  limits: { maxRegions: number; maxPerType: number; defaultPerType: number; maxConcurrency: number; defaultConcurrency: number; pageSize: number };
+  limits: { maxRegions: number; maxPerType: number; maxObjects: number; defaultPerType: number; maxConcurrency: number; defaultConcurrency: number; pageSize: number };
   project: string;
   engine: string;
   workspace: string;
@@ -1260,6 +1260,7 @@ export type DiscoveryScan = {
   scope: DiscoveryScope;
   estimate: { tasks: number; minCalls: number; maxCalls: number };
   calls: number;
+  truncated?: boolean;
   identity: CloudIdentity;
   context: DiscoveryPin;
   tasks: DiscoveryTask[];

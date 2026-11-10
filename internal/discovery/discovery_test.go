@@ -561,6 +561,34 @@ func TestLimitTruncatesAndMarksPartial(t *testing.T) {
 	}
 }
 
+func TestTotalObjectCapTruncatesAndMarksPartial(t *testing.T) {
+	svc := newService(&fakeRunner{})
+	svc.MaxObjects = 2
+	v := scanAll(t, svc, DiscoveryScope{Regions: []string{"eu-west-1"}, Types: []string{"aws_vpc"}}, snapshot())
+	if v.Status != ScanPartial || !v.Truncated || len(v.Results) != 2 || v.Tasks[0].Truncated {
+		t.Fatalf("status %s truncated %v results %d task %+v", v.Status, v.Truncated, len(v.Results), v.Tasks[0])
+	}
+	// Once the cap is reached the remaining lists are not read at all.
+	r := &fakeRunner{}
+	svc = newService(r)
+	svc.MaxObjects = 2
+	v = scanAll(t, svc, DiscoveryScope{Regions: []string{"eu-west-1"}, Types: []string{"aws_vpc", "aws_subnet"}, Concurrency: 1}, snapshot())
+	subnets := 0
+	for _, c := range r.calls {
+		if slices.Contains(c, "describe-subnets") {
+			subnets++
+		}
+	}
+	if v.Status != ScanPartial || subnets != 0 || v.Tasks[1].Status != TaskCancelled || v.Tasks[1].Message == "" {
+		t.Fatalf("status %s subnet calls %d task %+v", v.Status, subnets, v.Tasks[1])
+	}
+	// Under the cap nothing is marked.
+	v = scanAll(t, newService(&fakeRunner{}), DiscoveryScope{Regions: []string{"eu-west-1"}, Types: []string{"aws_vpc"}}, snapshot())
+	if v.Status != ScanCompleted || v.Truncated {
+		t.Fatalf("status %s truncated %v", v.Status, v.Truncated)
+	}
+}
+
 func TestMatchIsExactAndConservative(t *testing.T) {
 	c := func(typ, id, arn string) CloudResourceCandidate {
 		return CloudResourceCandidate{Type: typ, ResourceID: id, ImportID: id, ARN: arn, ImportStatus: ImportIDVerified}

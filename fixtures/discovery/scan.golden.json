@@ -89,6 +89,7 @@
       "defaultConcurrency": 2,
       "defaultPerType": 200,
       "maxConcurrency": 4,
+      "maxObjects": 5000,
       "maxPerType": 1000,
       "maxRegions": 6,
       "pageSize": 100
@@ -266,6 +267,7 @@
       }
     ],
     "duplicatesMerged": 0,
+    "truncated": false,
     "results": [
       {
         "id": "847e28ca988bafea05af5c0774305c2e",

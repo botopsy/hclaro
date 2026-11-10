@@ -60,7 +60,7 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			Identity      *discovery.CloudIdentity `json:"identity,omitempty"`
 			ProjectID     string                   `json:"projectId,omitempty"`
 		}{analysisOptions: base, Provider: "aws", Types: discovery.Types, Regions: discovery.Regions, DefaultRegion: "us-east-1", RegionSource: "default", Limits: map[string]int{
-			"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "defaultPerType": discovery.DefaultPerType,
+			"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "maxObjects": discovery.MaxObjects, "defaultPerType": discovery.DefaultPerType,
 			"maxConcurrency": discovery.MaxConcurrency, "defaultConcurrency": discovery.DefaultConcurrent, "pageSize": discovery.PageSize,
 		}}
 		switch {
