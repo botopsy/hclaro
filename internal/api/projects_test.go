@@ -341,3 +341,32 @@ func TestHubClientRoutesServeTheAppShellOnly(t *testing.T) {
 		t.Fatalf("hub routes without a hub: %d", w.Code)
 	}
 }
+
+// M24.04: scope refusals keep stable codes, and the session reports whether scoped
+// execution is enabled. No scoped execution route exists yet (M24.05).
+func TestScopeRefusalsAndSessionCapability(t *testing.T) {
+	s := newHubServer(t)
+	for _, tc := range []struct {
+		err    *projects.ScopeError
+		status int
+	}{
+		{&projects.ScopeError{Code: projects.CodeScopedDisabled, Message: "off"}, 404},
+		{&projects.ScopeError{Code: projects.CodeCapacityExceeded, Message: "full"}, 409},
+		{&projects.ScopeError{Code: projects.CodeExecutionUnsupported, Message: "remote"}, 409},
+		{&projects.ScopeError{Code: projects.CodeScopeChanged, Detail: projects.DetailEngineChanged, Message: "changed"}, 409},
+	} {
+		w := httptest.NewRecorder()
+		projectError(w, s.hub, tc.err)
+		body := decode[map[string]string](t, w)
+		if w.Code != tc.status || body["error"] != tc.err.Code || body["reason"] != tc.err.Message || body["detail"] != tc.err.Detail {
+			t.Fatalf("%s: %d %v", tc.err.Code, w.Code, body)
+		}
+	}
+	if caps := decode[map[string]any](t, s.do("GET", "/api/v1/session", ""))["capabilities"]; caps.(map[string]any)["scopedExecution"] != false {
+		t.Fatalf("%v", caps)
+	}
+	s.hub.ScopedExecution = true
+	if caps := decode[map[string]any](t, s.do("GET", "/api/v1/session", ""))["capabilities"]; caps.(map[string]any)["scopedExecution"] != true {
+		t.Fatalf("%v", caps)
+	}
+}

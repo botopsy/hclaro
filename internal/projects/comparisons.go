@@ -146,7 +146,10 @@ func (h *Hub) openSide(t ComparisonTarget, reload bool) comparisonSide {
 func sideError(err error) *SideError {
 	var path *PathError
 	var refusal *ProfileRefusal
+	var scope *ScopeError
 	switch {
+	case errors.As(err, &scope):
+		return &SideError{scope.Code, scope.Message}
 	case errors.As(err, &refusal):
 		return &SideError{refusal.Code, refusal.Message}
 	case errors.As(err, &path):

@@ -129,8 +129,13 @@ func parseSSE(body string) []sseEvent {
 
 func TestPlanFlowOverHTTP(t *testing.T) {
 	s := newPlanServer(t, &engine.Fake{Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n")), PlanJSON: fixtures.PlanAllActions})
-	if got := decode[map[string]string](t, s.do("GET", "/api/v1/session", "")); got["csrfToken"] != csrf {
+	session := decode[map[string]any](t, s.do("GET", "/api/v1/session", ""))
+	if session["csrfToken"] != csrf {
 		t.Fatal("csrf token not delivered to the authorized client")
+	}
+	// Scoped execution for Hub workspaces is off unless enabled when Hclaro starts (M24.04).
+	if caps, ok := session["capabilities"].(map[string]any); !ok || caps["scopedExecution"] != false {
+		t.Fatalf("session capabilities: %v", session["capabilities"])
 	}
 	options := decode[map[string]any](t, s.do("GET", "/api/v1/plans/options", ""))
 	if options["canPlan"] != true || options["workspace"] != "demo" {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+Scoped execution registry for Hub workspaces (M24.04), off by default:
+
+- Opening a Hub workspace and inspecting a project now hold a shared claim on the project folder for the whole read, so an init, plan, apply or workspace command can no longer start in that folder while it is being read.
+- Server-side execution scopes for Hub workspaces, as designed in `docs/architecture/adr-m24-scoped-execution.md`: a pinned identity, revalidation before every engine command and again before an apply, per-workspace plans and approvals, and cleanup on close, eviction and shutdown. They are disabled in this release and have no HTTP routes or UI yet; Hub workspaces stay read-only.
+- `GET /api/v1/session` reports `capabilities.scopedExecution` (false).
+
 Configuration compatibility and distribution policy (M24.24):
 
 - Operation history no longer overwrites a `history.json` that a newer Hclaro rewrote while this one was running; history becomes read-only for the session instead. An older-schema rewrite during a session is also left alone until restart.

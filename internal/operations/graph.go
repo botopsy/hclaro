@@ -117,6 +117,7 @@ var graphMessages = map[string]string{
 	"workspace_error":   "The active workspace could not be confirmed before generating the graph. Check workspace selection with your CLI.",
 	"workspace_changed": "The active workspace changed since Hclaro read this project. Read the project again first.",
 	"shutdown":          "Hclaro stopped while the graph was being generated. Nothing was kept.",
+	"scope_changed":     scopeChangedMessage,
 }
 
 func graphMessage(code string) string {
@@ -264,6 +265,12 @@ func (m *Manager) executeGraph(ctx context.Context, e *entry, snap workspace.Sna
 	grapher, ok := planner.(engine.Grapher)
 	if !ok {
 		return nil, "", "graph_unavailable", nil
+	}
+	if !m.verify(ctx, e, "graph") {
+		if ctx.Err() != nil {
+			return nil, "", stopped(), nil
+		}
+		return nil, "", "scope_changed", nil
 	}
 	name, err := planner.Workspace(ctx)
 	switch {

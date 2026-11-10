@@ -1,0 +1,564 @@
+package projects
+
+// Scoped execution for Hub workspaces (ADR M24.03, docs/architecture/adr-m24-scoped-execution.md).
+//
+// An execution scope is created on request for one open read context. It owns its own
+// operations.Manager, bound to exactly that context's root, engine executable, workspace and
+// composed environment, and shares the process-wide root claims with the launch manager.
+// Its identity is fixed when it is created and revalidated before every engine command. A
+// scope is never retargeted: anything that would change its identity closes it.
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+	"time"
+
+	"hclaro/internal/engine"
+	"hclaro/internal/operations"
+	"hclaro/internal/workspace"
+)
+
+// Stable codes of scope refusals (ADR M24.03, API contract).
+const (
+	CodeScopedDisabled       = "scoped_execution_disabled"
+	CodeExecutionUnsupported = "execution_unsupported"
+	CodeScopeChanged         = "scope_changed"
+	CodeCapacityExceeded     = "capacity_exceeded"
+)
+
+// Details of CodeScopeChanged.
+const (
+	DetailRootChanged        = "root_changed"
+	DetailEngineChanged      = "engine_changed"
+	DetailProfileChanged     = "profile_changed"
+	DetailWorkspaceMissing   = "workspace_missing"
+	DetailBackendChanged     = "backend_changed"
+	DetailDataDirChanged     = "data_dir_changed"
+	DetailEnvironmentChanged = "environment_changed"
+)
+
+// ScopeError is a scope refusal. Nothing ran. Messages never contain paths other than the
+// context's own, executable paths or environment values.
+type ScopeError struct {
+	Code    string
+	Detail  string
+	Message string
+}
+
+func (e *ScopeError) Error() string { return e.Message }
+
+var (
+	errScopedDisabled = &ScopeError{Code: CodeScopedDisabled, Message: "Plans and applies in Hub workspaces are not enabled in this session. Nothing ran."}
+	errCapacity       = &ScopeError{Code: CodeCapacityExceeded, Message: "Every open Hub workspace is running an operation. Wait for one to finish, then try again. Nothing was closed."}
+)
+
+func unsupportedScope(message string) *ScopeError {
+	return &ScopeError{Code: CodeExecutionUnsupported, Message: message}
+}
+
+var scopeMessages = map[string]string{
+	DetailRootChanged:        "The project folder was moved, replaced or removed from the Hub since this workspace was opened. Nothing ran. Open the workspace again.",
+	DetailEngineChanged:      "The Terraform/OpenTofu executable or its version changed since this workspace was opened. Nothing ran. Open the workspace again.",
+	DetailProfileChanged:     "The execution profile of this workspace was edited or removed. Nothing ran. Open the workspace again.",
+	DetailWorkspaceMissing:   "This workspace no longer exists in the project, or workspaces could not be listed. Nothing ran.",
+	DetailBackendChanged:     "The backend or its initialization changed since this workspace was opened. Nothing ran. Open the workspace again.",
+	DetailDataDirChanged:     "The data directory (TF_DATA_DIR) changed since this workspace was opened. Nothing ran. Restart Hclaro without an absolute TF_DATA_DIR.",
+	DetailEnvironmentChanged: "Environment settings that select accounts, regions, backends or proxies changed since this workspace was opened. Nothing ran. Open the workspace again.",
+}
+
+func changed(detail string) *ScopeError {
+	return &ScopeError{Code: CodeScopeChanged, Detail: detail, Message: scopeMessages[detail]}
+}
+
+// ExecutorFactory resolves the full engine (planner and applier) for an execution scope:
+// the same root, engine preference, selected workspace and composed environment as the
+// scope's read context.
+type ExecutorFactory func(root, preference, selected string, environ []string) (name, executable string, planner engine.Planner, err error)
+
+// DefaultExecutors uses the official CLI found on PATH, exactly as DefaultEngines does.
+func DefaultExecutors(root, preference, selected string, environ []string) (string, string, engine.Planner, error) {
+	cli, err := engine.Detect(root, preference)
+	if err != nil {
+		return "", "", nil, err
+	}
+	cli.SelectedWorkspace, cli.IgnoreInheritedWorkspace, cli.Environ = selected, true, environ
+	return cli.Name, cli.Executable, cli, nil
+}
+
+// identity is what a scope is. Every field is fixed at creation; see ADR M24.03, "Scope
+// identity". It is never serialized.
+type identity struct {
+	projectID string
+	root      string
+	rootInfo  os.FileInfo
+	engine    string
+	// executable is the path the engine factory returned; resolved is it with symbolic
+	// links evaluated, exeInfo its file identity and exeSHA its SHA-256.
+	executable, resolved string
+	exeInfo              os.FileInfo
+	exeSHA               string
+	version              string
+	workspace            string
+	profileID            string
+	profileRevision      int
+	profileFingerprint   string
+	dataDir              string
+	// envDigest is an HMAC with a per-process key; neither leaves the server.
+	envDigest     string
+	backend, mode string
+}
+
+// Scope is the execution scope of one open Hub read context.
+type Scope struct {
+	ContextID string
+	hub       *Hub
+	context   *Context
+	id        identity
+	// read runs the live version and workspace checks of revalidation; manager runs the
+	// scope's operations.
+	read    Adapter
+	manager *operations.Manager
+}
+
+// ScopeView is the sanitized identity shown to clients: no executable path, environment
+// or digest.
+type ScopeView struct {
+	ContextID     string        `json:"contextId"`
+	ProjectID     string        `json:"projectId"`
+	Alias         string        `json:"alias"`
+	RootPath      string        `json:"rootPath"`
+	Engine        string        `json:"engine"`
+	Version       string        `json:"version"`
+	Workspace     string        `json:"workspace"`
+	Profile       *ScopeProfile `json:"profile"`
+	Backend       string        `json:"backend"`
+	ExecutionMode string        `json:"executionMode"`
+}
+
+// ScopeProfile names the execution profile of a scope.
+type ScopeProfile struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Revision int    `json:"revision"`
+}
+
+// View returns the scope's display identity.
+func (s *Scope) View() ScopeView {
+	v := ScopeView{ContextID: s.ContextID, ProjectID: s.id.projectID, Alias: s.context.Alias, RootPath: s.id.root, Engine: s.id.engine, Version: s.id.version, Workspace: s.id.workspace, Backend: s.id.backend, ExecutionMode: s.id.mode}
+	if s.id.profileID != "" && s.context.Execution != nil {
+		v.Profile = &ScopeProfile{ID: s.id.profileID, Name: s.context.Execution.ProfileName, Revision: s.id.profileRevision}
+	}
+	return v
+}
+
+// Busy reports whether the scope is running or cancelling an operation.
+func (s *Scope) Busy() bool { return s.manager.Running() }
+
+// StartPlan starts a plan in this scope. The execution profile and its fingerprint are the
+// scope's own; a request cannot choose another target.
+func (s *Scope) StartPlan(varFiles, replaceIDs []string) (operations.Operation, error) {
+	req := operations.PlanStart{VarFiles: varFiles, Replace: replaceIDs}
+	if s.id.profileID != "" {
+		req.ProfileID, req.ContextFingerprint = s.id.profileID, s.id.profileFingerprint
+	}
+	return s.manager.StartPlanWith(req)
+}
+
+// Plans returns this scope's reviewed plans, oldest first.
+func (s *Scope) Plans() []*operations.Plan { return s.manager.Plans() }
+
+// Plan returns one of this scope's plans. A plan of another scope or of the launch project
+// is not found.
+func (s *Scope) Plan(id string) (*operations.Plan, bool) { return s.manager.Plan(id) }
+
+// Operations returns this scope's operations.
+func (s *Scope) Operations() []operations.Operation { return s.manager.Operations() }
+
+// Operation returns one of this scope's operations and its log.
+func (s *Scope) Operation(id string) (operations.Operation, *operations.Log, bool) {
+	return s.manager.Operation(id)
+}
+
+// Cancel cancels one of this scope's running operations.
+func (s *Scope) Cancel(id string) (operations.Operation, error) { return s.manager.Cancel(id) }
+
+// Execution returns the execution scope of an open read context, creating it on first use.
+// It fails closed: the gate must be on, the context open and loaded, and its backend a
+// known local-execution backend; the scope's identity must match the read context.
+func (h *Hub) Execution(cid string) (*Scope, error) {
+	if !h.ScopedExecution {
+		return nil, errScopedDisabled
+	}
+	if h.base.Err() != nil {
+		return nil, operations.ErrClosed
+	}
+	c, _, err := h.Context(cid)
+	if err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	if s := h.scopes[cid]; s != nil {
+		h.touchScopeLocked(cid)
+		h.mu.Unlock()
+		return s, nil
+	}
+	h.mu.Unlock()
+	snap := c.Snapshot()
+	if snap.Status == "loading" {
+		return nil, operations.ErrLoading
+	}
+	if !snap.Info.Capabilities.CanPlan {
+		reason := snap.Info.Capabilities.PlanReason
+		if reason == "" {
+			reason = "Planning is not available for this workspace."
+		}
+		return nil, unsupportedScope(reason)
+	}
+	s, err := h.newScope(c, snap)
+	if err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, open := h.contexts[cid]; !open || h.base.Err() != nil {
+		s.manager.Close(0)
+		return nil, ErrContextNotFound
+	}
+	if existing := h.scopes[cid]; existing != nil {
+		s.manager.Close(0)
+		h.touchScopeLocked(cid)
+		return existing, nil
+	}
+	for len(h.scopeOrder) >= h.MaxScopes {
+		victim := h.idleScopeLocked()
+		if victim == "" {
+			s.manager.Close(0)
+			return nil, errCapacity
+		}
+		h.closeScopeLocked(victim)
+	}
+	h.scopes[cid] = s
+	h.scopeOrder = append(h.scopeOrder, cid)
+	return s, nil
+}
+
+// newScope resolves and pins the identity of c and builds its manager. Nothing runs except
+// hashing the engine executable.
+func (h *Hub) newScope(c *Context, snap workspace.Snapshot) (*Scope, error) {
+	p, err := h.Registry.Get(c.ProjectID)
+	if err != nil || p.RootPath != c.RootPath {
+		return nil, changed(DetailRootChanged)
+	}
+	if status, _ := check(p.RootPath); status != StatusReady {
+		return nil, changed(DetailRootChanged)
+	}
+	rootInfo, err := os.Stat(p.RootPath)
+	if err != nil {
+		return nil, changed(DetailRootChanged)
+	}
+	preference, environ, execution, err := h.execution(p, c.profileID)
+	if err != nil {
+		return nil, changed(DetailProfileChanged)
+	}
+	if (execution == nil) != (c.Execution == nil) || execution != nil && (execution.Fingerprint != c.Execution.Fingerprint || execution.Revision != c.Execution.Revision) {
+		return nil, changed(DetailProfileChanged)
+	}
+	data, shared := dataDir()
+	if shared {
+		return nil, unsupportedScope("TF_DATA_DIR is an absolute path, so every project would share one data directory. Restart Hclaro without it.")
+	}
+	if data != c.DataDir {
+		return nil, changed(DetailDataDirChanged)
+	}
+	info := workspace.Inspect(p.RootPath)
+	switch {
+	case !info.Initialized:
+		return nil, unsupportedScope("Backend initialization was not detected. Initialize the project first.")
+	case info.ExecutionMode == "remote-exec":
+		return nil, unsupportedScope("Remote execution backends are read-only in Hclaro.")
+	case info.ExecutionMode != "local-cli" || info.Backend == "unknown" || info.Backend == "":
+		return nil, unsupportedScope("The backend type could not be verified from initialization metadata, so local planning is not enabled.")
+	case info.Backend != snap.Info.Backend || info.ExecutionMode != snap.Info.ExecutionMode:
+		return nil, changed(DetailBackendChanged)
+	}
+	if snap.Info.Version == "" || snap.Info.Workspace != c.Workspace {
+		return nil, unsupportedScope("This workspace has not been read successfully. Read it again first.")
+	}
+	if h.Executors == nil || h.Engines == nil {
+		return nil, unsupportedScope("Engine execution is not available in this session.")
+	}
+	name, executable, planner, err := h.Executors(p.RootPath, preference, c.Workspace, environ)
+	if err != nil || planner == nil {
+		return nil, unsupportedScope("Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine.")
+	}
+	if name != c.Engine || executable != c.Executable || executable == "" {
+		return nil, changed(DetailEngineChanged)
+	}
+	readName, readExecutable, read, err := h.Engines(p.RootPath, preference, c.Workspace, environ)
+	if err != nil || read == nil || readName != name || readExecutable != executable {
+		return nil, changed(DetailEngineChanged)
+	}
+	resolved, exeInfo, digest, err := executableIdentity(executable, true)
+	if err != nil {
+		return nil, changed(DetailEngineChanged)
+	}
+	id := identity{
+		projectID: p.ID, root: p.RootPath, rootInfo: rootInfo, engine: name, executable: executable, resolved: resolved, exeInfo: exeInfo, exeSHA: digest,
+		version: snap.Info.Version, workspace: c.Workspace, profileID: c.profileID, dataDir: data, envDigest: h.envDigest(environ),
+		backend: info.Backend, mode: info.ExecutionMode,
+	}
+	if execution != nil {
+		id.profileRevision, id.profileFingerprint = execution.Revision, execution.Fingerprint
+	}
+	m := operations.NewManager(c.store, planner, p.RootPath)
+	m.Locks = h.Locks
+	m.TempDir = h.TempDir
+	m.Git = h.Git
+	if h.History != nil {
+		m.Recorder = h.History
+	}
+	// The profile is the scope's own: any other profile is refused, and its planner is the
+	// scope's, already bound to the profile's environment and the workspace.
+	profileID := c.profileID
+	m.Binder = func(requested string) (operations.Binding, error) {
+		if requested != profileID {
+			return operations.Binding{}, &operations.RejectError{Code: "profile_scope", Reason: "This workspace was opened with another execution profile. Open it with the profile you want to use."}
+		}
+		_, environ, execution, err := h.execution(p, requested)
+		if err != nil || execution == nil {
+			return operations.Binding{}, &operations.RejectError{Code: "context_changed", Reason: scopeMessages[DetailProfileChanged]}
+		}
+		return operations.Binding{Context: *execution, Environ: environ}, nil
+	}
+	m.Bind = func([]string, string) engine.Planner { return planner }
+	s := &Scope{ContextID: c.ID, hub: h, context: c, id: id, read: read, manager: m}
+	m.Verify = s.verify
+	return s, nil
+}
+
+// executableIdentity resolves an engine executable and returns its file identity and,
+// when hash is set, its SHA-256.
+func executableIdentity(path string, hash bool) (resolved string, info os.FileInfo, digest string, err error) {
+	if !filepath.IsAbs(path) {
+		return "", nil, "", errors.New("engine executable path is not absolute")
+	}
+	resolved, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", nil, "", err
+	}
+	info, err = os.Stat(resolved)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", nil, "", errors.New("engine executable is not a regular file")
+	}
+	if !hash {
+		return resolved, info, "", nil
+	}
+	f, err := os.Open(resolved)
+	if err != nil {
+		return "", nil, "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", nil, "", err
+	}
+	return resolved, info, hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// targetVariable reports whether an environment variable can change which account, region,
+// backend, endpoint or engine behavior a command targets. See ADR M24.03, "Environment digest".
+func targetVariable(key string) bool {
+	upper := strings.ToUpper(key)
+	for _, prefix := range []string{"TF_", "AWS_", "GOOGLE_", "CLOUDSDK_", "ARM_", "AZURE_"} {
+		if strings.HasPrefix(upper, prefix) {
+			return true
+		}
+	}
+	switch upper {
+	case "KUBECONFIG", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE":
+		return true
+	}
+	return false
+}
+
+// envDigest is an HMAC over the target-relevant entries of a child environment (nil means
+// Hclaro's own). TF_WORKSPACE is excluded: Hub children always replace it with the scope's
+// workspace.
+func (h *Hub) envDigest(environ []string) string {
+	if environ == nil {
+		environ = os.Environ()
+	}
+	keep := []string{}
+	for _, item := range environ {
+		key, _, _ := strings.Cut(item, "=")
+		if strings.EqualFold(key, "TF_WORKSPACE") || !targetVariable(key) {
+			continue
+		}
+		keep = append(keep, item)
+	}
+	sort.Strings(keep)
+	mac := hmac.New(sha256.New, h.envKey)
+	for _, item := range keep {
+		mac.Write([]byte(item))
+		mac.Write([]byte{0})
+	}
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func newEnvKey() []byte {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// Revalidation depth.
+const (
+	// checkFiles reads the registry, profiles, environment and file metadata only.
+	checkFiles = iota
+	// checkEngine also runs `version` and `workspace list`.
+	checkEngine
+	// checkApply also hashes the engine executable again.
+	checkApply
+)
+
+// Revalidate checks that the scope's identity still holds. It runs no engine command; the
+// engine checks run in the operation itself (see verify). A failure is a *ScopeError.
+func (s *Scope) Revalidate(ctx context.Context) error { return s.revalidate(ctx, checkFiles) }
+
+func (s *Scope) revalidate(ctx context.Context, depth int) error {
+	h, id := s.hub, s.id
+	p, err := h.Registry.Get(id.projectID)
+	if err != nil || p.RootPath != id.root {
+		return changed(DetailRootChanged)
+	}
+	if status, _ := check(id.root); status != StatusReady {
+		return changed(DetailRootChanged)
+	}
+	if now, err := os.Stat(id.root); err != nil || !os.SameFile(id.rootInfo, now) {
+		return changed(DetailRootChanged)
+	}
+	resolved, exeInfo, _, err := executableIdentity(id.executable, false)
+	if err != nil || resolved != id.resolved || !os.SameFile(id.exeInfo, exeInfo) || exeInfo.Size() != id.exeInfo.Size() || !exeInfo.ModTime().Equal(id.exeInfo.ModTime()) {
+		return changed(DetailEngineChanged)
+	}
+	_, environ, execution, err := h.execution(p, id.profileID)
+	if err != nil {
+		return changed(DetailProfileChanged)
+	}
+	if id.profileID != "" && (execution == nil || execution.Revision != id.profileRevision || execution.Fingerprint != id.profileFingerprint) {
+		return changed(DetailProfileChanged)
+	}
+	if data, shared := dataDir(); shared || data != id.dataDir {
+		return changed(DetailDataDirChanged)
+	}
+	if h.envDigest(environ) != id.envDigest {
+		return changed(DetailEnvironmentChanged)
+	}
+	if info := workspace.Inspect(id.root); !info.Initialized || info.Backend != id.backend || info.ExecutionMode != id.mode {
+		return changed(DetailBackendChanged)
+	}
+	if depth < checkEngine {
+		return nil
+	}
+	if version, err := s.read.Version(ctx); err != nil || version != id.version {
+		return changed(DetailEngineChanged)
+	}
+	if list, err := s.read.ListWorkspaces(ctx); err != nil || !slices.Contains(list.Names, id.workspace) {
+		return changed(DetailWorkspaceMissing)
+	}
+	if depth < checkApply {
+		return nil
+	}
+	if _, _, digest, err := executableIdentity(id.executable, true); err != nil || digest != id.exeSHA {
+		return changed(DetailEngineChanged)
+	}
+	return nil
+}
+
+// verify is the manager's Verify hook: it runs with the root claim held, before the first
+// engine command of an operation. A failure closes the context, so it cannot be used again.
+func (s *Scope) verify(ctx context.Context, kind string) *operations.Diagnostic {
+	depth := checkEngine
+	if kind == "apply" {
+		depth = checkApply
+	}
+	err := s.revalidate(ctx, depth)
+	if err == nil {
+		return nil
+	}
+	message := scopeMessages[DetailRootChanged]
+	var scopeErr *ScopeError
+	if errors.As(err, &scopeErr) {
+		message = scopeErr.Message
+	}
+	if ctx.Err() == nil {
+		// Closing waits for this operation, so it cannot run on the operation's goroutine.
+		go s.hub.closeContext(s.ContextID, CodeScopeChanged)
+	}
+	return &operations.Diagnostic{Code: CodeScopeChanged, Message: message}
+}
+
+// closeContext closes a read context and its scope.
+func (h *Hub) closeContext(cid, reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closeLocked(cid, reason)
+}
+
+// scopeCloseWait bounds how long closing a scope waits for its operation to stop before its
+// saved plan is deleted. Shutdown uses the same bound as the launch manager.
+const scopeCloseWait = 20 * time.Second
+
+// closeScopeLocked removes the scope of cid. Its manager is closed in the background: the
+// running operation is cancelled, then the retained plan file is deleted and its approvals
+// dropped. The root claim is released when the operation ends. Caller holds h.mu.
+func (h *Hub) closeScopeLocked(cid string) {
+	s := h.scopes[cid]
+	if s == nil {
+		return
+	}
+	delete(h.scopes, cid)
+	h.scopeOrder = slices.DeleteFunc(h.scopeOrder, func(id string) bool { return id == cid })
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		s.manager.Close(scopeCloseWait)
+	}()
+}
+
+func (h *Hub) touchScopeLocked(cid string) {
+	h.scopeOrder = append(slices.DeleteFunc(h.scopeOrder, func(id string) bool { return id == cid }), cid)
+}
+
+// idleScopeLocked returns the least recently used scope without a running operation, or "".
+func (h *Hub) idleScopeLocked() string {
+	for _, cid := range h.scopeOrder {
+		if !h.scopes[cid].Busy() {
+			return cid
+		}
+	}
+	return ""
+}
+
+// idleContextLocked returns the oldest read context whose scope, if any, has no running
+// operation, or "". A context still loading is idle: closing it cancels the read, as before.
+func (h *Hub) idleContextLocked() string {
+	for _, cid := range h.order {
+		if s := h.scopes[cid]; s == nil || !s.Busy() {
+			return cid
+		}
+	}
+	return ""
+}

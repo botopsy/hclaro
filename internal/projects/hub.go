@@ -168,8 +168,18 @@ type Hub struct {
 	// so the launch project can be read again. Nil does nothing.
 	LaunchChanged func()
 	Now           func() time.Time
-	// MaxContexts bounds snapshots kept in memory; the oldest is closed first.
+	// MaxContexts bounds snapshots kept in memory; the oldest context without a running
+	// operation is closed first.
 	MaxContexts int
+	// ScopedExecution enables execution scopes for Hub workspaces (ADR M24.03). It is set
+	// only when Hclaro starts and is off by default; with it off, Execution refuses with
+	// scoped_execution_disabled and contexts stay read-only.
+	ScopedExecution bool
+	// Executors resolves the full engine of an execution scope; MaxScopes bounds scopes in
+	// memory; TempDir is where scopes keep saved plans ("" is the OS temp directory).
+	Executors   ExecutorFactory
+	MaxScopes   int
+	TempDir     string
 	base        context.Context
 	stop        context.CancelFunc
 	mu          sync.Mutex
@@ -183,19 +193,30 @@ type Hub struct {
 	// comparisons are workspace comparisons in memory, oldest first in comparisonOrder.
 	comparisons     map[string]*Comparison
 	comparisonOrder []string
-	loads           chan struct{}
-	wg              sync.WaitGroup
+	// scopes are execution scopes by context ID, least recently used first in scopeOrder.
+	scopes     map[string]*Scope
+	scopeOrder []string
+	// envKey keys the environment digests of scopes; it never leaves the process.
+	envKey []byte
+	loads  chan struct{}
+	wg     sync.WaitGroup
 }
 
 // NewHub creates a Hub. Close cancels running reads.
 func NewHub(registry *Registry, launch string) *Hub {
 	base, stop := context.WithCancel(context.Background())
-	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), WorkspaceManagers: DefaultWorkspaceManagers, Tools: DefaultTools, Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, reviews: map[string]*pendingReview{}, loads: make(chan struct{}, 3)}
+	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), WorkspaceManagers: DefaultWorkspaceManagers, Tools: DefaultTools, Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, Executors: DefaultExecutors, MaxScopes: 4, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, reviews: map[string]*pendingReview{}, scopes: map[string]*Scope{}, envKey: newEnvKey(), loads: make(chan struct{}, 3)}
 }
 
-// Close cancels context reads and initializations and waits for them to stop.
+// Close cancels context reads, execution scopes and initializations and waits for them to
+// stop. Scopes delete their saved plans.
 func (h *Hub) Close() {
 	h.stop()
+	h.mu.Lock()
+	for _, cid := range slices.Clone(h.scopeOrder) {
+		h.closeScopeLocked(cid)
+	}
+	h.mu.Unlock()
 	if h.Inits != nil {
 		h.Inits.Close(20 * time.Second)
 	}
@@ -407,6 +428,7 @@ func (h *Hub) closeLocked(cid, reason string) {
 		return
 	}
 	c.cancel()
+	h.closeScopeLocked(cid)
 	delete(h.contexts, cid)
 	h.order = slices.DeleteFunc(h.order, func(id string) bool { return id == cid })
 	if len(h.closed) >= 256 {
@@ -427,9 +449,13 @@ func (h *Hub) Inspect(ctx context.Context, id string) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	if _, busy := h.Locks.Holder(p.RootPath); busy {
+	// The claim is held for the whole inspection, so no init, plan or workspace command can
+	// start in between (ADR M24.03, G1).
+	release, ok := h.Locks.AcquireShared(p.RootPath)
+	if !ok {
 		return Summary{}, ErrBusy
 	}
+	defer release()
 	in := &Inspection{Workspaces: []string{}, InspectedAt: h.Now().UTC().Format(time.RFC3339)}
 	status, problem := check(p.RootPath)
 	switch {
@@ -493,9 +519,19 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 	if status, problem := check(p.RootPath); status != StatusReady {
 		return nil, false, &PathError{problem}
 	}
-	if _, busy := h.Locks.Holder(p.RootPath); busy {
+	// A shared claim is held from here until the read ends, so no init, plan or workspace
+	// command runs in this root while it is read (ADR M24.03, G1). Every return before the
+	// read starts releases it.
+	release, claimed := h.Locks.AcquireShared(p.RootPath)
+	if !claimed {
 		return nil, false, ErrBusy
 	}
+	started := false
+	defer func() {
+		if !started {
+			release()
+		}
+	}()
 	data, shared := dataDir()
 	if shared {
 		return nil, false, ErrSharedDataDir
@@ -530,18 +566,32 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 	}
 	for cid, c := range h.contexts {
 		if c.key == key {
+			if s := h.scopes[cid]; s != nil && s.Busy() {
+				h.mu.Unlock()
+				return nil, false, ErrBusy
+			}
+		}
+	}
+	for cid, c := range h.contexts {
+		if c.key == key {
 			h.closeLocked(cid, "reloaded")
 		}
 	}
+	// Contexts whose scope runs an operation are never evicted (ADR M24.03, G4).
 	for len(h.order) >= h.MaxContexts {
-		h.closeLocked(h.order[0], "evicted")
+		victim := h.idleContextLocked()
+		if victim == "" {
+			h.mu.Unlock()
+			return nil, false, errCapacity
+		}
+		h.closeLocked(victim, "evicted")
 	}
 	rootInfo, statErr := os.Stat(p.RootPath)
 	ctx, cancel := context.WithCancel(h.base)
 	info := workspace.Inspect(p.RootPath)
 	info.Project = p.Alias
 	c := &Context{ID: NewID(), ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Engine: name, Executable: executable, Workspace: ws, DataDir: data, CreatedAt: h.Now().UTC().Format(time.RFC3339), Execution: execution, cancel: cancel, key: key, profileID: profileID}
-	scope := workspace.Scope{Workspace: ws, ReadOnlyReason: ReadOnlyReason}
+	scope := workspace.Scope{Workspace: ws, ReadOnlyReason: ReadOnlyReason, Executable: h.ScopedExecution}
 	scope.Check = func(ctx context.Context) *workspace.Diagnostic {
 		list, err := adapter.ListWorkspaces(ctx)
 		if err != nil {
@@ -571,10 +621,12 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 	h.contexts[c.ID] = c
 	h.order = append(h.order, c.ID)
 	h.wg.Add(1)
+	started = true
 	h.mu.Unlock()
 	_ = h.Registry.Touch(p.ID, ws, h.Now())
 	go func() {
 		defer h.wg.Done()
+		defer release()
 		select {
 		case h.loads <- struct{}{}:
 			defer func() { <-h.loads }()

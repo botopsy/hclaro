@@ -69,7 +69,19 @@ type Scope struct {
 	// is published, for example to confirm the project directory did not change.
 	Check  func(context.Context) *Diagnostic
 	Verify func() *Diagnostic
+	// Executable reports the plan, apply and import capabilities the backend and engine
+	// allow instead of ReadOnlyReason. It is set only when scoped execution is enabled for the
+	// session (M24.04); the read adapter stays read-only either way, and the operations run
+	// through a separate execution scope.
+	Executable bool
 }
+
+// readOnlyScope reports whether s is a Hub read context whose capabilities are fixed to
+// read-only.
+func (s *Store) readOnlyScope() bool { return s.scope != nil && !s.scope.Executable }
+
+// executableScope reports whether s is a Hub context with scoped execution enabled.
+func (s *Store) executableScope() bool { return s.scope != nil && s.scope.Executable }
 
 func New(info Info) *Store {
 	return &Store{snapshot: Snapshot{Status: "loading", Info: info, Index: state.Empty()}}
@@ -206,7 +218,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		// A project without recorded state can still be planned; other failures cannot.
 		planning := snap.Info.Capabilities
 		snap.Info.Capabilities = Capabilities{PlanReason: "Planning needs a readable workspace. Resolve the issue above, then read the project again.", ApplyReason: "Applying needs a readable workspace.", ImportReason: "Importing needs a readable workspace. Resolve the issue above, then read the project again."}
-		if s.scope != nil {
+		if s.readOnlyScope() {
 			snap.Info.Capabilities = s.readOnly()
 		}
 		if code == "state_absent" {
@@ -254,7 +266,13 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		return
 	}
 	snap.Info.Workspace = name
-	switch _, planner := adapter.(engine.Planner); {
+	_, planner := adapter.(engine.Planner)
+	_, applier := adapter.(engine.Applier)
+	if s.executableScope() {
+		// The read adapter of a Hub context is never a planner; an execution scope supplies one.
+		planner, applier = true, true
+	}
+	switch {
 	case !planner:
 		snap.Info.Capabilities.PlanReason = "This engine adapter is read-only."
 	case snap.Info.ExecutionMode == "remote-exec":
@@ -266,7 +284,6 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	}
 	// Saved-plan apply is offered only where Hclaro itself produced the plan file locally.
 	// Remote execution has no verified contract that the reviewed plan is what gets applied.
-	_, applier := adapter.(engine.Applier)
 	switch {
 	case snap.Info.ExecutionMode == "remote-exec":
 		snap.Info.Capabilities.ApplyReason = "Remote execution backends are read-only in Hclaro: there is no verified contract that a plan reviewed here is exactly what the remote run applies."
@@ -287,7 +304,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	default:
 		caps.CanImport = true
 	}
-	if s.scope != nil {
+	if s.readOnlyScope() {
 		keep := caps.SupportsImportBlocks
 		*caps = s.readOnly()
 		caps.SupportsImportBlocks, caps.SupportsGeneratedConfig = keep, keep

@@ -389,6 +389,7 @@ var applyMessages = map[string]string{
 	"apply_cancelled":   "The apply was interrupted. Infrastructure may be partly changed: resources being created or destroyed when it stopped can be incomplete. Review the reloaded state and run a new plan. If the engine had to be stopped forcefully, a state lock may remain.",
 	"apply_timeout":     "The apply exceeded its time limit and was stopped. Infrastructure may be partly changed. Review the reloaded state and run a new plan.",
 	"shutdown":          "Hclaro stopped while the apply was running. Infrastructure may be partly changed. Check state with your CLI.",
+	"scope_changed":     scopeChangedMessage + " Nothing was applied, and the saved file was deleted.",
 }
 
 func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
@@ -495,6 +496,14 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	// unsupported action combination, independently of the earlier checks.
 	if p, ok := m.Plan(e.op.PlanID); !ok || p.ID != a.planID || unsupportedReason(p) != "" {
 		return "unknown_actions", nil, false
+	}
+	// A Hub workspace's scope is revalidated last, with the root claim held: project folder,
+	// engine binary and version, profile, environment, data directory and backend.
+	if !m.verify(ctx, e, "apply") {
+		if ctx.Err() != nil {
+			return stopped(), nil, false
+		}
+		return "scope_changed", nil, false
 	}
 	m.stage(e, "Applying")
 	label := engineLabel(a.engine)

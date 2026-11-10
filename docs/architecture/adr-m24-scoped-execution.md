@@ -119,7 +119,7 @@ Unchanged from today: `workspace.FingerprintExcept` over engine, version, worksp
 
 **Close.** User close, project removal or change, profile change, workspace deletion and failed revalidation close the context and its scope: cancel any running operation (as `Manager.Cancel` does), wait for it to reach a terminal state, delete the retained artifact, drop approvals and preflight bindings, release claims. Plans remain readable until the context ID is gone; after that their IDs answer `404 context_closed`.
 
-**Evict.** The cap stays at eight read contexts. Eviction picks the oldest context that is **idle**: no running or cancelling operation, no claim held. A context with a retained artifact may be evicted (artifact deleted, its plans noted "The workspace tab was closed. Run a new plan."). If no context is idle, opening another answers `409 capacity_exceeded` instead of cancelling work. A separate cap of four execution scopes bounds managers; it follows the same idle-first rule.
+**Evict.** The cap stays at eight read contexts. Eviction picks the oldest context that is **idle**: its scope, if any, has no running or cancelling operation. A context whose read is still loading is idle; closing it cancels the read, which releases its shared claim, as before. A context with a retained artifact may be evicted (artifact deleted, its plans noted "The workspace tab was closed. Run a new plan."). If no context is idle, opening another answers `409 capacity_exceeded` instead of cancelling work. A separate cap of four execution scopes bounds managers; it follows the same idle-first rule.
 
 **Memory bounds.** Per scope, the existing manager limits apply (100 operations, 10 logs of at most 2 MiB, 10 plans, one retained artifact). Across the process: at most eight contexts and four execution scopes, so at most four retained plan artifacts and four running operations, of which at most one per root.
 
@@ -214,6 +214,11 @@ Trust boundaries: (1) browser ↔ loopback HTTP server (Guard, session token, CS
 2. **Order.** M24.04 (registry, identity, locks, gate; no routes) → M24.05 (scoped plans) → M24.02 real-engine qualification of plans → M24.06 (scoped apply) → M24.07 (UI) → M24.12. The gate is not enabled by default before M24.02 qualification of both plan and apply and the M24.25 release gate. A user-facing flag name and default are an owner decision recorded at M24.06.
 3. **Fail closed.** Any unknown backend type, execution mode, engine version, missing capability field or revalidation error disables execution for that scope with a reason. The UI never enables plan or apply from frontend state alone.
 4. **Rollback.** Turning the gate off (or removing the routes) restores today's behavior exactly: launch-only plan/apply/import, read-only Hub contexts. The launch manager, launch routes and their tests are not modified by the scoped work except to share helpers without behavior change.
+
+## Implementation status
+
+- **M24.04 (done):** `internal/projects/scope.go` (identity, `Hub.Execution`, revalidation, close, eviction, environment digest), the `Verify` hook in `operations.Manager` (plan, drift, graph, apply), shared claims held for Hub reads and inspection (G1), per-scope managers (G3), idle-first eviction (G4), `capabilities.scopedExecution` in `GET /session` (G6), and stable codes with `detail` in API errors. The gate has no user-facing flag. G2 is covered for Hub scopes by scope revalidation; the launch plan fingerprint is unchanged. Synthetic tests: `internal/projects/scope_test.go`, `internal/api/projects_test.go`.
+- **Open:** scoped routes and request validation at the HTTP layer (M24.05/.06), reloading only the affected context after an apply (M24.06), UI (M24.07), G5.
 
 ## Residual risks
 
