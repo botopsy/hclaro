@@ -712,3 +712,34 @@ func copyTree(t *testing.T, from, to string) {
 		t.Fatal(err)
 	}
 }
+
+// A FileInfo captured with statIdentity keeps describing the original folder after another
+// folder takes its path. Plain os.Stat does not on Windows, where the identity is loaded
+// lazily from the path when os.SameFile first runs.
+func TestStatIdentityDetectsAFolderReplacedAtTheSamePath(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "root")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before, err := statIdentity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(dir, dir+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(before, now) {
+		t.Fatal("replaced folder not detected")
+	}
+	old, _ := os.Stat(dir + ".old")
+	if !os.SameFile(before, old) {
+		t.Fatal("identity does not follow the original folder")
+	}
+}

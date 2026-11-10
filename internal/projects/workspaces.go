@@ -395,8 +395,8 @@ func (h *Hub) StartWorkspaceWith(id string, action engine.WorkspaceAction, targe
 		release()
 		return operations.Operation{}, ErrContextChanged
 	}
-	rootInfo, statErr := os.Stat(p.RootPath)
-	exeInfo, exeErr := os.Stat(executable)
+	rootInfo, statErr := statIdentity(p.RootPath)
+	exeInfo, exeErr := statIdentity(executable)
 	if statErr != nil || exeErr != nil || staticContext(p, name, executable, environ, action, target, profile) != review.static {
 		release()
 		return operations.Operation{}, ErrContextChanged

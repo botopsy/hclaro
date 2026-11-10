@@ -288,6 +288,19 @@ func sameDir(a, b string) bool {
 	return err == nil && os.SameFile(x, y)
 }
 
+// statIdentity stats path and records its file identity now. On Windows, os.Stat leaves the
+// identity unloaded and os.SameFile loads it later from the path, so a FileInfo kept to
+// detect a replaced folder or executable would describe whatever is at the path at
+// comparison time. Comparing the FileInfo with itself loads and caches it.
+func statIdentity(path string) (os.FileInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	os.SameFile(info, info)
+	return info, nil
+}
+
 // check reports the filesystem status of a stored canonical root.
 func check(root string) (status, problem string) {
 	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
@@ -586,7 +599,7 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 		}
 		h.closeLocked(victim, "evicted")
 	}
-	rootInfo, statErr := os.Stat(p.RootPath)
+	rootInfo, statErr := statIdentity(p.RootPath)
 	ctx, cancel := context.WithCancel(h.base)
 	info := workspace.Inspect(p.RootPath)
 	info.Project = p.Alias

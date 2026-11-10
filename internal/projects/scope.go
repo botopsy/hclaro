@@ -262,7 +262,7 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot) (*Scope, error) {
 	if status, _ := check(p.RootPath); status != StatusReady {
 		return nil, changed(DetailRootChanged)
 	}
-	rootInfo, err := os.Stat(p.RootPath)
+	rootInfo, err := statIdentity(p.RootPath)
 	if err != nil {
 		return nil, changed(DetailRootChanged)
 	}
@@ -356,7 +356,7 @@ func executableIdentity(path string, hash bool) (resolved string, info os.FileIn
 	if err != nil {
 		return "", nil, "", err
 	}
-	info, err = os.Stat(resolved)
+	info, err = statIdentity(resolved)
 	if err != nil || !info.Mode().IsRegular() {
 		return "", nil, "", errors.New("engine executable is not a regular file")
 	}
