@@ -318,7 +318,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_show settings and restart. Only -no-color is accepted; output-file overrides could persist raw secrets.")
 			return
 		}
-		fail("state_unavailable", "State is unavailable. Check backend access, credentials, SSO/VPN, and installed provider schemas with the CLI, then "+again+". No refresh was run.")
+		fail("state_unavailable", "State is unavailable. "+engine.ReadAdvice(err, "Check backend access, credentials, SSO/VPN, and installed provider schemas with the CLI, then "+again+".")+" No refresh was run.")
 		return
 	}
 	idx, err := state.Parse(input)

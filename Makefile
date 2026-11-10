@@ -44,10 +44,12 @@ bin/mock/infracost$(EXE): scripts/fake-infracost/main.go fixtures/cost/infracost
 	go build -trimpath -buildvcs=false -o bin/mock/infracost$(EXE) ./scripts/fake-infracost
 
 demo: binary bin/mock/terraform$(EXE) bin/mock/aws$(EXE) bin/mock/infracost$(EXE)
+	@echo "Synthetic demo: fake Terraform/AWS/Infracost CLIs and fixtures only. No real engine, AWS account, provider or backend is used."
 	PATH="$(CURDIR)/bin/mock:$$PATH" TF_DATA_DIR="$(CURDIR)/fixtures/backend" HCLARO_CONFIG_DIR="$(CURDIR)/.cache/demo/config" ./bin/hclaro$(EXE) --engine terraform --path fixtures/project --no-browser
 
 # Synthetic Hub projects and a registry under .cache/hub-demo; the real registry is untouched.
 demo-hub: binary bin/mock/terraform$(EXE) bin/mock/tofu$(EXE)
+	@echo "Synthetic Hub demo: fake Terraform/OpenTofu CLIs and synthetic projects only. No real engine, provider or backend is used."
 	rm -rf .cache/hub-demo
 	go run ./scripts/hub-demo .cache/hub-demo
 	PATH="$(CURDIR)/bin/mock:$$PATH" HCLARO_CONFIG_DIR="$(CURDIR)/.cache/hub-demo/config" ./bin/hclaro$(EXE) --hub --no-browser

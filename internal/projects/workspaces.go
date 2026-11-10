@@ -274,7 +274,7 @@ func (h *Hub) ReviewWorkspaceWith(ctx context.Context, id string, action engine.
 	}
 	list, err := manager.ListWorkspaces(ctx)
 	if err != nil {
-		return refuse("workspace_list", "Unable to list workspaces, so Hclaro cannot check this command. Check backend access, credentials and SSO/VPN with the CLI, then review again.")
+		return refuse("workspace_list", "Unable to list workspaces, so Hclaro cannot check this command. "+engine.ReadAdvice(err, "Check backend access, credentials and SSO/VPN with the CLI, then review again."))
 	}
 	r.Workspaces, r.CLIDefault = slices.Clone(list.Names), list.Current
 	h.remember(p.ID, name, r.EngineVersion, list)

@@ -49,7 +49,7 @@ To rebuild the UI as well: `make install && make build`. To run the checks: `mak
 
 ## 3. Try it without real infrastructure
 
-From a source checkout, the demo uses a fake engine and synthetic state; nothing contacts a cloud or a real Terraform installation:
+From a source checkout, the demo uses a fake engine and synthetic state; nothing contacts a cloud, provider, backend or real Terraform installation. It shows the UI, not that your real setup works:
 
 ```sh
 make demo       # one synthetic project with 316 resources
@@ -87,7 +87,10 @@ The sidebar shows the current **project** and **workspace** at the top, then the
 | --- | --- |
 | "An IaC engine is needed" | Install Terraform or OpenTofu on `PATH`, or pass `--engine`, then restart. |
 | "Initialize this workspace first" | Run `init` yourself, or use **Initialize…** on the project's Hub page, then **Read again**. |
-| State unavailable | Check credentials, SSO session, VPN and backend in your terminal. Hclaro withholds raw CLI errors because they can contain secrets. |
+| "Rejected or expired credentials" | Sign in again in a terminal (for example `aws sso login`), then **Read again** or **Try again**. |
+| "Could not reach the backend or a provider" | Check network, VPN or proxy, then try again. |
+| "Needs init" although `.terraform` exists | Providers or modules are missing or the lockfile changed: run init again from the Hub project page or in a terminal. |
+| State or workspaces unavailable, no reason given | Check credentials, SSO session, VPN and backend in your terminal. Hclaro withholds raw CLI errors because they can contain secrets; it only recognizes common credential, network and init messages. |
 | Blank page or "session" error | Open the newest URL printed by the running `hclaro`; each start creates a new one. |
 | Port in use | Omit `--port`, or choose another. |
 | Plan unavailable | The Plans view says why (for example a remote execution backend). Hclaro plans and applies only locally executed workspaces. |

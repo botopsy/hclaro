@@ -54,6 +54,7 @@ const bucket = (ws: string): Resource => ({ id: `id-${ws}`, address: `aws_s3_buc
 type Call = { url: string; method: string; body?: unknown; headers: Record<string, string> };
 let calls: Call[];
 let hold: Promise<void> | undefined;
+let inspectReply: Project | undefined;
 function stub(list: ProjectList) {
   calls = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -65,7 +66,7 @@ function stub(list: ProjectList) {
     if (path === 'projects' && method === 'GET') return Response.json(list);
     if (path === 'projects' && method === 'POST') return Response.json(project('c'.repeat(32), 'added'), { status: 201 });
     if (path === 'projects/browse') return Response.json({ path: '/infra', parent: '/', project: false, entries: ['network'], truncated: false });
-    if (path.endsWith('/inspect')) return Response.json(inspected);
+    if (path.endsWith('/inspect')) return Response.json(inspectReply ?? inspected);
     if (path === 'contexts') return Response.json({ ...snapshot(body.workspace).context });
     const match = path.match(/^contexts\/ctx-(\w+)(\/resources)?/);
     if (match) {
@@ -85,6 +86,7 @@ function app(path: string) {
 beforeEach(() => {
   localStorage.clear();
   hold = undefined;
+  inspectReply = undefined;
   vi.spyOn(window, 'open').mockImplementation(() => null);
 });
 afterEach(() => {
@@ -228,6 +230,17 @@ describe('Workspace Hub', () => {
     consumeDeepLink();
     expect(window.location.search).toBe('');
     expect(sessionStorage.getItem(`hclaro.profile.${network}`)).toBeNull();
+  });
+  it('explains expired credentials when workspaces cannot be listed', async () => {
+    const advice = 'Unable to list workspaces. The CLI reported rejected or expired credentials. Sign in again in a terminal (for example aws sso login), then try again. Nothing was changed.';
+    inspectReply = { ...inspected, inspection: { workspaces: [], hiddenWorkspaces: 0, inspectedAt: '2026-11-05T12:00:00Z', diagnostic: { code: 'workspace_list', message: advice } } };
+    stub(listing(projects));
+    app(`/projects/${network}`);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Workspaces unavailable');
+    expect(alert).toHaveTextContent('expired credentials');
+    expect(alert).toHaveTextContent('Nothing was initialized or changed.');
+    expect(screen.queryByRole('button', { name: /Read state/ })).not.toBeInTheDocument();
   });
   it('opens the Hub when Hclaro was started without a project', async () => {
     stub(listing([]));
