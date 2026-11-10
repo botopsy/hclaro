@@ -218,7 +218,8 @@ Trust boundaries: (1) browser ↔ loopback HTTP server (Guard, session token, CS
 ## Implementation status
 
 - **M24.04 (done):** `internal/projects/scope.go` (identity, `Hub.Execution`, revalidation, close, eviction, environment digest), the `Verify` hook in `operations.Manager` (plan, drift, graph, apply), shared claims held for Hub reads and inspection (G1), per-scope managers (G3), idle-first eviction (G4), `capabilities.scopedExecution` in `GET /session` (G6), and stable codes with `detail` in API errors. The gate has no user-facing flag. G2 is covered for Hub scopes by scope revalidation; the launch plan fingerprint is unchanged. Synthetic tests: `internal/projects/scope_test.go`, `internal/api/projects_test.go`.
-- **Open:** scoped routes and request validation at the HTTP layer (M24.05/.06), reloading only the affected context after an apply (M24.06), UI (M24.07), G5.
+- **M24.05 (done):** `internal/api/scoped.go`: plan options, start, list, detail, change detail, operations, events and cancel under `/api/v1/contexts/{cid}/`, all behind the gate (`404 scoped_execution_disabled` before any lookup). Plan start needs the backend-access acknowledgment and the reviewed profile fingerprint, revalidates the scope synchronously (failure closes the context), then again under the root claim. Plans record `engineVersion` in addition to the content fingerprint, artifact SHA-256, source fingerprint and execution context. Cross-scope and launch IDs answer like missing ones. Scoped plan detail never reports apply as available (`scoped_apply_unavailable`) until M24.06. `security.mutating` lists only `contexts/{cid}/plans` and `contexts/{cid}/operations/{oid}/cancel`. Synthetic tests: `internal/api/scoped_test.go`, `internal/security/security_test.go`.
+- **Open:** scoped preflight, approval and apply, and reloading only the affected context after an apply (M24.06), UI (M24.07), a user-facing gate flag (owner decision), G5.
 
 ## Residual risks
 

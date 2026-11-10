@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/gitctx"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
@@ -58,7 +59,8 @@ type ScopeError struct {
 func (e *ScopeError) Error() string { return e.Message }
 
 var (
-	errScopedDisabled = &ScopeError{Code: CodeScopedDisabled, Message: "Plans and applies in Hub workspaces are not enabled in this session. Nothing ran."}
+	// ErrScopedDisabled answers every scoped request while the gate is off.
+	ErrScopedDisabled = &ScopeError{Code: CodeScopedDisabled, Message: "Plans and applies in Hub workspaces are not enabled in this session. Nothing ran."}
 	errCapacity       = &ScopeError{Code: CodeCapacityExceeded, Message: "Every open Hub workspace is running an operation. Wait for one to finish, then try again. Nothing was closed."}
 )
 
@@ -174,6 +176,48 @@ func (s *Scope) StartPlan(varFiles, replaceIDs []string) (operations.Operation, 
 	return s.manager.StartPlanWith(req)
 }
 
+// StartReviewedPlan starts a plan requested over HTTP. reviewed is the execution profile
+// fingerprint the user was shown ("" for a workspace opened without a profile); it must be
+// the scope's own. The scope is revalidated first (files, registry, profile, environment,
+// backend); a failure closes the context, as when the operation revalidates under the root
+// claim. Nothing runs when an error is returned.
+func (s *Scope) StartReviewedPlan(ctx context.Context, varFiles, replaceIDs []string, reviewed string) (operations.Operation, error) {
+	if reviewed != s.id.profileFingerprint {
+		return operations.Operation{}, &operations.RejectError{Code: "context_changed", Reason: "The execution context of this workspace is not the one you reviewed. Review the plan options again before planning."}
+	}
+	if err := s.Revalidate(ctx); err != nil {
+		s.hub.closeContext(s.ContextID, CodeScopeChanged)
+		return operations.Operation{}, err
+	}
+	return s.StartPlan(varFiles, replaceIDs)
+}
+
+// VarFiles lists the variable files of the scope's root that a plan may select.
+func (s *Scope) VarFiles() []string { return s.manager.VarFiles() }
+
+// ProfileFingerprint is the fingerprint of the scope's execution profile, or "".
+func (s *Scope) ProfileFingerprint() string { return s.id.profileFingerprint }
+
+// Execution is the sanitized execution profile context of the scope, or nil.
+func (s *Scope) Execution() *operations.ExecutionContext { return s.context.Execution.Clone() }
+
+// Snapshot is the scope's read snapshot.
+func (s *Scope) Snapshot() workspace.Snapshot { return s.context.Snapshot() }
+
+// ContextStatus reports whether a plan's context changed and whether it could be applied.
+func (s *Scope) ContextStatus(p *operations.Plan) (bool, operations.ApplyStatus) {
+	return s.manager.ContextStatus(p)
+}
+
+// SourceStatus compares a plan's source fingerprint with the scope's root now.
+func (s *Scope) SourceStatus(p *operations.Plan) gitctx.SourceStatus { return s.manager.SourceStatus(p) }
+
+// Holder names the kind of exclusive operation holding the scope's root, or "".
+func (s *Scope) Holder() string {
+	kind, _ := s.hub.Locks.Holder(s.id.root)
+	return kind
+}
+
 // Plans returns this scope's reviewed plans, oldest first.
 func (s *Scope) Plans() []*operations.Plan { return s.manager.Plans() }
 
@@ -197,7 +241,7 @@ func (s *Scope) Cancel(id string) (operations.Operation, error) { return s.manag
 // known local-execution backend; the scope's identity must match the read context.
 func (h *Hub) Execution(cid string) (*Scope, error) {
 	if !h.ScopedExecution {
-		return nil, errScopedDisabled
+		return nil, ErrScopedDisabled
 	}
 	if h.base.Err() != nil {
 		return nil, operations.ErrClosed
@@ -250,6 +294,21 @@ func (h *Hub) Execution(cid string) (*Scope, error) {
 	h.scopes[cid] = s
 	h.scopeOrder = append(h.scopeOrder, cid)
 	return s, nil
+}
+
+// ExistingScope returns the execution scope of an open read context without creating one;
+// nil means the context has none (no plan was requested in it yet, or it was evicted). It
+// fails like Execution when the gate is off or the context is closed.
+func (h *Hub) ExistingScope(cid string) (*Scope, error) {
+	if !h.ScopedExecution {
+		return nil, ErrScopedDisabled
+	}
+	if _, _, err := h.Context(cid); err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.scopes[cid], nil
 }
 
 // newScope resolves and pins the identity of c and builds its manager. Nothing runs except

@@ -97,12 +97,14 @@ type Operation struct {
 // artifact can still be applied is tracked separately (see ApplyStatus).
 type Plan struct {
 	plan.Review
-	ID          string   `json:"id"`
-	OperationID string   `json:"operationId"`
-	CreatedAt   string   `json:"createdAt"`
-	Engine      string   `json:"engine"`
-	Workspace   string   `json:"workspace"`
-	VarFiles    []string `json:"varFiles"`
+	ID          string `json:"id"`
+	OperationID string `json:"operationId"`
+	CreatedAt   string `json:"createdAt"`
+	Engine      string `json:"engine"`
+	// EngineVersion is the engine version the plan was made with.
+	EngineVersion string   `json:"engineVersion"`
+	Workspace     string   `json:"workspace"`
+	VarFiles      []string `json:"varFiles"`
 	// Kind is "plan", "replace" or "import"; Replace lists the requested instance addresses.
 	Kind    string        `json:"kind"`
 	Replace []string      `json:"replace"`
@@ -614,7 +616,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	}
 	result = &Plan{
 		Review: review, ID: m.NewID(), OperationID: e.op.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
+		Engine: snap.Info.Engine, EngineVersion: snap.Info.Version, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
 		Import: e.op.Import, GeneratedConfig: generatedConfig, GeneratedConfigTruncated: generatedTruncated,
 		ArtifactSHA256: digest, Fingerprint: fingerprint, Context: bound.Clone(), Source: source,
 		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Unsupported > 0,

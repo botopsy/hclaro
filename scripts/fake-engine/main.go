@@ -1,5 +1,5 @@
 // This helper is a synthetic CLI, not Terraform. Never install it on a normal PATH.
-// HCLARO_FAKE_PLAN selects plan behavior: unset (success), "lock", "slow", "fail" or "unsupported" (M24.01: a plan with unsupported action combinations). A project
+// HCLARO_FAKE_PLAN selects plan behavior: unset (success), "lock", "slow", "fail", "credentials" (M24.05: no provider credentials) or "unsupported" (M24.01: a plan with unsupported action combinations). A project
 // that declares an import block gets the import plan fixture; -generate-config-out writes
 // the generated configuration fixture.
 // `plan ... -refresh-only` is a drift scan; HCLARO_FAKE_DRIFT selects its result (see driftScan).
@@ -199,6 +199,11 @@ func refuse() {
 func plan(out, generate string) {
 	interrupted := make(chan os.Signal, 1)
 	signal.Notify(interrupted, os.Interrupt)
+	if os.Getenv("HCLARO_FAKE_PLAN") == "credentials" {
+		// A provider that finds no credentials; the synthetic message has no real values.
+		fmt.Println(`{"type":"diagnostic","@level":"error","@message":"Error: No valid credential sources found","diagnostic":{"severity":"error","summary":"No valid credential sources found","detail":"Please see the provider documentation for authentication options."}}`)
+		os.Exit(1)
+	}
 	log := fixtures.PlanLog
 	if os.Getenv("HCLARO_FAKE_PLAN") == "lock" {
 		log = fixtures.PlanLogLocked

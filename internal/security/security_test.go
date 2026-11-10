@@ -105,6 +105,17 @@ func TestMutatingRequests(t *testing.T) {
 		{"no git write route", "POST", "/api/v1/git/checkout", origin, "same-origin", csrf, "application/json", "{}", token, 405},
 		{"no git commit route", "POST", "/api/v1/projects/" + strings.Repeat("0", 32) + "/git/commit", origin, "same-origin", csrf, "application/json", "{}", token, 405},
 		{"no generic run route", "POST", "/api/v1/editor/run", origin, "same-origin", csrf, "application/json", "{}", token, 405},
+		// Scoped Hub plans (M24.05): only starting a plan and cancelling an operation of one
+		// context; no scoped apply, approval, preflight or generic route yet.
+		{"scoped plan", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", origin, "same-origin", csrf, "application/json", "{}", token, 202},
+		{"scoped cancel", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/operations/" + strings.Repeat("1", 32) + "/cancel", origin, "same-origin", csrf, "application/json", "{}", token, 202},
+		{"scoped plan needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", origin, "same-origin", "", "application/json", "{}", token, 403},
+		{"scoped plan needs origin", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", "", "", csrf, "application/json", "{}", token, 403},
+		{"scoped plan cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", origin, "cross-site", csrf, "application/json", "{}", token, 403},
+		{"scoped plan needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", origin, "same-origin", csrf, "application/json", "{}", "", 401},
+		{"no scoped apply yet", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply", origin, "same-origin", csrf, "application/json", "{}", token, 405},
+		{"bad scoped context id", "POST", "/api/v1/contexts/../plans", origin, "same-origin", csrf, "application/json", "{}", token, 405},
+		{"long scoped context id", "POST", "/api/v1/contexts/" + strings.Repeat("0", 64) + "/plans", origin, "same-origin", csrf, "application/json", "{}", token, 405},
 		{"put rejected", "PUT", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "{}", token, 405},
 		{"delete rejected", "DELETE", op, origin, "same-origin", csrf, "application/json", "{}", token, 405},
 	} {
