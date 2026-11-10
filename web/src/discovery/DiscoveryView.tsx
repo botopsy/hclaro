@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, BadgeCheck, CircleCheck, CircleDashed, CircleHelp, CircleSlash, CircleX, Cloud, CloudCog, Copy, History, Import, LoaderCircle, Play, Radar, Search, ShieldCheck, Square, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import { api, ApiError, post } from '../api';
@@ -110,7 +110,7 @@ export function DiscoveryView({
   if (options.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading cloud discovery…</p></div>;
   if (options.error || !o) return <div className="empty-state error-state" role="alert"><p>{options.error?.message || 'Cloud discovery is unavailable.'}</p></div>;
   return <div className="plans discovery">
-   <p className="info-line drift-explainer"><ShieldCheck size={13} />Cloud discovery lists existing AWS objects of {o.types.length} supported types in the account your credentials belong to, and compares them with <strong>this workspace’s recorded state</strong>. It never creates, changes or deletes cloud objects, and never writes state. Nothing is contacted until you ask.</p>
+   <p className="info-line drift-explainer"><ShieldCheck size={13} />Cloud discovery lists existing AWS objects of {o.types.length} supported types only ({o.types.map((t, i) => <Fragment key={t.type}>{i ? ', ' : ''}<code>{t.type}</code></Fragment>)}) in the account your credentials belong to, at most {o.limits.maxRegions} regions, {o.limits.maxPerType.toLocaleString()} objects per type and region and {o.limits.maxObjects.toLocaleString()} objects per scan. Other AWS types, Azure and Google Cloud are not discovered. It compares them with <strong>this workspace’s recorded state</strong>. It never creates, changes or deletes cloud objects, and never writes state. Nothing is contacted until you ask.</p>
    {!o.canScan && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Cloud discovery is unavailable here.</strong> {o.reason}</span></div>}
    {o.canScan && <IdentityBanner options={o} identity={identity} busy={verifying} blocked={blocked} error={verifyError} onVerify={() => void verify()} onScan={() => setPreview(true)} running={running} />}
    {o.canScan && (o.scope ? <details className="discovery-context"><summary>Execution context</summary><ScopeSummary scope={o.scope} executionContext={o.executionContext} title="Discovery uses" /></details> : o.context ? <details className="discovery-context"><summary>Execution context</summary><ContextSummary summary={o.context} title="Discovery uses" /></details> : o.profileError ? <p className="dialog-error" role="alert">{o.profileError}</p> : null)}
@@ -211,7 +211,7 @@ function typeLabel(options: DiscoveryOptions, type: string) {
 }
 
 function Outcome({ scan, options }: { scan: DiscoveryScan; options: DiscoveryOptions }) {
-  const failed = scan.tasks.filter(t => t.status === 'failed');
+  const failed = scan.tasks.filter(t => t.status === 'failed' || (scan.truncated && t.status === 'cancelled'));
   const truncated = scan.tasks.filter(t => t.truncated);
   if (scan.status === 'running') {
     const done = scan.tasks.filter(t => t.status === 'done' || t.status === 'failed').length;
@@ -222,7 +222,8 @@ function Outcome({ scan, options }: { scan: DiscoveryScan; options: DiscoveryOpt
   return <section className={scan.status === 'partial' ? 'drift-outcome' : 'operation-failed'} role="alert">
    <h2>{scan.status === 'partial' ? <TriangleAlert size={17} /> : <CircleX size={17} />}{title}</h2>
    {scan.message && <p>{scan.message}</p>}
-   {(failed.length > 0 || truncated.length > 0) && <ul className="discovery-task-issues">
+   {(failed.length > 0 || truncated.length > 0 || scan.truncated) && <ul className="discovery-task-issues">
+    {scan.truncated && <li><strong>All types</strong>: stopped at {options.limits.maxObjects.toLocaleString()} objects per scan; more exist. Scan fewer regions or types.</li>}
     {failed.map(t => <li key={t.type + t.region}><strong>{typeLabel(options, t.type)} · {t.region}</strong>: {t.message}</li>)}
     {truncated.map(t => <li key={'t' + t.type + t.region}><strong>{typeLabel(options, t.type)} · {t.region}</strong>: stopped at {t.count} objects; more exist.</li>)}
    </ul>}

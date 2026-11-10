@@ -158,6 +158,19 @@ describe('Cloud discovery', () => {
     expect(screen.getAllByText(/RDS DB instances · eu-west-1/).length).toBeGreaterThan(0);
     expect(screen.getByText(/missing is not the same as none/)).toBeInTheDocument();
   });
+
+  it('names the supported types and limits, and reports the per-scan cap', async () => {
+    const capped: DiscoveryScan = { ...scan, status: 'partial', truncated: true, tasks: scan.tasks.map(t => t.type === 'aws_db_instance' ? { ...t, status: 'cancelled', message: 'Not listed: the scan reached its object limit.' } : t) };
+    serve({ options: verified, scans: [capped] }, url => url.includes(`/discovery/scans/${scan.id}`) ? Response.json(capped) : undefined);
+    view();
+    expect(await screen.findByText('Scan incomplete')).toBeInTheDocument();
+    const explainer = screen.getByText(/supported types only/);
+    for (const t of ['aws_vpc', 'aws_subnet', 'aws_security_group', 'aws_s3_bucket', 'aws_db_instance']) expect(within(explainer).getByText(t)).toBeInTheDocument();
+    // toLocaleString groups digits by the machine's locale (1,000 / 1.000 / 1 000).
+    expect(explainer).toHaveTextContent(/at most 6 regions, 1\D?000 objects per type and region and 5\D?000 objects per scan\. Other AWS types, Azure and Google Cloud are not discovered/);
+    expect(screen.getByText(/stopped at 5\D?000 objects per scan; more exist/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Not listed: the scan reached its object limit/)).toHaveLength(2);
+  });
 });
 
 describe('Import wizard from discovery', () => {

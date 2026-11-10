@@ -41,8 +41,8 @@ const (
 )
 
 // Limits. A scan selects at most MaxRegions regions; each type lists at most MaxPerType
-// objects per region; at most MaxConcurrency reads of one scan run at once and at most
-// MaxCalls reads across all scans.
+// objects per region; a scan keeps at most MaxObjects objects in total; at most
+// MaxConcurrency reads of one scan run at once and at most MaxCalls reads across all scans.
 const (
 	MaxRegions        = 6
 	MaxPerTypeLimit   = 1000
@@ -54,7 +54,7 @@ const (
 	MaxRunning        = 2
 	maxScans          = 10
 	maxIdentities     = 20
-	maxCandidates     = 5000
+	MaxObjects        = 5000
 	maxAttempts       = 4
 )
 
@@ -226,10 +226,12 @@ type Scan struct {
 	Tasks       []Task                   `json:"tasks"`
 	Candidates  []CloudResourceCandidate `json:"-"`
 	Merged      int                      `json:"duplicatesMerged"`
-	Error       string                   `json:"error,omitempty"`
-	Message     string                   `json:"message,omitempty"`
-	cancel      context.CancelFunc
-	byID        map[string]int
+	// Truncated: the scan reached MaxObjects and dropped further objects.
+	Truncated bool   `json:"truncated"`
+	Error     string `json:"error,omitempty"`
+	Message   string `json:"message,omitempty"`
+	cancel    context.CancelFunc
+	byID      map[string]int
 }
 
 // CandidateView is a candidate with its binding match against the current state.
@@ -279,6 +281,8 @@ type Service struct {
 	PrepareTTL  time.Duration
 	ScanTimeout time.Duration
 	MaxRunning  int
+	// MaxObjects caps the objects one scan keeps; tests lower it.
+	MaxObjects int
 
 	mu         sync.Mutex
 	identities []*CloudIdentity
@@ -295,7 +299,7 @@ type Service struct {
 // New returns a service with runner.
 func New(runner Runner) *Service {
 	base, stop := context.WithCancel(context.Background())
-	return &Service{Runner: runner, Now: time.Now, Sleep: sleep, NewID: newID, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
+	return &Service{Runner: runner, Now: time.Now, Sleep: sleep, NewID: newID, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, MaxObjects: MaxObjects, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
@@ -600,7 +604,7 @@ func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 		finish(ScanCancelled, kind)
 	default:
 		s.mu.Lock()
-		failed, partial := 0, false
+		failed, partial := 0, scan.Truncated
 		for _, t := range scan.Tasks {
 			if t.Status == TaskFailed {
 				failed++
@@ -654,6 +658,18 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 	}
 	token, count := "", 0
 	for {
+		// The scan already holds MaxObjects: further reads would only be thrown away.
+		s.mu.Lock()
+		if scan.Truncated {
+			if task.Pages == 0 {
+				task.Status, task.Message = TaskCancelled, "Not listed: the scan reached its object limit."
+			} else {
+				task.Status, task.Truncated = TaskDone, true
+			}
+			s.mu.Unlock()
+			return ""
+		}
+		s.mu.Unlock()
 		pageSize := min(PageSize, limit-count)
 		args := append(slices.Clone(typ.args), "--output", "json", "--region", callRegion, "--max-items", itoa(pageSize))
 		if token != "" {
@@ -738,7 +754,8 @@ func (s *Service) add(scan *Scan, c CloudResourceCandidate) {
 		scan.Merged++
 		return
 	}
-	if len(scan.Candidates) >= maxCandidates {
+	if len(scan.Candidates) >= s.MaxObjects {
+		scan.Truncated = true
 		return
 	}
 	scan.byID[c.ID] = len(scan.Candidates)

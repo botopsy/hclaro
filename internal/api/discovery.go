@@ -135,7 +135,7 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 			Context       *executionSummary        `json:"context,omitempty"`
 			ProfileError  string                   `json:"profileError,omitempty"`
 		}{canScan, reason, "aws", discovery.Types, discovery.Regions, region, regionSource, map[string]int{
-			"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "defaultPerType": discovery.DefaultPerType,
+			"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "maxObjects": discovery.MaxObjects, "defaultPerType": discovery.DefaultPerType,
 			"maxConcurrency": discovery.MaxConcurrency, "defaultConcurrency": discovery.DefaultConcurrent, "pageSize": discovery.PageSize,
 		}, snap.Info.Project, snap.Info.Engine, snap.Info.Workspace, snap.Info.Backend, snap.Status, identity, projectID, context, profileError})
 	})
