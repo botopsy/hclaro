@@ -95,6 +95,8 @@ export type Operation = {
   // or not (uncertain).
   outcome?: 'applied' | 'not_applied' | 'uncertain';
   stateReloaded: boolean;
+  // Applies only: the apply ran, but reading state again afterwards failed.
+  stateReloadFailed?: boolean;
   diagnostic?: {
     code: string;
     message: string;

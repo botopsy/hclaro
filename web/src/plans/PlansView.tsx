@@ -5,6 +5,7 @@ import { api, post } from '../api';
 import type { ImportTarget, Operation, Plan, PlanOptions, PlanSummary, ReplaceTarget } from '../types';
 import { Button } from '../components/ui/button';
 import { ApplyDialog } from './ApplyDialog';
+import { launchScope } from './routes';
 import { OperationLog } from './OperationLog';
 import { PlanReview } from './PlanReview';
 import { PreflightDialog } from './PreflightDialog';
@@ -116,7 +117,7 @@ export function PlansView({
    {failed && plan.data && <p className="info-line">Below is the previous successful plan, created at {clock(plan.data.createdAt)}. It does not reflect the run above.</p>}
    {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <div className="empty-state error-state" role="alert"><p>{plan.error.message}</p></div> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} copy={copy} busy={!!running} onApply={() => setApplying(true)} onInspectImpact={inspectImpact} /> : !running && !failed && <div className="empty-state"><FileDiff size={30} /><h2>No plans yet</h2><p>Run a plan to see every proposed change: creates, updates, replacements, deletions, data reads and output changes. Nothing runs until you confirm.</p>{options.data?.canPlan && <Button variant="outline" onClick={() => setPreflight(true)}><Play size={14} />Run plan</Button>}</div>}
    {preflightOpen && options.data && <PreflightDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
-   {applying && plan.data && <ApplyDialog plan={plan.data} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
+   {applying && plan.data && <ApplyDialog plan={plan.data} scope={launchScope} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
   </div>;
 }
 
@@ -145,7 +146,9 @@ function ApplyResult({ operation }: { operation: Operation }) {
    {operation.outcome === 'uncertain' && <p className="plan-warning"><TriangleAlert size={14} />Infrastructure may be partly changed. Check the resources involved before running another plan.</p>}
    {operation.outcome === 'not_applied' && !ok && <p className="muted">The engine did not apply anything.</p>}
    {operation.import && (ok ? <p>Imported <code>{operation.import.address}</code>. It appears in the resource explorer once the reloaded state records it.</p> : <ImportRecovery target={operation.import} applied />)}
-   <p className="muted">{operation.stateReloaded ? `State was re-read at ${clock(operation.completedAt ?? operation.startedAt)}; the explorer shows what the engine recorded, not live cloud inventory.` : 'State was not re-read. Restart Hclaro or check state with your CLI.'} The saved plan was deleted and cannot be applied again.</p>
+   {operation.stateReloadFailed && <p className="plan-warning" role="alert"><TriangleAlert size={14} />State could not be read again after the apply, so the explorer may be out of date. Read the workspace again, or check state with your CLI.</p>}
+   <p className="muted">{operation.stateReloaded ? `State was re-read at ${clock(operation.completedAt ?? operation.startedAt)}; the explorer shows what the engine recorded, not live cloud inventory.` : operation.stateReloadFailed ? 'The explorer still shows the state read before the apply.' : 'State was not re-read. Restart Hclaro or check state with your CLI.'} The saved plan was deleted and cannot be applied again.</p>
+   {ok && <p className="muted">A successful apply means the engine recorded the changes in state. It does not check that your services are healthy.</p>}
    <Diagnostics operation={operation} />
   </section>;
 }

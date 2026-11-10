@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+Hub-scoped apply (M24.06), off by default:
+
+- New routes `POST /api/v1/contexts/{cid}/plans/{pid}/preflight`, `/approval` and `/apply` apply a reviewed saved plan of one Hub workspace with the launch project's checks: latest plan only, one-hour limit, server preflight, one-time approval bound to the plan and its saved file, typed phrase for destructive plans. They are off by default (`404 scoped_execution_disabled`) and have no UI yet. A hidden, experimental `--experimental-hub-execution` flag turns on Hub plans and applies for testing; it is not listed in `--help`, prints a warning, and is not yet qualified with real engines. See `docs/architecture.md`, "Scoped apply (M24.06)".
+- An approval works only in the workspace view it was issued in: another project, workspace, profile, the launch project or a reread view refuses it, and nothing is applied. Each request rechecks the workspace's project folder, engine, profile, environment and backend, and the apply checks them again, including the engine binary's hash, right before the engine runs.
+- After an apply, only the applied workspace is read again. If that read fails, the apply result now says so (`stateReloadFailed`) instead of reporting the state as reloaded, for the launch project too. A successful apply is labeled as recorded state, not as a check that services are healthy.
+
 Hub-scoped plan API (M24.05), off by default:
 
 - New routes under `/api/v1/contexts/{cid}/` for plan options, starting a plan, plan list and detail, change detail, operations, operation events and cancel, bound to one open Hub workspace. They are disabled in this release (`404 scoped_execution_disabled`); there is no UI and no scoped apply yet. See `docs/architecture.md`, "Scoped plans (M24.05)".

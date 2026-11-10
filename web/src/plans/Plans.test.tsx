@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import golden from '../../../fixtures/plan/all-actions.golden.json';
 import unsupportedGolden from '../../../fixtures/plan/unknown-actions.golden.json';
 import { PlansView } from './PlansView';
+import { ApplyDialog } from './ApplyDialog';
+import { planRoute } from './routes';
 import type { Approval, Operation, Plan, PlanOptions, PreflightCheck, PreflightReport } from '../types';
 
 const canary = 'DO_NOT_LEAK_HCLARO_TEST_SECRET';
@@ -399,6 +401,51 @@ describe('Plans', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
     expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
+  });
+
+  it('sends a Hub workspace apply only to its own context routes, never the launch routes', async () => {
+    const contextId = '9'.repeat(32);
+    serve((url, init) => {
+      if (url.endsWith('/preflight') && init?.method === 'POST') return Response.json(report);
+      if (url.endsWith('/approval') && init?.method === 'POST') return Response.json(approval);
+      if (url.endsWith('/apply') && init?.method === 'POST') return Response.json({ ...operation, kind: 'apply', status: 'running' }, { status: 202 });
+      return undefined;
+    });
+    const started = vi.fn();
+    render(<ApplyDialog plan={applicable} scope={{ kind: 'context', contextId }} onStarted={started} onClose={() => {}} />);
+    const user = userEvent.setup();
+    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const apply = await within(dialog).findByRole('button', { name: 'Apply plan' });
+    await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply demo');
+    for (const box of within(dialog).getAllByRole('checkbox')) await user.click(box);
+    await user.click(apply);
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
+    expect(posts.map(p => p.url)).toEqual([
+      `/api/v1/contexts/${contextId}/plans/${planId}/preflight`,
+      `/api/v1/contexts/${contextId}/plans/${planId}/approval`,
+      `/api/v1/contexts/${contextId}/plans/${planId}/apply`
+    ]);
+  });
+
+  it('refuses instead of falling back to the launch project when the workspace context is invalid', async () => {
+    render(<ApplyDialog plan={applicable} scope={{ kind: 'context', contextId: '' }} onStarted={() => {}} onClose={() => {}} />);
+    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    expect(await within(dialog).findByText(/no longer open/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
+    expect(posts).toHaveLength(0);
+    expect(() => planRoute({ kind: 'context', contextId: '../plans' }, planId, 'apply')).toThrow();
+    expect(() => planRoute({ kind: 'launch' }, '../x', 'apply')).toThrow();
+    expect(planRoute({ kind: 'launch' }, planId, 'apply')).toBe(`plans/${planId}/apply`);
+  });
+
+  it('warns when state could not be read again after an apply', async () => {
+    const applied: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: false, stateReloadFailed: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [applied, operation] }) : undefined);
+    view();
+    const alert = await screen.findByText(/State could not be read again after the apply/);
+    expect(alert).toBeInTheDocument();
+    expect(screen.getByText(/does not check that your services are healthy/)).toBeInTheDocument();
+    expect(screen.queryByText(/State was re-read/)).not.toBeInTheDocument();
   });
 
   it('reports an interrupted apply as an uncertain outcome', async () => {

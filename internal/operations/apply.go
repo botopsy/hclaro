@@ -411,11 +411,21 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 		_ = os.RemoveAll(a.dir)
 	}
 	m.mu.Unlock()
-	reloaded := false
+	reloaded, reloadFailure := false, ""
 	if started && m.Reload != nil && m.base.Err() == nil {
 		m.stage(e, "Reloading state")
 		m.Reload(m.base)
-		reloaded = true
+		// A failed read leaves the state view without the applied changes; say so rather
+		// than report it as reloaded.
+		// No recorded state is a successful read (state_absent), not a failure.
+		if snap := m.store.Get(); snap.Status == "error" && (snap.Diagnostic == nil || snap.Diagnostic.Code != "state_absent") {
+			reloadFailure = "The state could not be read again after the apply, so the state view may be out of date. Read the workspace again, or check state with your CLI."
+			if snap.Diagnostic != nil && snap.Diagnostic.Message != "" {
+				reloadFailure += " " + snap.Diagnostic.Message
+			}
+		} else {
+			reloaded = true
+		}
 	}
 	m.mu.Lock()
 	o := &e.op
@@ -424,6 +434,7 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	o.ExitCode = exitCode
 	o.Stage = "Finished"
 	o.StateReloaded = reloaded
+	o.StateReloadFailed = reloadFailure != ""
 	switch {
 	case code == "applied":
 		o.Status = Succeeded
@@ -440,6 +451,9 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	if message == "" {
 		message = applyMessages["apply_failed"]
 	}
+	if code == "applied" && !reloaded {
+		message = "Apply finished. The engine reported success."
+	}
 	if code != "applied" {
 		o.Diagnostic = &Diagnostic{Code: code, Message: message}
 	}
@@ -452,6 +466,12 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 		level = "error"
 	}
 	e.log.Append(level, message)
+	if reloadFailure != "" {
+		e.log.Append("warn", reloadFailure)
+	}
+	if code == "applied" {
+		e.log.Append("info", "A successful apply means the engine recorded the changes in state. It does not check that the services are healthy.")
+	}
 	applied, _ := m.Plan(e.op.PlanID)
 	m.recordFinal(e, applied, nil)
 	e.log.Finish()

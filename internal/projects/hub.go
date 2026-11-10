@@ -16,6 +16,7 @@ import (
 
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
+	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/rootlock"
 	"hclaro/internal/state"
@@ -177,15 +178,19 @@ type Hub struct {
 	ScopedExecution bool
 	// Executors resolves the full engine of an execution scope; MaxScopes bounds scopes in
 	// memory; TempDir is where scopes keep saved plans ("" is the OS temp directory).
-	Executors   ExecutorFactory
-	MaxScopes   int
-	TempDir     string
-	base        context.Context
-	stop        context.CancelFunc
-	mu          sync.Mutex
-	inspections map[string]*Inspection
-	contexts    map[string]*Context
-	order       []string
+	Executors ExecutorFactory
+	// GitProbe and IdentityProbe gather apply preflight facts for execution scopes; nil
+	// reports them as unavailable.
+	GitProbe      preflight.GitProbe
+	IdentityProbe preflight.IdentityProbe
+	MaxScopes     int
+	TempDir       string
+	base          context.Context
+	stop          context.CancelFunc
+	mu            sync.Mutex
+	inspections   map[string]*Inspection
+	contexts      map[string]*Context
+	order         []string
 	// closed remembers why recent contexts were closed, so the UI can say so.
 	closed map[string]string
 	// reviews holds reviewed workspace commands by context ID until they start or expire.

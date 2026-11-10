@@ -274,8 +274,8 @@ func TestScopedPlansRunInTheirOwnRootAndWorkspace(t *testing.T) {
 		if p.Workspace != tc.ws || p.Engine != tc.engine || p.EngineVersion != tc.version || len(p.ArtifactSHA256) != 64 || p.Fingerprint == "" || p.Scope.ContextID != cid || p.Scope.Backend != "local" || p.ContextChanged {
 			t.Fatalf("%+v", p.Plan)
 		}
-		// The saved plan is kept for M24.06, but no scoped route applies it yet.
-		if p.Apply.Available || p.Apply.Code != "scoped_apply_unavailable" || !p.Apply.ArtifactRetained {
+		// The saved plan is kept and, since M24.06, can be applied through this context only.
+		if !p.Apply.Available || p.Apply.Code != "" || !p.Apply.ArtifactRetained {
 			t.Fatalf("%+v", p.Apply)
 		}
 		for id := range p.Details {

@@ -7,7 +7,8 @@
 // graph when invoked as "tofu". HCLARO_FAKE_GRAPH selects others: "large" (1,000 nodes),
 // "cycle", "malformed", "init" (backend initialization required, exit 1), "leak" (a canary
 // on stderr, then the fixture) and "slow" (waits for an interrupt).
-// HCLARO_FAKE_APPLY selects apply behavior: unset (success), "stale" or "fail".
+// HCLARO_FAKE_APPLY selects apply behavior: unset (success), "stale", "fail" or "slow"
+// (M24.06: 3 seconds per log line; an interrupt stops it after the change in progress).
 // HCLARO_FAKE_INIT selects init behavior: unset (success: creates the data directory and a
 // lock file), "migrate", "prompt", "credentials", "registry", "slow" (waits for an
 // interrupt) or "leak" (echoes a canary and AWS_SECRET_ACCESS_KEY, then succeeds). Only
@@ -319,9 +320,20 @@ func apply(path string) {
 		fmt.Println(`{"type":"diagnostic","@level":"error","diagnostic":{"severity":"error","summary":"Saved plan is stale","detail":"The given plan file can no longer be applied because the state was changed by another operation after the plan was created."}}`)
 		os.Exit(1)
 	}
+	interrupted := make(chan os.Signal, 1)
+	signal.Notify(interrupted, os.Interrupt)
+	delay := 150 * time.Millisecond
+	if os.Getenv("HCLARO_FAKE_APPLY") == "slow" {
+		delay = 3 * time.Second
+	}
 	for _, line := range bytes.Split(bytes.TrimSpace(fixtures.ApplyLog), []byte("\n")) {
 		_, _ = os.Stdout.Write(append(line, '\n'))
-		time.Sleep(150 * time.Millisecond)
+		select {
+		case <-interrupted:
+			fmt.Println(`{"type":"log","@level":"warn","@message":"Interrupt received. Stopping gracefully."}`)
+			os.Exit(1)
+		case <-time.After(delay):
+		}
 	}
 	if os.Getenv("HCLARO_FAKE_APPLY") == "fail" {
 		os.Exit(1)
