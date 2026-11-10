@@ -20,7 +20,8 @@ export const groupLabels: Record<NavGroup, string | undefined> = {
 // - project: any open project workspace (terminal-opened or Hub workspace);
 // - launch:  only the project opened from the terminal (Hub workspaces are read-only);
 // - execution: the project opened from the terminal, and Hub workspaces when the server
-//              enables scoped execution (M24.07; plans and applies run in that workspace only);
+//              enables scoped execution (M24.07–M24.08; plans, imports, replacements and
+//              applies run in that workspace only);
 // - global:  a page of its own, independent of the open project;
 // - app:     application preferences, always available.
 export type NavScope = 'project' | 'launch' | 'execution' | 'global' | 'app';
@@ -58,7 +59,7 @@ export const navItems: readonly NavItem[] = [
   { id: 'drift', label: 'Drift detection', icon: ScanSearch, group: 'analyze', scope: 'launch', target: { kind: 'view', view: 'Drift' } },
   { id: 'graph', label: 'Dependency graph', icon: Waypoints, group: 'analyze', scope: 'launch', target: { kind: 'view', view: 'Graph' } },
   { id: 'compare', label: 'Compare', icon: GitCompareArrows, group: 'analyze', scope: 'global', target: { kind: 'route', route: 'compare' }, description: 'Compare workspaces' },
-  { id: 'import-discovery', label: 'Import & discovery', icon: Import, group: 'manage', scope: 'launch', target: { kind: 'view', view: 'Import', children: ['Discovery'] }, description: 'Import existing objects or discover cloud resources' },
+  { id: 'import-discovery', label: 'Import & discovery', icon: Import, group: 'manage', scope: 'execution', target: { kind: 'view', view: 'Import', children: ['Discovery'] }, description: 'Import existing objects or discover cloud resources' },
   { id: 'operations', label: 'Operations', icon: Terminal, group: 'manage', scope: 'execution', target: { kind: 'view', view: 'Operations' }, badge: 'operations' },
   { id: 'history', label: 'History', icon: History, group: 'manage', scope: 'global', target: { kind: 'route', route: 'history' }, description: 'Operation history on this machine' },
   { id: 'git', label: 'Git', icon: GitBranch, group: 'utility', scope: 'project', target: { kind: 'view', view: 'Git' }, description: 'Branch, commit and changed IaC files' },
@@ -96,7 +97,7 @@ export type NavState = {
   reason?: string;
 };
 
-const hubPlansOnly = 'Hub workspaces run plans and applies only. Drift scans, dependency graphs, cloud discovery and imports run only for the project opened from the terminal.';
+const hubPlansOnly = 'Hub workspaces run plans, imports, replacements and applies only. Drift scans, dependency graphs and cloud discovery run only for the project opened from the terminal.';
 const hubReadOnly = 'Hub workspaces are read-only. Plans, drift scans, dependency graphs, cloud discovery, applies and imports run only for the project opened from the terminal.';
 
 // Pages that show the current project. Global pages (Projects, Compare, History) do not.

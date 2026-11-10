@@ -217,3 +217,74 @@ describe('Hub plan flow (M24.07)', { timeout: 20000 }, () => {
     expect(contextPath(network, 'dev', 'Resources', planId)).toBe(`/projects/${network}/workspaces/dev/resources`);
   });
 });
+
+// M24.08: import and replace in a Hub workspace go only to that workspace's own context.
+describe('Hub import and replace (M24.08)', { timeout: 20000 }, () => {
+  const importOptions = (cid: string) => ({ canImport: true, canApply: true, supportsImportBlocks: true, supportsGeneratedConfig: true, engine: 'terraform', version: '1.9.8', workspace: wsOf(cid), backend: 'local', varFiles: [], scope: options(cid).scope, executionContext: null, contextFingerprint: '' });
+  const preview = { address: 'aws_s3_bucket.logs', file: 'imports.tf', content: 'import {\n  to = aws_s3_bucket.logs\n  id = "synthetic-logs"\n}\n', sha256: '7'.repeat(64), config: 'found', configFile: 'main.tf', canGenerate: false, issues: [], blocked: false };
+  const resource = (n: number) => ({ id: String(n).repeat(32).slice(0, 32), address: `aws_s3_bucket.b${n}`, mode: 'managed', type: 'aws_s3_bucket', name: `b${n}`, provider: 'registry.terraform.io/hashicorp/aws', module: '', attributes: {} });
+
+  it('previews, writes and plans an import in A/dev through its own context only', async () => {
+    override = (path, method) => {
+      const m = path.match(/^contexts\/([0-9a-f]{32})\/(imports.*)$/);
+      if (!m) return undefined;
+      if (m[2] === 'imports/options') return Response.json(importOptions(m[1]));
+      if (m[2] === 'imports/preview') return Response.json({ ...preview, scope: options(m[1]).scope });
+      if (m[2] === 'imports' && method === 'POST') return Response.json({ ...finished, status: 'running', import: { address: preview.address, file: preview.file } }, { status: 202 });
+      return undefined;
+    };
+    app(contextPath(network, 'dev', 'Import'));
+    expect(parseRoute(window.location.pathname)).toMatchObject({ kind: 'context', view: 'Import' });
+    const user = userEvent.setup();
+    // Cloud discovery stays launch-only: no Import & discovery tabs in a Hub workspace.
+    await screen.findByRole('form', { name: 'Existing object' });
+    expect(screen.queryByRole('tab', { name: /discovery/i })).toBeNull();
+    await user.type(screen.getByLabelText('Resource instance address'), 'aws_s3_bucket.logs');
+    await user.type(screen.getByLabelText('Import ID'), 'synthetic-logs');
+    await user.click(screen.getByRole('button', { name: /Check and preview/ }));
+    const confirm = await screen.findByRole('region', { name: 'Write the file and plan' });
+    const uses = within(confirm).getByLabelText('This import plan will use');
+    expect(uses).toHaveTextContent('/infra/network');
+    expect(uses).toHaveTextContent('dev');
+    expect(confirm).toHaveTextContent('Every workspace of this project plans this import block');
+    await user.click(within(confirm).getByRole('checkbox', { name: /Write imports.tf/ }));
+    await user.click(within(confirm).getByRole('button', { name: /Write file/ }));
+    await waitFor(() => expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/plans`));
+    const posts = calls.filter(c => c.method === 'POST' && c.url !== '/api/v1/contexts');
+    expect(posts.map(c => c.url)).toEqual([`/api/v1/contexts/${ctx.dev}/imports/preview`, `/api/v1/contexts/${ctx.dev}/imports`]);
+    expect(posts[1].body).toEqual({ address: 'aws_s3_bucket.logs', id: 'synthetic-logs', provider: '', file: 'imports.tf', generateConfig: false, varFiles: [], previewSha256: preview.sha256, acknowledgeWrite: true, acknowledgeBackendAccess: true, contextFingerprint: '' });
+    expect(calls.some(c => /^\/api\/v1\/(imports|plans\/options)/.test(c.url))).toBe(false);
+    expect(launchCalls()).toEqual([]);
+  });
+
+  it('a closed context asks to open the workspace again and writes nothing', async () => {
+    override = path => path.endsWith('/imports/options') ? Response.json({ error: 'context_closed', reason: 'This workspace view is no longer open.' }, { status: 404 }) : undefined;
+    app(contextPath(network, 'dev', 'Import'));
+    expect(await screen.findByRole('heading', { name: 'Open this workspace again' })).toBeInTheDocument();
+    expect(calls.some(c => c.method === 'POST' && c.url.includes('/imports'))).toBe(false);
+  });
+
+  it('plans a replacement of instances chosen in A/dev with their IDs, as a full plan', async () => {
+    const page = { resources: [resource(1), resource(2)], total: 2 };
+    override = path => /^contexts\/[0-9a-f]{32}\/resources$/.test(path) ? Response.json(page) : undefined;
+    app(contextPath(network, 'dev', 'Resources'));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('checkbox', { name: 'Select aws_s3_bucket.b1 for replacement' }));
+    await user.click(screen.getByRole('button', { name: 'Plan replacement…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Plan a replacement' });
+    expect(dialog).toHaveTextContent('This is a full plan, not a targeted one');
+    expect(within(dialog).getByLabelText('This plan will use')).toHaveTextContent('dev');
+    await user.click(within(dialog).getByRole('button', { name: 'Plan replacement' }));
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/plans`)).toBe(true));
+    expect(calls.find(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/plans`)!.body).toEqual({ acknowledgeBackendAccess: true, varFiles: [], replace: [resource(1).id], contextFingerprint: '' });
+    expect(launchCalls()).toEqual([]);
+  });
+
+  it('offers no replacement selection while Hub execution is off', async () => {
+    gate = false;
+    override = path => /^contexts\/[0-9a-f]{32}\/resources$/.test(path) ? Response.json({ resources: [resource(1)], total: 1 }) : undefined;
+    app(contextPath(network, 'dev', 'Resources'));
+    await screen.findByText('aws_s3_bucket.b1');
+    expect(screen.queryByRole('checkbox', { name: /for replacement/ })).toBeNull();
+  });
+});

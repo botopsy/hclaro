@@ -491,6 +491,12 @@ export type ImportOptions = {
   workspace: string;
   backend: string;
   varFiles: string[];
+  // Set for a Hub workspace (M24.08): why importing is unavailable, its scope, the recorded
+  // profile context and the fingerprint an import start must send back.
+  code?: string;
+  scope?: ScopeView | null;
+  executionContext?: ExecutionContext | null;
+  contextFingerprint?: string;
 };
 export type ImportRequest = {
   address: string;

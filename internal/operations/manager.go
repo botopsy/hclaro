@@ -188,15 +188,19 @@ type Manager struct {
 	Cost *cost.Service
 	// Verify, when set, revalidates the execution scope of a Hub workspace (M24.04) with the
 	// project root claim held, immediately before an operation's first engine command; kind
-	// is "plan", "drift", "graph" or "apply". A non-nil Diagnostic stops the operation before
-	// the engine runs (code scope_changed). The launch manager leaves it nil.
-	Verify   func(ctx context.Context, kind string) *Diagnostic
-	entries  []*entry
-	plans    []*Plan
-	scans    []*DriftScan
-	graphs   []*GraphRun
-	running  *entry
-	artifact *artifact
+	// is "plan", "drift", "graph" or "apply", or "import" before an import block is written.
+	// A non-nil Diagnostic stops the operation before the engine runs (code scope_changed).
+	// The launch manager leaves it nil.
+	Verify func(ctx context.Context, kind string) *Diagnostic
+	// ImportBinding, when set, is folded into import preview digests: a Hub workspace's
+	// manager sets its context ID. The launch manager leaves it empty.
+	ImportBinding string
+	entries       []*entry
+	plans         []*Plan
+	scans         []*DriftScan
+	graphs        []*GraphRun
+	running       *entry
+	artifact      *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.
 	notes  map[string]string
 	base   context.Context

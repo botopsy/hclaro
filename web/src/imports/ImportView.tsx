@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CircleCheck, CircleHelp, CloudCog, Radar, Unlink, Copy, Eye, EyeOff, FilePlus2, FileSearch, Import, LoaderCircle, LockKeyhole, Play, ShieldCheck, Terminal, TriangleAlert } from 'lucide-react';
-import { api, post } from '../api';
+import { CircleCheck, CircleHelp, CloudCog, Radar, Unlink, Copy, Eye, EyeOff, FilePlus2, FileSearch, Import, Layers3, LoaderCircle, LockKeyhole, Play, ShieldCheck, Terminal, TriangleAlert } from 'lucide-react';
+import { api, ApiError, post } from '../api';
 import type { DiscoveryPrefill, ImportOptions, ImportPreview, ImportRequest, Operation, PlanOptions } from '../types';
 import { ContextSummary } from '../profiles/ContextSummary';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 import { Button } from '../components/ui/button';
 import { engineLabel } from '../plans/labels';
+import { ScopeSummary } from '../plans/PreflightDialog';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 
 // addressType returns the resource type of an instance address (the server parses it exactly).
 function addressType(address: string) {
@@ -20,6 +22,8 @@ const blank: ImportRequest = { address: '', id: '', provider: '', file: 'imports
 // only then offers to write it and run a full plan. Applying happens later, from the plan
 // review, with the same confirmation as any other plan.
 export function ImportView({
+  scope = launchScope,
+  reopen,
   workspaceStatus,
   profileId = '',
   onStarted,
@@ -27,6 +31,11 @@ export function ImportView({
   prefill,
   clearPrefill
 }: {
+  // The project or Hub workspace the import is written to and planned in. Every request goes
+  // to it only; there is no fallback from a Hub workspace to the launch project.
+  scope?: PlanScope;
+  // Opens a closed Hub workspace again (after its context changed).
+  reopen?: () => void;
   workspaceStatus?: string;
   // An object prepared in Cloud discovery: it fills the ID and suggests an address. The
   // address and resource block remain the user's decision.
@@ -47,11 +56,13 @@ export function ImportView({
   const [consent, setConsent] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
-  const options = useQuery({ queryKey: ['import-options', workspaceStatus], queryFn: () => api<ImportOptions>('imports/options') });
+  const scoped = scope.kind === 'context';
+  const options = useQuery({ queryKey: ['import-options', scopeKey(scope), workspaceStatus], queryFn: () => api<ImportOptions>(scopedPath(scope, 'imports/options')) });
   const o = options.data;
-  // The execution context summary comes from the plan options: an import is a plan.
-  const context = useQuery({ queryKey: ['plan-options', workspaceStatus, profileId], queryFn: () => api<PlanOptions>(`plans/options${profileId ? `?profileId=${profileId}` : ''}`) });
-  const choice = useVarFileChoice(context.data);
+  // The execution context summary comes from the plan options: an import is a plan. A Hub
+  // workspace's import options carry its scope and recorded context themselves.
+  const context = useQuery({ queryKey: ['plan-options', workspaceStatus, profileId], queryFn: () => api<PlanOptions>(`plans/options${profileId ? `?profileId=${profileId}` : ''}`), enabled: !scoped });
+  const choice = useVarFileChoice(scoped ? o && { varFiles: o.varFiles, executionContext: o.executionContext ?? undefined, contextFingerprint: o.contextFingerprint } : context.data);
   const summary = context.data?.context;
   const contextBlocked = !!summary && summary.issues.length > 0 || !!context.data?.profileError;
   const engine = engineLabel(o?.engine ?? 'terraform');
@@ -67,7 +78,7 @@ export function ImportView({
     setChecking(true);
     setError('');
     try {
-      setPreview(await post<ImportPreview>('imports/preview', { ...request, address: request.address.trim() }));
+      setPreview(await post<ImportPreview>(scopedPath(scope, 'imports/preview'), { ...request, address: request.address.trim() }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The import could not be checked.');
     } finally {
@@ -79,8 +90,15 @@ export function ImportView({
     setStarting(true);
     setError('');
     try {
-      const bound = summary?.context.profileId ? { profileId, contextFingerprint: summary.context.fingerprint } : {};
-      const operation = await post<Operation>('imports', { ...request, address: request.address.trim(), varFiles: choice.chosen, previewSha256: preview.sha256, acknowledgeWrite: true, acknowledgeBackendAccess: true, ...bound, ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });
+      const reviewed = { ...request, address: request.address.trim(), varFiles: choice.chosen, previewSha256: preview.sha256, acknowledgeWrite: true, acknowledgeBackendAccess: true };
+      // A Hub workspace's import is bound to the scope its options described; the server
+      // refuses it if anything in that scope changed since. It takes no profile or discovery link.
+      let operation: Operation;
+      if (scoped) operation = await post<Operation>(scopedPath(scope, 'imports'), { ...reviewed, contextFingerprint: o?.contextFingerprint ?? '' });
+      else {
+        const bound = summary?.context.profileId ? { profileId, contextFingerprint: summary.context.fingerprint } : {};
+        operation = await post<Operation>('imports', { ...reviewed, ...bound, ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });
+      }
       setRequest(blank);
       clearPrefill?.();
       setPreview(undefined);
@@ -98,6 +116,8 @@ export function ImportView({
   const errors = preview?.issues.filter(i => i.severity === 'error') ?? [];
   const warnings = preview?.issues.filter(i => i.severity === 'warning') ?? [];
   const ready = !!preview && !preview.blocked && !!o?.canImport;
+  // A Hub workspace whose context changed or closed is never retargeted: open it again.
+  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{options.error.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing was written.</span></div>;
   return <div className="import-wizard">
    {workspaceStatus === 'loading' ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace before imports can be checked…</div> : o && !o.canImport && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span>{o.reason || 'Importing through Hclaro is unavailable for this workspace.'} You can still check an import here and copy a manual recipe.</span></div>}
    {prefill && <section className={`discovery-link ${linked ? '' : 'unlinked'}`} aria-label="Discovered object">
@@ -148,11 +168,12 @@ export function ImportView({
     <div className="surface-heading"><div><h2 id="import-confirm-title">Write the file and plan</h2><p>{engine} runs a full plan for workspace <strong>{o.workspace}</strong>. You review every change it proposes before anything is applied.</p></div><Play size={18} /></div>
     <ul className="preflight-list">
      <li><FilePlus2 size={16} /><span><strong>Writes {preview.generatedFile ? <>two new files</> : <>one new file</>}</strong>: <code>{preview.file}</code>{preview.generatedFile && <> now, and <code>{preview.generatedFile}</code> during the plan</>}. Existing files are never changed. To back out later, delete {preview.generatedFile ? 'them' : 'it'}.</span></li>
+     <li><Layers3 size={16} /><span><strong>Becomes part of the project's configuration.</strong> Every workspace of this project plans this import block until you remove the file; only the plan of workspace <strong>{o.workspace}</strong> is run now.</span></li>
      <li><CloudCog size={16} /><span><strong>Contacts providers and the {o.backend} backend</strong> using your existing credentials, to read the existing object and refresh other resources.</span></li>
      <li><LockKeyhole size={16} /><span><strong>May lock the state</strong> while planning, if the backend supports locking.</span></li>
      <li><ShieldCheck size={16} /><span><strong>Does not change state or infrastructure.</strong> {o.canApply ? 'The import is recorded only if you apply the reviewed plan and confirm it.' : 'Applying is unavailable here; you can review the plan only.'}</span></li>
     </ul>
-    {summary ? <ContextSummary summary={summary} title="This import plan will use" /> : context.data?.profileError && <p className="dialog-error" role="alert">{context.data.profileError}</p>}
+    {scoped ? o.scope && <ScopeSummary scope={o.scope} executionContext={o.executionContext} title="This import plan will use" /> : summary ? <ContextSummary summary={summary} title="This import plan will use" /> : context.data?.profileError && <p className="dialog-error" role="alert">{context.data.profileError}</p>}
     <VarFileChoice choice={choice} />
     <label className="check consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>Write <code>{preview.file}</code> to this project</span></label>
     <div className="form-actions"><Button onClick={() => void start()} disabled={!consent || starting || contextBlocked} title={contextBlocked ? 'Resolve the execution context issues first.' : undefined}><Play size={14} />{starting ? 'Starting…' : 'Write file and plan import'}</Button></div>
