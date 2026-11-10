@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -51,6 +50,26 @@ func (c *CLI) WithEnvironment(environ []string, workspace string) *CLI {
 }
 
 var ErrUnsafeArgs = errors.New("inherited TF_CLI_ARGS contains unsupported arguments; only -no-color is accepted")
+
+// Read failures the CLI's stderr was classified as; the stderr text itself is never kept.
+var (
+	ErrReadCredentials  = errors.New("engine read failed: credentials were rejected or have expired")
+	ErrReadNetwork      = errors.New("engine read failed: the backend or a provider could not be reached")
+	ErrReadInitRequired = errors.New("engine read failed: initialization is required")
+)
+
+// ReadAdvice explains a classified read failure to the user, or returns fallback.
+func ReadAdvice(err error, fallback string) string {
+	switch {
+	case errors.Is(err, ErrReadCredentials):
+		return "The CLI reported rejected or expired credentials. Sign in again in a terminal (for example aws sso login), then try again. Nothing was changed."
+	case errors.Is(err, ErrReadNetwork):
+		return "The CLI could not reach the backend or a provider. Check your network, VPN or proxy, then try again. Nothing was changed."
+	case errors.Is(err, ErrReadInitRequired):
+		return "The CLI says this folder needs init (backend, modules or providers are not installed). Run init from the project's Hub page or in a terminal, then try again. Nothing was initialized automatically."
+	}
+	return fallback
+}
 
 // flagName matches a bare flag name; anything after "=" is a value and is never reported.
 var flagName = regexp.MustCompile(`^--?[A-Za-z][A-Za-z0-9_-]{0,40}$`)
@@ -186,10 +205,20 @@ func (c *CLI) runEnv(ctx context.Context, timeout time.Duration, dropWorkspace b
 	buf := &boundedBuffer{max: state.MaxBytes}
 	cmd.Stdout = buf
 	// Never return raw stderr: even diagnostics from read-only commands can contain secrets.
-	cmd.Stderr = io.Discard
+	// Only its classification leaves this function.
+	stderr := &boundedTail{max: 64 << 10}
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, errors.New("engine read timed out or was cancelled")
+		}
+		switch Classify(stderr.String()) {
+		case "credentials":
+			return nil, ErrReadCredentials
+		case "network":
+			return nil, ErrReadNetwork
+		case "init_required":
+			return nil, ErrReadInitRequired
 		}
 		return nil, errors.New("engine read failed; check initialization, credentials, VPN and provider schema compatibility using the CLI")
 	}

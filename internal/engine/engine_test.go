@@ -27,6 +27,10 @@ func TestHelperProcess(t *testing.T) {
 		time.Sleep(10 * time.Second)
 		os.Exit(0)
 	}
+	if text := os.Getenv("HCLARO_TEST_STDERR"); text != "" {
+		fmt.Fprintln(os.Stderr, text)
+		os.Exit(1)
+	}
 	if os.Getenv("HCLARO_TEST_FAIL") == "1" {
 		fmt.Fprintln(os.Stderr, "DO_NOT_LEAK_HCLARO_TEST_SECRET")
 		os.Exit(1)
@@ -83,6 +87,48 @@ func TestFakeExecutable(t *testing.T) {
 	start := time.Now()
 	if _, err := c.State(ctx); err == nil || time.Since(start) > 3*time.Second {
 		t.Fatal("cancellation failed")
+	}
+}
+
+// A failed read is classified for the user; the stderr text never leaves the adapter.
+func TestReadFailureIsClassifiedWithoutStderr(t *testing.T) {
+	t.Setenv("HCLARO_TEST_HELPER", "1")
+	t.Setenv("TF_LOG_PATH", "")
+	t.Setenv("TF_LOG", "")
+	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_version", "TF_CLI_ARGS_workspace", "TF_CLI_ARGS_show"} {
+		t.Setenv(key, "")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &CLI{Name: "terraform", Executable: exe, Root: t.TempDir()}
+	for _, tc := range []struct {
+		stderr string
+		want   error
+		advice string
+	}{
+		{"Error: the SSO session has expired for account 123456789012 SECRET_TOKEN_x", ErrReadCredentials, "expired credentials"},
+		{"Error: dial tcp: lookup bucket.example: no such host SECRET_TOKEN_x", ErrReadNetwork, "could not reach"},
+		{"Error: Backend initialization required, please run \"terraform init\" SECRET_TOKEN_x", ErrReadInitRequired, "needs init"},
+		{"Error: something else entirely SECRET_TOKEN_x", nil, "fallback"},
+	} {
+		t.Setenv("HCLARO_TEST_STDERR", tc.stderr)
+		for _, read := range []func() error{
+			func() error { _, err := c.State(context.Background()); return err },
+			func() error { _, err := c.ListWorkspaces(context.Background()); return err },
+		} {
+			err := read()
+			if err == nil || strings.Contains(err.Error(), "SECRET") || strings.Contains(err.Error(), "123456789012") {
+				t.Fatalf("%q: unsafe or missing error %v", tc.stderr, err)
+			}
+			if tc.want != nil && !errors.Is(err, tc.want) {
+				t.Fatalf("%q: got %v", tc.stderr, err)
+			}
+			if advice := ReadAdvice(err, "fallback"); !strings.Contains(advice, tc.advice) || strings.Contains(advice, "SECRET") {
+				t.Fatalf("%q: advice %q", tc.stderr, advice)
+			}
+		}
 	}
 }
 func TestDetection(t *testing.T) {

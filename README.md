@@ -18,26 +18,38 @@
 
 Hclaro never runs `init`, `plan`, `refresh` or `apply` on its own, never runs `destroy`, `state rm/mv` or `force-unlock`, and redacts secrets on the server before data reaches the browser. Details: [SECURITY.md](SECURITY.md) and [docs/architecture.md](docs/architecture.md).
 
-## Install
-
-**Beta binaries.** Pre-releases are published on [GitHub Releases](https://github.com/botopsy/hclaro/releases) as `hclaro_<version>_<os>_<arch>` archives for macOS (arm64, amd64), Linux (amd64, arm64) and Windows (amd64), with a SHA-256 checksums file. Binaries are not signed or notarized, so macOS Gatekeeper and Windows SmartScreen warn on first launch. Every package is smoke-tested natively in CI, and each release has a CycloneDX SBOM and GitHub build-provenance attestations (`gh attestation verify <file> -R botopsy/hclaro`).
-
-```sh
-shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing
-```
-
-**From source:** Go 1.26+ and Make (see [Build from source](#build-from-source)); `make binary` produces `bin/hclaro` from the committed UI bundle without Node.
-
-You also need Terraform (1.5–1.17) or OpenTofu (1.6–1.13) on `PATH` and an initialized project. Step-by-step instructions, troubleshooting and uninstall: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
-
 ## Quick start
 
-```sh
-cd path/to/terraform-root
-hclaro                 # opens the project in your browser (read-only until you act)
-hclaro --hub           # Workspace Hub with your registered projects
-hclaro --strict-local  # disable every feature that sends data to a third party
-```
+**You need:** macOS, Linux or Windows; Terraform 1.5–1.17 or OpenTofu 1.6–1.13 on `PATH` (Hclaro uses your installed engine and never downloads one); a browser on the same machine.
+
+1. **Install.** Download the archive for your platform and the checksums file from [GitHub Releases](https://github.com/botopsy/hclaro/releases) (beta pre-releases for macOS arm64/amd64, Linux amd64/arm64 and Windows amd64), verify it, and put `hclaro` on your `PATH`:
+
+   ```sh
+   shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing
+   ```
+
+   Binaries are not signed or notarized, so Gatekeeper and SmartScreen warn on first launch. Each release also has a CycloneDX SBOM and build-provenance attestations (`gh attestation verify <file> -R botopsy/hclaro`). Or build from source with Go 1.26+ and Make: `make binary` produces `bin/hclaro` without Node.
+
+2. **Try the synthetic demo** (from a source checkout; optional). It uses a fake engine and synthetic state: **no real Terraform, AWS, provider or backend is contacted.**
+
+   ```sh
+   make demo-hub   # Workspace Hub with synthetic Terraform/OpenTofu projects
+   make demo       # one synthetic project with 316 resources
+   ```
+
+3. **Open your own projects.**
+
+   ```sh
+   hclaro --hub           # Workspace Hub: register your project folders
+   cd path/to/terraform-root && hclaro   # or open one project directly
+   hclaro --strict-local  # disable every feature that sends data to a third party
+   ```
+
+   Open the private URL printed in the terminal. It contains the session credential: do not share or paste it anywhere.
+
+**First run, step by step:** add a project folder in the Hub → open it to list its CLI workspaces → choose a workspace and, if you use them, an execution profile → if the project is not initialized, review and run **Initialize…** (never automatic) → run a plan → review every change → apply the reviewed plan only after typing the confirmation → check the result in Operations and the refreshed state. Plans and applies in Hub workspaces need the experimental flag described in [docs/BETA.md](docs/BETA.md#what-is-qualified-what-is-beta-and-what-is-off); without it they run only for the project you start Hclaro in.
+
+Full walkthrough, troubleshooting and uninstall: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md). What is tested and what is not: [docs/BETA.md](docs/BETA.md).
 
 ## License and feedback
 

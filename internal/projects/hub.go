@@ -516,7 +516,7 @@ func (h *Hub) inspect(ctx context.Context, p Record) (name, version string, name
 		if errors.Is(err, engine.ErrUnsafeArgs) {
 			return name, version, names, "", 0, diag("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace settings and restart Hclaro. Only -no-color is accepted.")
 		}
-		return name, version, names, "", 0, diag("workspace_list", "Unable to list workspaces. Check backend access, credentials and SSO/VPN with the CLI, then inspect again.")
+		return name, version, names, "", 0, diag("workspace_list", "Unable to list workspaces. "+engine.ReadAdvice(err, "Check backend access, credentials and SSO/VPN with the CLI, then inspect again."))
 	}
 	return name, version, list.Names, list.Current, list.Hidden, nil
 }
@@ -620,7 +620,7 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 			if errors.Is(err, engine.ErrUnsafeArgs) {
 				return diag("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace settings and restart Hclaro. Only -no-color is accepted.")
 			}
-			return diag("workspace_list", "Unable to list workspaces. Check backend access, credentials and SSO/VPN with the CLI, then read this workspace again.")
+			return diag("workspace_list", "Unable to list workspaces. "+engine.ReadAdvice(err, "Check backend access, credentials and SSO/VPN with the CLI, then read this workspace again."))
 		}
 		if !slices.Contains(list.Names, ws) {
 			return diag("workspace_missing", "This workspace does not exist in the project. Choose another one, or create it from the project page.")
