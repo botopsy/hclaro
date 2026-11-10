@@ -31,7 +31,7 @@ Full details: [SECURITY.md](../SECURITY.md).
 ## Known limitations
 
 - Only locally executed workspaces can be planned and applied; remote/cloud execution backends are read-only.
-- Workspaces opened from the Workspace Hub are read-only by default; plans, drift, graphs, discovery, imports and applies run for the project you start Hclaro in. The hidden, experimental `--experimental-hub-execution` flag enables plans and applies (only) in Hub workspaces; it is not yet qualified with real engines.
+- Workspaces opened from the Workspace Hub are read-only by default; plans, drift, graphs, discovery, imports and applies run for the project you start Hclaro in. The hidden, experimental `--experimental-hub-execution` flag enables plans, replacements, imports (through a reviewed plan) and applies (only) in Hub workspaces; it is not yet qualified with real engines.
 - Views of the project opened from the terminal are not deep-linkable; Hub workspace views are.
 - Cloud discovery supports AWS only, five resource types.
 - Binaries are not code-signed or notarized.

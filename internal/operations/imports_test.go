@@ -12,6 +12,7 @@ import (
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
 	"hclaro/internal/imports"
+	"hclaro/internal/rootlock"
 	"hclaro/internal/workspace"
 )
 
@@ -250,4 +251,64 @@ func TestImportPlanThatDoesNotImportWarnsAndFailedPlanKeepsFile(t *testing.T) {
 	if applyCalls(fake) != 0 {
 		t.Fatal("apply ran")
 	}
+}
+
+// A Hub workspace's manager revalidates its scope with the root claim held, immediately
+// before writing: a refusal writes nothing, runs nothing and releases the root. Its preview
+// digests are bound to the context, so a launch or other-context digest is refused.
+func TestImportVerifiedBeforeWritingAndBoundToItsContext(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
+	m, root := importSetup(t, fake, map[string]string{"main.tf": legacyBlock})
+	m.Locks = rootlock.New()
+	req := imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"}
+	unbound := m.PreviewImport(req).SHA256
+	m.ImportBinding = "context-a"
+	bound := m.PreviewImport(req).SHA256
+	if bound == unbound || bound == "" {
+		t.Fatal("preview digest not bound to the context")
+	}
+	m.ImportBinding = "context-b"
+	if _, err := m.StartImport(ImportRequest{Request: req, PreviewSHA256: bound}); !rejectedWith(err, "preview_changed") {
+		t.Fatalf("other context's preview accepted: %v", err)
+	}
+	m.ImportBinding = "context-a"
+	if _, err := m.StartImport(ImportRequest{Request: req, PreviewSHA256: unbound}); !rejectedWith(err, "preview_changed") {
+		t.Fatalf("unbound preview accepted: %v", err)
+	}
+	kinds := []string{}
+	m.Verify = func(ctx context.Context, kind string) *Diagnostic {
+		kinds = append(kinds, kind)
+		if _, held := m.Locks.Holder(root); !held {
+			t.Error("verified without the root claim")
+		}
+		return &Diagnostic{Code: "scope_changed", Message: "The project folder was moved."}
+	}
+	if _, err := m.StartImport(ImportRequest{Request: req, PreviewSHA256: bound}); !rejectedWith(err, "scope_changed") {
+		t.Fatalf("scope change not refused: %v", err)
+	}
+	if len(kinds) != 1 || kinds[0] != "import" {
+		t.Fatalf("verify kinds %v", kinds)
+	}
+	if _, err := os.Stat(filepath.Join(root, "imports.tf")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("file written after a refused revalidation")
+	}
+	if len(fake.Requests()) != 0 {
+		t.Fatal("engine ran")
+	}
+	if _, held := m.Locks.Holder(root); held {
+		t.Fatal("root claim not released")
+	}
+	m.Verify = nil
+	op, err := m.StartImport(ImportRequest{Request: req, PreviewSHA256: bound})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := wait(t, m, op.ID); done.Status != Succeeded {
+		t.Fatalf("%+v", done)
+	}
+}
+
+func rejectedWith(err error, code string) bool {
+	var r *RejectError
+	return errors.As(err, &r) && r.Code == code
 }

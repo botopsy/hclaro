@@ -310,6 +310,8 @@ func TestHubClientRoutesServeTheAppShellOnly(t *testing.T) {
 		"/projects/" + id + "/workspaces/prod/tools/x":                404,
 		"/projects/" + id + "/workspaces/prod/plans":                  200,
 		"/projects/" + id + "/workspaces/prod/plans/" + id:            200,
+		"/projects/" + id + "/workspaces/prod/import":                 200,
+		"/projects/" + id + "/workspaces/prod/discovery":              404,
 		"/projects/" + id + "/workspaces/prod/plans/x":                404,
 		"/projects/" + id + "/workspaces/prod/plans/" + id + "/apply": 404,
 		"/projects/" + id + "/workspaces/prod/operations":             200,

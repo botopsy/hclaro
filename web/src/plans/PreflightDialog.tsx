@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { CloudCog, LockKeyhole, Play, RefreshCcw, ShieldCheck, X } from 'lucide-react';
-import type { PlanOptions, ReplaceTarget } from '../types';
+import type { ExecutionContext, PlanOptions, ReplaceTarget, ScopeView } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { engineLabel } from './labels';
@@ -43,17 +43,22 @@ export function PreflightDialog({
      <li><LockKeyhole size={16} /><span><strong>May lock the state</strong> while planning, if the backend supports locking. Other operations wait until the plan finishes or is cancelled.</span></li>
      <li><ShieldCheck size={16} /><span><strong>Does not change infrastructure.</strong> {options.canApply ? 'You review the saved plan first; it is applied only if you confirm it explicitly.' : 'The saved plan is deleted after Hclaro extracts redacted review data. Applying is unavailable here.'}</span></li>
     </ul>
-    {summary ? <ContextSummary summary={summary} title="This plan will use" /> : options.scope ? <section className="context-summary" aria-label="This plan will use"><div className="context-summary-heading"><h3>This plan will use</h3></div><dl className="metadata compact-metadata">
-     <div><dt>Project</dt><dd><strong>{options.scope.alias}</strong></dd></div>
-     <div><dt>Root folder</dt><dd className="mono">{options.scope.rootPath}</dd></div>
-     <div><dt>Workspace</dt><dd><strong>{options.scope.workspace}</strong> <span className="muted">(this tab; the CLI default is not changed)</span></dd></div>
-     <div><dt>Engine</dt><dd>{engine} {options.scope.version}</dd></div>
-     <div><dt>Backend · mode</dt><dd>{options.scope.backend} · {options.scope.executionMode}</dd></div>
-     <div><dt>Profile</dt><dd><RecordedContext context={options.executionContext} /></dd></div>
-    </dl></section> : options.profileError ? <p className="dialog-error" role="alert">{options.profileError}</p> : <p className="muted">No execution profile: the plan uses the environment Hclaro was started with. Save this project to the Hub to choose a profile.</p>}
+    {summary ? <ContextSummary summary={summary} title="This plan will use" /> : options.scope ? <ScopeSummary scope={options.scope} executionContext={options.executionContext} title="This plan will use" /> : options.profileError ? <p className="dialog-error" role="alert">{options.profileError}</p> : <p className="muted">No execution profile: the plan uses the environment Hclaro was started with. Save this project to the Hub to choose a profile.</p>}
     <VarFileChoice choice={choice} />
     {error && <p className="dialog-error" role="alert">{error}</p>}
     <div className="dialog-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button ref={confirm} onClick={() => onConfirm(choice.chosen, summary?.context.profileId ? summary.context.fingerprint : undefined)} disabled={busy || blocked || !!options.profileError} title={blocked ? 'Resolve the execution context issues first.' : undefined}><Play size={14} />{busy ? 'Starting…' : replacing ? 'Plan replacement' : 'Run plan'}</Button></div>
    </div>
   </div>;
+}
+
+// ScopeSummary shows the identity of a Hub workspace's execution scope, as the server pinned it.
+export function ScopeSummary({ scope, executionContext, title }: { scope: ScopeView; executionContext?: ExecutionContext | null; title: string }) {
+  return <section className="context-summary" aria-label={title}><div className="context-summary-heading"><h3>{title}</h3></div><dl className="metadata compact-metadata">
+   <div><dt>Project</dt><dd><strong>{scope.alias}</strong></dd></div>
+   <div><dt>Root folder</dt><dd className="mono">{scope.rootPath}</dd></div>
+   <div><dt>Workspace</dt><dd><strong>{scope.workspace}</strong> <span className="muted">(this tab; the CLI default is not changed)</span></dd></div>
+   <div><dt>Engine</dt><dd>{engineLabel(scope.engine)} {scope.version}</dd></div>
+   <div><dt>Backend · mode</dt><dd>{scope.backend} · {scope.executionMode}</dd></div>
+   <div><dt>Profile</dt><dd><RecordedContext context={executionContext ?? undefined} /></dd></div>
+  </dl></section>;
 }

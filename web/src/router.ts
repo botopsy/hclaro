@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react';
 // Client routes. Segments are routing hints only: the server resolves project IDs and
 // workspace names itself and never reads files from them.
 // Views a Hub workspace URL can hold. Plans (with an optional plan ID, the review) and
-// Operations are deep-linkable since M24.07; they act only on that workspace's own context.
-export type ExplorerView = 'Resources' | 'Overview' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Plans' | 'Operations';
+// Operations are deep-linkable since M24.07, Import since M24.08; they act only on that
+// workspace's own context.
+export type ExplorerView = 'Resources' | 'Overview' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Plans' | 'Operations' | 'Import';
 export type Route = {
   kind: 'launch';
 } | {
@@ -31,7 +32,8 @@ const views: Record<string, ExplorerView> = {
   tools: 'Tools',
   git: 'Git',
   plans: 'Plans',
-  operations: 'Operations'
+  operations: 'Operations',
+  import: 'Import'
 };
 const projectId = /^[0-9a-f]{32}$/;
 const workspaceName = /^[A-Za-z0-9_-]{1,90}$/;

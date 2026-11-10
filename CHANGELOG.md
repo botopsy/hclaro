@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Hub-scoped import and replace (M24.08), only with the experimental `--experimental-hub-execution` flag:
+
+- New routes `GET /api/v1/contexts/{cid}/imports/options`, `POST .../imports/preview` and `POST .../imports`, and an Import page in Hub workspace tabs (`/projects/<id>/workspaces/<name>/import`). The reviewed import block is written only into that workspace's project folder, then a full plan runs there; the import is recorded only by applying that reviewed plan with the scoped approval. Cloud discovery stays launch-only.
+- An import preview is bound to its workspace view: it cannot start an import in another workspace, project, profile or the launch project. The workspace is revalidated before the request and again, with the project claimed, immediately before the file is written; a change refuses the import and writes nothing.
+- The import confirmation says the new file is project configuration, so plans of every workspace of the project include it until it is removed.
+- The Resources list of a Hub workspace offers replacement selection: at most 50 instances of that workspace, sent as resource IDs, planned as a full plan (one `-replace` each, never `-target`). The selection is cleared when the workspace or profile changes.
+
 Hub plan and apply UI (M24.07), only with the experimental `--experimental-hub-execution` flag:
 
 - A Hub workspace tab offers Plans and Operations when the server enables scoped execution. Every plan, change, operation, log, cancel, preflight, approval and apply request goes to that workspace's own context; nothing falls back to the launch project. Drift, graphs, discovery and imports stay launch-only.

@@ -25,6 +25,7 @@ import (
 
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
+	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
@@ -242,6 +243,31 @@ func (s *Scope) StartApply(ctx context.Context, planID, token, typed string) (op
 		return operations.Operation{}, err
 	}
 	return s.manager.StartApply(planID, token, typed)
+}
+
+// PreviewImport checks an import request against this workspace's snapshot and root. It
+// writes nothing and runs no engine command. The scope is revalidated first, so a changed
+// project is refused instead of previewed against another folder.
+func (s *Scope) PreviewImport(ctx context.Context, req imports.Request) (imports.Preview, error) {
+	if err := s.checked(ctx); err != nil {
+		return imports.Preview{}, err
+	}
+	return s.manager.PreviewImport(req), nil
+}
+
+// StartImport writes the reviewed import block into this scope's root only and starts a full
+// plan there; the import is recorded only by applying that saved plan. reviewed is the profile
+// fingerprint the user was shown, as for StartReviewedPlan. The scope is revalidated now and
+// again with the root claim held, immediately before the file is written; nothing is written
+// when either fails.
+func (s *Scope) StartImport(ctx context.Context, req imports.Request, previewSHA256 string, varFiles []string, reviewed string) (operations.Operation, error) {
+	if reviewed != s.id.profileFingerprint {
+		return operations.Operation{}, &operations.RejectError{Code: "context_changed", Reason: "The execution context of this workspace is not the one you reviewed. Check the import again."}
+	}
+	if err := s.checked(ctx); err != nil {
+		return operations.Operation{}, err
+	}
+	return s.manager.StartImport(operations.ImportRequest{Request: req, PreviewSHA256: previewSHA256, VarFiles: varFiles, ProfileID: s.id.profileID, ContextFingerprint: s.id.profileFingerprint})
 }
 
 // VarFiles lists the variable files of the scope's root that a plan may select.
@@ -462,6 +488,7 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot) (*Scope, error) {
 	m.Reload = func(ctx context.Context) { c.store.Load(ctx, readOnly{read}, name) }
 	s := &Scope{ContextID: c.ID, hub: h, context: c, id: id, read: read, manager: m}
 	m.Verify = s.verify
+	m.ImportBinding = c.ID
 	return s, nil
 }
 

@@ -1,6 +1,8 @@
 package operations
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -52,6 +54,7 @@ func (m *Manager) importEnv(snap workspace.Snapshot) imports.Env {
 func (m *Manager) PreviewImport(req imports.Request) imports.Preview {
 	snap := m.store.Get()
 	p := imports.Check(m.importEnv(snap), req)
+	p.SHA256 = m.previewDigest(p)
 	if snap.Status == "loading" {
 		p.Issues = append(p.Issues, imports.Issue{Code: "workspace_loading", Severity: "error", Message: "Hclaro is still reading the workspace."})
 		p.Blocked = true
@@ -94,12 +97,21 @@ func (m *Manager) StartImport(req ImportRequest) (Operation, error) {
 			}
 		}
 	}
-	if preview.SHA256 == "" || preview.SHA256 != req.PreviewSHA256 {
+	if preview.SHA256 == "" || m.previewDigest(preview) != req.PreviewSHA256 {
 		return Operation{}, reject("preview_changed", "The import block or destination changed since you reviewed it. Review the preview again.")
 	}
 	release, ok := m.Locks.Acquire(m.root, "import")
 	if !ok {
 		return Operation{}, ErrBusy
+	}
+	// A Hub workspace's scope is revalidated with the root claim held, before anything is
+	// written: a moved root, another engine, profile, environment, backend or a deleted
+	// workspace refuses the import without writing.
+	if m.Verify != nil {
+		if d := m.Verify(m.base, "import"); d != nil {
+			release()
+			return Operation{}, reject(d.Code, d.Message+" Nothing was written.")
+		}
 	}
 	switch err := imports.WriteNew(m.root, preview.File, []byte(preview.Content)); {
 	case errors.Is(err, imports.ErrFileExists):
@@ -111,6 +123,16 @@ func (m *Manager) StartImport(req ImportRequest) (Operation, error) {
 	}
 	target := &ImportTarget{Address: preview.Address, File: preview.File, GeneratedFile: preview.GeneratedFile, Provider: req.Provider}
 	return m.startPlanLocked(snap, Operation{VarFiles: selected, Replace: []string{}, Import: target, Context: bound}, release, environ), nil
+}
+
+// previewDigest is the digest the user reviewed. With an ImportBinding it also covers that
+// binding, so a preview of one Hub workspace cannot start an import in another.
+func (m *Manager) previewDigest(p imports.Preview) string {
+	if p.SHA256 == "" || m.ImportBinding == "" {
+		return p.SHA256
+	}
+	sum := sha256.Sum256([]byte(m.ImportBinding + "\x00" + p.SHA256))
+	return hex.EncodeToString(sum[:])
 }
 
 // importWarnings flags an import plan that does not import the requested address.
