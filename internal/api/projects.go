@@ -217,31 +217,11 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			Reused bool `json:"reused"`
 		}{c, reused})
 	})
-	contextOf := func(w http.ResponseWriter, r *http.Request) *projects.Context {
-		c, reason, err := hub.Context(r.PathValue("cid"))
-		if err != nil {
-			message := map[string]string{
-				"project_removed":   "This project was removed from the Hub.",
-				"project_changed":   "This project's folder or engine changed. Open the workspace again.",
-				"reloaded":          "A newer read of this workspace replaced this one.",
-				"evicted":           "This snapshot was released to save memory. Open the workspace again.",
-				"initialized":       "This project was initialized after this snapshot was read. Open the workspace again.",
-				"workspace_deleted": "This workspace was deleted from the project.",
-				"profile_changed":   "The execution profile of this view was edited. Open the workspace again to use the current profile.",
-				"profile_removed":   "The execution profile of this view was deleted. Choose another profile.",
-				"scope_changed":     "The project, engine, execution profile, environment or backend of this workspace changed, so it was closed. Open the workspace again.",
-			}[reason]
-			if message == "" {
-				message = "This workspace view is no longer open. Open the workspace again."
-			}
-			reasonJSON(w, 404, "context_closed", message)
-			return nil
-		}
-		return c
-	}
+	contextOf := func(w http.ResponseWriter, r *http.Request) *projects.Context { return openContext(w, r, hub) }
 	initRoutes(mux, hub)
 	workspaceRoutes(mux, hub)
 	toolRoutes(mux, hub)
+	scopedRoutes(mux, hub)
 	mux.HandleFunc("GET /api/v1/contexts/{cid}", func(w http.ResponseWriter, r *http.Request) {
 		if c := contextOf(w, r); c != nil {
 			writeJSON(w, 200, workspaceBody(c.Snapshot(), c))
@@ -257,6 +237,31 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			resourceDetail(w, c.Snapshot(), r.PathValue("rid"))
 		}
 	})
+}
+
+// openContext returns the open read context named by the {cid} path segment, or answers
+// 404 context_closed with the reason it was closed.
+func openContext(w http.ResponseWriter, r *http.Request, hub *projects.Hub) *projects.Context {
+	c, reason, err := hub.Context(r.PathValue("cid"))
+	if err != nil {
+		message := map[string]string{
+			"project_removed":   "This project was removed from the Hub.",
+			"project_changed":   "This project's folder or engine changed. Open the workspace again.",
+			"reloaded":          "A newer read of this workspace replaced this one.",
+			"evicted":           "This snapshot was released to save memory. Open the workspace again.",
+			"initialized":       "This project was initialized after this snapshot was read. Open the workspace again.",
+			"workspace_deleted": "This workspace was deleted from the project.",
+			"profile_changed":   "The execution profile of this view was edited. Open the workspace again to use the current profile.",
+			"profile_removed":   "The execution profile of this view was deleted. Choose another profile.",
+			"scope_changed":     "The project, engine, execution profile, environment or backend of this workspace changed, so it was closed. Open the workspace again.",
+		}[reason]
+		if message == "" {
+			message = "This workspace view is no longer open. Open the workspace again."
+		}
+		reasonJSON(w, 404, "context_closed", message)
+		return nil
+	}
+	return c
 }
 
 var contextIDPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)

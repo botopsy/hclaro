@@ -336,18 +336,10 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			errorJSON(w, 410, "log_not_retained")
 			return
 		}
-		after := int64(0)
-		cursor := r.URL.Query().Get("after")
-		if cursor == "" {
-			cursor = r.Header.Get("Last-Event-ID")
-		}
-		if cursor != "" {
-			n, err := strconv.ParseInt(cursor, 10, 64)
-			if err != nil || n < 0 {
-				errorJSON(w, 400, "invalid_cursor")
-				return
-			}
-			after = n
+		after, ok := eventCursor(r)
+		if !ok {
+			errorJSON(w, 400, "invalid_cursor")
+			return
 		}
 		stream(w, r, func() operations.Operation {
 			op, _, _ := lookupOperation(r, manager, inits)

@@ -266,8 +266,8 @@ func (m *Manager) executeGraph(ctx context.Context, e *entry, snap workspace.Sna
 	if !ok {
 		return nil, "", "graph_unavailable", nil
 	}
-	if !m.verify(ctx, e, "graph") {
-		if ctx.Err() != nil {
+	if ok, changed := m.verify(ctx, e, "graph"); !ok {
+		if !changed {
 			return nil, "", stopped(), nil
 		}
 		return nil, "", "scope_changed", nil

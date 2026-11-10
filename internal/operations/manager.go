@@ -97,12 +97,14 @@ type Operation struct {
 // artifact can still be applied is tracked separately (see ApplyStatus).
 type Plan struct {
 	plan.Review
-	ID          string   `json:"id"`
-	OperationID string   `json:"operationId"`
-	CreatedAt   string   `json:"createdAt"`
-	Engine      string   `json:"engine"`
-	Workspace   string   `json:"workspace"`
-	VarFiles    []string `json:"varFiles"`
+	ID          string `json:"id"`
+	OperationID string `json:"operationId"`
+	CreatedAt   string `json:"createdAt"`
+	Engine      string `json:"engine"`
+	// EngineVersion is the engine version the plan was made with.
+	EngineVersion string   `json:"engineVersion"`
+	Workspace     string   `json:"workspace"`
+	VarFiles      []string `json:"varFiles"`
 	// Kind is "plan", "replace" or "import"; Replace lists the requested instance addresses.
 	Kind    string        `json:"kind"`
 	Replace []string      `json:"replace"`
@@ -387,18 +389,29 @@ var messages = map[string]string{
 // scopeChangedMessage explains a failed scope revalidation; the log has the specific reason.
 const scopeChangedMessage = "The project, engine, execution profile, environment or backend of this workspace changed since it was opened, so nothing ran. Open the workspace again."
 
-// verify runs the Verify hook. It reports false, with the reason in the log, when the
-// operation must stop before the engine runs.
-func (m *Manager) verify(ctx context.Context, e *entry, kind string) bool {
+// verify runs the Verify hook. ok is false when the operation must stop before the engine
+// runs; a scope change is logged.
+//
+// changed is true only when the hook reported a scope change (code scope_changed). Any other
+// diagnostic means the operation's context ended first (cancel, timeout, shutdown); the
+// caller then reports why it stopped. The hook decides, not a later ctx.Err() check: a scope
+// change closes the scope, which cancels ctx, possibly before the caller looks at it.
+func (m *Manager) verify(ctx context.Context, e *entry, kind string) (ok, changed bool) {
 	if m.Verify == nil {
-		return true
+		return true, false
 	}
 	if d := m.Verify(ctx, kind); d != nil {
+		if d.Code != scopeChangedCode {
+			return false, false
+		}
 		e.log.Append("error", d.Message)
-		return false
+		return false, true
 	}
-	return true
+	return true, false
 }
+
+// scopeChangedCode is the Verify diagnostic code of a real scope change.
+const scopeChangedCode = "scope_changed"
 
 // Running reports whether an operation is running or being cancelled.
 func (m *Manager) Running() bool {
@@ -478,8 +491,8 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	if bound != nil {
 		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
 	}
-	if !m.verify(ctx, e, "plan") {
-		if ctx.Err() != nil {
+	if ok, changed := m.verify(ctx, e, "plan"); !ok {
+		if !changed {
 			return nil, nil, stopped(), nil
 		}
 		return nil, nil, "scope_changed", nil
@@ -614,7 +627,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	}
 	result = &Plan{
 		Review: review, ID: m.NewID(), OperationID: e.op.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		Engine: snap.Info.Engine, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
+		Engine: snap.Info.Engine, EngineVersion: snap.Info.Version, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
 		Import: e.op.Import, GeneratedConfig: generatedConfig, GeneratedConfigTruncated: generatedTruncated,
 		ArtifactSHA256: digest, Fingerprint: fingerprint, Context: bound.Clone(), Source: source,
 		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Unsupported > 0,

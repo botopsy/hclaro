@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+Hub-scoped plan API (M24.05), off by default:
+
+- New routes under `/api/v1/contexts/{cid}/` for plan options, starting a plan, plan list and detail, change detail, operations, operation events and cancel, bound to one open Hub workspace. They are disabled in this release (`404 scoped_execution_disabled`); there is no UI and no scoped apply yet. See `docs/architecture.md`, "Scoped plans (M24.05)".
+- A scoped plan needs the backend-access acknowledgment and the reviewed execution profile fingerprint, revalidates the workspace's scope before it starts and again before the engine runs, and is reachable only from its own workspace: IDs from another workspace or the launch project answer like missing ones.
+- Plans now also record the engine version they were made with (`engineVersion`).
+
 Scoped execution registry for Hub workspaces (M24.04), off by default:
 
 - Opening a Hub workspace and inspecting a project now hold a shared claim on the project folder for the whole read, so an init, plan, apply or workspace command can no longer start in that folder while it is being read.
