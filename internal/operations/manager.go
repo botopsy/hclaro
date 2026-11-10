@@ -458,6 +458,12 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 		if code == "workspace_changed" {
 			message = fmt.Sprintf("The active workspace changed since Hclaro started (was %q). Restart Hclaro to review the current workspace.", snap.Info.Workspace)
 		}
+		if code == "unsafe_cli_args" {
+			message += " " + engine.UnsafeArgsHelp(environOr(e.environ), "plan", "workspace", "show")
+		}
+		if code == "credentials" {
+			message += credentialHint(e)
+		}
 		o.Diagnostic = &Diagnostic{Code: code, Message: message}
 	}
 	o.LogDropped = e.log.Dropped()
@@ -651,18 +657,45 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 // classify prefers the structured diagnostics over the stderr hint.
 func (m *Manager) classify(e *entry, hint string) string {
 	m.mu.Lock()
-	var text strings.Builder
-	for _, d := range e.op.Diagnostics {
-		text.WriteString(d.Summary + "\n" + d.Detail + "\n")
-	}
+	text := diagnosticsText(e)
 	m.mu.Unlock()
-	if code := engine.Classify(text.String()); code != "" {
+	if code := engine.Classify(text); code != "" {
 		return code
 	}
 	if hint != "" {
 		return hint
 	}
 	return "plan_failed"
+}
+
+// diagnosticsText joins the engine diagnostics of e. Caller holds mu.
+func diagnosticsText(e *entry) string {
+	var text strings.Builder
+	for _, d := range e.op.Diagnostics {
+		text.WriteString(d.Summary + "\n" + d.Detail + "\n")
+	}
+	return text.String()
+}
+
+// credentialHint tells an expired sign-in, missing credentials and denied access apart, so
+// they read differently from a generic failure. The code stays "credentials". Caller holds mu.
+func credentialHint(e *entry) string {
+	switch engine.CredentialKind(diagnosticsText(e)) {
+	case "expired":
+		return " The engine reported expired credentials or an expired SSO session: sign in again (for example aws sso login) in your terminal."
+	case "missing":
+		return " The engine found no credentials: check that the execution profile or your environment provides them."
+	case "denied":
+		return " The engine was denied access: the identity it used lacks a permission, or is not the one you expected."
+	}
+	return ""
+}
+
+func environOr(environ []string) []string {
+	if environ == nil {
+		return os.Environ()
+	}
+	return environ
 }
 
 // Fingerprint identifies the plan context: engine, version, workspace, variable file
