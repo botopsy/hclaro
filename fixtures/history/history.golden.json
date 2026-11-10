@@ -132,6 +132,11 @@
         "time": "2026-11-06T10:00:00Z",
         "level": "info",
         "text": "Apply finished. The state view was reloaded from the engine."
+      },
+      {
+        "time": "2026-11-06T10:00:00Z",
+        "level": "info",
+        "text": "A successful apply means the engine recorded the changes in state. It does not check that the services are healthy."
       }
     ],
     "live": true

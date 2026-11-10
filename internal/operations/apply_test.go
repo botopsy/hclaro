@@ -93,6 +93,49 @@ func TestApplyAppliesReviewedArtifactOnceAndReloads(t *testing.T) {
 	}
 }
 
+// A state read that fails after an apply is reported, not hidden behind "reloaded". The
+// apply outcome stays what the engine reported; applied state is not service health.
+func TestApplyReportsAFailedStateReload(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	m, _ := setup(t, fake, workspace.Info{})
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, nil, "terraform") }
+	id := planned(t, m)
+	done := wait(t, m, approveAndApply(t, m, id).ID)
+	if done.Status != Succeeded || done.Outcome != "applied" || done.StateReloaded || !done.StateReloadFailed {
+		t.Fatalf("%+v", done)
+	}
+	_, log, _ := m.Operation(done.ID)
+	events, _, _, _ := log.Since(0)
+	text := ""
+	for _, e := range events {
+		text += e.Level + " " + e.Text + "\n"
+	}
+	for _, want := range []string{"warn The state could not be read again after the apply", "It does not check that the services are healthy."} {
+		if !strings.Contains(text, want) {
+			t.Errorf("log missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "The state view was reloaded") {
+		t.Errorf("log claims a reload:\n%s", text)
+	}
+}
+
+// A read after an apply that finds no recorded state succeeded; it is not a failed reload.
+func TestApplyReloadWithoutRecordedStateIsNotAFailure(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	m, _ := setup(t, fake, workspace.Info{})
+	absent := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: []byte(`{"format_version":"1.0"}`)}
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, absent, "terraform") }
+	id := planned(t, m)
+	done := wait(t, m, approveAndApply(t, m, id).ID)
+	if m.store.Get().Diagnostic == nil || m.store.Get().Diagnostic.Code != "state_absent" {
+		t.Fatalf("%+v", m.store.Get().Diagnostic)
+	}
+	if done.Outcome != "applied" || !done.StateReloaded || done.StateReloadFailed {
+		t.Fatalf("%+v", done)
+	}
+}
+
 func TestApplyRefusedWithoutValidApproval(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})

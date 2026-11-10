@@ -40,7 +40,14 @@ type Options struct {
 	// StrictLocal refuses features that send data to a third-party service; today that is
 	// cost estimation (M17).
 	StrictLocal bool
+	// HubExecution turns on plans and applies in Hub workspaces (ADR M24.03, M24.04–.06). It
+	// is a hidden, experimental opt-in: not in --help, off by default, and not yet qualified
+	// with real engines (M24.02).
+	HubExecution bool
 }
+
+// hiddenFlags are accepted but not listed in --help.
+var hiddenFlags = map[string]bool{"experimental-hub-execution": true}
 
 func Parse(args []string, output io.Writer) (Options, error) {
 	o := Options{}
@@ -54,9 +61,19 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.BoolVar(&o.Hub, "hub", false, "Open the Workspace Hub; the current directory is not read unless --path is given")
 	flags.BoolVar(&o.StrictLocal, "strict-local", false, "Strict local-only mode: disable features that send data to third-party services (cost estimation)")
 	flags.StringVar(&o.ExportHistory, "export-history", "", "Write the redacted operation history to a new .json or .md `file` and exit")
+	flags.BoolVar(&o.HubExecution, "experimental-hub-execution", false, "Experimental: allow plans and applies in Hub workspaces")
 	flags.Usage = func() {
 		fmt.Fprintln(output, "Hclaro — local Terraform & OpenTofu explorer\n\nUsage: hclaro [flags]\n\nRun inside a Terraform/OpenTofu root to open it; elsewhere, or with --hub, the Workspace\nHub opens with your registered projects.")
-		flags.PrintDefaults()
+		visible := flag.NewFlagSet("hclaro", flag.ContinueOnError)
+		visible.SetOutput(output)
+		flags.VisitAll(func(f *flag.Flag) {
+			if hiddenFlags[f.Name] {
+				return
+			}
+			visible.Var(f.Value, f.Name, f.Usage)
+			visible.Lookup(f.Name).DefValue = f.DefValue
+		})
+		visible.PrintDefaults()
 		fmt.Fprintln(output, "\nLaunch is read-only: no init, plan or refresh runs automatically. Plans run only when\nrequested in the UI. A plan is applied only from its reviewed saved file, after explicit\nconfirmation in the UI, and only for locally executed backends.\nExit codes: 0 success, 1 startup failure, 2 invalid arguments.")
 	}
 	if err := flags.Parse(args); err != nil {
@@ -175,6 +192,12 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	hub := projects.NewHub(registry, root)
 	hub.Profiles = executionProfiles
+	// Off unless the hidden experimental flag is given; every scoped route then answers
+	// scoped_execution_disabled and Hub workspaces stay read-only.
+	hub.ScopedExecution = o.HubExecution
+	if o.HubExecution {
+		fmt.Fprintln(output, "Experimental: plans and applies in Hub workspaces are enabled (--experimental-hub-execution). They are not yet qualified with real Terraform/OpenTofu engines; applies still need a reviewed saved plan and your confirmation.")
+	}
 	hub.UseHistory(operationHistory)
 	defer hub.Close()
 	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(o.Port)))
@@ -210,6 +233,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager.Git = gitService
 	hub.Git = gitService
 	manager.IdentityProbe = preflight.AWSIdentity
+	// Hub execution scopes (when enabled) gather the same preflight facts.
+	hub.GitProbe, hub.IdentityProbe = preflight.GitStatus, preflight.AWSIdentity
 	// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
 	manager.Discovery = discovery.New(discovery.Exec{})
 	// Cost estimation (M17): off until the user opts in after the disclosure; never in

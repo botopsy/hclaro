@@ -67,13 +67,15 @@ type Operation struct {
 	// Import is set for import plans.
 	Import *ImportTarget `json:"import,omitempty"`
 	// Outcome is set for applies: applied, not_applied or uncertain.
-	Outcome         string             `json:"outcome,omitempty"`
-	StateReloaded   bool               `json:"stateReloaded"`
-	Diagnostic      *Diagnostic        `json:"diagnostic,omitempty"`
-	Diagnostics     []EngineDiagnostic `json:"engineDiagnostics"`
-	CancelRequested bool               `json:"cancelRequested"`
-	LogDropped      int64              `json:"logDropped"`
-	LogRetained     bool               `json:"logRetained"`
+	Outcome       string `json:"outcome,omitempty"`
+	StateReloaded bool   `json:"stateReloaded"`
+	// StateReloadFailed is set when an apply ran but reading state again afterwards failed.
+	StateReloadFailed bool               `json:"stateReloadFailed,omitempty"`
+	Diagnostic        *Diagnostic        `json:"diagnostic,omitempty"`
+	Diagnostics       []EngineDiagnostic `json:"engineDiagnostics"`
+	CancelRequested   bool               `json:"cancelRequested"`
+	LogDropped        int64              `json:"logDropped"`
+	LogRetained       bool               `json:"logRetained"`
 	// ProjectID, Notices and LockfileChanged are set for Hub initializations. Notices disclose
 	// inherited settings that were ignored; LockfileChanged is set once the engine has run.
 	ProjectID       string   `json:"projectId,omitempty"`

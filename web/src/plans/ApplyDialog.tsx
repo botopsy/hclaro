@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { actionOrder, engineLabel, meta } from './labels';
+import { launchScope, planRoute, type PlanScope } from './routes';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -54,8 +55,9 @@ function ResourceList({ label, items }: { label: string; items: PreflightResourc
 // Preflight and final confirmation before a saved-plan apply. Every check runs on the server
 // and is evaluated again when the apply starts; the dialog shows the results, collects an
 // acknowledgement per warning and the typed phrase, and only then asks for a one-time
-// approval and applies. Closing the dialog declines and nothing is applied.
-export function ApplyDialog({ plan, onStarted, onClose }: { plan: Plan; onStarted: (operation: Operation) => void; onClose: () => void }) {
+// approval and applies. Closing the dialog declines and nothing is applied. scope names the
+// project or Hub workspace the plan belongs to; every request goes to that scope only.
+export function ApplyDialog({ plan, scope, onStarted, onClose }: { plan: Plan; scope: PlanScope; onStarted: (operation: Operation) => void; onClose: () => void }) {
   const [report, setReport] = useState<PreflightReport>();
   const [acked, setAcked] = useState<Set<string>>(new Set());
   const [typed, setTyped] = useState('');
@@ -69,10 +71,15 @@ export function ApplyDialog({ plan, onStarted, onClose }: { plan: Plan; onStarte
   useModal(dialog, cancel, onClose);
   // A newer preflight replaces the binding on the server, so only the latest response counts.
   const latest = useRef(0);
+  // Keyed by value, so a caller that builds a new scope object each render does not rerun
+  // the preflight.
+  const contextId = scope.kind === 'context' ? scope.contextId : undefined;
+  const target = useCallback((step: 'preflight' | 'approval' | 'apply') => planRoute(contextId === undefined ? launchScope : { kind: 'context', contextId }, plan.id, step), [contextId, plan.id]);
   const runPreflight = useCallback((verifyIdentity = false) => {
     const request = ++latest.current;
     const current = () => request === latest.current;
-    post<PreflightReport>(`plans/${plan.id}/preflight`, { verifyIdentity })
+    Promise.resolve()
+      .then(() => post<PreflightReport>(target('preflight'), { verifyIdentity }))
       .then(r => {
         if (!current()) return;
         setReport(r);
@@ -85,7 +92,7 @@ export function ApplyDialog({ plan, onStarted, onClose }: { plan: Plan; onStarte
         setChecking(false);
         setVerifying(false);
       });
-  }, [plan.id]);
+  }, [target]);
   // Runs the checks again on request; the first run starts with checking already set.
   const rerun = (verifyIdentity = false) => {
     setChecking(true);
@@ -113,8 +120,8 @@ export function ApplyDialog({ plan, onStarted, onClose }: { plan: Plan; onStarte
     setBusy(true);
     setError('');
     try {
-      const approval = await post<Approval>(`plans/${plan.id}/approval`, { preflightBinding: report.binding, acknowledged: [...acked] });
-      onStarted(await post<Operation>(`plans/${plan.id}/apply`, { confirmationToken: approval.confirmationToken, confirmation: typed }));
+      const approval = await post<Approval>(target('approval'), { preflightBinding: report.binding, acknowledged: [...acked] });
+      onStarted(await post<Operation>(target('apply'), { confirmationToken: approval.confirmationToken, confirmation: typed }));
     } catch (e) {
       setError(errorText(e, 'The apply could not be started.'));
       setBusy(false);

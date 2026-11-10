@@ -185,11 +185,63 @@ func (s *Scope) StartReviewedPlan(ctx context.Context, varFiles, replaceIDs []st
 	if reviewed != s.id.profileFingerprint {
 		return operations.Operation{}, &operations.RejectError{Code: "context_changed", Reason: "The execution context of this workspace is not the one you reviewed. Review the plan options again before planning."}
 	}
-	if err := s.Revalidate(ctx); err != nil {
-		s.hub.closeContext(s.ContextID, CodeScopeChanged)
+	if err := s.checked(ctx); err != nil {
 		return operations.Operation{}, err
 	}
 	return s.StartPlan(varFiles, replaceIDs)
+}
+
+// checked revalidates the scope's files, registry, profile, environment and backend before
+// a plan, preflight, approval or apply request is handled. A failure closes the context, so
+// its saved plan, preflight binding and approval are deleted and cannot be replayed. While an
+// operation runs, the request is refused but the context stays open: closing it would
+// interrupt an apply that already passed its checks and leave its outcome uncertain. The
+// next request after the operation ends closes it.
+func (s *Scope) checked(ctx context.Context) error {
+	if err := s.Revalidate(ctx); err != nil {
+		if !s.Busy() {
+			s.hub.closeContext(s.ContextID, CodeScopeChanged)
+		}
+		return err
+	}
+	return nil
+}
+
+// Preflight evaluates the apply checks of one of this scope's plans. A plan of another
+// scope or of the launch project is not found.
+func (s *Scope) Preflight(ctx context.Context, planID string, req operations.PreflightRequest) (operations.PreflightReport, error) {
+	if _, ok := s.manager.Plan(planID); !ok {
+		return operations.PreflightReport{}, operations.ErrNotFound
+	}
+	if err := s.checked(ctx); err != nil {
+		return operations.PreflightReport{}, err
+	}
+	return s.manager.Preflight(ctx, planID, req)
+}
+
+// Approve issues the one-time approval of one of this scope's plans. The token lives in
+// this scope's manager only, bound to the plan, its saved file digest and the preflight.
+func (s *Scope) Approve(ctx context.Context, planID string, req operations.ApprovalRequest) (operations.Approval, error) {
+	if _, ok := s.manager.Plan(planID); !ok {
+		return operations.Approval{}, operations.ErrNotFound
+	}
+	if err := s.checked(ctx); err != nil {
+		return operations.Approval{}, err
+	}
+	return s.manager.Approve(planID, req)
+}
+
+// StartApply consumes the approval of one of this scope's plans and applies its saved
+// file. The scope is revalidated here and again, fully (engine version, workspace list and
+// executable SHA-256), with the root claim held immediately before the engine runs.
+func (s *Scope) StartApply(ctx context.Context, planID, token, typed string) (operations.Operation, error) {
+	if _, ok := s.manager.Plan(planID); !ok {
+		return operations.Operation{}, operations.ErrNotFound
+	}
+	if err := s.checked(ctx); err != nil {
+		return operations.Operation{}, err
+	}
+	return s.manager.StartApply(planID, token, typed)
 }
 
 // VarFiles lists the variable files of the scope's root that a plan may select.
@@ -402,6 +454,12 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot) (*Scope, error) {
 		return operations.Binding{Context: *execution, Environ: environ}, nil
 	}
 	m.Bind = func([]string, string) engine.Planner { return planner }
+	// Apply preflight facts, as for the launch project. The identity probe contacts AWS only
+	// when the user asks for it in the preflight.
+	m.GitProbe, m.IdentityProbe = h.GitProbe, h.IdentityProbe
+	// After an apply, only this workspace's snapshot is read again, with the root claim
+	// still held; other contexts and the launch project are not touched.
+	m.Reload = func(ctx context.Context) { c.store.Load(ctx, readOnly{read}, name) }
 	s := &Scope{ContextID: c.ID, hub: h, context: c, id: id, read: read, manager: m}
 	m.Verify = s.verify
 	return s, nil

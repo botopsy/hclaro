@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"os"
@@ -69,6 +70,23 @@ func TestExportHistory(t *testing.T) {
 	}
 	if err := Run(context.Background(), Options{ExportHistory: out}, io.Discard, "test"); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("overwrote an existing export: %v", err)
+	}
+}
+
+// Hub execution is a hidden, experimental opt-in: off by default and not listed in --help.
+func TestHubExecutionIsAHiddenOptIn(t *testing.T) {
+	if o, err := Parse([]string{}, io.Discard); err != nil || o.HubExecution {
+		t.Fatalf("hub execution by default: %+v %v", o, err)
+	}
+	if o, err := Parse([]string{"--experimental-hub-execution"}, io.Discard); err != nil || !o.HubExecution {
+		t.Fatalf("--experimental-hub-execution: %+v %v", o, err)
+	}
+	var help strings.Builder
+	if _, err := Parse([]string{"-h"}, &help); !errors.Is(err, flag.ErrHelp) {
+		t.Fatal(err)
+	}
+	if strings.Contains(help.String(), "hub-execution") || !strings.Contains(help.String(), "-strict-local") || !strings.Contains(help.String(), "-export-history file") {
+		t.Fatalf("help:\n%s", help.String())
 	}
 }
 

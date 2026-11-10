@@ -11,7 +11,7 @@ import (
 	"hclaro/internal/projects"
 )
 
-// Scoped plan routes for Hub workspaces (M24.05, ADR M24.03 "API contract"). Every route names
+// Scoped plan and apply routes for Hub workspaces (M24.05, M24.06, ADR M24.03 "API contract"). Every route names
 // an open read context in its path; the server resolves the context's execution scope and
 // never falls back to the launch project. Plan and operation IDs of another scope, or of the
 // launch project, answer exactly like missing ones. Requests carry no path, executable,
@@ -22,10 +22,6 @@ type scopedOperation struct {
 	operations.Operation
 	Scope projects.ScopeView `json:"scope"`
 }
-
-// scopedApplyUnavailable replaces an "available" apply status until scoped apply exists
-// (M24.06): the saved plan is kept, but no route can apply it yet.
-const scopedApplyUnavailable = "Applying a plan from a Hub workspace is not available yet. Review it here, or apply from the project Hclaro was started in."
 
 // resolveScope answers the request itself and returns nil unless the gate is on, the {cid}
 // context is open and (with create) its execution scope exists or could be created.
@@ -185,9 +181,6 @@ func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			return
 		}
 		changed, status := s.ContextStatus(p)
-		if status.Available {
-			status = operations.ApplyStatus{Code: "scoped_apply_unavailable", Reason: scopedApplyUnavailable, ArtifactRetained: status.ArtifactRetained, ExpiresAt: status.ExpiresAt}
-		}
 		writeJSON(w, 200, struct {
 			*operations.Plan
 			EngineVersionLabel string                 `json:"currentEngineVersion"`
@@ -196,6 +189,102 @@ func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			SourceStatus       gitctx.SourceStatus    `json:"sourceStatus"`
 			Scope              projects.ScopeView     `json:"scope"`
 		}{p, s.Snapshot().Info.Version, changed, status, s.SourceStatus(p), s.View()})
+	})
+	// Preflight, approval and apply of a scope's saved plan (M24.06). They reuse the launch
+	// project's policy (operations.Manager) in the scope's own manager, so approvals and
+	// preflight bindings exist only in that scope. Each request revalidates the scope first;
+	// the apply revalidates it again, fully, with the root claim held.
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/plans/{pid}/preflight", func(w http.ResponseWriter, r *http.Request) {
+		if !hub.ScopedExecution {
+			projectError(w, hub, projects.ErrScopedDisabled)
+			return
+		}
+		var body struct {
+			VerifyIdentity bool `json:"verifyIdentity"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		s, ok := scopedPlanScope(w, r, hub)
+		if !ok {
+			return
+		}
+		report, err := s.Preflight(r.Context(), r.PathValue("pid"), operations.PreflightRequest{VerifyIdentity: body.VerifyIdentity})
+		if err != nil {
+			scopedApplyError(w, r, hub, err)
+			return
+		}
+		writeJSON(w, 200, struct {
+			operations.PreflightReport
+			Scope projects.ScopeView `json:"scope"`
+		}{report, s.View()})
+	})
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/plans/{pid}/approval", func(w http.ResponseWriter, r *http.Request) {
+		if !hub.ScopedExecution {
+			projectError(w, hub, projects.ErrScopedDisabled)
+			return
+		}
+		var body struct {
+			Binding      string   `json:"preflightBinding"`
+			Acknowledged []string `json:"acknowledged"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if len(body.Binding) > 128 || len(body.Acknowledged) > 32 {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		for _, a := range body.Acknowledged {
+			if len(a) > 64 {
+				errorJSON(w, 400, "invalid_request")
+				return
+			}
+		}
+		s, ok := scopedPlanScope(w, r, hub)
+		if !ok {
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		defer cancel()
+		approval, err := s.Approve(ctx, r.PathValue("pid"), operations.ApprovalRequest{Binding: body.Binding, Acknowledged: body.Acknowledged})
+		if err != nil {
+			scopedApplyError(w, r, hub, err)
+			return
+		}
+		writeJSON(w, 200, struct {
+			operations.Approval
+			Scope projects.ScopeView `json:"scope"`
+		}{approval, s.View()})
+	})
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/plans/{pid}/apply", func(w http.ResponseWriter, r *http.Request) {
+		if !hub.ScopedExecution {
+			projectError(w, hub, projects.ErrScopedDisabled)
+			return
+		}
+		var body struct {
+			Token        string `json:"confirmationToken"`
+			Confirmation string `json:"confirmation"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if len(body.Token) > 128 || len(body.Confirmation) > 256 {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		s, ok := scopedPlanScope(w, r, hub)
+		if !ok {
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		defer cancel()
+		op, err := s.StartApply(ctx, r.PathValue("pid"), body.Token, body.Confirmation)
+		if err != nil {
+			scopedApplyError(w, r, hub, err)
+			return
+		}
+		writeJSON(w, 202, scopedOperation{op, s.View()})
 	})
 	mux.HandleFunc("GET /api/v1/contexts/{cid}/plans/{pid}/changes/{change}", func(w http.ResponseWriter, r *http.Request) {
 		_, p, ok := scopedPlan(w, r, hub)
@@ -296,6 +385,38 @@ func scopedPlan(w http.ResponseWriter, r *http.Request, hub *projects.Hub) (*pro
 		return nil, nil, false
 	}
 	return s, p, true
+}
+
+// scopedPlanScope resolves the scope of a preflight, approval or apply request without
+// creating one: a context with no scope has no plans. Anything else is plan_not_found.
+func scopedPlanScope(w http.ResponseWriter, r *http.Request, hub *projects.Hub) (*projects.Scope, bool) {
+	s, ok := resolveScope(w, r, hub, false)
+	if !ok {
+		return nil, false
+	}
+	if s == nil || !idPattern.MatchString(r.PathValue("pid")) {
+		errorJSON(w, 404, "plan_not_found")
+		return nil, false
+	}
+	return s, true
+}
+
+// scopedApplyError maps a refused scoped preflight, approval or apply. Nothing was applied.
+func scopedApplyError(w http.ResponseWriter, r *http.Request, hub *projects.Hub, err error) {
+	var scope *projects.ScopeError
+	var rejected *operations.RejectError
+	switch {
+	case errors.As(err, &scope):
+		projectError(w, hub, err)
+	case errors.Is(err, operations.ErrNotFound):
+		errorJSON(w, 404, "plan_not_found")
+	case errors.As(err, &rejected):
+		reasonJSON(w, 409, rejected.Code, rejected.Reason)
+	case errors.Is(err, operations.ErrClosed):
+		reasonJSON(w, 503, "shutting_down", "Hclaro is shutting down.")
+	default:
+		errorJSON(w, 500, "apply_not_started")
+	}
 }
 
 // scopedOperationOf finds an operation of the request's scope; anything else is
