@@ -69,6 +69,36 @@ export type PlanOptions = {
   projectId?: string;
   context?: ExecutionSummary;
   profileError?: string;
+  // Set for a Hub workspace (M24.07): why planning is unavailable, its scope, the recorded
+  // profile context and the fingerprint a plan start must send back.
+  code?: string;
+  scope?: ScopeView;
+  executionContext?: ExecutionContext;
+  contextFingerprint?: string;
+};
+// The sanitized identity of a Hub workspace's execution scope.
+export type ScopeView = {
+  contextId: string;
+  projectId: string;
+  alias: string;
+  rootPath: string;
+  engine: string;
+  version: string;
+  workspace: string;
+  profile: { id: string; name: string; revision: number } | null;
+  backend: string;
+  executionMode: string;
+};
+// GET contexts/<id>/plans/options.
+export type ScopedPlanOptions = {
+  canPlan: boolean;
+  code?: string;
+  reason?: string;
+  scope: ScopeView | null;
+  backendAccessRequired: boolean;
+  varFiles: string[];
+  executionContext: ExecutionContext | null;
+  contextFingerprint: string;
 };
 export type EngineDiagnostic = {
   severity: string;

@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 
 // Client routes. Segments are routing hints only: the server resolves project IDs and
 // workspace names itself and never reads files from them.
-export type ExplorerView = 'Resources' | 'Overview' | 'Modules' | 'Providers' | 'Tools' | 'Git';
+// Views a Hub workspace URL can hold. Plans (with an optional plan ID, the review) and
+// Operations are deep-linkable since M24.07; they act only on that workspace's own context.
+export type ExplorerView = 'Resources' | 'Overview' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Plans' | 'Operations';
 export type Route = {
   kind: 'launch';
 } | {
@@ -19,6 +21,7 @@ export type Route = {
   projectId: string;
   workspace: string;
   view: ExplorerView;
+  planId?: string;
 };
 const views: Record<string, ExplorerView> = {
   resources: 'Resources',
@@ -26,7 +29,9 @@ const views: Record<string, ExplorerView> = {
   modules: 'Modules',
   providers: 'Providers',
   tools: 'Tools',
-  git: 'Git'
+  git: 'Git',
+  plans: 'Plans',
+  operations: 'Operations'
 };
 const projectId = /^[0-9a-f]{32}$/;
 const workspaceName = /^[A-Za-z0-9_-]{1,90}$/;
@@ -43,8 +48,9 @@ export function parseRoute(pathname: string): Route {
     workspace = decodeURIComponent(parts[3] || '');
   } catch {/* Malformed escapes fall back to the project page. */}
   const view = views[parts[4] || 'resources'];
-  if (parts[2] !== 'workspaces' || !workspaceName.test(workspace) || !view || parts.length > 5) return { kind: 'project', projectId: parts[1] };
-  return { kind: 'context', projectId: parts[1], workspace, view };
+  const planId = view === 'Plans' && parts.length === 6 && projectId.test(parts[5]) ? parts[5] : undefined;
+  if (parts[2] !== 'workspaces' || !workspaceName.test(workspace) || !view || parts.length > (planId ? 6 : 5)) return { kind: 'project', projectId: parts[1] };
+  return { kind: 'context', projectId: parts[1], workspace, view, ...(planId ? { planId } : {}) };
 }
 // Each project workspace gets its own workbench; every other route shares the launch one.
 // Moving between two different keys discards the in-memory state of the tab's workbench.
@@ -87,8 +93,9 @@ export function hubPath() {
 export function projectPath(id: string) {
   return `/projects/${encodeURIComponent(id)}`;
 }
-export function contextPath(id: string, workspace: string, view: ExplorerView = 'Resources') {
-  return `/projects/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspace)}/${view.toLowerCase()}`;
+export function contextPath(id: string, workspace: string, view: ExplorerView = 'Resources', planId?: string) {
+  const plan = view === 'Plans' && planId && projectId.test(planId) ? `/${planId}` : '';
+  return `/projects/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspace)}/${view.toLowerCase()}${plan}`;
 }
 export function isExplorerView(view: string): view is ExplorerView {
   return Object.values(views).includes(view as ExplorerView);

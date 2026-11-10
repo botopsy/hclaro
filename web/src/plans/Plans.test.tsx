@@ -284,7 +284,7 @@ describe('Plans', () => {
     view();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
-    let dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    let dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     const identity = await within(dialog).findByRole('region', { name: 'Context identity' });
     expect(identity).toHaveTextContent('platform-infra');
     expect(identity).toHaveTextContent('Terraform 1.9.8');
@@ -303,7 +303,7 @@ describe('Plans', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(posts.filter(p => p.url.endsWith('/approval') || p.url.endsWith('/apply'))).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: 'Review and apply…' }));
-    dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     const apply = await within(dialog).findByRole('button', { name: 'Apply plan' });
     await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply demo');
     // There is no blanket acknowledgement: each warning has its own checkbox.
@@ -334,7 +334,7 @@ describe('Plans', () => {
     });
     view();
     await userEvent.click(await screen.findByRole('button', { name: 'Review and apply…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     const section = await within(dialog).findByRole('region', { name: 'Blocking' });
     expect(section).toHaveTextContent('Blocks');
     expect(section).toHaveTextContent('Run a new plan and review it again.');
@@ -353,7 +353,7 @@ describe('Plans', () => {
     view();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     await user.click(await within(dialog).findByRole('button', { name: 'Verify AWS identity' }));
     await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Verify AWS identity' })).not.toBeInTheDocument());
     expect(posts.filter(p => p.url.endsWith('/preflight')).map(p => JSON.parse(p.init.body as string).verifyIdentity)).toEqual([false, true]);
@@ -372,7 +372,7 @@ describe('Plans', () => {
     view();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     const confirm = async () => {
       await user.type(await within(dialog).findByLabelText('Confirmation phrase'), 'apply demo');
       for (const box of within(dialog).getAllByRole('checkbox')) await user.click(box);
@@ -398,7 +398,7 @@ describe('Plans', () => {
     });
     view();
     await userEvent.click(await screen.findByRole('button', { name: 'Review and apply…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
   });
@@ -414,7 +414,7 @@ describe('Plans', () => {
     const started = vi.fn();
     render(<ApplyDialog plan={applicable} scope={{ kind: 'context', contextId }} onStarted={started} onClose={() => {}} />);
     const user = userEvent.setup();
-    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     const apply = await within(dialog).findByRole('button', { name: 'Apply plan' });
     await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply demo');
     for (const box of within(dialog).getAllByRole('checkbox')) await user.click(box);
@@ -429,7 +429,7 @@ describe('Plans', () => {
 
   it('refuses instead of falling back to the launch project when the workspace context is invalid', async () => {
     render(<ApplyDialog plan={applicable} scope={{ kind: 'context', contextId: '' }} onStarted={() => {}} onClose={() => {}} />);
-    const dialog = await screen.findByRole('dialog', { name: 'Apply this plan' });
+    const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     expect(await within(dialog).findByText(/no longer open/)).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
     expect(posts).toHaveLength(0);

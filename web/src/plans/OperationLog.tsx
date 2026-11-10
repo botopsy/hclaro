@@ -4,17 +4,22 @@ import { post, streamEvents } from '../api';
 import { operationActive, type Operation, type OperationEvent } from '../types';
 import { Button } from '../components/ui/button';
 import { duration } from './labels';
+import { launchScope, scopedPath, type PlanScope } from './routes';
 
 const maxLines = 2000;
 
 // Streams one operation's sanitized log. Reconnects resume from the last received event.
 export function OperationLog({
   operation: initial,
-  onFinished
+  onFinished,
+  scope = launchScope
 }: {
   operation: Operation;
   onFinished?: (operation: Operation) => void;
+  // The project or Hub workspace the operation runs in; its log and cancel use only its routes.
+  scope?: PlanScope;
 }) {
+  const route = scopedPath(scope, `operations/${initial.id}`);
   const [events, setEvents] = useState<OperationEvent[]>([]);
   const [operation, setOperation] = useState(initial);
   const [truncated, setTruncated] = useState(false);
@@ -32,7 +37,7 @@ export function OperationLog({
     async function run() {
       for (let attempt = 0; !stopped && attempt < 20; attempt++) {
         try {
-          const ended = await streamEvents(initial.id, last, {
+          const ended = await streamEvents(route, last, {
             log: event => {
               last = event.seq;
               setEvents(current => [...current, event].slice(-maxLines));
@@ -54,7 +59,7 @@ export function OperationLog({
       stopped = true;
       controller.abort();
     };
-  }, [initial.id]);
+  }, [route]);
   const done = !operationActive(operation);
   const noun = operation.kind === 'apply' ? 'Apply' : operation.kind === 'init' ? 'Init' : operation.kind === 'workspace' || operation.kind === 'tool' ? 'Command' : operation.kind === 'drift' ? 'Scan' : operation.kind === 'graph' ? 'Graph' : 'Plan';
   useEffect(() => {
@@ -66,7 +71,7 @@ export function OperationLog({
   async function cancel() {
     setCancelling(true);
     try {
-      setOperation(await post<Operation>(`operations/${operation.id}/cancel`, {}));
+      setOperation(await post<Operation>(`${route}/cancel`, {}));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Cancellation failed.');
       setCancelling(false);

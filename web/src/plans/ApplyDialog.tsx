@@ -7,6 +7,8 @@ import { useModal } from '../components/useModal';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { actionOrder, engineLabel, meta } from './labels';
 import { launchScope, planRoute, type PlanScope } from './routes';
+import { productionLike } from '../router';
+import { ProductionBadge } from '../hub/HubView';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -57,7 +59,7 @@ function ResourceList({ label, items }: { label: string; items: PreflightResourc
 // acknowledgement per warning and the typed phrase, and only then asks for a one-time
 // approval and applies. Closing the dialog declines and nothing is applied. scope names the
 // project or Hub workspace the plan belongs to; every request goes to that scope only.
-export function ApplyDialog({ plan, scope, onStarted, onClose }: { plan: Plan; scope: PlanScope; onStarted: (operation: Operation) => void; onClose: () => void }) {
+export function ApplyDialog({ plan, scope, project, onStarted, onClose }: { plan: Plan; scope: PlanScope; project?: string; onStarted: (operation: Operation) => void; onClose: () => void }) {
   const [report, setReport] = useState<PreflightReport>();
   const [acked, setAcked] = useState<Set<string>>(new Set());
   const [typed, setTyped] = useState('');
@@ -134,9 +136,12 @@ export function ApplyDialog({ plan, scope, onStarted, onClose }: { plan: Plan; s
   const impact = report?.impact;
   const counts = impact ? actionOrder.filter(a => a !== 'no-op' && impact.summary[a]) : [];
   const ctx = report?.context;
+  // The heading names exactly where the plan is applied: the server's answer once it is in.
+  const where = { project: ctx?.project || project || 'this project', workspace: ctx?.workspace || plan.workspace };
+  const production = productionLike(where.workspace, where.project, ctx?.executionContext?.profileName);
   return <div className="dialog-backdrop">
    <div ref={dialog} className="dialog apply-dialog preflight-dialog" role="dialog" aria-modal="true" aria-labelledby="apply-title" aria-describedby="apply-summary">
-    <div className="dialog-header"><h2 id="apply-title">Apply this plan</h2><Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
+    <div className="dialog-header"><h2 id="apply-title">Apply to {where.project} / {where.workspace}</h2>{production && <ProductionBadge />}<Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
     <p id="apply-summary">{engine} will apply the saved plan you reviewed to workspace <strong>{plan.workspace}</strong>. This changes real infrastructure. A saved plan does not prompt again, so this is the final confirmation. Hclaro checks everything below on the server now and again when the apply starts.</p>
 
     {ctx && <section className="preflight-identity" aria-label="Context identity">

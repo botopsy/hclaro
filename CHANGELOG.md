@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Hub plan and apply UI (M24.07), only with the experimental `--experimental-hub-execution` flag:
+
+- A Hub workspace tab offers Plans and Operations when the server enables scoped execution. Every plan, change, operation, log, cancel, preflight, approval and apply request goes to that workspace's own context; nothing falls back to the launch project. Drift, graphs, discovery and imports stay launch-only.
+- Deep links `/projects/<id>/workspaces/<name>/plans`, `.../plans/<plan id>` and `.../operations` work on refresh, back/forward and in new tabs. A closed workspace view asks to be opened again; a plan that is no longer kept is explained.
+- Switching workspace or profile discards the plan selection, dialogs, approvals and operation state of the previous one. The CLI default workspace is never changed.
+- The apply dialog is headed `Apply to <project> / <workspace>` and flags production-like names. The context bar shows the execution mode and whether the workspace can plan and apply.
+
 Hub-scoped apply (M24.06), off by default:
 
 - New routes `POST /api/v1/contexts/{cid}/plans/{pid}/preflight`, `/approval` and `/apply` apply a reviewed saved plan of one Hub workspace with the launch project's checks: latest plan only, one-hour limit, server preflight, one-time approval bound to the plan and its saved file, typed phrase for destructive plans. They are off by default (`404 scoped_execution_disabled`) and have no UI yet. A hidden, experimental `--experimental-hub-execution` flag turns on Hub plans and applies for testing; it is not listed in `--help`, prints a warning, and is not yet qualified with real engines. See `docs/architecture.md`, "Scoped apply (M24.06)".

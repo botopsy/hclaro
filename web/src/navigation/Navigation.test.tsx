@@ -103,6 +103,17 @@ describe('Navigation model', () => {
     expect(navState(navItem('overview'), page)).toMatchObject({ enabled: false, reason: 'Choose a workspace of this project first.' });
     expect(navState(navItem('overview'), { ...page, projectWorkspace: 'dev' }).enabled).toBe(true);
   });
+  it('enables Hub plans and operations only when the server enables scoped execution', () => {
+    const hub = context({ route: parseRoute(`/projects/${hubId}/workspaces/dev/plans`), mode: 'hub-workspace', view: 'Plans', scopedExecution: true });
+    expect(navState(navItem('plans'), hub)).toEqual({ enabled: true, active: true });
+    expect(navState(navItem('operations'), hub).enabled).toBe(true);
+    for (const id of ['drift', 'graph', 'import-discovery']) expect(navState(navItem(id), hub)).toMatchObject({ enabled: false, reason: expect.stringContaining('plans and applies only') });
+    expect(navState(navItem('plans'), { ...hub, scopedExecution: false }).enabled).toBe(false);
+    const page = context({ route: parseRoute(`/projects/${hubId}`), mode: 'hub-project', scopedExecution: true });
+    expect(navState(navItem('plans'), page).enabled).toBe(false);
+    expect(navState(navItem('plans'), { ...page, projectWorkspace: 'dev' }).enabled).toBe(true);
+    expect(navState(navItem('plans'), context({ mode: 'none', scopedExecution: true })).enabled).toBe(false);
+  });
   it('derives active state from the route and view, including nested workflows', () => {
     const item = navItem('import-discovery');
     expect(isActive(item, route, 'Import')).toBe(true);

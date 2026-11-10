@@ -102,9 +102,10 @@ export type StreamHandlers = {
   truncated: () => void;
 };
 // Server-sent events are read with fetch so the session token stays in a header, never a URL.
-// Resolves true when the server reports the end of the operation.
-export async function streamEvents(id: string, after: number, handlers: StreamHandlers, signal: AbortSignal): Promise<boolean> {
-  const response = await fetch(`/api/v1/operations/${id}/events?after=${after}`, {
+// Resolves true when the server reports the end of the operation. path is the operation's
+// route, for example "operations/<id>" or a Hub workspace's "contexts/<cid>/operations/<id>".
+export async function streamEvents(path: string, after: number, handlers: StreamHandlers, signal: AbortSignal): Promise<boolean> {
+  const response = await fetch(`/api/v1/${path}/events?after=${after}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'text/event-stream'

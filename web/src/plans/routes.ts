@@ -1,15 +1,26 @@
-// Where a saved plan's preflight, approval and apply requests go. The launch project uses its
-// original routes; a Hub workspace uses only its own read context's routes (M24.06). There is
-// no fallback from a Hub workspace to the launch project: an invalid context refuses instead.
+// Where plan and operation requests go. The launch project uses its original routes; a Hub
+// workspace uses only its own read context's routes (M24.05–M24.07). There is no fallback from
+// a Hub workspace to the launch project: an invalid context refuses instead.
 export type PlanScope = { kind: 'launch' } | { kind: 'context'; contextId: string };
 
 export const launchScope: PlanScope = { kind: 'launch' };
 
 const id = /^[0-9a-f]{32}$/;
 
+// scopedPath prefixes a launch API path (for example "plans" or "operations/<id>/events")
+// with the scope's context.
+export function scopedPath(scope: PlanScope, path: string) {
+  if (scope.kind === 'launch') return path;
+  if (!id.test(scope.contextId)) throw new Error('This workspace view is no longer open. Open the workspace again.');
+  return `contexts/${scope.contextId}/${path}`;
+}
+
+// scopeKey separates cached queries of different scopes.
+export function scopeKey(scope: PlanScope) {
+  return scope.kind === 'launch' ? 'launch' : scope.contextId;
+}
+
 export function planRoute(scope: PlanScope, planId: string, step: 'preflight' | 'approval' | 'apply') {
   if (!id.test(planId)) throw new Error('This plan is no longer available. Run a new plan.');
-  if (scope.kind === 'launch') return `plans/${planId}/${step}`;
-  if (!id.test(scope.contextId)) throw new Error('This workspace view is no longer open. Open the workspace again.');
-  return `contexts/${scope.contextId}/plans/${planId}/${step}`;
+  return scopedPath(scope, `plans/${planId}/${step}`);
 }
