@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+Support qualification (M24.11):
+
+- New [support matrix](docs/support-matrix.md): every engine version, platform, backend, provider and operation with PASS/FAIL/NOT_TESTED/BLOCKED. Only the Terraform 1.5.5 local-backend plan run is PASS; a test refuses PASS rows without dated, real, recorded evidence.
+- Fix: an initialized project whose `.terraform/terraform.tfstate` exists but is not a readable regular file was treated as the default local backend and could be planned. It now stays `unknown` and read-only.
+- Opt-in [AWS sandbox runbook](docs/qualification/aws-sandbox.md) for owner-approved S3 backend and AWS provider qualification (not yet run). CI step names now say they are the mocked tier.
+
 Hub-scoped import and replace (M24.08), only with the experimental `--experimental-hub-execution` flag:
 
 - New routes `GET /api/v1/contexts/{cid}/imports/options`, `POST .../imports/preview` and `POST .../imports`, and an Import page in Hub workspace tabs (`/projects/<id>/workspaces/<name>/import`). The reviewed import block is written only into that workspace's project folder, then a full plan runs there; the import is recorded only by applying that reviewed plan with the scoped approval. Cloud discovery stays launch-only.

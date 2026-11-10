@@ -1,5 +1,7 @@
 name: Verify
 description: Install the pinned toolchains and run hclaro's checks. Shared by the CI jobs.
+# Every check here is the "mocked" tier of docs/support-matrix.md. Real-engine and sandbox
+# cloud runs are manual and never part of CI.
 inputs:
   race:
     description: Run Go tests with the race detector (needs a C toolchain).
@@ -26,7 +28,7 @@ runs:
     - name: Install frontend dependencies
       shell: bash
       run: npm ci --prefix web --no-audit --no-fund
-    - name: Go tests
+    - name: Go tests (mocked engines and synthetic data; no real engine or cloud)
       shell: bash
       env:
         RACE: ${{ inputs.race }}
@@ -36,7 +38,7 @@ runs:
     - name: Go vet
       shell: bash
       run: go vet ./cmd/... ./internal/... ./scripts/...
-    - name: Vitest
+    - name: Vitest (mocked)
       shell: bash
       run: npm --prefix web test
     - name: Typecheck and lint
@@ -62,7 +64,7 @@ runs:
         # --with-deps installs system libraries on Linux only.
         if [ "$RUNNER_OS" = Linux ]; then deps=--with-deps; else deps=; fi
         npm --prefix web exec -- playwright install $deps chromium
-    - name: Synthetic browser checks
+    - name: Synthetic browser checks (mocked engines)
       if: inputs.browser == 'true'
       shell: bash
       run: |
