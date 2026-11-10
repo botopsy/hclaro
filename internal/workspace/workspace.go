@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -180,8 +181,9 @@ func Inspect(root string) Info {
 	}
 	// Without a backend or cloud block, init records no backend metadata and the engine uses
 	// the default local backend. A block that was never initialized makes the engine refuse
-	// to plan, so this cannot route a plan to a remote backend.
-	if info.Backend == "unknown" && info.Initialized && !fileExists(metadata) && !declaresBackend(root) {
+	// to plan, so this cannot route a plan to a remote backend. Metadata that exists but is not
+	// a readable regular file (a directory, an unreadable entry) is not absence: it stays unknown.
+	if _, err := os.Lstat(metadata); info.Backend == "unknown" && info.Initialized && errors.Is(err, fs.ErrNotExist) && !declaresBackend(root) {
 		info.Backend = "local"
 		info.ExecutionMode = "local-cli"
 	}

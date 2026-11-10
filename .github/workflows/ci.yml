@@ -9,6 +9,8 @@ name: CI
 # - Changes that touch only docs/ or Markdown files skip the checks. Skipping is decided per
 #   job (a skipped job reports success), not by workflow path filters, so required checks
 #   are never left waiting.
+# - Changes to the support matrix or its evidence (docs/support-matrix.md, docs/qualification/,
+#   docs/archive/verification/) run everything, so TestSupportMatrix checks them.
 on:
   pull_request:
     branches: [master]
@@ -53,6 +55,8 @@ jobs:
             printf '%s\n' "$changed" | grep -Ev '^docs/|\.md$' >/dev/null || code=false
             # fixtures/ is embedded into Go tests; scripts/ holds the fake engine and fixture server.
             printf '%s\n' "$changed" | grep -E '\.go$|^go\.(mod|sum)$|^(scripts|fixtures|\.github)/' >/dev/null || go=false
+            # TestSupportMatrix validates the support matrix and the evidence it links to.
+            if printf '%s\n' "$changed" | grep -E '^docs/(support-matrix\.md|qualification/|archive/verification/)' >/dev/null; then code=true go=true; fi
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "go=$go" >> "$GITHUB_OUTPUT"

@@ -117,6 +117,19 @@ func TestVersionCompatibility(t *testing.T) {
 	if !Supported("tofu", "1.6.0") || !Supported("terraform", "1.5.0") || Supported("tofu", "1.5.0") {
 		t.Fatal("incorrect compatibility")
 	}
+	// Exact accepted edges, documented in docs/support-matrix.md, README.md and the version
+	// error. Widening either range needs real-engine evidence in the support matrix first.
+	for v, want := range map[string]bool{
+		"terraform 1.4.7": false, "terraform 1.5.0": true, "terraform 1.17.99": true, "terraform 1.18.0": false,
+		"tofu 1.5.9": false, "tofu 1.6.0": true, "tofu 1.13.99": true, "tofu 1.14.0": false,
+		"terraform 1.5.0-rc1": false, "tofu 1.9.0-beta1": false, "opentofu 1.6.0": false,
+		"terraform v1.5.0": false, "terraform 1.5": false, "terraform 1.5.0.1": false,
+	} {
+		name, version, _ := strings.Cut(v, " ")
+		if Supported(name, version) != want {
+			t.Errorf("Supported(%s) = %v", v, !want)
+		}
+	}
 }
 
 func TestBoundedOutput(t *testing.T) {
