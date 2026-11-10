@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import golden from '../../../fixtures/plan/all-actions.golden.json';
 import driftGolden from '../../../fixtures/drift/mixed.golden.json';
 import graphGolden from '../../../fixtures/graph/terraform.golden.json';
+import discoveryGolden from '../../../fixtures/discovery/scan.golden.json';
 import App from '../App';
 import { contextPath, parseRoute } from '../router';
-import type { DependencyGraph, DriftScan, Operation, Plan, PreflightReport, Project, ProjectList, ScopedPlanOptions, Workspace } from '../types';
+import type { DependencyGraph, DiscoveryOptions, DiscoveryPrefill, DiscoveryScan, DriftScan, Operation, Plan, PreflightReport, Project, ProjectList, ScopedPlanOptions, Workspace } from '../types';
 
 // M24.07: plans and applies of a Hub workspace go only to that workspace's own context.
 const network = 'a'.repeat(32);
@@ -238,9 +239,9 @@ describe('Hub import and replace (M24.08)', { timeout: 20000 }, () => {
     app(contextPath(network, 'dev', 'Import'));
     expect(parseRoute(window.location.pathname)).toMatchObject({ kind: 'context', view: 'Import' });
     const user = userEvent.setup();
-    // Cloud discovery stays launch-only: no Import & discovery tabs in a Hub workspace.
+    // Import & discovery tabs: both run in this workspace's context (M24.09).
     await screen.findByRole('form', { name: 'Existing object' });
-    expect(screen.queryByRole('tab', { name: /discovery/i })).toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Import and discovery' })).toBeInTheDocument();
     await user.type(screen.getByLabelText('Resource instance address'), 'aws_s3_bucket.logs');
     await user.type(screen.getByLabelText('Import ID'), 'synthetic-logs');
     await user.click(screen.getByRole('button', { name: /Check and preview/ }));
@@ -382,5 +383,89 @@ describe('Hub drift scans and graphs (M24.09)', { timeout: 20000 }, () => {
     expect(parseRoute(`/projects/${network}/workspaces/dev/drift`)).toEqual({ kind: 'context', projectId: network, workspace: 'dev', view: 'Drift' });
     expect(parseRoute(`/projects/${network}/workspaces/dev/graph`)).toEqual({ kind: 'context', projectId: network, workspace: 'dev', view: 'Graph' });
     expect(parseRoute(`/projects/${network}/workspaces/dev/graph/${planId}`)).toEqual({ kind: 'project', projectId: network });
+  });
+});
+
+describe('Hub cloud discovery (M24.09)', { timeout: 20000 }, () => {
+  const scan = discoveryGolden.scan as unknown as DiscoveryScan;
+  const prefill = discoveryGolden.prefill as unknown as DiscoveryPrefill;
+  const verified = discoveryGolden.options as unknown as DiscoveryOptions;
+  // A/dev was verified and scanned; prod was not. Both are one project and root.
+  function serveDiscovery() {
+    override = (path, method) => {
+      const m = path.match(/^contexts\/([0-9a-f]{32})\/(discovery\/.*|imports.*)$/);
+      if (!m) return undefined;
+      const [, cid, rest] = m;
+      const dev = wsOf(cid) === 'dev';
+      if (rest === 'discovery/options') return Response.json({ ...verified, context: undefined, identity: dev ? verified.identity : undefined, workspace: wsOf(cid), scope: options(cid).scope, executionContext: null, contextFingerprint: '' });
+      if (rest === 'discovery/scans' && method === 'GET') return Response.json({ scans: dev ? [scan] : [] });
+      if (rest === 'discovery/identity') return Response.json(verified.identity);
+      if (dev && rest === `discovery/scans/${scan.id}`) return Response.json(scan);
+      if (dev && rest.startsWith(`discovery/scans/${scan.id}/candidates/`)) return Response.json(prefill);
+      if (rest === 'imports/options') return Response.json({ canImport: true, canApply: true, supportsImportBlocks: true, supportsGeneratedConfig: true, engine: 'terraform', version: '1.9.8', workspace: wsOf(cid), backend: 'local', varFiles: [], scope: options(cid).scope, executionContext: null, contextFingerprint: '' });
+      return Response.json({ error: 'scan_not_found' }, { status: 404 });
+    };
+  }
+  const launchDiscovery = () => calls.filter(c => /^\/api\/v1\/(discovery|imports)(\/|$|\?)/.test(c.url));
+
+  it('shows, verifies and prepares in A/dev through its own context only, and nothing of it in prod', async () => {
+    serveDiscovery();
+    app(contextPath(network, 'dev', 'Discovery'));
+    const user = userEvent.setup();
+    expect(await screen.findByText('Scan complete')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Import and discovery' })).toBeInTheDocument();
+    // Opening the page contacts nothing.
+    expect(calls.filter(c => c.method === 'POST' && c.url !== '/api/v1/contexts')).toEqual([]);
+    await user.click(screen.getByText('Execution context'));
+    expect(screen.getByLabelText('Discovery uses')).toHaveTextContent('/infra/network');
+
+    await user.click(screen.getByRole('button', { name: 'Verify again' }));
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/discovery/identity`)).toBe(true));
+    expect(calls.find(c => c.url.endsWith('/discovery/identity'))!.body).toEqual({ contextFingerprint: '' });
+
+    const row = screen.getByText('hclaro-legacy-logs').closest('tr')!;
+    await user.click(within(row).getByRole('button', { name: /Prepare import/ }));
+    await waitFor(() => expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/import`));
+    const prepare = calls.find(c => c.url.includes('/prepare'))!;
+    expect(prepare.url).toMatch(new RegExp(`^/api/v1/contexts/${ctx.dev}/discovery/scans/${scan.id}/candidates/[0-9a-f]{32}/prepare$`));
+    expect(prepare.body).toEqual({ contextFingerprint: '', acknowledgeUnknownMapping: false });
+    expect(await screen.findByText(/From Cloud discovery/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Import ID')).toHaveValue(prefill.importId);
+
+    await user.click(screen.getByRole('button', { name: 'Discover cloud resources' }));
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    // The prepared import is unsaved work of dev's workbench: switching asks first.
+    const leave = await screen.findByRole('dialog', { name: 'Leave this project?' });
+    expect(leave).toHaveTextContent('An import prepared from cloud discovery');
+    await user.click(within(leave).getByRole('button', { name: 'Switch anyway' }));
+    await waitFor(() => expect(window.location.pathname).toBe(`/projects/${network}/workspaces/prod/discovery`));
+    expect(await screen.findByRole('heading', { name: 'AWS context not verified' })).toBeInTheDocument();
+    expect(screen.queryByText('Scan complete')).not.toBeInTheDocument();
+    expect(calls.some(c => c.url.includes(`contexts/${ctx.prod}/discovery/scans/${scan.id}`))).toBe(false);
+    expect(launchDiscovery()).toEqual([]);
+  });
+
+  it('sends the discovery link with a Hub import', async () => {
+    serveDiscovery();
+    const inner = override!;
+    const importPreview = { address: prefill.suggestedAddress, file: 'imports.tf', content: 'import {}\n', sha256: '7'.repeat(64), config: 'found', configFile: 'main.tf', canGenerate: false, issues: [], blocked: false };
+    override = (path, method) => path === `contexts/${ctx.dev}/imports/preview` ? Response.json({ ...importPreview, scope: options(ctx.dev).scope })
+      : path === `contexts/${ctx.dev}/imports` && method === 'POST' ? Response.json({ ...finished, status: 'running' }, { status: 202 }) : inner(path, method);
+    app(contextPath(network, 'dev', 'Discovery'));
+    const user = userEvent.setup();
+    await screen.findByText('Scan complete');
+    await user.click(within(screen.getByText('hclaro-legacy-logs').closest('tr')!).getByRole('button', { name: /Prepare import/ }));
+    await user.click(await screen.findByRole('button', { name: /Check and preview/ }));
+    const confirm = await screen.findByRole('region', { name: 'Write the file and plan' });
+    await user.click(within(confirm).getByRole('checkbox', { name: /Write imports.tf/ }));
+    await user.click(within(confirm).getByRole('button', { name: /Write file/ }));
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/imports`)).toBe(true));
+    expect(calls.find(c => c.method === 'POST' && c.url.endsWith('/imports'))!.body).toMatchObject({ id: prefill.importId, discoveryToken: prefill.token, contextFingerprint: '' });
+    expect(calls.find(c => c.method === 'POST' && c.url.endsWith('/imports'))!.body).not.toHaveProperty('profileId');
+    expect(launchDiscovery()).toEqual([]);
+  });
+
+  it('parses discovery deep links', () => {
+    expect(parseRoute(`/projects/${network}/workspaces/dev/discovery`)).toEqual({ kind: 'context', projectId: network, workspace: 'dev', view: 'Discovery' });
   });
 });

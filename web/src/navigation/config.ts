@@ -97,7 +97,7 @@ export type NavState = {
   reason?: string;
 };
 
-const hubPlansOnly = 'Cloud discovery runs only for the project opened from the terminal. Hub workspaces run plans, imports, replacements, applies, drift scans and dependency graphs.';
+const hubPlansOnly = 'Available only for the project opened from the terminal.';
 const hubReadOnly = 'Hub workspaces are read-only. Plans, drift scans, dependency graphs, cloud discovery, applies and imports run only for the project opened from the terminal.';
 
 // Pages that show the current project. Global pages (Projects, Compare, History) do not.

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
 	"hclaro/internal/preflight"
@@ -183,14 +184,17 @@ type Hub struct {
 	// reports them as unavailable.
 	GitProbe      preflight.GitProbe
 	IdentityProbe preflight.IdentityProbe
-	MaxScopes     int
-	TempDir       string
-	base          context.Context
-	stop          context.CancelFunc
-	mu            sync.Mutex
-	inspections   map[string]*Inspection
-	contexts      map[string]*Context
-	order         []string
+	// Discovery is the session's AWS discovery service. A scope's verifications, scans and
+	// prepared imports are dropped (running scans cancelled) when the scope closes.
+	Discovery   *discovery.Service
+	MaxScopes   int
+	TempDir     string
+	base        context.Context
+	stop        context.CancelFunc
+	mu          sync.Mutex
+	inspections map[string]*Inspection
+	contexts    map[string]*Context
+	order       []string
 	// closed remembers why recent contexts were closed, so the UI can say so.
 	closed map[string]string
 	// reviews holds reviewed workspace commands by context ID until they start or expire.

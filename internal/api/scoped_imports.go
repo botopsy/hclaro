@@ -14,7 +14,8 @@ import (
 // bound to one open read context: the preview checks that workspace's state and root, and
 // the start writes the reviewed block into that root only, then runs a full plan in the
 // scope. The import is recorded only by applying that saved plan through the scoped
-// preflight, approval and apply. Requests carry no path, profile, workspace or discovery link.
+// preflight, approval and apply. Requests carry no path, profile or workspace. A discovery
+// link (M24.09) must name a candidate prepared in this same context.
 func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	mux.HandleFunc("GET /api/v1/contexts/{cid}/imports/options", func(w http.ResponseWriter, r *http.Request) {
 		if !scopedContext(w, r, hub) {
@@ -97,6 +98,9 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			AcknowledgeBackend *bool `json:"acknowledgeBackendAccess"`
 			// ContextFingerprint is the one the import options returned.
 			ContextFingerprint string `json:"contextFingerprint"`
+			// DiscoveryToken, when set, links the import to a candidate prepared from this
+			// context's discovery scan.
+			DiscoveryToken string `json:"discoveryToken"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
@@ -115,6 +119,17 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
 		defer cancel()
+		if body.DiscoveryToken != "" {
+			stale := hub.Discovery == nil || !idPattern.MatchString(body.DiscoveryToken)
+			if !stale {
+				pin, _, err := scopeDiscoveryPin(ctx, s, false, "")
+				stale = err != nil || hub.Discovery.CheckImport(body.DiscoveryToken, pin, body.Request) != nil
+			}
+			if stale {
+				reasonJSON(w, 409, "discovery_stale", "The import no longer matches the discovered object or its context (another workspace, project, profile, import ID or resource type, or the preparation expired). Prepare it again from Cloud discovery, or clear the discovery link to import manually.")
+				return
+			}
+		}
 		op, err := s.StartImport(ctx, body.Request, body.PreviewSHA256, body.VarFiles, body.ContextFingerprint)
 		var rejected *operations.RejectError
 		switch {
@@ -131,6 +146,9 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		case err != nil:
 			scopeError(w, r, hub, err)
 		default:
+			if body.DiscoveryToken != "" {
+				hub.Discovery.Consume(body.DiscoveryToken)
+			}
 			writeJSON(w, 202, scopedOperation{op, s.View()})
 		}
 	})

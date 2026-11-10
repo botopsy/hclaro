@@ -32,11 +32,19 @@ func discoveryPin(manager *operations.Manager, profileID, expected string) (disc
 	if c != nil {
 		pin.ProjectID, pin.ProfileID, pin.ProfileName, pin.ContextFingerprint = c.ProjectID, c.ProfileID, c.ProfileName, c.Fingerprint
 		pin.AWSProfile, pin.AWSRegion = c.AWSProfile, c.AWSRegion
-	} else if name := os.Getenv("AWS_PROFILE"); awsProfileName.MatchString(name) && !state.Suspicious(name) {
-		// The inherited profile name is shown so the user sees which profile the CLI uses.
-		pin.AWSProfile = name
+	} else {
+		pin.AWSProfile = inheritedAWSProfile()
 	}
 	return pin, environ, nil
+}
+
+// inheritedAWSProfile is the AWS_PROFILE Hclaro inherited, when it is a plain profile name.
+// It is shown so the user sees which profile the CLI uses without an execution profile.
+func inheritedAWSProfile() string {
+	if name := os.Getenv("AWS_PROFILE"); awsProfileName.MatchString(name) && !state.Suspicious(name) {
+		return name
+	}
+	return ""
 }
 
 // discoveryRoutes serve AWS discovery for the launch workspace. GET routes never run a
@@ -196,7 +204,7 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		if !ok {
 			return
 		}
-		writeJSON(w, 200, map[string]any{"scans": svc.Scans()})
+		writeJSON(w, 200, map[string]any{"scans": svc.Scans("")})
 	})
 	mux.HandleFunc("GET /api/v1/discovery/scans/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -233,7 +241,7 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		if !ok {
 			return
 		}
-		scan, err := svc.Cancel(id)
+		scan, err := svc.Cancel(id, "")
 		if err != nil {
 			discoveryError(w, err)
 			return

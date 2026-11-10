@@ -798,7 +798,7 @@ func TestConcurrencyLimitsAndCancellation(t *testing.T) {
 	r.mu.Unlock()
 	c, _ := s.Start(pin(), nil, id.ID, scope)
 	time.Sleep(30 * time.Millisecond)
-	if _, err := s.Cancel(c.ID); err != nil {
+	if _, err := s.Cancel(c.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	v := wait(t, s, c.ID, pin(), snapshot())

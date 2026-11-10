@@ -212,7 +212,7 @@ func TestScopedImportRequestValidation(t *testing.T) {
 		"no write ack":       {strings.Replace(start, `"acknowledgeWrite":true`, `"acknowledgeWrite":false`, 1), 400, "acknowledgement_required"},
 		"no backend ack":     {strings.Replace(start, `"acknowledgeBackendAccess":true,`, ``, 1), 400, "acknowledgement_required"},
 		"profile id":         {strings.Replace(start, `{`, `{"profileId":"x",`, 1), 400, "invalid_request"},
-		"discovery token":    {strings.Replace(start, `{`, `{"discoveryToken":"x",`, 1), 400, "invalid_request"},
+		"discovery token":    {strings.Replace(start, `{`, `{"discoveryToken":"x",`, 1), 409, "discovery_stale"},
 		"root path":          {strings.Replace(start, `{`, `{"rootPath":"/tmp",`, 1), 400, "invalid_request"},
 		"workspace":          {strings.Replace(start, `{`, `{"workspace":"prod",`, 1), 400, "invalid_request"},
 		"wrong fingerprint":  {strings.Replace(start, `"contextFingerprint":""`, `"contextFingerprint":"x"`, 1), 409, "context_changed"},
