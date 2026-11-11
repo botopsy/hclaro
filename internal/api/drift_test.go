@@ -192,9 +192,9 @@ func TestDriftScanRouteGuard(t *testing.T) {
 		{"no origin", "POST", "/api/v1/drift-scans", "", csrf, 403},
 		{"foreign origin", "POST", "/api/v1/drift-scans", "http://evil.example", csrf, 403},
 		{"no csrf", "POST", "/api/v1/drift-scans", "http://" + host, "", 403},
-		{"no post on a scan", "POST", "/api/v1/drift-scans/" + strings.Repeat("0", 32), "http://" + host, csrf, 405},
-		{"no apply of a scan", "POST", "/api/v1/drift-scans/" + strings.Repeat("0", 32) + "/apply", "http://" + host, csrf, 405},
-		{"no delete", "DELETE", "/api/v1/drift-scans/" + strings.Repeat("0", 32), "http://" + host, csrf, 405},
+		{"no post on a scan", "POST", "/api/v1/drift-scans/" + strings.Repeat("0", 32), "http://" + host, csrf, 404},
+		{"no apply of a scan", "POST", "/api/v1/drift-scans/" + strings.Repeat("0", 32) + "/apply", "http://" + host, csrf, 404},
+		{"no delete", "DELETE", "/api/v1/drift-scans/" + strings.Repeat("0", 32), "http://" + host, csrf, 404},
 	} {
 		r := httptest.NewRequest(tc.method, "http://"+host+tc.path, strings.NewReader(`{"acknowledgeProviderAccess":true}`))
 		r.Header.Set("Authorization", "Bearer "+session)

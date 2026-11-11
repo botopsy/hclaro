@@ -181,10 +181,10 @@ func TestGraphRouteGuard(t *testing.T) {
 		{"no origin", "POST", "/api/v1/graphs", "", csrf, 403},
 		{"foreign origin", "POST", "/api/v1/graphs", "http://evil.example", csrf, 403},
 		{"no csrf", "POST", "/api/v1/graphs", "http://" + host, "", 403},
-		{"no post on a graph", "POST", "/api/v1/graphs/" + zero, "http://" + host, csrf, 405},
-		{"no apply from a graph", "POST", "/api/v1/graphs/" + zero + "/apply", "http://" + host, csrf, 405},
-		{"no post on a node", "POST", "/api/v1/graphs/" + zero + "/nodes/n0", "http://" + host, csrf, 405},
-		{"no delete", "DELETE", "/api/v1/graphs/" + zero, "http://" + host, csrf, 405},
+		{"no post on a graph", "POST", "/api/v1/graphs/" + zero, "http://" + host, csrf, 404},
+		{"no apply from a graph", "POST", "/api/v1/graphs/" + zero + "/apply", "http://" + host, csrf, 404},
+		{"no post on a node", "POST", "/api/v1/graphs/" + zero + "/nodes/n0", "http://" + host, csrf, 404},
+		{"no delete", "DELETE", "/api/v1/graphs/" + zero, "http://" + host, csrf, 404},
 	} {
 		r := httptest.NewRequest(tc.method, "http://"+host+tc.path, strings.NewReader(`{"acknowledgeEngineRun":true}`))
 		r.Header.Set("Authorization", "Bearer "+session)

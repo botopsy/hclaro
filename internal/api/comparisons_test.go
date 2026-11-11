@@ -285,7 +285,7 @@ func TestComparisonRequestValidation(t *testing.T) {
 			t.Fatalf("%s: %d", path, w.Code)
 		}
 	}
-	if w := s.do("DELETE", "/api/v1/comparisons/"+strings.Repeat("0", 32), "{}"); w.Code != 405 {
+	if w := s.do("DELETE", "/api/v1/comparisons/"+strings.Repeat("0", 32), "{}"); w.Code != 404 {
 		t.Fatalf("delete: %d", w.Code)
 	}
 	if w := s.do("GET", "/compare", ""); w.Code != 200 || w.Body.String() != "app" {

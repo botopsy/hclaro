@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"mime"
 	"net/http"
-	"regexp"
 	"strings"
 )
 
@@ -21,40 +20,15 @@ func Token() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// mutating lists the only routes that accept a body, per method. POST: start a plan,
-// start a drift scan (a refresh-only plan whose file is never kept), generate a dependency
-// graph (`graph` only), run the server-side preflight of a reviewed plan (it reads Git status and, only when asked, the AWS caller identity), approve it, apply it with that one-time approval, cancel a running
-// operation, preview an import and start one; register, order, inspect and browse Hub
-// projects; open a read context; start a standard init of a Hub project; review and start a
-// reviewed workspace command; create, clone or choose the default execution profile of a
-// project; start a workspace comparison (opens two read contexts); read the Git status or
-// the redacted diff of one changed configuration file of the launch or a Hub project (they
-// run read-only `git` commands, which GET routes never do); open an approved file in VS
-// Code or Cursor; verify the AWS caller identity, start or cancel an AWS discovery scan and
-// prepare an import from one discovered object (they run allowlisted read-only AWS CLI calls);
-// turn cost estimation on or off, start or cancel a cost estimate of a reviewed plan and
-// clear the saved estimate aggregates (the estimate runs the allowlisted Infracost CLI).
-// Scoped Hub execution (M24.05–M24.09) adds starting a plan, an import, a drift scan or a
-// graph in, previewing an import in, preflighting, approving and applying a plan of,
-// cancelling an operation of, and the AWS discovery requests above in, one open workspace
-// context.
-// PATCH and DELETE edit or unregister one Hub project or one execution profile.
-// The import preview and folder browse have no side effects; they are POSTs so the import
-// ID or a local path never appears in a URL. Project inspection, workspace review and
-// opening a context run read-only engine commands, which GET routes never do.
-var mutating = map[string]*regexp.Regexp{
-	http.MethodPost:   regexp.MustCompile(`^/api/v1/(workspace/reload|plans|drift-scans|graphs|plans/[0-9a-f]{32}/(preflight|approval|apply|cost-estimates)|cost/(opt-in|opt-out|history/clear)|cost-estimates/[0-9a-f]{32}/cancel|operations/[0-9a-f]{32}/cancel|imports|imports/preview|projects|projects/(order|browse)|projects/[0-9a-f]{32}/(inspect|operations/(init|workspace|validate|fmt-check|providers|outputs-metadata)|workspaces/review|execution-profiles|execution-profiles/default|execution-profiles/[0-9a-f]{32}/clone|git/(status|diff)|editor/open)|git/(status|diff)|editor/open|contexts|contexts/[0-9a-f]{32}/(plans|imports|imports/preview|drift-scans|graphs|discovery/(identity|scans|scans/[0-9a-f]{32}/(cancel|candidates/[0-9a-f]{32}/prepare))|plans/[0-9a-f]{32}/(preflight|approval|apply)|operations/[0-9a-f]{32}/cancel)|comparisons|discovery/(identity|scans|scans/[0-9a-f]{32}/(cancel|candidates/[0-9a-f]{32}/prepare)))$`),
-	http.MethodPatch:  regexp.MustCompile(`^/api/v1/(projects/[0-9a-f]{32}(/execution-profiles/[0-9a-f]{32})?|history/retention)$`),
-	http.MethodDelete: regexp.MustCompile(`^/api/v1/(projects/[0-9a-f]{32}(/execution-profiles/[0-9a-f]{32})?|history(/[0-9a-f]{32})?)$`),
-}
-
 func equal(got, want string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
 // Guard uses an exact socket authority, not a suffix or a client-supplied forwarded host.
 // Every API request needs the session bearer token; mutating requests additionally need an
-// exact same-origin Origin header, a JSON body and the per-launch CSRF token header.
+// exact same-origin Origin header, a JSON body and the per-launch CSRF token header. Which
+// routes exist is the router's decision: the guard only classifies by method (POST, PATCH
+// and DELETE under /api/ mutate; GET and HEAD read; everything else is refused).
 func Guard(host, token, csrf string, next http.Handler) http.Handler {
 	origin := "http://" + host
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +52,7 @@ func Guard(host, token, csrf string, next http.Handler) http.Handler {
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
-		case mutating[r.Method] != nil && mutating[r.Method].MatchString(r.URL.Path):
+		case strings.HasPrefix(r.URL.Path, "/api/") && (r.Method == http.MethodPost || r.Method == http.MethodPatch || r.Method == http.MethodDelete):
 			fetchSite := r.Header.Get("Sec-Fetch-Site")
 			if r.Header.Get("Origin") != origin || fetchSite != "" && fetchSite != "same-origin" {
 				http.Error(w, "forbidden local origin", http.StatusForbidden)

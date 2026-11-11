@@ -58,126 +58,62 @@ func TestTokensAndRequestBounds(t *testing.T) {
 func TestMutatingRequests(t *testing.T) {
 	token, csrf := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	handler := Guard("127.0.0.1:9273", token, csrf, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(202) }))
-	origin, op := "http://127.0.0.1:9273", "/api/v1/operations/"+strings.Repeat("0", 32)+"/cancel"
-	for _, tc := range []struct {
-		name, method, path, origin, site, csrf, contentType, body, auth string
-		code                                                            int
-	}{
-		{"start plan", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"cancel", "POST", op, origin, "", csrf, "application/json; charset=utf-8", "{}", token, 202},
-		{"origin required", "POST", "/api/v1/plans", "", "same-origin", csrf, "application/json", "{}", token, 403},
-		{"foreign origin", "POST", "/api/v1/plans", "http://evil.example", "same-origin", csrf, "application/json", "{}", token, 403},
-		{"localhost origin", "POST", "/api/v1/plans", "http://localhost:9273", "", csrf, "application/json", "{}", token, 403},
-		{"same-site is not same-origin", "POST", "/api/v1/plans", origin, "same-site", csrf, "application/json", "{}", token, 403},
-		{"csrf token required", "POST", "/api/v1/plans", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"csrf token must match", "POST", "/api/v1/plans", origin, "same-origin", token, "application/json", "{}", token, 403},
-		{"form posts rejected", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/x-www-form-urlencoded", "a=1", token, 415},
-		{"text posts rejected", "POST", "/api/v1/plans", origin, "same-origin", csrf, "text/plain", "{}", token, 415},
-		{"empty body", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "", token, 413},
-		{"large body", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/json", strings.Repeat(" ", MaxBody+1), token, 413},
-		{"session required", "POST", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		{"apply route", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/apply", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"approval route", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/approval", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"preflight route", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/preflight", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"preflight needs csrf", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/preflight", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"preflight cross-site", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/preflight", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"apply needs csrf", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/apply", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"apply needs origin", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/apply", "", "", csrf, "application/json", "{}", token, 403},
-		{"apply cross-site", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/apply", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"bad plan id apply", "POST", "/api/v1/plans/../apply", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"no other plan post", "POST", "/api/v1/plans/" + strings.Repeat("0", 32) + "/destroy", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"import preview", "POST", "/api/v1/imports/preview", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"start import", "POST", "/api/v1/imports", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"import needs csrf", "POST", "/api/v1/imports", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"import needs origin", "POST", "/api/v1/imports", "", "", csrf, "application/json", "{}", token, 403},
-		{"import preview needs csrf", "POST", "/api/v1/imports/preview", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"no other import post", "POST", "/api/v1/imports/write", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"no arbitrary post", "POST", "/api/v1/workspace", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"bad operation id", "POST", "/api/v1/operations/../../cancel", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"git status", "POST", "/api/v1/git/status", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"git diff", "POST", "/api/v1/git/diff", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"editor open", "POST", "/api/v1/editor/open", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"hub git status", "POST", "/api/v1/projects/" + strings.Repeat("0", 32) + "/git/status", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"hub editor open", "POST", "/api/v1/projects/" + strings.Repeat("0", 32) + "/editor/open", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"git needs csrf", "POST", "/api/v1/git/diff", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"editor needs origin", "POST", "/api/v1/editor/open", "", "", csrf, "application/json", "{}", token, 403},
-		{"editor cross-site", "POST", "/api/v1/editor/open", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"no git write route", "POST", "/api/v1/git/checkout", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"no git commit route", "POST", "/api/v1/projects/" + strings.Repeat("0", 32) + "/git/commit", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"no generic run route", "POST", "/api/v1/editor/run", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		// Scoped Hub plans (M24.05): only starting a plan and cancelling an operation of one
-		// context; no scoped apply, approval, preflight or generic route yet.
-		{"scoped plan", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped cancel", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/operations/" + strings.Repeat("1", 32) + "/cancel", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped plan needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped plan needs origin", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", "", "", csrf, "application/json", "{}", token, 403},
-		{"scoped plan cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"scoped plan needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		{"scoped preflight", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/preflight", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped preflight needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/preflight", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped preflight cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/preflight", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"scoped preflight needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/preflight", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		{"scoped approval", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/approval", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped approval needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/approval", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped approval cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/approval", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"scoped approval needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/approval", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		// Scoped Hub import (M24.08): preview and start only, behind the same guards.
-		{"scoped import preview", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/imports/preview", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped import", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/imports", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped import needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/imports", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped import needs origin", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/imports", "", "", csrf, "application/json", "{}", token, 403},
-		{"scoped import cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/imports", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"scoped import needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/imports", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		{"scoped drift scan", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/drift-scans", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped drift scan needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/drift-scans", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped drift scan needs origin", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/drift-scans", "", "", csrf, "application/json", "{}", token, 403},
-		{"scoped drift scan cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/drift-scans", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"scoped drift scan needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/drift-scans", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		{"scoped graph", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/graphs", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped graph needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/graphs", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped graph needs origin", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/graphs", "", "", csrf, "application/json", "{}", token, 403},
-		{"scoped graph cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/graphs", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"scoped graph needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/graphs", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		{"scoped preview needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/imports/preview", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped discovery identity", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/identity", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped discovery scan", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/scans", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped discovery cancel", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/scans/" + strings.Repeat("0", 32) + "/cancel", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped discovery prepare", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/scans/" + strings.Repeat("0", 32) + "/candidates/" + strings.Repeat("0", 32) + "/prepare", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped discovery scan needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/scans", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped discovery identity needs origin", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/identity", "", "", csrf, "application/json", "{}", token, 403},
-		{"scoped discovery prepare cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/scans/" + strings.Repeat("0", 32) + "/candidates/" + strings.Repeat("0", 32) + "/prepare", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"scoped discovery needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/scans", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		{"no other scoped discovery post", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/discovery/run", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"no scoped raw import route", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/imports/run", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"scoped apply", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply", origin, "same-origin", csrf, "application/json", "{}", token, 202},
-		{"scoped apply needs csrf", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply", origin, "same-origin", "", "application/json", "{}", token, 403},
-		{"scoped apply cross-site", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply", origin, "cross-site", csrf, "application/json", "{}", token, 403},
-		{"scoped apply needs session", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply", origin, "same-origin", csrf, "application/json", "{}", "", 401},
-		{"scoped apply without origin", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply", "", "", csrf, "application/json", "{}", token, 403},
-		{"scoped apply as form", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply", origin, "same-origin", csrf, "text/plain", "{}", token, 415},
-		{"scoped destroy is not a route", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/destroy", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"bad scoped plan id", "POST", "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/../apply", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"bad scoped context id", "POST", "/api/v1/contexts/../plans", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"long scoped context id", "POST", "/api/v1/contexts/" + strings.Repeat("0", 64) + "/plans", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"put rejected", "PUT", "/api/v1/plans", origin, "same-origin", csrf, "application/json", "{}", token, 405},
-		{"delete rejected", "DELETE", op, origin, "same-origin", csrf, "application/json", "{}", token, 405},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest(tc.method, "http://127.0.0.1:9273"+tc.path, strings.NewReader(tc.body))
-			for k, v := range map[string]string{"Origin": tc.origin, "Sec-Fetch-Site": tc.site, "X-Hclaro-CSRF": tc.csrf, "Content-Type": tc.contentType} {
-				if v != "" {
-					r.Header.Set(k, v)
-				}
+	origin, id := "http://127.0.0.1:9273", strings.Repeat("0", 32)
+	// Every shape the router may serve is guarded the same way, so the checks are exercised on
+	// one path per method and the path list only proves the guard does not depend on it.
+	paths := []string{"/api/v1/plans", "/api/v1/plans/" + id + "/apply", "/api/v1/contexts/" + id + "/plans/" + id + "/apply", "/api/v1/not-a-route"}
+	for _, method := range []string{"POST", "PATCH", "DELETE"} {
+		for _, path := range paths {
+			for _, tc := range []struct {
+				name, origin, site, csrf, contentType, body, auth string
+				code                                              int
+			}{
+				{"accepted", origin, "same-origin", csrf, "application/json", "{}", token, 202},
+				{"json charset", origin, "", csrf, "application/json; charset=utf-8", "{}", token, 202},
+				{"origin required", "", "same-origin", csrf, "application/json", "{}", token, 403},
+				{"foreign origin", "http://evil.example", "same-origin", csrf, "application/json", "{}", token, 403},
+				{"localhost origin", "http://localhost:9273", "", csrf, "application/json", "{}", token, 403},
+				{"same-site is not same-origin", origin, "same-site", csrf, "application/json", "{}", token, 403},
+				{"cross-site", origin, "cross-site", csrf, "application/json", "{}", token, 403},
+				{"csrf required", origin, "same-origin", "", "application/json", "{}", token, 403},
+				{"csrf must match", origin, "same-origin", token, "application/json", "{}", token, 403},
+				{"form rejected", origin, "same-origin", csrf, "application/x-www-form-urlencoded", "a=1", token, 415},
+				{"text rejected", origin, "same-origin", csrf, "text/plain", "{}", token, 415},
+				{"empty body", origin, "same-origin", csrf, "application/json", "", token, 413},
+				{"large body", origin, "same-origin", csrf, "application/json", strings.Repeat(" ", MaxBody+1), token, 413},
+				{"session required", origin, "same-origin", csrf, "application/json", "{}", "", 401},
+			} {
+				t.Run(method+" "+tc.name+" "+path, func(t *testing.T) {
+					r := httptest.NewRequest(method, "http://127.0.0.1:9273"+path, strings.NewReader(tc.body))
+					for k, v := range map[string]string{"Origin": tc.origin, "Sec-Fetch-Site": tc.site, "X-Hclaro-CSRF": tc.csrf, "Content-Type": tc.contentType} {
+						if v != "" {
+							r.Header.Set(k, v)
+						}
+					}
+					if tc.auth != "" {
+						r.Header.Set("Authorization", "Bearer "+tc.auth)
+					}
+					w := httptest.NewRecorder()
+					handler.ServeHTTP(w, r)
+					if w.Code != tc.code {
+						t.Fatalf("status %d, want %d", w.Code, tc.code)
+					}
+				})
 			}
-			if tc.auth != "" {
-				r.Header.Set("Authorization", "Bearer "+tc.auth)
-			}
-			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, r)
-			if w.Code != tc.code {
-				t.Fatalf("status %d, want %d", w.Code, tc.code)
-			}
-		})
+		}
+	}
+	// Other methods, and mutating methods outside /api/, never reach the handler.
+	for _, tc := range []struct{ method, path string }{{"PUT", "/api/v1/plans"}, {"OPTIONS", "/api/v1/plans"}, {"POST", "/"}, {"DELETE", "/index.html"}} {
+		r := httptest.NewRequest(tc.method, "http://127.0.0.1:9273"+tc.path, strings.NewReader("{}"))
+		r.Header.Set("Origin", origin)
+		r.Header.Set("X-Hclaro-CSRF", csrf)
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != 405 {
+			t.Fatalf("%s %s: status %d, want 405", tc.method, tc.path, w.Code)
+		}
 	}
 }
 
