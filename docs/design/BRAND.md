@@ -14,7 +14,7 @@ the reference artboard rendered with the same font it differs in 0.47 % of pixel
 ## 1. Source palette (exact)
 
 These five values are copied literally from the reference. They exist once, as raw tokens at the
-top of `web/src/styles.css`, and are never edited or approximated; every other colour is derived and
+top of `web/src/styles/tokens.css`, and are never edited or approximated; every other colour is derived and
 listed separately in §2.
 
 | Raw token | Hex | Role |

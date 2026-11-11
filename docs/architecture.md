@@ -546,6 +546,8 @@ The Resources view adds a checkbox to managed rows only; the selection (kept acr
 
 The build is TypeScript + Vite + Tailwind, with React, TanStack Query, Lucide and a shadcn-style Button. Vite writes content-hashed files to `internal/ui/dist/assets/` plus `THIRD-PARTY-NOTICES.txt` for runtime dependencies; the Go binary embeds that directory.
 
+Styles are plain global CSS. `web/src/styles.css` is only the entry: it imports Tailwind and then the files in `web/src/styles/` in a fixed order (tokens, base, shell, shared views, then one file per feature area). That order is the cascade, so new feature files are appended; the split was checked to produce a byte-identical built stylesheet.
+
 ## Navigation (M21)
 
 `web/src/navigation/config.ts` declares every sidebar destination once: label, icon, group, scope (`project`, `launch`, `global`, `app`), target (a workbench view or a global route) and badge. `navState` derives availability and the active item from the parsed route and current view, never from URL substrings; the Import & discovery entry stays active for both of its child views. `Sidebar.tsx` renders the groups, the project switcher, the workspace control, compact mode and fixed-position tooltips (so the scrolling group list cannot clip them).

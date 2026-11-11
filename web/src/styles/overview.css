@@ -1,0 +1,342 @@
+.stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  display: grid;
+}
+
+.stat {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.stat > span {
+  color: var(--muted);
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  display: flex;
+}
+
+.stat > span > svg {
+  color: var(--subtle);
+}
+
+.stat > strong {
+  letter-spacing: -1.2px;
+  font-variant-numeric: tabular-nums;
+  margin: 19px 0 8px;
+  font-size: 32px;
+  font-weight: 500;
+  display: block;
+}
+
+.stat > small {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.overview-columns {
+  grid-template-columns: 1.3fr 1fr;
+  gap: 18px;
+  margin-top: 20px;
+  display: grid;
+}
+
+.surface {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 23px;
+}
+
+.surface-heading {
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 22px;
+  display: flex;
+}
+
+.surface-heading h2 {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.surface-heading p {
+  color: var(--muted);
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.surface-heading > svg {
+  color: var(--subtle);
+}
+
+.distribution-row {
+  text-align: left;
+  border-radius: 3px;
+  width: 100%;
+  padding: 9px 0 12px;
+  display: block;
+}
+
+.distribution-row:hover {
+  background: var(--surface-hover);
+}
+
+.distribution-row > span {
+  color: var(--muted);
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  display: flex;
+}
+
+.distribution-row strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.distribution-row progress {
+  appearance: none;
+  background: var(--inset);
+  border: 0;
+  border-radius: 3px;
+  width: 100%;
+  height: 5px;
+  margin-top: 9px;
+  display: block;
+  overflow: hidden;
+}
+
+.distribution-row progress::-webkit-progress-bar {
+  background: var(--inset);
+}
+
+.distribution-row progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.distribution-row progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.workspace-info .metadata > div {
+  border-bottom: 1px solid var(--border-soft);
+  padding: 11px 0;
+}
+
+.workspace-info > .button {
+  width: 100%;
+  margin-top: 23px;
+}
+
+.workspace-warnings {
+  margin-top: 20px;
+}
+
+.info-note {
+  color: var(--muted);
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px 0;
+  font-size: 13px;
+  line-height: 1.8;
+  display: flex;
+}
+
+.info-note > svg {
+  color: var(--subtle);
+  margin-top: 2px;
+}
+
+.directory-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  display: grid;
+}
+
+.directory-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  border-radius: 8px;
+  min-width: 0;
+  padding: 21px;
+}
+
+.directory-card:hover, .provider-card:hover {
+  border-color: var(--subtle);
+  background: var(--surface-hover);
+}
+
+.directory-icon {
+  width: 38px;
+  height: 38px;
+  color: var(--accent-text);
+  background: var(--accent-dim);
+  border-radius: 8px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+  display: flex;
+}
+
+.directory-card h2 {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.directory-card p {
+  color: var(--subtle);
+  overflow-wrap: anywhere;
+  margin-top: 9px;
+  font-size: 12px;
+}
+
+.directory-card > div {
+  color: var(--muted);
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 26px;
+  font-size: 13px;
+  display: flex;
+}
+
+.provider-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  text-align: left;
+  border-radius: 8px;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 24px;
+  display: flex;
+}
+
+.provider-card h2 {
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.provider-card p {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  margin-top: 7px;
+  font-size: 13px;
+}
+
+.provider-card > span:nth-last-child(2) {
+  color: var(--muted);
+  white-space: nowrap;
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.provider-card > svg {
+  color: var(--subtle);
+}
+
+.provider-icon {
+  color: var(--purple);
+  background: var(--inset);
+  border-radius: 9px;
+  padding: 16px;
+  display: flex;
+}
+
+.settings-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  max-width: 850px;
+}
+
+.setting-row {
+  border-bottom: 1px solid var(--border-soft);
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 28px;
+  display: flex;
+}
+
+.setting-row h2, .settings-security h2 {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.setting-row p {
+  color: var(--muted);
+  margin-top: 7px;
+  font-size: 14px;
+}
+
+.segmented {
+  border: 1px solid var(--border);
+  background: var(--inset);
+  border-radius: 7px;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  display: flex;
+}
+
+.segmented > button {
+  color: var(--muted);
+  text-transform: capitalize;
+  border-radius: 4px;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 11px;
+  font-size: 13px;
+  display: flex;
+}
+
+.segmented > button[aria-pressed="true"] {
+  background: var(--surface-hover);
+  color: var(--text);
+  box-shadow: 0 1px 4px #0001;
+}
+
+.settings-security {
+  background: var(--inset);
+  border-radius: 0 0 9px 9px;
+  gap: 15px;
+  padding: 28px;
+  display: flex;
+}
+
+.settings-security > svg {
+  color: var(--accent-text);
+}
+
+.settings-security p {
+  color: var(--muted);
+  margin-top: 9px;
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.settings-security code {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.empty-description {
+  color: var(--muted);
+  padding: 25px 0;
+  font-size: 14px;
+}
+
+.spin {
+  animation: 1.2s linear infinite spin;
+}

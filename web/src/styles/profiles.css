@@ -1,0 +1,236 @@
+/* M09 execution profiles */
+.identity-badge {
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn), transparent 60%);
+  border-radius: 999px;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.context-selector .workspace-switch {
+  max-width: 220px;
+}
+
+.context-selector .issue-text {
+  font-size: 12px;
+}
+
+.issue-text {
+  color: var(--warn);
+}
+
+.project-profile {
+  border: 1px solid var(--border-soft);
+  background: var(--inset);
+  border-radius: 8px;
+  margin: 4px 0 12px;
+  padding: 8px 10px;
+  display: flex;
+}
+
+.context-line {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.context-summary {
+  border: 1px solid var(--border);
+  background: var(--inset);
+  border-radius: 8px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  display: flex;
+}
+
+.context-summary-heading {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+
+.context-summary-heading h3 {
+  margin: 0 auto 0 0;
+  font-size: 14px;
+}
+
+.compact-metadata {
+  font-size: 13px;
+}
+
+.plain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.context-issues, .context-notices {
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  list-style: none;
+  display: flex;
+}
+
+.context-issues li, .context-notices li {
+  align-items: flex-start;
+  gap: 6px;
+  display: flex;
+}
+
+.context-issues li {
+  color: var(--warn);
+}
+
+.context-notices li {
+  color: var(--muted);
+}
+
+.context-issues svg, .context-notices svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.context-explainer {
+  margin: 0;
+  font-size: 12px;
+}
+
+.dialog-wide {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.profile-list {
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+}
+
+.profile-list li {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  display: flex;
+}
+
+.profile-list li.chosen {
+  border-color: var(--accent);
+  background: var(--surface-selected);
+}
+
+.profile-text {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  display: flex;
+}
+
+.profile-text .muted {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+.profile-actions {
+  align-items: center;
+  gap: 2px;
+  display: flex;
+}
+
+.profile-editor {
+  flex-direction: column;
+  gap: 12px;
+  display: flex;
+}
+
+.profile-editor fieldset {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  display: flex;
+}
+
+.profile-editor legend {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field {
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  display: flex;
+}
+
+.field > span {
+  font-weight: 500;
+}
+
+.field input, .field select {
+  border: 1px solid var(--input);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.field small {
+  font-size: 12px;
+}
+
+.var-file-options {
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  display: flex;
+}
+
+.var-file-options label {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  display: flex;
+}
+
+/* Dialogs with an execution context summary can be taller than the viewport. */
+.dialog {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.profile-editor fieldset {
+  min-width: 0;
+}
+
+.field small, .context-summary dd {
+  overflow-wrap: anywhere;
+}
+
+.context-summary dd svg {
+  vertical-align: -1px;
+}

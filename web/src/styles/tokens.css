@@ -1,0 +1,60 @@
+:root {
+  /* Raw brand palette: the five literal colours of the M19 reference mockup
+     (recorded in docs/design/BRAND.md). Never approximate or edit these; derive instead.
+     docs/design/BRAND.md documents every token below and its measured contrast. */
+  --brand-navy: #0B1220;
+  --brand-ivory: #F4F4F0;
+  --brand-stone: #E8E8E1;
+  --brand-lime: #C6F432;
+  --brand-olive: #6A8F00;
+
+  /* Semantic tokens. Each is light-dark(<light theme>, <dark theme>) and follows color-scheme:
+     "light dark" follows the system before any script runs (no flash of the wrong palette);
+     the saved preference pins data-theme. Components use only these names, never raw hex. */
+  color-scheme: light dark;
+  --bg: light-dark(var(--brand-ivory), var(--brand-navy));
+  --sidebar: light-dark(var(--brand-stone), #0E1626);
+  --surface: light-dark(#FBFBF8, #131C2D);
+  --surface-hover: light-dark(#EDEDE6, #1A2437);
+  --surface-selected: light-dark(#E6EDCF, #1E2B25);
+  --inset: light-dark(#EFEFE9, #0D1524);
+  --border: light-dark(#D6D6CD, #253047);
+  --border-soft: light-dark(#E3E3DB, #1A2436);
+  /* Form-control boundaries: at least 3:1 against the surfaces they sit on. */
+  --input: light-dark(#7E837A, #66728A);
+  --text: light-dark(var(--brand-navy), var(--brand-ivory));
+  --muted: light-dark(#4B5363, #A4ACB9);
+  --subtle: light-dark(#5D6573, #8891A0);
+  /* Brand accent for marks, indicators and selected borders (graphics, 3:1). In light mode this is
+     the reference olive; it is never used for small text, which takes --accent-text instead. */
+  --accent: light-dark(var(--brand-olive), var(--brand-lime));
+  --accent-dim: light-dark(#DDE8B8, #2D3B23);
+  --accent-text: light-dark(#4A6600, var(--brand-lime));
+  --accent-foreground: var(--brand-navy);
+  /* Primary actions: navy on light surfaces, lime on dark ones. */
+  --primary: light-dark(var(--brand-navy), var(--brand-lime));
+  --primary-hover: light-dark(#1E2A3F, #D4F75E);
+  --primary-foreground: light-dark(var(--brand-ivory), var(--brand-navy));
+  --ring: light-dark(#4A6600, var(--brand-lime));
+  --purple: light-dark(#6650A8, #B3A5E5);
+  /* Logo colours for the theme-following ("auto") wordmark; see HclaroLogo. */
+  --logo-text: light-dark(var(--brand-navy), var(--brand-ivory));
+  --logo-chevron: light-dark(var(--brand-olive), var(--brand-lime));
+  --logo-cursor: light-dark(var(--brand-navy), var(--brand-lime));
+  --shadow: 0 8px 28px light-dark(color-mix(in srgb, var(--brand-navy) 7%, transparent), #0003);
+  background: var(--bg);
+  color: var(--text);
+  font-synthesis: none;
+  text-rendering: optimizelegibility;
+  -webkit-font-smoothing: antialiased;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
+  font-size: 15px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

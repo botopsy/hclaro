@@ -1,0 +1,259 @@
+/* Cost estimate (M17) */
+.cost-tab {
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  display: flex;
+}
+
+.cost-disclaimer, .cost-actions {
+  color: var(--muted);
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  display: flex;
+}
+
+.cost-actions {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.cost-gate, .cost-start, .cost-running {
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.cost-gate {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  display: flex;
+}
+
+.cost-gate h2 {
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  display: flex;
+}
+
+.cost-start, .cost-running {
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  display: flex;
+}
+
+.cost-running {
+  justify-content: flex-start;
+}
+
+.cost-result {
+  flex-direction: column;
+  gap: 14px;
+  display: flex;
+}
+
+.cost-result.stale .cost-headline, .cost-result.stale .cost-split {
+  opacity: .6;
+}
+
+.cost-headline {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  display: flex;
+}
+
+.cost-delta {
+  font-variant-numeric: tabular-nums;
+  font-size: 24px;
+}
+
+.cost-delta.up {
+  color: var(--warn);
+}
+
+.cost-delta.down {
+  color: var(--create);
+}
+
+.cost-delta abbr {
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.cost-split {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin: 0;
+  display: grid;
+}
+
+.cost-split > div {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.cost-split dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cost-split dd {
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.cost-caveats {
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  list-style: none;
+  display: flex;
+}
+
+.cost-caveats li {
+  color: var(--muted);
+  gap: 7px;
+  display: flex;
+}
+
+.cost-caveats svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.cost-types caption, .cost-items caption {
+  text-align: left;
+  color: var(--muted);
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The shared resources table is fixed-layout with three sized columns; cost tables size
+   their own columns so addresses keep the room they need. */
+.cost-items, .cost-types {
+  table-layout: auto;
+}
+
+.cost-items th, .cost-types th {
+  width: auto;
+}
+
+.cost-items td, .cost-types td {
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+
+.cost-items td:nth-child(n+4), .cost-types td {
+  white-space: nowrap;
+}
+
+.cost-items td:nth-child(2) {
+  overflow-wrap: anywhere;
+  width: 45%;
+  min-width: 240px;
+}
+
+.cost-items td:nth-child(3) {
+  min-width: 130px;
+}
+
+.cost-unpriced {
+  font-size: 12px;
+  display: block;
+}
+
+.cost-status {
+  white-space: nowrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  display: inline-flex;
+}
+
+.cost-status.cost-estimated {
+  color: var(--text);
+}
+
+.cost-status.cost-partial, .cost-status.cost-usage_unknown {
+  color: var(--warn);
+}
+
+.cost-status.cost-unsupported, .cost-status.cost-not_estimated, .cost-status.cost-free {
+  color: var(--muted);
+}
+
+.cost-note {
+  font-size: 12px;
+  display: block;
+}
+
+.cost-components summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.cost-components ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+.cost-provenance {
+  font-size: 12px;
+}
+
+.cost-disclosure {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  display: grid;
+}
+
+.cost-disclosure section {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.cost-disclosure h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.cost-disclosure ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.cost-saved summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+@media (width <= 720px) {
+  .cost-items, .cost-types {
+    display: block;
+    overflow-x: auto;
+  }
+}

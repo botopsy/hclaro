@@ -1,0 +1,585 @@
+.app {
+  --sidebar-width: 232px;
+  min-height: 100vh;
+  display: flex;
+}
+
+/* M21: the sidebar is a fixed column: brand and project context on top, groups scroll in
+   the middle, utilities and the local note stay at the bottom. */
+.sidebar {
+  border-right: 1px solid var(--border);
+  background: var(--sidebar);
+  z-index: 25;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--sidebar-width);
+  padding: 16px 12px 0;
+  display: flex;
+  position: fixed;
+  inset: 0 auto 0 0;
+}
+
+/* M19 brand: wordmark and compact mark. Values are the reference geometry in em units. */
+.hclaro-logo, .hclaro-mark-glyph {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  letter-spacing: -.04em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.hclaro-logo {
+  color: var(--logo-text);
+  --logo-chevron-color: var(--logo-chevron);
+  --logo-cursor-color: var(--logo-cursor);
+  display: inline-block;
+}
+
+/* Pinned variants use the literal reference colours whatever the active theme. */
+.hclaro-logo.hclaro-light {
+  color: var(--brand-navy);
+  --logo-chevron-color: var(--brand-olive);
+  --logo-cursor-color: var(--brand-navy);
+}
+
+.hclaro-logo.hclaro-dark {
+  color: var(--brand-ivory);
+  --logo-chevron-color: var(--brand-lime);
+  --logo-cursor-color: var(--brand-lime);
+}
+
+.hclaro-logo.hclaro-inverse {
+  color: var(--brand-navy);
+  --logo-chevron-color: var(--brand-navy);
+  --logo-cursor-color: var(--brand-navy);
+}
+
+.hclaro-chevron {
+  color: var(--logo-chevron-color);
+  vertical-align: baseline;
+  width: .5em;
+  height: .7em;
+  margin-right: .22em;
+  display: inline-block;
+}
+
+/* Hollow, static and unfilled: deliberately not a blinking input caret. */
+.hclaro-cursor {
+  border: .09em solid var(--logo-cursor-color);
+  border-radius: .06em;
+  width: .52em;
+  height: .73em;
+  margin-left: .1em;
+  display: inline-block;
+}
+
+.hclaro-mark {
+  background: var(--brand-navy);
+  color: var(--brand-ivory);
+  --logo-cursor-color: var(--brand-lime);
+  flex-shrink: 0;
+  justify-content: center;
+  align-items: center;
+  display: inline-flex;
+}
+
+/* On the navy sidebar of the dark theme the navy tile keeps a hairline edge. */
+.sidebar .hclaro-mark {
+  box-shadow: 0 0 0 1px light-dark(transparent, var(--border));
+}
+
+.sidebar-head {
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  display: flex;
+}
+
+.brand {
+  border-radius: 6px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 6px;
+  font-size: 22px;
+  display: flex;
+}
+
+.sidebar-toggle, .sidebar-close {
+  color: var(--muted);
+  border-radius: 6px;
+  flex-shrink: 0;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  display: grid;
+}
+
+.sidebar-toggle:hover, .sidebar-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.sidebar-close {
+  display: none;
+}
+
+.brand-compact {
+  display: none !important;
+}
+
+/* Static first paint inside #root until the bundle renders; no motion, so nothing to reduce. */
+.boot-splash {
+  background: var(--bg);
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  display: flex;
+}
+
+.boot-splash .hclaro-mark {
+  border-radius: 16px;
+  width: 64px;
+  height: 64px;
+  font-size: 40px;
+}
+
+.about-row .hclaro-logo {
+  font-size: 24px;
+}
+
+.empty-state > .hclaro-mark {
+  margin-bottom: 4px;
+}
+
+.release-badge {
+  letter-spacing: .9px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 4px;
+  font-size: 11px;
+}
+
+.project-switcher {
+  margin: 14px 0 0;
+  position: relative;
+}
+
+.project-tile {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--inset);
+  border-radius: 8px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 8px 8px 7px;
+  display: flex;
+}
+
+.project-tile:hover, .project-tile[aria-expanded="true"] {
+  border-color: var(--input);
+  background: var(--surface-hover);
+}
+
+.project-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-text > * {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  overflow: hidden;
+}
+
+.project-kicker {
+  letter-spacing: .9px;
+  text-transform: uppercase;
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.project-text strong {
+  margin-top: 1px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.project-text > span:last-child {
+  color: var(--muted);
+  margin-top: 1px;
+  font-size: 12px;
+}
+
+.project-chevron {
+  color: var(--subtle);
+}
+
+.project-icon {
+  width: 24px;
+  height: 28px;
+  color: var(--purple);
+  flex-shrink: 0;
+  place-items: center;
+  display: grid;
+}
+
+.status-missing .project-icon {
+  color: var(--update);
+}
+
+.switcher-popover {
+  z-index: 40;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  border-radius: 8px;
+  width: 260px;
+  max-height: min(70vh, 460px);
+  padding: 6px;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  overflow-y: auto;
+}
+
+.switcher-popover ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.switcher-label {
+  letter-spacing: .9px;
+  text-transform: uppercase;
+  color: var(--subtle);
+  padding: 8px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.switcher-option {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  text-align: left;
+  border-radius: 6px;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 8px;
+  display: flex;
+}
+
+.switcher-option > svg {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.switcher-option > span {
+  min-width: 0;
+}
+
+.switcher-option strong, .switcher-option span span {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  overflow: hidden;
+}
+
+.switcher-option strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.switcher-option span span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.switcher-option:hover {
+  background: var(--surface-hover);
+}
+
+.switcher-option[aria-current="page"] {
+  background: var(--surface-selected);
+}
+
+.switcher-popover > * + .switcher-all {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.switcher-workspace {
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 6px;
+  padding: 6px 4px 10px;
+}
+
+.sidebar-workspace {
+  margin: 6px 0 0;
+  padding: 0 2px 0 9px;
+}
+
+.workspace-control {
+  color: var(--muted);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  display: flex;
+}
+
+.workspace-control strong {
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+}
+
+.workspace-control .workspace-switch {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.sidebar-nav {
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+  display: flex;
+}
+
+/* Only the groups scroll, so the project context and utilities stay reachable. */
+.sidebar-scroll {
+  overscroll-behavior: contain;
+  flex: 1;
+  min-height: 0;
+  margin: 0 -12px;
+  padding: 2px 12px 8px;
+  overflow-y: auto;
+}
+
+.nav-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-group + .nav-group {
+  margin-top: 14px;
+}
+
+.nav-label {
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--subtle);
+  margin: 0 10px 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.nav-item {
+  width: 100%;
+  color: var(--muted);
+  text-align: left;
+  border-radius: 6px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1px;
+  padding: 7px 10px;
+  font-size: 14px;
+  display: flex;
+  position: relative;
+}
+
+.nav-text {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.nav-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* Active: tinted background, accent text, heavier weight and an edge marker, so the
+   state never depends on colour alone. */
+.nav-item.active {
+  background: var(--surface-selected);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.nav-item.active:before {
+  content: "";
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  width: 3px;
+  height: 18px;
+  position: absolute;
+  left: -12px;
+}
+
+.nav-count {
+  background: var(--accent-dim);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  border-radius: 4px;
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.soon {
+  letter-spacing: .6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-left: auto;
+  padding: 3px 5px;
+  font-size: 11px;
+}
+
+.nav-item.unavailable {
+  opacity: .55;
+}
+
+.sidebar-bottom {
+  border-top: 1px solid var(--border-soft);
+  padding: 8px 0 4px;
+}
+
+.sidebar-foot {
+  color: var(--subtle);
+  border-top: 1px solid var(--border);
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 12px;
+  font-size: 12px;
+  display: flex;
+}
+
+.sidebar-foot > svg {
+  color: var(--accent-text);
+}
+
+.foot-version {
+  white-space: nowrap;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  display: flex;
+}
+
+/* Compact-mode labels: fixed so the sidebar's scroll area cannot clip them. */
+.nav-tooltip {
+  z-index: 50;
+  pointer-events: none;
+  background: var(--text);
+  color: var(--bg);
+  white-space: nowrap;
+  border-radius: 5px;
+  max-width: 360px;
+  padding: 5px 8px;
+  font-size: 12px;
+  position: fixed;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateY(-50%);
+}
+
+.nav-toggle {
+  display: none !important;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Desktop icon-only mode. */
+.app.sidebar-compact {
+  --sidebar-width: 64px;
+}
+
+.sidebar-compact .sidebar {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.sidebar-compact .sidebar-head {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-compact .brand {
+  padding: 0;
+}
+
+.sidebar-compact .sidebar-toggle {
+  margin: 0;
+}
+
+.sidebar-compact .brand-wordmark, .sidebar-compact .brand .release-badge, .sidebar-compact .project-text, .sidebar-compact .project-chevron, .sidebar-compact .nav-label, .sidebar-compact .nav-text, .sidebar-compact .nav-count:not(.running-dot), .sidebar-compact .foot-version, .sidebar-compact .sidebar-foot .nav-text {
+  display: none;
+}
+
+.sidebar-compact .brand-compact {
+  display: inline-flex !important;
+}
+
+.sidebar-compact .project-tile {
+  justify-content: center;
+  padding: 6px 0;
+}
+
+.sidebar-compact .switcher-popover {
+  top: 0;
+  left: calc(100% + 12px);
+}
+
+.sidebar-compact .nav-item {
+  justify-content: center;
+  padding: 9px 0;
+}
+
+.sidebar-compact .nav-item.active:before {
+  left: -10px;
+}
+
+.sidebar-compact .running-dot {
+  padding: 0;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+
+.sidebar-compact .nav-group + .nav-group {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.sidebar-compact .sidebar-scroll {
+  margin: 0 -10px;
+  padding: 2px 10px 8px;
+}
+
+.sidebar-compact .sidebar-foot {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
