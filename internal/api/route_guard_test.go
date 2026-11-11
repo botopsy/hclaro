@@ -182,10 +182,12 @@ func TestUnroutedMutationsAreRefused(t *testing.T) {
 
 // Go unescapes path wildcards, so an encoded slash or dot segment arrives in PathValue. No
 // mutating route may succeed or fail internally with one. This sweep sends an empty body, so
-// it only proves the request is refused; TestMalformedIDsCannotMutateProjects proves which
-// layer refuses it when the body is valid.
+// it only proves the request is refused; TestMalformedIDsCannotMutateProjects and
+// TestScopedNearMissIDsReachNoPlan prove which layer refuses it when the body is valid.
+// History routes are not registered on this server; history_test.go covers their IDs.
 func TestMalformedIDsNeverSucceed(t *testing.T) {
 	s := newHubServer(t)
+	s.hub.ScopedExecution = true // otherwise every scoped route stops at the gate
 	s.add("network")
 	bad := []string{"%2e%2e", "%2F", "..%2Fx", strings.Repeat("A", 32), strings.Repeat("0", 31), strings.Repeat("0", 64), "%00", "x%20y", "%E2%82%AC"}
 	wildcard := regexp.MustCompile(`\{[a-z]+\}`)

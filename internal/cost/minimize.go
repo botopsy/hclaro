@@ -82,7 +82,7 @@ func clean(value, marker any, key string, depth int) (any, bool) {
 	case nil, bool, json.Number:
 		return v, true
 	case string:
-		if len(v) > maxValueString || state.LooksSecret(v) || state.EmbeddedSecret(v, key) || strings.ContainsAny(v, "\x00\r\n") {
+		if len(v) > maxValueString || state.LooksSecret(v) || state.EmbeddedSecret(v, key) || notOneDocument(v) || strings.ContainsAny(v, "\x00\r\n") {
 			return nil, false
 		}
 		return maskAccounts(v), true
@@ -113,6 +113,13 @@ func clean(value, marker any, key string, depth int) (any, bool) {
 		return out, true
 	}
 	return nil, false
+}
+
+// notOneDocument reports text that starts like JSON but is not exactly one JSON document
+// (unterminated, or with more after it). EmbeddedSecret cannot inspect it, so it is dropped.
+func notOneDocument(v string) bool {
+	t := strings.TrimSpace(v)
+	return t != "" && (t[0] == '{' || t[0] == '[') && !json.Valid([]byte(t))
 }
 
 // cleanValues filters a resource's attribute object with its sensitivity markers.

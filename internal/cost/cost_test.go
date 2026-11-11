@@ -145,6 +145,12 @@ func TestMinimizeNameValuePairs(t *testing.T) {
 			leak:    []string{"leak-f", "leak-g"},
 			keep:    []string{`"options":"[{\"name\":\"Region\",\"value\":\"eu-north-1\"}]"`},
 		},
+		// Text that only looks like JSON cannot be checked for embedded secrets, so it is dropped.
+		"JSON-looking strings that are not one document": {
+			setting: `"a": "{\"name\":\"DB_PASSWORD\",\"value\":\"leak-h\"", "b": "[{\"name\":\"DB_PASSWORD\",\"value\":\"leak-i\"}", "c": "{\"x\":1} {\"name\":\"DB_PASSWORD\",\"value\":\"leak-j\"}", "d": " {\"cpu\":256} "`,
+			leak:    []string{"leak-h", "leak-i", "leak-j"},
+			keep:    []string{`"d":" {\"cpu\":256} "`},
+		},
 		"harmless pricing pairs": {
 			setting: `"setting": [{"namespace": "aws:autoscaling:launchconfiguration", "name": "InstanceType", "value": "c5.xlarge"}, {"key": "MinSize", "value": "2"}, {"name": "Region", "value": "eu-west-1"}]`,
 			keep:    []string{`"value":"c5.xlarge"`, `"value":"2"`, `"name":"Region","value":"eu-west-1"`},
