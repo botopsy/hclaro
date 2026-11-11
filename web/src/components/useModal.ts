@@ -1,5 +1,7 @@
 import { useEffect, type RefObject } from 'react';
 
+const focusable = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])';
+
 // Shared modal behavior: focus the initial control, close on Escape, keep Tab inside the
 // dialog and restore focus when it closes.
 export function useModal(dialog: RefObject<HTMLElement | null>, initial: RefObject<HTMLElement | null>, onClose: () => void) {
@@ -12,9 +14,13 @@ export function useModal(dialog: RefObject<HTMLElement | null>, initial: RefObje
         onClose();
       }
       if (event.key !== 'Tab' || !dialog.current) return;
-      const items = Array.from(dialog.current.querySelectorAll<HTMLElement>('button:not(:disabled), input'));
+      // Filter '*' rather than querySelectorAll(focusable): some DOMs return selector-list matches out of document order.
+      const items = Array.from(dialog.current.querySelectorAll<HTMLElement>('*')).filter(e => e.matches(focusable) && !e.closest('[inert], details:not([open]) > :not(summary)'));
       const first = items[0], last = items.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
+      if (!dialog.current.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first)?.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last?.focus();
       } else if (!event.shiftKey && document.activeElement === last) {

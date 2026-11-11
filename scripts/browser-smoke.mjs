@@ -137,6 +137,54 @@ try{
  await page.getByText('Destroy the existing object, then create a replacement.').waitFor()
  assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in plan review')
  await page.screenshot({path:'docs/screenshots/plans-dark.png',fullPage:true})
+ // M24.17: keyboard-only review. Navigate, reach a change, open and close it, open and leave the
+ // apply dialog; focus is never lost and Tab never escapes the dialog.
+ const focused=()=>page.evaluate(()=>{const e=document.activeElement;return e&&e!==document.body?(e.getAttribute('data-change-id')||e.getAttribute('aria-label')||e.textContent.trim()):null})
+ await page.keyboard.press('Escape')
+ await page.getByLabel('Change details').waitFor({state:'detached'})
+ assert.match(await focused(),/./,'focus lost after closing change details')
+ await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Overview',exact:true}).focus()
+ await page.keyboard.press('Enter')
+ await page.getByRole('heading',{name:'Workspace overview'}).waitFor()
+ await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Plans',exact:true}).focus()
+ await page.keyboard.press('Enter')
+ await page.getByText(/10 resource changes and 4 output changes/).waitFor()
+ let change=null
+ for(let i=0;i<80&&!change;i++){await page.keyboard.press('Tab');change=await page.evaluate(()=>document.activeElement?.getAttribute('data-change-id'))}
+ assert(change,'no plan change reachable with Tab')
+ await page.keyboard.press('ArrowDown')
+ change=await page.evaluate(()=>document.activeElement?.getAttribute('data-change-id'))
+ await page.keyboard.press('Enter')
+ await page.getByLabel('Change details').getByRole('button',{name:'Close change details'}).waitFor()
+ await page.keyboard.press('Escape')
+ await page.getByLabel('Change details').waitFor({state:'detached'})
+ assert.equal(await focused(),change,'focus not returned to the change row')
+ // Closing with the drawer's own button also hands focus back to the row.
+ await page.keyboard.press('Enter')
+ await page.getByLabel('Change details').getByRole('button',{name:'Close change details'}).press('Enter')
+ await page.getByLabel('Change details').waitFor({state:'detached'})
+ assert.equal(await focused(),change,'focus not returned after the close button')
+ // Typical laptop width: review and details fit without horizontal scrolling.
+ await page.setViewportSize({width:1280,height:800})
+ await page.keyboard.press('Enter')
+ await page.getByLabel('Change details').getByRole('button',{name:'Close change details'}).waitFor()
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'1280px plan review overflows')
+ await page.screenshot({path:'docs/screenshots/plans-1280-dark.png'})
+ await page.keyboard.press('Escape')
+ await page.setViewportSize({width:1512,height:1050})
+ const applyButton=page.getByRole('button',{name:'Review and apply…'})
+ await applyButton.focus()
+ await page.keyboard.press('Enter')
+ const keyboardApply=page.getByRole('dialog',{name:/^Apply to .+ \/ demo$/})
+ await keyboardApply.getByLabel('Confirmation phrase').waitFor()
+ for(let i=0;i<40;i++){
+  await page.keyboard.press(i%7===6?'Shift+Tab':'Tab')
+  assert(await keyboardApply.evaluate(d=>d.contains(document.activeElement)),'Tab left the apply dialog')
+ }
+ await page.keyboard.press('Escape')
+ await keyboardApply.waitFor({state:'detached'})
+ assert.equal(await applyButton.evaluate(e=>e===document.activeElement),true,'focus not returned to Review and apply')
+ await page.getByRole('button',{name:/module\.compute\.aws_instance\.main\[0\]/}).click()
  // M17: the Cost tab is off until the disclosure is accepted; a completed estimate shows
  // coverage and caveats, and unpriced resources carry labels, not amounts.
  await page.getByRole('tab',{name:'Cost estimate'}).click()

@@ -92,11 +92,11 @@ a {
   text-decoration: none;
 }
 
-button, input, select, summary {
+button, input, select, textarea, summary {
   outline: none;
 }
 
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, :where([tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
 }
@@ -341,7 +341,7 @@ code, .mono {
   letter-spacing: .9px;
   text-transform: uppercase;
   color: var(--subtle);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -589,7 +589,7 @@ code, .mono {
   border-radius: 4px;
   margin-left: auto;
   padding: 3px 5px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .nav-item.unavailable {
@@ -1227,7 +1227,7 @@ kbd {
   color: var(--subtle);
   letter-spacing: 1px;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .resources-table {
@@ -1543,7 +1543,7 @@ kbd {
   color: var(--subtle);
   justify-content: space-between;
   align-items: center;
-  font-size: 10px;
+  font-size: 11px;
   display: flex;
 }
 
@@ -2155,7 +2155,7 @@ kbd {
   }
 
   .release-badge {
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .stats-grid {
