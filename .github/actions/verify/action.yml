@@ -56,7 +56,9 @@ runs:
     - name: Build embedded host binary
       if: inputs.browser == 'true'
       shell: bash
-      run: CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o bin/hclaro ./cmd/hclaro
+      run: |
+        suffix=""; if [ "$RUNNER_OS" = Windows ]; then suffix=".exe"; fi
+        CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "bin/hclaro${suffix}" ./cmd/hclaro
     - name: Install test browser
       if: inputs.browser == 'true'
       shell: bash
