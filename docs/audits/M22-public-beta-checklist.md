@@ -1,6 +1,6 @@
 # M22 public beta checklist
 
-**Update (2026-11-09, M25): the repository is public.** `v0.1.0-beta.1` was built by CircleCI while the repository was private and turned back into a draft before the visibility change; the first public release is `v0.1.0-beta.2`, built by GitHub Actions (`docs/RELEASING.md`). Rulesets, secret scanning with push protection and private vulnerability reporting are on (rows 14, 15). The rows below record the state before that.
+**Update (2026-11-09, M25): the repository is public.** `v0.1.0-beta.1` was built by CircleCI while the repository was private and turned back into a draft before the visibility change; the first public release is `v0.1.0-beta.2`, built by GitHub Actions (`docs/RELEASING.md`). Rulesets, secret scanning with push protection and private vulnerability reporting are on (rows 14, 15). The rows below record the state before that. Current verified GitHub settings: [M24-github-settings-checklist.md](M24-github-settings-checklist.md) (2026-11-11).
 
 **M23 status (2026-11-09): PREPARED, NOT PUBLISHED.** Version bump and the GitHub settings that work on a private repository are done (rows 11–13, 17, 18). The repository stays private. Still open: CircleCI (row 16), going public and the settings that need a public repository (rows 14, 15, 23).
 

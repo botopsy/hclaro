@@ -26,7 +26,7 @@ hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub reposito
    ./dist/hclaro-$(go env GOOS)-$(go env GOARCH) --version
    ```
 
-4. Check the public-beta checklist (`docs/audits/M22-public-beta-checklist.md`) for open items.
+4. Re-run the GitHub settings checklist (`docs/audits/M24-github-settings-checklist.md`): no critical row may be FAIL or NOT_VERIFIED. Check the public-beta checklist (`docs/audits/M22-public-beta-checklist.md`) for open items.
 5. Check that the release notes claim no engine, backend, provider or platform beyond the PASS rows of [support-matrix.md](support-matrix.md). Green CI is the mocked tier only.
 
 ## Tag and publish
