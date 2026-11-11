@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
 )
 
@@ -30,6 +31,9 @@ import (
 // pattern expression as written in the source, with the mutating patterns each one expands
 // to. A new built pattern fails TestEveryRouteNamesItsMethod until it is added here, and
 // TestDynamicRoutesAreRouted fails when an expansion is no longer served.
+// shortcut: a new prefix in gitRoutes' `both` map or a new tool in the projectRoutes loop keeps
+// the expression text, so it is not detected and its routes miss the malformed-ID sweeps;
+// the method guard still protects them. Upgrade to a recorded registration if this grows.
 var dynamicRoutes = map[string][]string{
 	`"GET " + prefix + "/git/head"`:     nil,
 	`"POST " + prefix + "/git/status"`:  {"POST /api/v1/git/status", "POST /api/v1/projects/{id}/git/status"},
@@ -221,11 +225,24 @@ func layer(code int, body []byte) string {
 		return "router"
 	case "invalid_request":
 		return "decoder"
-	case "project_not_found", "profile_not_found":
+	case "project_not_found", "profile_not_found", "plan_not_found", "context_closed", "operation_not_found":
 		return "id"
 	default:
 		return fmt.Sprintf("%d %s", code, e)
 	}
+}
+
+// nearMisses are look-alikes of a real ID: other case, one character more, less or
+// different, encoded separators and dot segments, and an empty segment.
+func nearMisses(real string) []string {
+	// sibling has a valid format, so it passes any format check and tests the lookup itself.
+	last := "0"
+	if strings.HasSuffix(real, "0") {
+		last = "1"
+	}
+	sibling := real[:len(real)-1] + last
+	return []string{sibling, strings.ToUpper(real), real + "0", real[:len(real)-1], "x" + real[1:], real + "%2F", "%2F" + real,
+		real + "%00", real + "%20", "..%2F" + real, "%2e%2e", "", real + "/"}
 }
 
 // snapshot is everything a project or profile mutation can change: the registry and
@@ -265,10 +282,6 @@ func TestMalformedIDsCannotMutateProjects(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	profile := decode[profileView](t, w).ID
-	near := func(real string) []string {
-		return []string{strings.ToUpper(real), real + "0", real[:len(real)-1], "x" + real[1:], real + "%2F", "%2F" + real,
-			real + "%00", real + "%20", "..%2F" + real, "%2e%2e", "", real + "/"}
-	}
 	for _, step := range []struct {
 		method, path, body string
 		want               int
@@ -288,7 +301,7 @@ func TestMalformedIDsCannotMutateProjects(t *testing.T) {
 			if !strings.Contains(step.path, slot) {
 				continue
 			}
-			for _, variant := range near(value) {
+			for _, variant := range nearMisses(value) {
 				path := strings.ReplaceAll(step.path, slot, variant)
 				for other, v := range real {
 					path = strings.ReplaceAll(path, other, v)
@@ -309,5 +322,70 @@ func TestMalformedIDsCannotMutateProjects(t *testing.T) {
 		if after := snapshot(t, s, dirs...); maps.Equal(before, after) {
 			t.Fatalf("control %s %s changed nothing, so the snapshot cannot detect a mutation", step.method, path)
 		}
+	}
+}
+
+// The execution routes of a real scoped plan: preflight, approval, apply and cancel, each sent
+// with near misses of the plan, context and operation IDs and a body the route accepts. Every
+// one stops at the router or the ID lookup and nothing is approved or applied; the same step
+// with the real IDs then succeeds, so the body was valid.
+func TestScopedNearMissIDsReachNoPlan(t *testing.T) {
+	s := newScopedServer(t)
+	cid := s.openLoaded("network", "dev", "")
+	plan := s.plan(cid)
+	done := s.waitScoped(cid, plan.ID)
+	if done.Status != operations.Succeeded || done.PlanID == "" {
+		t.Fatalf("plan: %+v", done)
+	}
+	pid := done.PlanID
+	refused := func(method, template, body string, ids map[string]string) {
+		t.Helper()
+		for slot, value := range ids {
+			for _, variant := range nearMisses(value) {
+				path := strings.ReplaceAll(template, slot, variant)
+				for other, v := range ids {
+					path = strings.ReplaceAll(path, other, v)
+				}
+				w := s.do(method, path, body)
+				if l := layer(w.Code, w.Body.Bytes()); l != "router" && l != "id" {
+					t.Errorf("%s %s: refused by %s, want the router or the ID lookup: %s", method, path, l, w.Body)
+				}
+			}
+		}
+		if n := len(s.calls("apply")); n != 0 {
+			t.Fatalf("%s %s: a near-miss ID ran %d applies", method, template, n)
+		}
+	}
+	ids := map[string]string{"{cid}": cid, "{pid}": pid}
+	step := "/api/v1/contexts/{cid}/plans/{pid}/"
+	real := "/api/v1/contexts/" + cid + "/plans/" + pid + "/"
+
+	refused("POST", step+"preflight", `{}`, ids)
+	w := s.do("POST", real+"preflight", `{}`)
+	if w.Code != 200 {
+		t.Fatalf("preflight: %d %s", w.Code, w.Body)
+	}
+	report := decode[scopedPreflight](t, w)
+	ack, _ := jsonString(report.Acknowledge)
+	approval := fmt.Sprintf(`{"preflightBinding":%q,"acknowledged":%s}`, report.Binding, ack)
+
+	refused("POST", step+"approval", approval, ids)
+	w = s.do("POST", real+"approval", approval)
+	if w.Code != 200 {
+		t.Fatalf("approval: %d %s", w.Code, w.Body)
+	}
+	apply := applyBody(decode[scopedApproval](t, w))
+
+	refused("POST", step+"apply", apply, ids)
+	refused("POST", "/api/v1/contexts/{cid}/operations/{oid}/cancel", `{}`, map[string]string{"{cid}": cid, "{oid}": plan.ID})
+	if w := s.do("POST", "/api/v1/contexts/"+cid+"/operations/"+plan.ID+"/cancel", `{}`); w.Code != 409 || refusal(w.Body.Bytes()) != "operation_not_running" {
+		t.Fatalf("cancel of the finished plan: %d %s", w.Code, w.Body)
+	}
+	w = s.do("POST", real+"apply", apply)
+	if w.Code != 202 {
+		t.Fatalf("apply: %d %s", w.Code, w.Body)
+	}
+	if done := s.waitScoped(cid, decode[scopedOp](t, w).ID); done.Status != operations.Succeeded || len(s.calls("apply")) != 1 {
+		t.Fatalf("control apply: %+v, %d apply calls", done, len(s.calls("apply")))
 	}
 }
