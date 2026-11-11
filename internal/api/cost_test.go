@@ -282,7 +282,7 @@ func TestCostUnavailableStatesAndGuards(t *testing.T) {
 		{"no csrf cancel", "POST", "/api/v1/cost-estimates/" + id + "/cancel", "http://" + host, "", session, 403},
 		{"no csrf clear", "POST", "/api/v1/cost/history/clear", "http://" + host, "", session, 403},
 		{"no get opt-in", "GET", "/api/v1/cost/opt-in", "", "", session, 404},
-		{"no delete", "DELETE", "/api/v1/cost-estimates/" + id, "http://" + host, csrf, session, 405},
+		{"no delete", "DELETE", "/api/v1/cost-estimates/" + id, "http://" + host, csrf, session, 404},
 	} {
 		r := httptest.NewRequest(tc.method, "http://"+host+tc.path, strings.NewReader(`{"acknowledged":true,"disclosureVersion":"1"}`))
 		if tc.method == "GET" {

@@ -267,8 +267,8 @@ func TestDiscoveryUnavailableAndRouteGuard(t *testing.T) {
 		{"foreign origin", "POST", "/api/v1/discovery/scans", "http://evil.example", csrf, 403},
 		{"no csrf", "POST", "/api/v1/discovery/scans/" + id + "/candidates/" + id + "/prepare", "http://" + host, "", 403},
 		{"no csrf cancel", "POST", "/api/v1/discovery/scans/" + id + "/cancel", "http://" + host, "", 403},
-		{"no delete", "DELETE", "/api/v1/discovery/scans/" + id, "http://" + host, csrf, 405},
-		{"no arbitrary post", "POST", "/api/v1/discovery/run", "http://" + host, csrf, 405},
+		{"no delete", "DELETE", "/api/v1/discovery/scans/" + id, "http://" + host, csrf, 404},
+		{"no arbitrary post", "POST", "/api/v1/discovery/run", "http://" + host, csrf, 404},
 		{"no identity get", "GET", "/api/v1/discovery/identity", "", "", 404},
 	} {
 		r := httptest.NewRequest(tc.method, "http://"+host+tc.path, strings.NewReader(`{}`))

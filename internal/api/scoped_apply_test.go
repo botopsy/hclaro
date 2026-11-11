@@ -578,8 +578,8 @@ func TestScopedApplyRequestValidation(t *testing.T) {
 	}
 	wantError(t, s.do("POST", base+"preflight", `{"verifyIdentity":false,"profileId":"x"}`), 400, "invalid_request")
 	wantError(t, s.do("POST", base+"approval", `{"preflightBinding":"x","acknowledged":[],"all":true}`), 400, "invalid_request")
-	// A malformed plan ID is not a mutating route at all (security.Guard).
-	if w := s.do("POST", "/api/v1/contexts/"+cid+"/plans/not-an-id/apply", `{}`); w.Code != 405 {
+	// A malformed plan ID is no route (the catch-all answers 404).
+	if w := s.do("POST", "/api/v1/contexts/"+cid+"/plans/not-an-id/apply", `{}`); w.Code != 404 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	wantError(t, s.do("POST", "/api/v1/contexts/"+strings.Repeat("e", 32)+"/plans/"+pid+"/apply", `{}`), 404, "context_closed")

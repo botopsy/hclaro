@@ -154,7 +154,7 @@ func TestHistoryMutationsNeedSessionAndCSRF(t *testing.T) {
 		{"DELETE", "/api/v1/history/" + id, "{}", []opt{with("Origin", "https://evil.example")}, 403},
 		{"DELETE", "/api/v1/history", `{"confirm":true}`, []opt{without("X-Hclaro-CSRF")}, 403},
 		{"PATCH", "/api/v1/history/retention", `{"maxEntries":10,"maxAgeDays":1,"maxBytes":65536}`, []opt{without("X-Hclaro-CSRF")}, 403},
-		{"POST", "/api/v1/history/export", `{"format":"json","path":"/tmp/x.json"}`, nil, 405},
+		{"POST", "/api/v1/history/export", `{"format":"json","path":"/tmp/x.json"}`, nil, 404},
 		{"PUT", "/api/v1/history/" + id, `{}`, nil, 405},
 	} {
 		if w := s.do(tc.method, tc.path, tc.body, tc.opts...); w.Code != tc.code {

@@ -47,7 +47,7 @@ func TestLocalBoundary(t *testing.T) {
 		{"127.0.0.1:9273", "null", token, "GET", 403},
 		{"127.0.0.1:9273", "", "", "GET", 401},
 		{"127.0.0.1:9273", "", "wrong", "GET", 401},
-		{"127.0.0.1:9273", "", token, "POST", 405},
+		{"127.0.0.1:9273", "", token, "POST", 403},
 	} {
 		w := request(h, "/api/v1/workspace", tc.host, tc.origin, tc.token, tc.method)
 		if w.Code != tc.code {
