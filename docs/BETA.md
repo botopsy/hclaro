@@ -26,7 +26,7 @@ hclaro, published by [BotOpsy](https://github.com/botopsy), is in public beta. I
 | **Launch project only** (default) | Plans, applies, replace, imports, drift scans, graphs and AWS discovery run only for the project Hclaro was started in. Hub workspaces are read-only apart from a reviewed init, reviewed workspace commands and read-only project tools. |
 | **Experimental, off by default** | `--experimental-hub-execution` enables plans, applies, replace, imports, drift, graphs and AWS discovery in Hub workspaces (row HUB-01, not run with a real engine). |
 | **Disabled by design** | Plan, apply, import and workspace changes for remote/cloud execution backends (HCP Terraform, Terraform Enterprise, `remote`) and for unrecognized backends; `destroy`, `state rm/mv`, `force-unlock`, `refresh`/`apply -refresh-only` that writes state, and any automatic init, plan or apply. |
-| **Not planned for this beta** | Azure or Google Cloud discovery, other AWS resource types, package managers and installers, auto-update. |
+| **Not planned for this beta** | Azure or Google Cloud discovery, other AWS resource types, package managers other than the Homebrew tap, installers, auto-update. |
 
 The demo (`make demo`, `make demo-hub`) runs only a fake engine against synthetic fixtures. It shows how the UI behaves; it is not evidence that a real engine, backend or provider works.
 
@@ -48,9 +48,9 @@ Full details: [SECURITY.md](../SECURITY.md).
 - Views of the project opened from the terminal are not deep-linkable; Hub workspace views are.
 - Cloud discovery supports AWS only (AWS CLI v2) and five resource types: `aws_vpc`, `aws_subnet`, `aws_security_group`, `aws_s3_bucket`, `aws_db_instance`. A scan covers at most 6 regions, 1,000 objects per type and region and 5,000 objects in total; a scan that hits a limit is shown as incomplete. The account is shown only after an explicit AWS STS check, never inferred from a profile name; expired SSO sessions are reported as such. Other AWS types, Azure and Google Cloud are not planned for this beta.
 - Cost estimates are off by default and use the Infracost CLI v0.10, which sends price lookups (provider, region, resource type and pricing attributes such as instance type or size) to Infracost's external pricing API. Hclaro sends it a minimized plan without state, outputs, variables, secrets, tags or free text, with AWS account IDs in attribute values replaced by zeros (resource addresses are kept as they are), but cannot see what the CLI adds itself. `--strict-local` turns cost estimation off completely.
-- Binaries are not code-signed or notarized.
+- Binaries are not code-signed or notarized, so Gatekeeper and SmartScreen warn on first launch ([what to do](GETTING_STARTED.md#2-install)). Checksums show that a download is intact; build-provenance attestations tie it to hclaro's release workflow. Neither is a code signature.
 - A plan that contains an action combination Hclaro does not recognize can be reviewed but never applied from Hclaro; see [plan-actions.md](plan-actions.md).
-- Releases are distributed through [GitHub Releases](https://github.com/botopsy/hclaro/releases) only: no package managers, installers or auto-update, and Hclaro does not tell you when a new version exists. Upgrading is manual ([GETTING_STARTED.md](GETTING_STARTED.md#upgrade-go-back-and-back-up)); later channels and their conditions are in [RELEASING.md](RELEASING.md#distribution-roadmap).
+- Releases are distributed through [GitHub Releases](https://github.com/botopsy/hclaro/releases) and a source-build Homebrew tap (`brew install botopsy/tap/hclaro`): no other package managers, installers or auto-update, and Hclaro does not tell you when a new version exists. Upgrading is manual ([GETTING_STARTED.md](GETTING_STARTED.md#upgrade-go-back-and-back-up)); later channels and their conditions are in [RELEASING.md](RELEASING.md#distribution-roadmap).
 
 ## Giving feedback
 

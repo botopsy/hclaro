@@ -28,7 +28,7 @@ Hclaro never runs `init`, `plan`, `refresh` or `apply` on its own, never runs `d
    shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing
    ```
 
-   Binaries are not signed or notarized, so Gatekeeper and SmartScreen warn on first launch. Each release also has a CycloneDX SBOM and build-provenance attestations (`gh attestation verify <file> -R botopsy/hclaro`). Or build from source with Go 1.26+ and Make: `make binary` produces `bin/hclaro` without Node.
+   Binaries are not signed or notarized, so Gatekeeper and SmartScreen warn on first launch. Each release also has a CycloneDX SBOM and build-provenance attestations (`gh attestation verify <file> -R botopsy/hclaro`). On macOS with Homebrew (Linux untested), `brew install botopsy/tap/hclaro` builds it from the tagged source instead. Or build from source with Go 1.26+ and Make: `make binary` produces `bin/hclaro` without Node.
 
 2. **Try the synthetic demo** (from a source checkout; optional). It uses a fake engine and synthetic state: **no real Terraform, AWS, provider or backend is contacted.**
 

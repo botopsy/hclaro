@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+Distribution trust (M24.22):
+
+- Homebrew: `brew install botopsy/tap/hclaro` builds hclaro from the tagged source with Homebrew's Go. The formula lives in `packaging/homebrew/hclaro.rb` and the new public tap `botopsy/homebrew-tap` ([RELEASING.md](docs/RELEASING.md#homebrew-formula)).
+- Install docs explain what checksums and attestations do and do not prove, and how to allow one unsigned binary past Gatekeeper or SmartScreen without turning either off. RELEASING.md describes what future code signing and notarization would need; none is implemented.
+
 Secret handling (M24.12):
 
 - Fix: redaction missed secrets that a provider does not mark sensitive in common shapes: camelCase or dashed names (`privateKey`, `apiKey`, `x-api-key`), name/value environment pairs (`{"name": "DB_PASSWORD", "value": …}` in container and function definitions), JSON-encoded strings such as `container_definitions` (also escaped twice), and HTTP Basic credentials. These values are now hidden in state, plans, drift, comparisons, history and logs. Some ordinary values are now hidden too, for example an IAM policy whose condition key names a token or secret.
