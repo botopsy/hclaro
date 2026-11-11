@@ -140,6 +140,11 @@ func TestMinimizeNameValuePairs(t *testing.T) {
 			leak:    []string{"leak-d", "leak-e"},
 			keep:    []string{`"name":"client_secret"`, `"name":"license_key"`},
 		},
+		"pairs inside JSON-encoded strings": {
+			setting: `"container_definitions": "[{\"environment\":[{\"name\":\"DB_PASSWORD\",\"value\":\"leak-f\"}]}]", "task_spec": "{\"env\":[{\"Key\":\"ApiToken\",\"Value\":\"leak-g\"}]}", "options": "[{\"name\":\"Region\",\"value\":\"eu-north-1\"}]"`,
+			leak:    []string{"leak-f", "leak-g"},
+			keep:    []string{`"options":"[{\"name\":\"Region\",\"value\":\"eu-north-1\"}]"`},
+		},
 		"harmless pricing pairs": {
 			setting: `"setting": [{"namespace": "aws:autoscaling:launchconfiguration", "name": "InstanceType", "value": "c5.xlarge"}, {"key": "MinSize", "value": "2"}, {"name": "Region", "value": "eu-west-1"}]`,
 			keep:    []string{`"value":"c5.xlarge"`, `"value":"2"`, `"name":"Region","value":"eu-west-1"`},

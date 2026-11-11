@@ -347,6 +347,10 @@ func redact(value, marker any, key string, depth int) any {
 	return Redacted
 }
 
+// EmbeddedSecret reports a string holding a JSON document in which the redaction policy
+// would hide anything. key is the attribute name the string belongs to.
+func EmbeddedSecret(v, key string) bool { return embeddedSecret(v, key, 0) }
+
 // embeddedSecret reports a string holding a JSON document (a container definition, a policy,
 // a serialized environment) in which the redaction policy would hide anything. The whole
 // string is then hidden, since it is displayed as one value.

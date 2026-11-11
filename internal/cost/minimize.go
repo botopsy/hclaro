@@ -82,7 +82,7 @@ func clean(value, marker any, key string, depth int) (any, bool) {
 	case nil, bool, json.Number:
 		return v, true
 	case string:
-		if len(v) > maxValueString || state.LooksSecret(v) || strings.ContainsAny(v, "\x00\r\n") {
+		if len(v) > maxValueString || state.LooksSecret(v) || state.EmbeddedSecret(v, key) || strings.ContainsAny(v, "\x00\r\n") {
 			return nil, false
 		}
 		return maskAccounts(v), true
