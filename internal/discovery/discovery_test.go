@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -31,6 +32,8 @@ type fakeRunner struct {
 	// account is what STS reports.
 	account string
 }
+
+var randomHex = regexp.MustCompile(`"[0-9a-f]{16,}"`)
 
 func (f *fakeRunner) Run(ctx context.Context, environ []string, args []string) ([]byte, error) {
 	if !Allowed(args) {
@@ -412,7 +415,8 @@ func TestScanPaginationMatchingAndRedaction(t *testing.T) {
 	}
 	// Secrets in tags and responses never reach the view.
 	b, _ := json.Marshal(v)
-	out := string(b)
+	// Random hex IDs (scan, identity) can contain "5432" by chance; no leak needle is long hex.
+	out := randomHex.ReplaceAllString(string(b), `""`)
 	for _, leak := range []string{"DO_NOT_LEAK", "hunter2", "not-a-real-token", "IpPermissions", "0.0.0.0/0", "MasterUsername", "rds.amazonaws.com", "5432", "synthetic-owner", "‮", "AROASYNTHETIC"} {
 		if strings.Contains(out, leak) {
 			t.Errorf("view leaks %q", leak)
