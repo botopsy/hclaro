@@ -151,6 +151,11 @@ func TestMinimizeNameValuePairs(t *testing.T) {
 			leak:    []string{"leak-h", "leak-i", "leak-j"},
 			keep:    []string{`"d":" {\"cpu\":256} "`},
 		},
+		"JSON-looking strings nested in a valid document": {
+			setting: `"e": "{\"x\":\"{\\\"name\\\":\\\"DB_PASSWORD\\\",\\\"value\\\":\\\"leak-k\\\"\"}", "f": "{\"x\":\"[1,2]\"}"`,
+			leak:    []string{"leak-k"},
+			keep:    []string{`"f":"{\"x\":\"[1,2]\"}"`},
+		},
 		"harmless pricing pairs": {
 			setting: `"setting": [{"namespace": "aws:autoscaling:launchconfiguration", "name": "InstanceType", "value": "c5.xlarge"}, {"key": "MinSize", "value": "2"}, {"name": "Region", "value": "eu-west-1"}]`,
 			keep:    []string{`"value":"c5.xlarge"`, `"value":"2"`, `"name":"Region","value":"eu-west-1"`},

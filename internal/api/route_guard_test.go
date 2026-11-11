@@ -201,7 +201,8 @@ func TestMalformedIDsNeverSucceed(t *testing.T) {
 			if u, err := url.ParseRequestURI(p); err != nil || u.Path == "" {
 				continue
 			}
-			if w := s.do(method, p, "{}"); w.Code < 300 && w.Code >= 200 || w.Code >= 500 {
+			w := s.do(method, p, "{}")
+			if w.Code < 300 && w.Code >= 200 || w.Code >= 500 || refusal(w.Body.Bytes()) == "scoped_execution_disabled" {
 				t.Errorf("%s %s: %d %s", method, p, w.Code, w.Body)
 			}
 		}

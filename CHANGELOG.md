@@ -4,7 +4,7 @@
 
 Cost estimates:
 
-- Fix: the input sent to Infracost could contain secret values that a provider does not mark sensitive: the value of a name/value environment pair such as `{"name": "DB_PASSWORD", "value": …}`, and secrets inside JSON-encoded strings such as an ECS `container_definitions`. These values are now removed before Infracost runs, by the same rules that hide them in the UI. A string that starts like JSON but is not one complete JSON document is also left out of the cost input, since it cannot be checked.
+- Fix: the input sent to Infracost could contain secret values that a provider does not mark sensitive: the value of a name/value environment pair such as `{"name": "DB_PASSWORD", "value": …}`, and secrets inside JSON-encoded strings such as an ECS `container_definitions`. These values are now removed before Infracost runs, by the same rules that hide them in the UI. A string that starts like JSON but is not one complete JSON document, on its own or inside another JSON string, is also left out of the cost input, since it cannot be checked.
 - Fix: the Cost estimate tab of a plan in a Hub workspace requested the launch project's cost routes, which cannot know a Hub plan, and failed. It now says that cost estimates are available only for the project Hclaro was opened with from the terminal, and makes no cost requests.
 
 Local API boundary:
