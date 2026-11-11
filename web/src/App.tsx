@@ -1,16 +1,14 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Command, Copy, Database, ExternalLink, Folder, FolderTree, Layers3, LoaderCircle, LockKeyhole, Menu, Monitor, Moon, Network, Search, ShieldCheck, SlidersHorizontal, Sun, Terminal, X } from 'lucide-react';
-import { api, ApiError, openInNewTab, post } from './api';
-import type { ContextInfo, Module, Operation, ReplaceTarget, Resource, ResourcePage, Workspace } from './types';
+import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, Command, Database, ExternalLink, Folder, FolderTree, Layers3, LoaderCircle, LockKeyhole, Menu, Moon, Network, Search, ShieldCheck, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { ApiError, api, openInNewTab, post } from './api';
+import type { ReplaceTarget, Resource, ResourcePage } from './types';
 import { comparePath, historyPath, contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
-import { HubView, ProductionBadge, ProjectView, projectsQuery } from './hub/HubView';
+import { HubView, ProductionBadge, ProjectView } from './hub/HubView';
 import { Button } from './components/ui/button';
-import { Drawer } from './components/Drawer';
-import { JsonTree } from './components/JsonTree';
 import { PlansView } from './plans/PlansView';
 import { OperationsView } from './plans/OperationsView';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from './plans/routes';
+import { scopeKey, scopedPath } from './plans/routes';
 import { ImportView } from './imports/ImportView';
 import { DriftView } from './drift/DriftView';
 import { DiscoveryView } from './discovery/DiscoveryView';
@@ -20,56 +18,19 @@ import { HistoryView } from './history/HistoryView';
 import { ToolsView } from './hub/ToolsView';
 import { LaunchTools } from './hub/LaunchTools';
 import { ContextSelector } from './profiles/ContextSelector';
-import { useProfileSelection } from './profiles/selection';
-import { GitBadge, GitView, SourceLink, editorLabels, gitPrefix } from './git/GitView';
-import { HclaroLogo } from './brand/HclaroLogo';
+import { GitBadge, GitView, gitPrefix } from './git/GitView';
 import { viewTrail, type NavContext, type NavItem, type NavMode, type View } from './navigation/config';
 import { ImportDiscoveryTabs, Sidebar, type SidebarProject, type SwitchTarget, type SwitchTargets } from './navigation/Sidebar';
 import { ConfirmSwitch } from './navigation/ConfirmSwitch';
-import { applyTheme } from './brand/theme';
-import type { DiscoveryPrefill, EditorName } from './types';
-type Preferences = {
-  theme: 'system' | 'light' | 'dark';
-  density: 'comfortable' | 'compact';
-  grouping: 'module' | 'flat';
-  // The editor that "Open in editor" links use; only these names exist on the server.
-  editor: EditorName;
-  // Desktop sidebar: labelled (default) or icon-only. Narrow screens always use a drawer.
-  sidebar: 'expanded' | 'compact';
-};
-const defaults: Preferences = {
-  theme: 'system',
-  density: 'comfortable',
-  grouping: 'module',
-  editor: 'vscode',
-  sidebar: 'expanded'
-};
-function readPreferences(): Preferences {
-  try {
-    const saved = JSON.parse(localStorage.getItem('hclaro.preferences') || '{}');
-    return {
-      theme: ['system', 'light', 'dark'].includes(saved.theme) ? saved.theme : defaults.theme,
-      density: saved.density === 'compact' ? 'compact' : 'comfortable',
-      grouping: saved.grouping === 'flat' ? 'flat' : 'module',
-      editor: saved.editor === 'cursor' ? 'cursor' : 'vscode',
-      sidebar: saved.sidebar === 'compact' ? 'compact' : 'expanded'
-    };
-  } catch {
-    return defaults;
-  }
-}
-function providerName(name: string) {
-  return name.split('/').at(-1) || 'unknown';
-}
-function moduleName(name: string) {
-  return name ? name.replace(/^module\./, '') : 'Root module';
-}
-function timeLabel(time?: string) {
-  return time ? new Date(time).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
-  }) : '—';
-}
+import type { DiscoveryPrefill } from './types';
+import { useWorkbenchContext } from './workbench/useWorkbenchContext';
+import { useMedia, usePreferences } from './workbench/preferences';
+import { ErrorState } from './workbench/ErrorState';
+import { Inspector, ModuleTree, ResourceRow } from './workbench/Explorer';
+import { Overview } from './workbench/Overview';
+import { SettingsPanel } from './workbench/SettingsPanel';
+import { PageHeading } from './workbench/PageHeading';
+import { moduleName, providerName, timeLabel } from './workbench/format';
 // Each project workspace gets its own Workbench instance (keyed below), so filters,
 // selections and cached queries can never carry over from another context.
 export default function App() {
@@ -78,17 +39,6 @@ export default function App() {
 }
 // Below this width the sidebar is a dismissible drawer instead of a column.
 const narrowQuery = '(width <= 900px)';
-function useMedia(query: string) {
-  const [matches, setMatches] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia(query).matches);
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const media = window.matchMedia(query);
-    const update = () => setMatches(media.matches);
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, [query]);
-  return matches;
-}
 function Workbench({
   route
 }: {
@@ -118,7 +68,7 @@ function Workbench({
   const menuButton = useRef<HTMLButtonElement>(null);
   // A project or workspace switch waiting for confirmation (it would discard work in this tab).
   const [pendingSwitch, setPendingSwitch] = useState<string>();
-  const [preferences, setPreferences] = useState(readPreferences);
+  const { preferences, changePreference } = usePreferences();
   // Icon-only mode is a desktop preference; the narrow-screen drawer always shows labels.
   const compact = preferences.sidebar === 'compact' && !narrow;
   const [search, setSearch] = useState('');
@@ -147,40 +97,8 @@ function Workbench({
   const listRef = useRef<HTMLElement>(null);
   // A Hub workspace is opened explicitly (it runs CLI reads); "Read again" opens a fresh one.
   const [generation, setGeneration] = useState(0);
-  // The registry (no engine command) names the current project and the switcher's recent ones.
-  const projects = useQuery(projectsQuery);
-  const project = projects.data?.projects?.find(p => p.id === scoped?.projectId);
-  const launchProject = !scoped ? projects.data?.projects?.find(p => p.launch) : undefined;
-  // Execution profiles belong to registered projects. The choice is kept per browser tab.
-  const profileProject = scoped ? scoped.projectId : launchProject?.id;
-  const profile = useProfileSelection(profileProject);
-  const profileReady = !profileProject || profile.profiles.isFetched;
-  const opened = useQuery({
-    queryKey: ['context-open', scoped?.projectId, scoped?.workspace, profile.selected, generation],
-    queryFn: () => post<ContextInfo>('contexts', {
-      projectId: scoped!.projectId,
-      workspace: scoped!.workspace,
-      reload: generation > 0,
-      ...(profile.selected ? { profileId: profile.selected } : {})
-    }),
-    enabled: !!scoped && profileReady
-  });
-  // Launch routes keep their original paths; a Hub context reads only through its own ID.
-  const base = scoped ? opened.data ? `contexts/${opened.data.id}` : undefined : '';
-  const workspace = useQuery({
-    queryKey: ['workspace', base],
-    queryFn: () => api<Workspace>(base || 'workspace'),
-    enabled: base !== undefined,
-    refetchInterval: q => q.state.data?.status === 'loading' ? 700 : false
-  });
+  const { projects, project, launchProject, profileProject, profile, opened, readScope, workspace, session, hubExecution, planScope, operations } = useWorkbenchContext(route, generation);
   const w = workspace.data;
-  // Plans and applies in a Hub workspace exist only when the server enables them (M24.06);
-  // the UI never enables them on its own, and the server refuses them either way.
-  const session = useQuery({ queryKey: ['session'], queryFn: () => api<{ capabilities?: { scopedExecution?: boolean } }>('session'), staleTime: Infinity });
-  const hubExecution = !!session.data?.capabilities?.scopedExecution;
-  // Where this tab's plans and operations live: the launch project, or only this Hub
-  // workspace's own open context. There is no fallback between the two.
-  const planScope: PlanScope | undefined = scoped ? hubExecution && opened.data ? { kind: 'context', contextId: opened.data.id } : undefined : launchScope;
   const noLaunch = !scoped && w?.diagnostic?.code === 'no_launch_project';
   // Resource IDs are derived from addresses, so they also match the same address in another
   // context of this workspace (another profile): a replacement selection never outlives its context.
@@ -283,12 +201,6 @@ function Workbench({
       setRereading(false);
     }
   }
-  const operations = useQuery({
-    queryKey: ['operations', planScope ? scopeKey(planScope) : 'none'],
-    queryFn: () => api<{ operations: Operation[] }>(scopedPath(planScope!, 'operations')),
-    enabled: !!planScope,
-    refetchInterval: q => q.state.data?.operations?.some(o => o.status === 'running') ? 2000 : false
-  });
   const runningOperation = operations.data?.operations?.find(o => o.status === 'running');
   const ready = w?.status === 'ready' || w?.status === 'empty';
   const parameters = new URLSearchParams({
@@ -302,14 +214,14 @@ function Workbench({
   });
   if (module !== undefined) parameters.set('module', module);
   const resources = useQuery({
-    queryKey: ['resources', base, parameters.toString()],
-    queryFn: () => api<ResourcePage>(`${base ? `${base}/` : ''}resources?${parameters}`),
-    enabled: ready && base !== undefined
+    queryKey: ['resources', readScope ? scopeKey(readScope) : 'none', parameters.toString()],
+    queryFn: () => api<ResourcePage>(scopedPath(readScope!, `resources?${parameters}`)),
+    enabled: ready && !!readScope
   });
   const detail = useQuery({
-    queryKey: ['resource', base, selected],
-    queryFn: () => api<Resource>(`${base ? `${base}/` : ''}resources/${selected}`),
-    enabled: !!selected && base !== undefined
+    queryKey: ['resource', readScope ? scopeKey(readScope) : 'none', selected],
+    queryFn: () => api<Resource>(scopedPath(readScope!, `resources/${selected}`)),
+    enabled: !!selected && !!readScope
   });
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -318,16 +230,6 @@ function Workbench({
     }, 180);
     return () => window.clearTimeout(timer);
   }, [search]);
-  useEffect(() => {
-    try {
-      localStorage.setItem('hclaro.preferences', JSON.stringify(preferences));
-    } catch {/* Preferences are optional. */}
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => applyTheme(preferences.theme);
-    apply();
-    media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, [preferences]);
   useEffect(() => {
     if (onHub) return;
     function keyboard(event: globalThis.KeyboardEvent) {
@@ -369,10 +271,6 @@ function Workbench({
       setNotice('Clipboard is unavailable. Select and copy the text manually.');
     }
   }
-  const changePreference = (change: Partial<Preferences>) => setPreferences(p => ({
-    ...p,
-    ...change
-  }));
   const total = w ? w.managed + w.data : 0;
   const maxReplace = 50;
   function toggleReplace(resource: Resource) {
@@ -403,7 +301,7 @@ function Workbench({
           if (scoped && p?.workspace && p.workspace !== scoped.workspace) navigate(contextPath(scoped.projectId, p.workspace, isExplorerView(view) ? view : 'Resources'));
         }} /></> : !scoped && w && <><span className="context-divider" /><div className="context-item muted" title="Execution profiles belong to Hub projects. Save this project to the Hub to use them.">Profile: none</div></>}<span className="context-divider" /><div className="context-item" title={w?.info.executionMode ? `Execution mode: ${w.info.executionMode}` : undefined}><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong>{w?.info.executionMode && <span className="muted">{w.info.executionMode}</span>}<span className={`dot ${ready ? '' : 'dot-muted'}`} /></div>{scoped && w && <span className="hub-tag hub-tag-quiet" title={hubExecution ? w.info.capabilities.canPlan ? 'Plans and applies run in this workspace only, after review and confirmation.' : w.info.capabilities.planReason : 'This session was started without Hub execution.'}>{hubExecution && w.info.capabilities.canPlan ? 'Plan & apply' : 'Read-only'}</span>}{gitBase !== undefined && <><span className="context-divider" /><GitBadge prefix={gitBase} onOpen={() => setView('Git')} /></>}<span className="context-spacer" />{scoped && <><Button variant="ghost" size="small" onClick={reread} disabled={w?.status === 'loading'} title="Read this workspace's recorded state again. No refresh is run."><RefreshCcw size={12} />Read again</Button><Button variant="ghost" size="small" onClick={() => openInNewTab(contextPath(scoped.projectId, scoped.workspace, isExplorerView(view) ? view : 'Resources'))} title="Open this workspace in a new browser tab"><ExternalLink size={12} />New tab</Button></>}{!scoped && <Button variant="ghost" size="small" onClick={() => void rereadLaunch()} disabled={rereading || w?.status === 'loading' || !!runningOperation} title="Inspect this folder and read its recorded state again, as at startup. No init, plan or refresh is run."><RefreshCcw size={12} />Read again</Button>}{!scoped && runningOperation && <button className="context-running" onClick={() => setView(runningOperation.kind === 'drift' ? 'Drift' : runningOperation.kind === 'graph' ? 'Graph' : 'Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.kind === 'drift' ? 'Drift scan' : runningOperation.kind === 'graph' ? 'Graph' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>}
    <main id="main-content" tabIndex={-1} className="main-content">
-    {historyPage ? <div className="page-heading"><div><div className="eyebrow">ON THIS MACHINE</div><h1>Operation history</h1><p>What ran, when, against which workspace, and what each reviewed plan proposed. Redacted metadata only.</p></div><span className="read-only-badge"><ShieldCheck size={13} />Never re-runs</span></div> : comparing ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>Compare workspaces</h1><p>Line up the recorded state of two workspaces: dev and prod, or one stack in two roots. Only when you ask.</p></div><span className="read-only-badge"><ShieldCheck size={13} />Read-only</span></div> : onHub ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>{route.kind === 'hub' ? 'Projects' : 'Project workspaces'}</h1><p>{route.kind === 'hub' ? 'Every Terraform and OpenTofu root you work with, in one place.' : 'Open a CLI workspace to read its recorded state in this tab.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{route.kind === 'project' ? 'Changes ask first' : 'Read-only'}</span></div> : <div className="page-heading"><div><div className="eyebrow">{scoped ? `HUB WORKSPACE · ${scoped.workspace.toUpperCase()}` : 'YOUR INFRASTRUCTURE, IN FOCUS'}</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view === 'Drift' ? 'Drift detection' : view === 'Graph' ? 'Dependency graph' : view === 'Discovery' ? 'Cloud discovery' : view === 'Tools' ? 'Project tools' : view === 'Git' ? 'Git changes' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Tools' ? 'Validate, check formatting, and list provider requirements and output names. Read-only, and only when you ask.' : view === 'Git' ? 'Branch, commit and the IaC files you changed, with redacted diffs. Read-only: Hclaro never runs checkout, commit or push.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Drift' ? 'Compare what state records with what providers report, only when you ask.' : view === 'Graph' ? 'See what depends on what, and what a change could reach. Only a plan confirms what will change.' : view === 'Discovery' ? 'Find existing AWS objects this workspace does not record yet, and prepare a reviewed import. Only when you ask.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : view === 'Drift' ? 'Never writes state' : view === 'Discovery' ? 'Read-only cloud reads' : 'Read-only'}</span></div>}
+    <PageHeading route={route} view={view} />
     {!onHub && (!scoped || hubExecution) && (view === 'Import' || view === 'Discovery') && <ImportDiscoveryTabs view={view} onChange={setView} />}
     {historyPage ? <HistoryView copy={copy} /> : comparing ? <CompareView copy={copy} /> : route.kind === 'hub' ? <HubView notify={setNotice} /> : route.kind === 'project' ? <ProjectView id={route.projectId} /> : view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : scoped && (view === 'Plans' || view === 'Operations' || view === 'Import' || view === 'Discovery' || view === 'Drift' || view === 'Graph') ? !hubExecution ? session.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /></div> : <ErrorState title="Hub workspaces are read-only in this session" message="Plans and applies run only for the project opened from the terminal. Nothing ran." /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
           void opened.refetch();
@@ -481,7 +379,7 @@ function Workbench({
                   setView('Plans');
                 }}>Plan replacement…</Button><Button variant="ghost" size="small" onClick={() => setReplaceSelection([])}><X size={12} />Clear</Button></div>}<table className="resources-table"><thead><tr><th scope="col" className="select-column"><span className="sr-only">Select for replacement</span></th><th scope="col">Resource</th><th scope="col" className="provider-column">Provider</th><th scope="col">Mode</th></tr></thead><tbody>{resources.data?.resources.map(r => <ResourceRow key={r.id} resource={r} selected={selected === r.id} onSelect={() => setSelected(r.id)} selectable={!scoped || hubExecution} chosen={replaceSelection.some(c => c.id === r.id)} onChoose={() => toggleReplace(r)} />)}</tbody></table><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
        </section>
-       {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && base !== undefined && detail.data ? { path: `${base ? `${base}/` : ''}resources/${detail.data.id}/source`, prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} />}
+       {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && readScope && detail.data ? { path: scopedPath(readScope, `resources/${detail.data.id}/source`), prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} />}
       </div>
      </>}
      {view === 'Overview' && <Overview workspace={w} browse={() => setView('Resources')} chooseType={t => {
@@ -507,143 +405,4 @@ function Workbench({
     }} />}
   {notice && <div role="status" className="toast"><Check size={15} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={13} /></button></div>}
  </div>;
-}
-function ErrorState({
-  title = 'Unable to read workspace',
-  message,
-  retry,
-  retryLabel = 'Retry connection'
-}: {
-  title?: string;
-  message: string;
-  retry?: () => void;
-  retryLabel?: string;
-}) {
-  return <div className="empty-state error-state" role="alert"><CircleHelp size={28} /><h2>{title}</h2><p>{message}</p>{retry && <Button variant="outline" onClick={retry}>{retryLabel}</Button>}<span className="safe-note"><ShieldCheck size={13} />No infrastructure was changed.</span></div>;
-}
-function ResourceRow({
-  resource: r,
-  selected,
-  onSelect,
-  selectable,
-  chosen,
-  onChoose
-}: {
-  resource: Resource;
-  selected: boolean;
-  onSelect: () => void;
-  selectable: boolean;
-  chosen: boolean;
-  onChoose: () => void;
-}) {
-  function key(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    event.preventDefault();
-    const buttons = Array.from(event.currentTarget.closest('tbody')!.querySelectorAll<HTMLButtonElement>('[data-resource-id]'));
-    const index = buttons.indexOf(event.currentTarget);
-    buttons[Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus();
-  }
-  // Only managed instances can be replaced; data sources and whole modules cannot.
-  return <tr className={selected ? 'selected' : ''}><td className="select-column">{selectable && r.mode === 'managed' && <input type="checkbox" checked={chosen} onChange={onChoose} aria-label={`Select ${r.address} for replacement`} />}</td><td><button className="resource-button" data-resource-id={r.id} aria-pressed={selected} onClick={onSelect} onKeyDown={key}><span className={`resource-icon ${r.mode === 'data' ? 'data-icon' : ''}`}>{r.mode === 'data' ? <Database size={17} /> : <Box size={17} />}</span><span className="resource-text"><strong>{r.name}{r.index !== undefined && <span className="instance-key">[{typeof r.index === 'string' ? JSON.stringify(r.index) : String(r.index)}]</span>}</strong><span className="resource-type">{r.type}</span><span className="resource-address mono" title={r.address}>{r.address}</span></span></button></td><td className="provider-column"><span className="provider-label"><span className="provider-dot" />{providerName(r.provider)}</span></td><td><span className={`mode-badge ${r.mode}`}>{r.mode === 'data' ? 'Data' : 'Managed'}</span></td></tr>;
-}
-function ModuleTree({
-  modules,
-  selected,
-  choose
-}: {
-  modules: Module[];
-  selected: string | undefined;
-  choose: (value: string) => void;
-}) {
-  function key(event: KeyboardEvent<HTMLUListElement>) {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
-    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if (index < 0) return;
-    event.preventDefault();
-    buttons[Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus();
-  }
-  function node(m: Module) {
-    const children = modules.filter(c => c.address !== '' && c.parent === m.address);
-    return <li key={m.address}>{children.length ? <details open><summary><ChevronDown size={12} /><span>{moduleName(m.address)}</span></summary><button className={`tree-resource ${selected === m.address ? 'chosen' : ''}`} onClick={() => choose(m.address)}><Folder size={13} /><span>Direct resources</span><span className="tree-count">{m.count}</span></button><ul>{children.map(node)}</ul></details> : <button className={`tree-resource ${selected === m.address ? 'chosen' : ''}`} onClick={() => choose(m.address)} title={m.address}><Folder size={13} /><span>{moduleName(m.address).replace(moduleName(m.parent) + '.', '')}</span><span className="tree-count">{m.count}</span></button>}</li>;
-  }
-  const root = modules.find(m => m.address === '');
-  return <ul className="module-tree" onKeyDown={key} aria-label="Modules">{root && <li><button className={`tree-resource ${selected === '' ? 'chosen' : ''}`} onClick={() => choose('')}><Folder size={13} /><span>Root module</span><span className="tree-count">{root.count}</span></button></li>}{modules.filter(m => m.address !== '' && m.parent === '').map(node)}</ul>;
-}
-function Inspector({
-  resource,
-  loading,
-  error,
-  close,
-  copy,
-  source,
-  editor,
-  notify
-}: {
-  resource?: Resource;
-  loading: boolean;
-  error?: string;
-  close: () => void;
-  copy: (value: string, label: string) => Promise<void>;
-  source?: { path: string; prefix: string };
-  editor: EditorName;
-  notify: (text: string) => void;
-}) {
-  return <Drawer label="Resource inspector" onClose={close}><div className="inspector-header"><span><Braces size={15} />Resource details</span><Button variant="ghost" size="icon" aria-label="Close inspector" onClick={close}><X size={16} /></Button></div>{loading ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading details…</div> : error ? <ErrorState message={error} /> : resource && <div className="inspector-body"><div className="inspector-title"><span className="resource-icon"><Box size={23} /></span><span className={`mode-badge ${resource.mode}`}>{resource.mode}</span></div><h2>{resource.name}</h2><p className="inspector-type mono">{resource.type}</p><div className="address-box"><div className="label-row"><span>RESOURCE ADDRESS</span><Button variant="ghost" size="icon" aria-label="Copy resource address" onClick={() => {
-            void copy(resource.address, 'Address');
-          }}><Copy size={13} /></Button></div><code>{resource.address}</code></div><dl className="metadata"><div><dt>Provider</dt><dd className="mono">{resource.provider || 'Not recorded'}</dd></div><div><dt>Module</dt><dd className="mono">{resource.module || 'Root module'}</dd></div><div><dt>Instance key</dt><dd className="mono">{resource.index === undefined ? '—' : JSON.stringify(resource.index)}</dd></div><div><dt>Source</dt><dd>Recorded state</dd></div></dl>{source && <SourceLink prefix={source.prefix} sourcePath={source.path} editor={editor} notify={notify} />}<div className="attributes-header"><h3>Attributes</h3><Button variant="ghost" size="icon" aria-label="Copy redacted JSON" onClick={() => {
-          void copy(JSON.stringify(resource.attributes, null, 2), 'Redacted JSON');
-        }}><Copy size={14} /></Button></div><div className="redaction-note"><LockKeyhole size={12} />Sensitive, secret-named and credential-like values are hidden.</div><div className="json-viewer"><JsonTree value={resource.attributes} /></div></div>}</Drawer>;
-}
-function Overview({
-  workspace: w,
-  browse,
-  chooseType
-}: {
-  workspace: Workspace;
-  browse: () => void;
-  chooseType: (type: string) => void;
-}) {
-  const stats = [{
-    label: 'Managed resources',
-    value: w.managed,
-    icon: Box
-  }, {
-    label: 'Data sources',
-    value: w.data,
-    icon: Database
-  }, {
-    label: 'Child modules',
-    value: Math.max(w.modules.length - 1, 0),
-    icon: FolderTree
-  }, {
-    label: 'Providers',
-    value: Object.keys(w.providers).length,
-    icon: Network
-  }];
-  return <div className="overview"><div className="stats-grid">{stats.map(({
-        label,
-        value,
-        icon: Icon
-      }) => <div key={label} className="stat"><span>{label}<Icon size={16} /></span><strong>{value.toLocaleString()}</strong><small>Recorded in state</small></div>)}</div><div className="overview-columns"><section className="surface distribution"><div className="surface-heading"><div><h2>Resource distribution</h2><p>Instances by resource type</p></div><Braces size={18} /></div>{Object.entries(w.types).sort((a, b) => b[1] - a[1]).map(([type, count]) => <button className="distribution-row" key={type} onClick={() => chooseType(type)}><span><span className="mono">{type}</span><strong>{count}</strong></span><progress value={count} max={w.managed + w.data} aria-label={`${type}: ${count} instances`} /></button>)}{w.managed + w.data === 0 && <p className="empty-description">No resource instances in this snapshot.</p>}</section><section className="surface workspace-info"><div className="surface-heading"><div><h2>Workspace context</h2><p>Connected through your local CLI</p></div><Terminal size={18} /></div><dl className="metadata"><div><dt>Project</dt><dd>{w.info.project}</dd></div>{w.context && <div><dt>Root folder</dt><dd className="mono">{w.context.rootPath}</dd></div>}<div><dt>Workspace</dt><dd>{w.info.workspace}{w.context && ' (this tab only)'}</dd></div>{w.context && <div><dt>Data directory</dt><dd className="mono">{w.context.dataDir}</dd></div>}<div><dt>Engine</dt><dd>{w.info.engine} {w.info.version}</dd></div><div><dt>Backend type</dt><dd>{w.info.backend}</dd></div><div><dt>Execution mode</dt><dd>{w.info.executionMode}</dd></div><div><dt>Provider lockfile</dt><dd>{w.info.providerLock ? 'Present' : 'Not detected'}</dd></div><div><dt>Snapshot</dt><dd>{timeLabel(w.capturedAt)}</dd></div></dl><Button variant="outline" onClick={browse}>Explore resources<ArrowRight size={14} /></Button></section></div><div className="workspace-warnings">{w.info.warnings.map(warning => <div className="info-note" key={warning}><CircleHelp size={15} /><span>{warning}</span></div>)}</div></div>;
-}
-function SettingsPanel({
-  preferences,
-  changePreference
-}: {
-  preferences: Preferences;
-  changePreference: (change: Partial<Preferences>) => void;
-}) {
-  return <div className="settings-panel"><div className="setting-row about-row"><div><h2>About Hclaro</h2><p>A local workspace for Terraform and OpenTofu. Public beta.</p></div><HclaroLogo /></div><div className="setting-row"><div><h2>Appearance</h2><p>Follow your system, or choose a theme.</p></div><div className="segmented">{(['system', 'light', 'dark'] as const).map((theme, i) => {
-          const Icon = [Monitor, Sun, Moon][i];
-          return <button aria-pressed={preferences.theme === theme} key={theme} onClick={() => changePreference({
-            theme
-          })}><Icon size={14} />{theme}</button>;
-        })}</div></div><div className="setting-row"><div><h2>Resource density</h2><p>Adjust the space between resource rows.</p></div><select aria-label="Resource density" value={preferences.density} onChange={e => changePreference({
-        density: e.target.value as Preferences['density']
-      })}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div className="setting-row"><div><h2>Default grouping</h2><p>Browse by module or use a flat resource list.</p></div><select aria-label="Default grouping" value={preferences.grouping} onChange={e => changePreference({
-        grouping: e.target.value as Preferences['grouping']
-      })}><option value="module">Module tree</option><option value="flat">Flat list</option></select></div><div className="setting-row"><div><h2>Source editor</h2><p>Used by Open in editor links. Hclaro asks the operating system to open the editor's link; it never runs a command you type.</p></div><select aria-label="Source editor" value={preferences.editor} onChange={e => changePreference({
-        editor: e.target.value === 'cursor' ? 'cursor' : 'vscode'
-      })}>{(Object.keys(editorLabels) as EditorName[]).map(name => <option key={name} value={name}>{editorLabels[name]}</option>)}</select></div><div className="settings-security"><ShieldCheck size={23} /><div><h2>Your machine. Your infrastructure.</h2><p>No telemetry, cloud accounts, or external services. Only display preferences are saved in this browser. Hub projects are saved as paths and names in your user configuration directory. To change engines, restart with <code>--engine terraform</code> or <code>--engine tofu</code>.</p></div></div></div>;
 }

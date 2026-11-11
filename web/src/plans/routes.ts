@@ -10,9 +10,17 @@ const id = /^[0-9a-f]{32}$/;
 // scopedPath prefixes a launch API path (for example "plans" or "operations/<id>/events")
 // with the scope's context.
 export function scopedPath(scope: PlanScope, path: string) {
-  if (scope.kind === 'launch') return path;
-  if (!id.test(scope.contextId)) throw new Error('This workspace view is no longer open. Open the workspace again.');
-  return `contexts/${scope.contextId}/${path}`;
+  return scope.kind === 'launch' ? path : `${contextRoot(scope.contextId)}/${path}`;
+}
+
+// snapshotPath is the workspace snapshot: "workspace" at launch, the context itself in the Hub.
+export function snapshotPath(scope: PlanScope) {
+  return scope.kind === 'launch' ? 'workspace' : contextRoot(scope.contextId);
+}
+
+function contextRoot(contextId: string) {
+  if (!id.test(contextId)) throw new Error('This workspace view is no longer open. Open the workspace again.');
+  return `contexts/${contextId}`;
 }
 
 // scopeKey separates cached queries of different scopes.
