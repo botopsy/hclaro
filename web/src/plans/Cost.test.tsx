@@ -55,6 +55,17 @@ describe('Cost estimate tab', () => {
     expect(await screen.findByText('Cost estimation is not available')).toBeInTheDocument();
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => /cost/.test(String(url)))).toHaveLength(0);
   });
+  it('in a Hub workspace never shows a launch-project estimate already in the cache', async () => {
+    serve(ready, estimate);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(['cost-provider'], ready);
+    client.setQueryData(['cost-estimate', planId], estimate);
+    render(<QueryClientProvider client={client}><PlanReview plan={plan} copy={async () => {}} onApply={() => {}} scope={{ kind: 'context', contextId: 'f'.repeat(32) }} /></QueryClientProvider>);
+    await userEvent.click(screen.getByRole('tab', { name: /Cost estimate/ }));
+    expect(await screen.findByText('Cost estimation is not available')).toBeInTheDocument();
+    expect(screen.queryByText(/USD/)).not.toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => /cost/.test(String(url)))).toHaveLength(0);
+  });
   it('is off by default: nothing is posted until the disclosure is accepted', async () => {
     serve(off, null, url => url.endsWith('/cost/opt-in') ? Response.json(ready) : undefined);
     await openCost();

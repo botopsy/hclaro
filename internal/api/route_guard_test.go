@@ -1,77 +1,157 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"hclaro/internal/profiles"
 )
 
 // security.Guard treats every POST, PATCH and DELETE under /api/ as mutating and leaves the
 // choice of routes to the router. These tests drive the real handler with full credentials
-// to prove the router is the second allowlist: read-only routes refuse mutating methods,
-// intents that were never routes stay unrouted, and a malformed ID never reaches a lookup.
+// to prove the router is the second allowlist: every route names its methods, intents that
+// were never routes stay unrouted, and a malformed ID never reaches an action.
 
-var mutatingRoute = regexp.MustCompile(`"((?:POST|PATCH|DELETE) /api/[^"]*)"`)
+// dynamicRoutes lists the registrations whose pattern is built at run time, keyed by the
+// pattern expression as written in the source, with the mutating patterns each one expands
+// to. A new built pattern fails TestEveryRouteNamesItsMethod until it is added here, and
+// TestDynamicRoutesAreRouted fails when an expansion is no longer served.
+var dynamicRoutes = map[string][]string{
+	`"GET " + prefix + "/git/head"`:     nil,
+	`"POST " + prefix + "/git/status"`:  {"POST /api/v1/git/status", "POST /api/v1/projects/{id}/git/status"},
+	`"POST " + prefix + "/git/diff"`:    {"POST /api/v1/git/diff", "POST /api/v1/projects/{id}/git/diff"},
+	`"POST " + prefix + "/editor/open"`: {"POST /api/v1/editor/open", "POST /api/v1/projects/{id}/editor/open"},
+	`"POST /api/v1/projects/{id}/operations/" + string(tool)`: {
+		"POST /api/v1/projects/{id}/operations/validate", "POST /api/v1/projects/{id}/operations/fmt-check",
+		"POST /api/v1/projects/{id}/operations/providers", "POST /api/v1/projects/{id}/operations/outputs-metadata",
+	},
+}
 
-// mutatingPatterns reads the registered mutating patterns from the source, so a new route is
-// covered without editing this test. The routes registered with a built prefix or in a
-// loop are added by hand.
-func mutatingPatterns(t *testing.T) []string {
+// registrations parses this package's sources and returns every literal route pattern and
+// the source text of every pattern built at run time.
+func registrations(t *testing.T) (literal []string, dynamic map[string]bool) {
 	t.Helper()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := map[string]bool{}
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") {
+	dynamic = map[string]bool{}
+	fset := token.NewFileSet()
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(f)
+		f, err := parser.ParseFile(fset, name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, m := range mutatingRoute.FindAllStringSubmatch(string(src), -1) {
-			if !strings.HasSuffix(m[1], "/") {
-				seen[m[1]] = true
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "HandleFunc" && sel.Sel.Name != "Handle" {
+				return true
+			}
+			if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				pattern, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				literal = append(literal, pattern)
+			} else {
+				dynamic[types.ExprString(call.Args[0])] = true
+			}
+			return true
+		})
+	}
+	if len(literal) < 100 {
+		t.Fatalf("only %d literal routes found; the source scan is broken", len(literal))
+	}
+	return literal, dynamic
+}
+
+// mutatingPatterns returns every registered POST, PATCH and DELETE pattern.
+func mutatingPatterns(t *testing.T) []string {
+	t.Helper()
+	literal, _ := registrations(t)
+	var out []string
+	for _, p := range literal {
+		if strings.HasPrefix(p, "POST ") || strings.HasPrefix(p, "PATCH ") || strings.HasPrefix(p, "DELETE ") {
+			out = append(out, p)
+		}
+	}
+	for _, expansions := range dynamicRoutes {
+		out = append(out, expansions...)
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+var methodPrefix = regexp.MustCompile(`^(GET|POST|PATCH|DELETE) /api/`)
+
+// Every route but the two catch-alls names its method, so the router refuses other methods
+// and a read route can never receive a mutation that passed the guard.
+func TestEveryRouteNamesItsMethod(t *testing.T) {
+	literal, dynamic := registrations(t)
+	for _, p := range literal {
+		if p != "/" && p != "/api/" && !methodPrefix.MatchString(p) {
+			t.Errorf("route %q does not name its method", p)
+		}
+	}
+	for expr := range dynamic {
+		if _, ok := dynamicRoutes[expr]; !ok {
+			t.Errorf("route pattern %s is built at run time; add it and its expansions to dynamicRoutes", expr)
+		}
+	}
+	for expr := range dynamicRoutes {
+		if !dynamic[expr] {
+			t.Errorf("dynamicRoutes lists %s, which is no longer registered", expr)
+		}
+	}
+}
+
+// Each hand-listed expansion is served: a request reaches a handler, not the catch-all.
+func TestDynamicRoutesAreRouted(t *testing.T) {
+	s := newHubServer(t)
+	for _, expansions := range dynamicRoutes {
+		for _, pattern := range expansions {
+			method, path, _ := strings.Cut(pattern, " ")
+			path = strings.ReplaceAll(path, "{id}", strings.Repeat("0", 32))
+			if w := s.do(method, path, "{}"); refusal(w.Body.Bytes()) == "route_not_found" || w.Code == 405 {
+				t.Errorf("%s is not routed: %d %s", pattern, w.Code, w.Body)
 			}
 		}
 	}
-	for _, p := range []string{"/api/v1", "/api/v1/projects/{id}"} {
-		for _, r := range []string{"/git/status", "/git/diff", "/editor/open"} {
-			seen["POST "+p+r] = true
-		}
-	}
-	for _, tool := range []string{"validate", "fmt-check", "providers", "outputs-metadata"} {
-		seen["POST /api/v1/projects/{id}/operations/"+tool] = true
-	}
-	var out []string
-	for p := range seen {
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	if len(out) < 50 {
-		t.Fatalf("only %d mutating routes found; the source scan is broken", len(out))
-	}
-	return out
 }
 
 func TestReadOnlyRoutesAreNotMutable(t *testing.T) {
 	s := newHubServer(t)
 	for _, path := range []string{"/api/v1/health", "/api/v1/workspace", "/api/v1/resources", "/api/v1/resources/x"} {
 		for _, method := range []string{"POST", "PATCH", "DELETE"} {
-			if w := s.do(method, path, "{}"); w.Code != 404 {
-				t.Errorf("%s %s: %d, want 404", method, path, w.Code)
+			if w := s.do(method, path, "{}"); w.Code != 404 || refusal(w.Body.Bytes()) != "route_not_found" {
+				t.Errorf("%s %s: %d %s, want 404 route_not_found", method, path, w.Code, w.Body)
 			}
 		}
 	}
 }
 
-// Intents that were never routes. Each answers a 4xx without running anything.
+// Intents that were never routes. The router answers each one; no handler runs.
 func TestUnroutedMutationsAreRefused(t *testing.T) {
 	s := newHubServer(t)
 	id := strings.Repeat("0", 32)
@@ -84,30 +164,34 @@ func TestUnroutedMutationsAreRefused(t *testing.T) {
 		"/api/v1/contexts/" + id + "/plans/" + id + "/destroy",
 		"/api/v1/contexts/" + id + "/discovery/run",
 		"/api/v1/contexts/" + id + "/imports/run",
-		"/api/v1/contexts/" + strings.Repeat("0", 64) + "/plans",
-		"/api/v1/contexts/" + id + "/plans/not-an-id/apply",
 	} {
 		for _, method := range []string{"POST", "PATCH", "DELETE"} {
-			if w := s.do(method, path, "{}"); w.Code < 400 || w.Code >= 500 {
-				t.Errorf("%s %s: %d %s", method, path, w.Code, w.Body)
+			if w := s.do(method, path, "{}"); w.Code != 404 || refusal(w.Body.Bytes()) != "route_not_found" {
+				t.Errorf("%s %s: %d %s, want 404 route_not_found", method, path, w.Code, w.Body)
 			}
 		}
+	}
+	if n := s.calls.Load(); n != 0 {
+		t.Fatalf("an unrouted request ran %d engine commands", n)
 	}
 }
 
 // Go unescapes path wildcards, so an encoded slash or dot segment arrives in PathValue. No
-// mutating route may accept one, and nothing may be removed by one.
+// mutating route may succeed or fail internally with one. This sweep sends an empty body, so
+// it only proves the request is refused; TestMalformedIDsCannotMutateProjects proves which
+// layer refuses it when the body is valid.
 func TestMalformedIDsNeverSucceed(t *testing.T) {
 	s := newHubServer(t)
-	project := s.add("network")
+	s.add("network")
 	bad := []string{"%2e%2e", "%2F", "..%2Fx", strings.Repeat("A", 32), strings.Repeat("0", 31), strings.Repeat("0", 64), "%00", "x%20y", "%E2%82%AC"}
+	wildcard := regexp.MustCompile(`\{[a-z]+\}`)
 	for _, pattern := range mutatingPatterns(t) {
 		method, path, _ := strings.Cut(pattern, " ")
 		if !strings.Contains(path, "{") {
 			continue // no ID to malform, and browse would list a real directory
 		}
 		for _, b := range bad {
-			p := regexp.MustCompile(`\{[a-z]+\}`).ReplaceAllString(path, b)
+			p := wildcard.ReplaceAllString(path, b)
 			if u, err := url.ParseRequestURI(p); err != nil || u.Path == "" {
 				continue
 			}
@@ -116,7 +200,114 @@ func TestMalformedIDsNeverSucceed(t *testing.T) {
 			}
 		}
 	}
-	if _, err := s.hub.Registry.Get(project.ID); err != nil {
-		t.Fatalf("a malformed ID removed or changed the registered project: %v", err)
+}
+
+func refusal(body []byte) string {
+	var b struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(body, &b)
+	return b.Error
+}
+
+// layer names what refused a request: the router (path cleaning or the catch-all), the body
+// decoder, or the ID lookup.
+func layer(code int, body []byte) string {
+	if code >= 300 && code < 400 {
+		return "router"
+	}
+	switch e := refusal(body); e {
+	case "route_not_found":
+		return "router"
+	case "invalid_request":
+		return "decoder"
+	case "project_not_found", "profile_not_found":
+		return "id"
+	default:
+		return fmt.Sprintf("%d %s", code, e)
+	}
+}
+
+// snapshot is everything a project or profile mutation can change: the registry and
+// profile files (names and contents) and the number of engine commands run.
+func snapshot(t *testing.T, s *hubServer, dirs ...string) map[string]string {
+	t.Helper()
+	out := map[string]string{"engine calls": strconv.FormatInt(s.calls.Load(), 10)}
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[filepath.Join(dir, e.Name())] = string(b)
+		}
+	}
+	return out
+}
+
+// Near misses of a real ID, encoded separators and dot segments, sent with a body the route
+// accepts, never mutate a project or profile or run the engine. Each is refused by the router
+// or the ID lookup, never by the decoder, and the same request with the real ID succeeds and
+// changes the snapshot, so the comparison can fail.
+func TestMalformedIDsCannotMutateProjects(t *testing.T) {
+	s := newHubServer(t)
+	profileDir := t.TempDir()
+	s.hub.Profiles = profiles.Open(profileDir, time.Now())
+	_, _, registryPath := s.hub.Registry.Status()
+	dirs := []string{filepath.Dir(registryPath), profileDir}
+	project := s.add("network").ID
+	w := s.do("POST", "/api/v1/projects/"+project+"/execution-profiles", `{"name":"Production","workspace":"prod"}`)
+	if w.Code != 201 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	profile := decode[profileView](t, w).ID
+	near := func(real string) []string {
+		return []string{strings.ToUpper(real), real + "0", real[:len(real)-1], "x" + real[1:], real + "%2F", "%2F" + real,
+			real + "%00", real + "%20", "..%2F" + real, "%2e%2e", "", real + "/"}
+	}
+	for _, step := range []struct {
+		method, path, body string
+		want               int
+	}{
+		{"PATCH", "/api/v1/projects/{id}", `{"alias":"Renamed"}`, 200},
+		{"POST", "/api/v1/projects/{id}/inspect", `{}`, 200},
+		{"POST", "/api/v1/projects/{id}/execution-profiles", `{"name":"Staging","workspace":"dev"}`, 201},
+		{"PATCH", "/api/v1/projects/{id}/execution-profiles/{pid}", `{"name":"Production","workspace":"dev","expectedRevision":1}`, 200},
+		{"POST", "/api/v1/projects/{id}/execution-profiles/{pid}/clone", `{"name":"Copy"}`, 201},
+		{"POST", "/api/v1/projects/{id}/execution-profiles/default", `{"profileId":"` + profile + `"}`, 200},
+		{"DELETE", "/api/v1/projects/{id}/execution-profiles/{pid}", `{"expectedRevision":2}`, 200},
+		{"DELETE", "/api/v1/projects/{id}", `{}`, 200},
+	} {
+		real := map[string]string{"{id}": project, "{pid}": profile}
+		before := snapshot(t, s, dirs...)
+		for slot, value := range real {
+			if !strings.Contains(step.path, slot) {
+				continue
+			}
+			for _, variant := range near(value) {
+				path := strings.ReplaceAll(step.path, slot, variant)
+				for other, v := range real {
+					path = strings.ReplaceAll(path, other, v)
+				}
+				w := s.do(step.method, path, step.body)
+				if l := layer(w.Code, w.Body.Bytes()); l != "router" && l != "id" {
+					t.Errorf("%s %s: refused by %s, want the router or the ID lookup: %s", step.method, path, l, w.Body)
+				}
+			}
+		}
+		if after := snapshot(t, s, dirs...); !maps.Equal(before, after) {
+			t.Fatalf("%s %s: a malformed ID changed the project, its profiles or ran the engine", step.method, step.path)
+		}
+		path := strings.NewReplacer("{id}", project, "{pid}", profile).Replace(step.path)
+		if w := s.do(step.method, path, step.body); w.Code != step.want {
+			t.Fatalf("control %s %s: %d %s, want %d", step.method, path, w.Code, w.Body, step.want)
+		}
+		if after := snapshot(t, s, dirs...); maps.Equal(before, after) {
+			t.Fatalf("control %s %s changed nothing, so the snapshot cannot detect a mutation", step.method, path)
+		}
 	}
 }

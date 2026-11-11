@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Cost estimates:
+
+- Fix: the input sent to Infracost could contain secret values that a provider does not mark sensitive: the value of a name/value environment pair such as `{"name": "DB_PASSWORD", "value": …}`, and secrets inside JSON-encoded strings such as an ECS `container_definitions`. These values are now removed before Infracost runs, by the same rules that hide them in the UI. Infracost's ECS pricing reads only the task's `cpu`, `memory` and accelerator type, so removing `container_definitions` does not change its price (checked against Infracost's source, not with a live run).
+- Fix: the Cost estimate tab of a plan in a Hub workspace requested the launch project's cost routes, which cannot know a Hub plan, and failed. It now says that cost estimates are available only for the project Hclaro was opened with from the terminal, and makes no cost requests.
+
+Local API boundary:
+
+- Every POST, PATCH and DELETE request under `/api/` now gets the full checks (session token, exact Origin, CSRF header, JSON body and size limit) whatever its path, so a new route is protected from the moment it exists. Visible change: a mutating request to a path that is not a route used to answer `405`; it now answers `401` or `403` if a check fails and `404 route_not_found` otherwise.
+- The health, snapshot and resource routes accept only GET and HEAD; other methods answer `404 route_not_found`. New tests send every mutating route malformed and look-alike IDs with valid bodies and check that nothing changes on disk and no engine command runs.
+
 Hub layout (M24.26):
 
 - Fix: in a Hub workspace, the context bar was wider than the window at common laptop widths (1839px of page in a 1512px window), so the page scrolled sideways and New tab and the snapshot time were cut off. The bar now wraps to a second row when its items do not fit; the launch project's bar is unchanged. A new browser check (`scripts/browser-hub.mjs`, part of `make browser-test`) opens a Hub workspace and its Tools page with the fake engines and fails on horizontal overflow at 1512, 1280 and 1100px.
