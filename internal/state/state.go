@@ -291,6 +291,17 @@ const maxShownString = 16 << 10
 // key is the attribute name the value belongs to.
 func Redact(value, marker any, key string) any { return redact(value, marker, key, 0) }
 
+// RiskyPair reports a name/value pair ({"name": "DB_PASSWORD", "value": …}, as in container
+// and function environments) whose "value" takes its risk from the sibling name.
+func RiskyPair(m map[string]any) bool {
+	for k, item := range m {
+		if name, ok := item.(string); ok && (strings.EqualFold(k, "name") || strings.EqualFold(k, "key")) && RiskyKey(name) {
+			return true
+		}
+	}
+	return false
+}
+
 func redact(value, marker any, key string, depth int) any {
 	if marker == true || RiskyKey(key) || depth > 64 {
 		return Redacted
@@ -299,14 +310,7 @@ func redact(value, marker any, key string, depth int) any {
 	case map[string]any:
 		out := map[string]any{}
 		masks, _ := marker.(map[string]any)
-		// A name/value pair ({"name": "DB_PASSWORD", "value": …}, as in container and
-		// function environments) takes its risk from the sibling name.
-		pair := false
-		for k, item := range v {
-			if name, ok := item.(string); ok && (strings.EqualFold(k, "name") || strings.EqualFold(k, "key")) && RiskyKey(name) {
-				pair = true
-			}
-		}
+		pair := RiskyPair(v)
 		for k, item := range v {
 			// Unknown map keys can themselves be secrets (e.g. for_each or arbitrary tags).
 			if Suspicious(k) || len(k) > 128 {

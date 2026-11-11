@@ -82,7 +82,7 @@ export function PlanReview({ plan, copy, onApply, busy, onInspectImpact, scope =
     <button role="tab" aria-selected={tab === 'drift'} onClick={() => { setTab('drift'); setSelected(undefined); }}>Changed outside {engineLabel(plan.engine)} <span>{plan.drift.length}</span></button>
     <button role="tab" aria-selected={tab === 'cost'} onClick={() => { setTab('cost'); setSelected(undefined); }}>Cost estimate</button>
    </div>
-   {tab === 'cost' ? <CostTab plan={plan} /> : tab === 'outputs' ? <Outputs outputs={plan.outputs} /> : <>
+   {tab === 'cost' ? <CostTab plan={plan} scope={scope} /> : tab === 'outputs' ? <Outputs outputs={plan.outputs} /> : <>
     {tab === 'drift' && <p className="info-line">These objects changed outside {engineLabel(plan.engine)} since the last state was recorded. They are not planned changes, but they explain differences in the plan.</p>}
     <div className="filter-row plan-filters"><div className="search-field compact"><Search size={14} /><input value={search} onChange={e => { setSearch(e.target.value); setLimit(pageSize); }} placeholder="Filter by address or type…" aria-label="Filter changes" />{search && <button className="clear-search" aria-label="Clear filter" onClick={() => setSearch('')}><X size={12} /></button>}</div>{tab === 'changes' && <label className="check"><input type="checkbox" checked={showNoOp} onChange={e => setShowNoOp(e.target.checked)} />Show unchanged</label>}{(actions.length > 0 || search) && <Button variant="ghost" size="small" onClick={() => { setActions([]); setSearch(''); }}><X size={12} />Reset</Button>}<span className="filter-count">{visible.length} shown</span></div>
     <div className={`explorer plan-explorer ${selected ? 'with-inspector' : ''}`}>

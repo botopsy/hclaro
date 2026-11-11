@@ -7,6 +7,7 @@ import golden from '../../../fixtures/cost/estimate.golden.json';
 import planGolden from '../../../fixtures/plan/all-actions.golden.json';
 import { PlanReview } from './PlanReview';
 import { signed } from './CostTab';
+import type { PlanScope } from './routes';
 import type { CostEstimate, CostProviderCapabilities, Plan } from '../types';
 
 const canary = 'DO_NOT_LEAK_HCLARO_TEST_SECRET';
@@ -38,8 +39,8 @@ function serve(provider: CostProviderCapabilities, latest: CostEstimate | null, 
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
 }
-async function openCost(p: Plan = plan) {
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlanReview plan={p} copy={async () => {}} onApply={() => {}} /></QueryClientProvider>);
+async function openCost(p: Plan = plan, scope?: PlanScope) {
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlanReview plan={p} copy={async () => {}} onApply={() => {}} scope={scope} /></QueryClientProvider>);
   await userEvent.click(screen.getByRole('tab', { name: /Cost estimate/ }));
 }
 afterEach(() => {
@@ -48,6 +49,12 @@ afterEach(() => {
 });
 
 describe('Cost estimate tab', () => {
+  it('in a Hub workspace explains estimates are launch-only and calls no cost route', async () => {
+    serve(ready, estimate);
+    await openCost(plan, { kind: 'context', contextId: 'f'.repeat(32) });
+    expect(await screen.findByText('Cost estimation is not available')).toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => /cost/.test(String(url)))).toHaveLength(0);
+  });
   it('is off by default: nothing is posted until the disclosure is accepted', async () => {
     serve(off, null, url => url.endsWith('/cost/opt-in') ? Response.json(ready) : undefined);
     await openCost();

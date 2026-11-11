@@ -89,8 +89,9 @@ func clean(value, marker any, key string, depth int) (any, bool) {
 	case map[string]any:
 		masks, _ := marker.(map[string]any)
 		out := map[string]any{}
+		pair := state.RiskyPair(v)
 		for k, item := range v {
-			if len(k) > 128 || state.Suspicious(k) {
+			if len(k) > 128 || state.Suspicious(k) || pair && strings.EqualFold(k, "value") {
 				continue
 			}
 			if c, ok := clean(item, masks[k], k, depth+1); ok {

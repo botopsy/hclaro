@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { clock } from './labels';
 import { ActionBadge } from './PlanReview';
+import type { PlanScope } from './routes';
 
 // Amounts arrive as decimal strings rounded to cents. They are shown as received, with an
 // explicit sign and currency code, so no floating-point rounding is added in the browser.
@@ -30,7 +31,13 @@ function StatusLabel({ status }: { status: CostItemStatus }) {
   return <span className={`cost-status cost-${status}`} title={hint}><Icon size={12} aria-hidden="true" />{label}</span>;
 }
 
-export function CostTab({ plan }: { plan: Plan }) {
+// Cost routes exist only for the launch project's plans; a Hub plan ID is unknown there.
+export function CostTab({ plan, scope }: { plan: Plan; scope: PlanScope }) {
+  if (scope.kind !== 'launch') return <Unavailable icon={CloudOff} title="Cost estimation is not available" reason="Cost estimates are made for plans of the project Hclaro was opened with from the terminal." />;
+  return <LaunchCostTab plan={plan} />;
+}
+
+function LaunchCostTab({ plan }: { plan: Plan }) {
   const client = useQueryClient();
   const provider = useQuery({ queryKey: ['cost-provider'], queryFn: () => api<CostProviderCapabilities>('cost/provider') });
   const [disclosing, setDisclosing] = useState(false);
