@@ -38,16 +38,16 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 	gitRoutes(mux, store, manager, hub)
 	discoveryRoutes(mux, manager, hub)
 	costRoutes(mux, store, manager)
-	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": version})
 	})
-	mux.HandleFunc("/api/v1/workspace", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/workspace", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, workspaceBody(store.Get(), nil))
 	})
-	mux.HandleFunc("/api/v1/resources", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/resources", func(w http.ResponseWriter, r *http.Request) {
 		listResources(w, r, store.Get())
 	})
-	mux.HandleFunc("/api/v1/resources/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/resources/", func(w http.ResponseWriter, r *http.Request) {
 		resourceDetail(w, store.Get(), strings.TrimPrefix(r.URL.Path, "/api/v1/resources/"))
 	})
 	if hub != nil {
