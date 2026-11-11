@@ -71,3 +71,7 @@ runs:
         suffix=""; if [ "$RUNNER_OS" = Windows ]; then suffix=".exe"; fi
         go build -o "bin/fixture-http${suffix}" ./scripts/fixture-http
         node scripts/browser-smoke.mjs
+        # Hub workspace: the real binary on 127.0.0.1 with the fake engines and synthetic projects.
+        go build -trimpath -o "bin/mock/terraform${suffix}" ./scripts/fake-engine
+        go build -trimpath -o "bin/mock/tofu${suffix}" ./scripts/fake-engine
+        node scripts/browser-hub.mjs

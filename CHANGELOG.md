@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Hub layout (M24.26):
+
+- Fix: in a Hub workspace, the context bar was wider than the window at common laptop widths (1839px of page in a 1512px window), so the page scrolled sideways and New tab and the snapshot time were cut off. The bar now wraps to a second row when its items do not fit; the launch project's bar is unchanged. A new browser check (`scripts/browser-hub.mjs`, part of `make browser-test`) opens a Hub workspace and its Tools page with the fake engines and fails on horizontal overflow at 1512, 1280 and 1100px.
+
 Supply-chain checks (M24.23):
 
 - Every release (and dry run) is checked by `scripts/release-check` before anything is published: archives must hold exactly the binary and its five documents, with no credential-like content; the checksums file must cover every file; the SBOM must list the Go toolchain and every module in each binary. The publish job also verifies each provenance attestation. RELEASING.md says what the provenance records and that no SLSA level is claimed.

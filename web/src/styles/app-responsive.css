@@ -42,7 +42,7 @@
   }
 
   .context-bar {
-    gap: 12px;
+    column-gap: 12px;
   }
 
   .app {
@@ -64,7 +64,7 @@
   }
 
   .context-bar {
-    gap: 10px;
+    column-gap: 10px;
     font-size: 12px;
   }
 
@@ -202,7 +202,7 @@
 
 
   .context-bar {
-    height: 42px;
+    min-height: 42px;
   }
 
   .filter-row select {

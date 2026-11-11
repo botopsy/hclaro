@@ -155,12 +155,13 @@
 
 .context-bar {
   border-bottom: 1px solid var(--border-soft);
-  height: 45px;
+  min-height: 45px;
   color: var(--muted);
   background: var(--inset);
+  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
-  padding: 0 32px;
+  gap: 6px 18px;
+  padding: 6px 32px;
   font-size: 13px;
   display: flex;
 }
