@@ -7,7 +7,7 @@ This policy covers hclaro, published by BotOpsy.
 Please report security problems **privately**. Do not open a public issue, discussion or pull request for them.
 
 - Preferred: GitHub private vulnerability reporting, **Security → Report a vulnerability** on the repository (<https://github.com/botopsy/hclaro/security/advisories/new>).
-- If that form is not available, open a public issue that says only "requesting a private security contact", with no details, and BotOpsy will reply with a private channel.
+- If that form is not available, start a [Q&A discussion](https://github.com/botopsy/hclaro/discussions/new?category=q-a) titled "Requesting a private security contact" with no details in it, and BotOpsy will reply with a private channel. Do not use the issue forms for this: they ask for reproduction steps.
 
 Include the Hclaro version (`hclaro --version`), OS, engine and version, and steps to reproduce with **synthetic** data. Never send real credentials, state, plans, plan output, `.tfvars` contents, the private session URL or real account identifiers; describe them or use placeholders instead. If you believe a secret was exposed, rotate it first.
 
