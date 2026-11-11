@@ -49,6 +49,7 @@ const richPlan = `{
           "user_data": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "marked": "hidden-by-marker-value",
           "random": "kX9fQ2LmZp7RtY4vBn8WcE3s", "long": "` + "%LONG%" + `",
           "root_block_device": [{"volume_size": 50, "volume_type": "gp3"}],
+          "setting": [{"name": "DB_PASSWORD", "value": "plain-pair-value"}, {"name": "InstanceType", "value": "t3.large"}],
           "ebs_block_device": [{"volume_size": 10, "kms_key_id": "DO_NOT_LEAK_HCLARO_TEST_SECRET"}]
         },
         "sensitive_values": {"marked": true}
@@ -101,7 +102,7 @@ func TestMinimizeKeepsPricingDataAndDropsSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(out)
-	for _, leak := range []string{canary, "DO_NOT_LEAK", "hidden-by-marker-value", "kX9fQ2LmZp7RtY4vBn8WcE3s", "aaaaaaaaaa", "example.com", "variables", "output_changes", "resource_drift", "relevant_attributes", "checks", "outputs", "assume_role", "access_key", "kms_key_id", "free text", "444455556666", "777788889999"} {
+	for _, leak := range []string{canary, "DO_NOT_LEAK", "hidden-by-marker-value", "kX9fQ2LmZp7RtY4vBn8WcE3s", "aaaaaaaaaa", "example.com", "variables", "output_changes", "resource_drift", "relevant_attributes", "checks", "outputs", "assume_role", "access_key", "kms_key_id", "free text", "plain-pair-value", "444455556666", "777788889999"} {
 		if strings.Contains(text, leak) {
 			t.Errorf("minimized input contains %q:\n%s", leak, text)
 		}
@@ -118,6 +119,59 @@ func TestMinimizeKeepsPricingDataAndDropsSecrets(t *testing.T) {
 	// A dropped list element keeps its index: the second block has only its size.
 	if !strings.Contains(text, `"ebs_block_device":[{"volume_size":10}]`) {
 		t.Errorf("nested block not filtered element-wise: %s", text)
+	}
+}
+
+// Name/value pairs take their risk from the sibling name in any letter case and at any
+// depth; pairs with ordinary names keep the pricing value.
+func TestMinimizeNameValuePairs(t *testing.T) {
+	setting := `"setting": [{"name": "DB_PASSWORD", "value": "plain-pair-value"}, {"name": "InstanceType", "value": "t3.large"}]`
+	cases := map[string]struct {
+		setting    string
+		leak, keep []string
+	}{
+		"case variants": {
+			setting: `"setting": [{"Name": "db-password", "Value": "leak-a"}, {"NAME": "ApiToken", "VALUE": "leak-b"}, {"Key": "signingKey", "value": "leak-c"}]`,
+			leak:    []string{"leak-a", "leak-b", "leak-c"},
+			keep:    []string{`"Name":"db-password"`, `"NAME":"ApiToken"`},
+		},
+		"nested pairs and object values": {
+			setting: `"setting": [{"block": [{"options": {"name": "client_secret", "value": {"inner": "leak-d"}}}]}, {"name": "license_key", "value": ["leak-e"]}]`,
+			leak:    []string{"leak-d", "leak-e"},
+			keep:    []string{`"name":"client_secret"`, `"name":"license_key"`},
+		},
+		"pairs inside JSON-encoded strings": {
+			setting: `"container_definitions": "[{\"environment\":[{\"name\":\"DB_PASSWORD\",\"value\":\"leak-f\"}]}]", "task_spec": "{\"env\":[{\"Key\":\"ApiToken\",\"Value\":\"leak-g\"}]}", "options": "[{\"name\":\"Region\",\"value\":\"eu-north-1\"}]"`,
+			leak:    []string{"leak-f", "leak-g"},
+			keep:    []string{`"options":"[{\"name\":\"Region\",\"value\":\"eu-north-1\"}]"`},
+		},
+		"harmless pricing pairs": {
+			setting: `"setting": [{"namespace": "aws:autoscaling:launchconfiguration", "name": "InstanceType", "value": "c5.xlarge"}, {"key": "MinSize", "value": "2"}, {"name": "Region", "value": "eu-west-1"}]`,
+			keep:    []string{`"value":"c5.xlarge"`, `"value":"2"`, `"name":"Region","value":"eu-west-1"`},
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			doc := strings.Replace(strings.Replace(richPlan, "%LONG%", "x", 1), setting, c.setting, 1)
+			if !strings.Contains(doc, c.setting) {
+				t.Fatal("fixture replacement failed")
+			}
+			out, err := cost.Minimize([]byte(doc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(out)
+			for _, leak := range c.leak {
+				if strings.Contains(text, leak) {
+					t.Errorf("minimized input contains %q:\n%s", leak, text)
+				}
+			}
+			for _, keep := range c.keep {
+				if !strings.Contains(text, keep) {
+					t.Errorf("minimized input lost %s:\n%s", keep, text)
+				}
+			}
+		})
 	}
 }
 

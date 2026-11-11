@@ -82,15 +82,16 @@ func clean(value, marker any, key string, depth int) (any, bool) {
 	case nil, bool, json.Number:
 		return v, true
 	case string:
-		if len(v) > maxValueString || state.LooksSecret(v) || strings.ContainsAny(v, "\x00\r\n") {
+		if len(v) > maxValueString || state.LooksSecret(v) || state.EmbeddedSecret(v, key) || strings.ContainsAny(v, "\x00\r\n") {
 			return nil, false
 		}
 		return maskAccounts(v), true
 	case map[string]any:
 		masks, _ := marker.(map[string]any)
 		out := map[string]any{}
+		pair := state.RiskyPair(v)
 		for k, item := range v {
-			if len(k) > 128 || state.Suspicious(k) {
+			if len(k) > 128 || state.Suspicious(k) || pair && strings.EqualFold(k, "value") {
 				continue
 			}
 			if c, ok := clean(item, masks[k], k, depth+1); ok {
