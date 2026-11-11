@@ -48,6 +48,22 @@ CI step names say which tier ran. They never stand for each other.
 | Local real-engine | Manual, on a maintainer machine, disposable project, local backend, no providers that reach a network | Real engine output parses and the flows work end to end (rows RE-*). |
 | Sandbox cloud | Manual, owner-approved, [AWS sandbox runbook](qualification/aws-sandbox.md) | Real backends, providers and credentials (rows BE-*, PR-*, DS-*). Never in routine CI. |
 
+## Platforms
+
+All five release binaries are cross-compiled on one Linux amd64 runner (`make cross`, `CGO_ENABLED=0`); none is built on its own platform. What then runs on each platform natively:
+
+| Binary | Release smoke (`native-smoke`) | Full test suite on the same OS/arch (CI) | Real engine | Status |
+| --- | --- | --- | --- | --- |
+| darwin/arm64 | Native, `macos-15` runner (macOS 15, Apple silicon) | Native, `macos` job (Go with `-race`, web, browser on master) | NOT_TESTED | Native smoke + native suite |
+| darwin/amd64 | Native, `macos-15-intel` runner (macOS 15, Intel) | None. The suite is not run on Intel macOS | RE-01 (Terraform 1.5.5, macOS 13 Intel, maintainer machine) | Native smoke only; one manual real-engine run |
+| linux/amd64 | Native, `ubuntu-24.04` runner | Native, `linux` job (plus lint and browser) | NOT_TESTED | Native smoke + native suite |
+| linux/arm64 | Native, `ubuntu-24.04-arm` runner | None. The suite is not run on arm64 Linux | NOT_TESTED | Native smoke only |
+| windows/amd64 | Native, `windows-2025` runner | Native, `windows` job (Go without `-race`, web, browser on master) | NOT_TESTED | Native smoke + native suite |
+
+Native smoke (`.github/workflows/release.yml`, job `native-smoke`) checks the archive's SHA-256, runs `hclaro --version`, starts `hclaro --hub --no-browser` with an empty config directory and fetches the UI over `127.0.0.1` (HTTP 200). It runs no engine and opens no project. Last full pass: `v0.1.0-beta.3`, run 42709272214, 2026-11-09 (`--version` only; the startup check was added after that release). No target is emulated: there are no QEMU or Rosetta runs, and nothing above is inferred from a neighbouring target. Windows arm64, 32-bit and other operating systems are not built or supported.
+
+CI label meaning: `build` = compiled and packaged; `native-smoke` = the shipped binary started on its own OS/arch; `linux`/`macos`/`windows` = the mocked test suite (fake engines) on that runner; `real-engine` = a row in the matrix above, recorded by hand, never CI.
+
 ## Remote and cloud execution
 
 `remote` and `cloud` backends are classified `remote-exec` from the initialized backend metadata and stay read-only whatever the UI sends: the server computes plan, apply and import capabilities from that classification, and every plan, apply, import, drift and graph endpoint checks them. Any backend type Hclaro does not recognise, or metadata it cannot read, is `unsupported` and also read-only. Changing that needs its own qualification and is out of scope for the beta.

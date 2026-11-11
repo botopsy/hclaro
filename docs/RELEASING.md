@@ -45,7 +45,7 @@ The `Release` workflow then:
 3. Cross-compiles macOS amd64/arm64, Linux amd64/arm64 and Windows amd64 with `CGO_ENABLED=0 -trimpath -buildvcs=false`.
 4. Packages `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` for Windows) containing the binary, `LICENSE`, `README.md`, `SECURITY.md`, `CHANGELOG.md` and `THIRD-PARTY-NOTICES.txt`, with fixed modification times and owners, plus `hclaro_<version>_checksums.txt` (SHA-256). The job summary lists the toolchain, commit and checksums.
 5. Writes `hclaro_<version>_sbom.cdx.json`, a CycloneDX SBOM of the Go toolchain and modules and the npm packages bundled into the UI (`scripts/release-sbom.mjs`, the same list as `THIRD-PARTY-NOTICES.txt`; reproducible for a commit), included in the checksums file.
-6. Verifies the checksum and runs `--version` natively on all five targets: Linux amd64 and arm64, macOS arm64 and amd64 (Intel), Windows amd64.
+6. `native-smoke`: verifies the checksum, runs `--version` and starts the Hub (UI over `127.0.0.1` answers 200) natively on all five targets: Linux amd64 and arm64, macOS arm64 and amd64 (Intel), Windows amd64. The full test suite runs only on Linux amd64, macOS arm64 and Windows amd64; see [Platforms](support-matrix.md#platforms).
 7. Attests build provenance for every release file with GitHub artifact attestations (Sigstore; the publish job alone gets an OIDC token), then creates a **draft** release (pre-release for any `-suffix` version) with generated notes and exactly the seven files, then downloads them back and checks them against the checksums. Only this job can write, with the workflow's own `GITHUB_TOKEN` (`contents: write`); no personal access token is used.
 
 Then review the draft on the Releases page and publish it:

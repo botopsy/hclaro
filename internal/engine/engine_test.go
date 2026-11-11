@@ -40,6 +40,10 @@ func TestHelperProcess(t *testing.T) {
 	}
 	switch args {
 	case "version -json":
+		if out := os.Getenv("HCLARO_TEST_VERSION_JSON"); out != "" {
+			fmt.Println(out)
+			break
+		}
 		fmt.Println(`{"terraform_version":"1.9.8"}`)
 	case "workspace show":
 		fmt.Println("staging")
@@ -174,6 +178,42 @@ func TestVersionCompatibility(t *testing.T) {
 		name, version, _ := strings.Cut(v, " ")
 		if Supported(name, version) != want {
 			t.Errorf("Supported(%s) = %v", v, !want)
+		}
+	}
+}
+
+// Version edges through the fake CLI's `version -json`, the path Hclaro actually uses.
+func TestVersionBoundariesThroughCLI(t *testing.T) {
+	t.Setenv("HCLARO_TEST_HELPER", "1")
+	t.Setenv("TF_LOG", "OFF")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name, json, want string
+	}{
+		{"terraform", `{"terraform_version":"1.5.0"}`, "1.5.0"},
+		{"terraform", `{"terraform_version":"1.17.99"}`, "1.17.99"},
+		{"terraform", `{"terraform_version":"1.4.7"}`, ""},
+		{"terraform", `{"terraform_version":"1.18.0"}`, ""},
+		{"terraform", `{"terraform_version":"2.0.0"}`, ""},
+		{"terraform", `{"terraform_version":"1.10.0-rc1"}`, ""},
+		{"terraform", `{"terraform_version":"1.9.0-alpha20240101"}`, ""},
+		{"terraform", `{"tofu_version":"1.9.0"}`, ""},
+		{"terraform", `not json`, ""},
+		{"tofu", `{"terraform_version":"1.6.0"}`, "1.6.0"},
+		{"tofu", `{"tofu_version":"1.13.99"}`, "1.13.99"},
+		{"tofu", `{"terraform_version":"1.5.9"}`, ""},
+		{"tofu", `{"terraform_version":"1.14.0"}`, ""},
+		{"tofu", `{"terraform_version":"1.9.0-beta1"}`, ""},
+		{"tofu", `{"terraform_version":"2.0.0"}`, ""},
+	} {
+		t.Setenv("HCLARO_TEST_VERSION_JSON", c.json)
+		cli := &CLI{Name: c.name, Executable: exe, Root: t.TempDir()}
+		v, err := cli.Version(context.Background())
+		if c.want == "" && (err == nil || v != "") || c.want != "" && (err != nil || v != c.want) {
+			t.Errorf("%s %s: got %q %v", c.name, c.json, v, err)
 		}
 	}
 }

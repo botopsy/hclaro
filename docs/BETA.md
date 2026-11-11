@@ -15,7 +15,7 @@ hclaro, published by [BotOpsy](https://github.com/botopsy), is in public beta. I
 | Every feature | Go and web unit tests, plus a real-browser suite against the real Go server, all on **synthetic** state, plans and fake Terraform/OpenTofu/AWS/Infracost CLIs. Run on Linux, macOS and Windows in CI. |
 | Real Terraform | Terraform 1.5.5 with the local backend and built-in resources only, against a disposable project. |
 | Not yet certified | Any cloud provider, any remote backend, Terraform Cloud/HCP, and every OpenTofu release. Apply and import have not been run against a real engine. Row by row: [support-matrix.md](support-matrix.md). |
-| Platforms | Every release archive (macOS arm64/amd64, Linux amd64/arm64, Windows amd64) is checksum-verified and run with `--version` natively. The full test suite runs on Linux amd64, macOS arm64 and Windows amd64 only. |
+| Platforms | Every release archive (macOS arm64/amd64, Linux amd64/arm64, Windows amd64) is cross-compiled on Linux, then checksum-verified, run with `--version` and started natively. The full test suite runs on Linux amd64, macOS arm64 and Windows amd64 only; Linux arm64 and macOS Intel get the smoke test only. See [Platforms](support-matrix.md#platforms). |
 
 ## What is qualified, what is beta and what is off
 

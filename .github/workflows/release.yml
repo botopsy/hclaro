@@ -149,7 +149,8 @@ jobs:
 
   smoke:
     # Run each packaged binary natively, on all five targets (standard runners for public
-    # repositories).
+    # repositories). docs/support-matrix.md#platforms records what this does and does not prove.
+    name: native-smoke (${{ matrix.target }})
     needs: [validate, build]
     strategy:
       fail-fast: false
@@ -186,6 +187,26 @@ jobs:
           out="$("$exe" --version | tr -d '\r')"
           echo "$out"
           [ "$out" = "hclaro $VERSION" ]
+          echo "$exe" > exe-path
+      - name: Start the Hub and fetch the UI
+        working-directory: release
+        run: |
+          set -euo pipefail
+          # Hub mode reads no project and needs no engine; an empty config dir keeps it isolated.
+          exe="$(cat exe-path)"; cfg="$RUNNER_TEMP/hclaro-config"; mkdir -p "$cfg"
+          HCLARO_CONFIG_DIR="$cfg" "$exe" --hub --no-browser > startup.log 2>&1 &
+          pid=$!
+          url=
+          for _ in $(seq 30); do
+            url=$(grep -Eo 'http://127\.0\.0\.1:[0-9]+' startup.log | head -1 || true)
+            [ -n "$url" ] && break
+            sleep 1
+          done
+          # The log's session URL is a live credential for this throwaway server; print only the address.
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$url/" || true)
+          kill "$pid" || true
+          echo "url=$url status=$code"
+          [ -n "$url" ] && [ "$code" = 200 ] || { grep -v session= startup.log || true; exit 1; }
 
   publish:
     # Only a validated tag push publishes, and only as a draft.
