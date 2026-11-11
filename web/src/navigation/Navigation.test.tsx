@@ -22,11 +22,14 @@ const listing: ProjectList = {
   launchRoot: '/infra/launch-stack'
 };
 const resource: Resource = { id: 'r1', address: 'aws_s3_bucket.logs', mode: 'managed', type: 'aws_s3_bucket', name: 'logs', provider: 'registry.terraform.io/hashicorp/aws', module: '', attributes: {} };
+// Context IDs have the server's 32-hex form; this one encodes the workspace name.
+const ctxId = (ws: string) => Array.from(ws, c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('').padEnd(32, '0');
+const wsOf = (cid: string) => cid.replace(/(00)+$/, '').match(/../g)!.map(h => String.fromCharCode(parseInt(h, 16))).join('');
 function snapshot(ws: string, hub: boolean): Workspace {
   return {
     status: 'ready',
     capturedAt: '2026-11-05T12:00:00Z',
-    ...(hub ? { context: { id: `ctx-${ws}`, projectId: hubId, alias: 'network', rootPath: '/infra/network', engine: 'terraform', workspace: ws, dataDir: '.terraform', createdAt: '2026-11-05T12:00:00Z' } } : {}),
+    ...(hub ? { context: { id: ctxId(ws), projectId: hubId, alias: 'network', rootPath: '/infra/network', engine: 'terraform', workspace: ws, dataDir: '.terraform', createdAt: '2026-11-05T12:00:00Z' } } : {}),
     info: { project: hub ? 'network' : 'launch-stack', engine: 'terraform', version: '1.9.8', workspace: ws, backend: 'local', executionMode: 'local-cli', initialized: true, providerLock: true, warnings: [], capabilities: { canReadState: true, canPlan: !hub, canApplySavedPlan: !hub, supportsImportBlocks: true, supportsGeneratedConfig: true, canImport: !hub } },
     managed: 1, data: 0, modules: [{ address: '', parent: '', count: 1 }], providers: { [resource.provider]: 1 }, types: { aws_s3_bucket: 1 }
   };
@@ -44,8 +47,8 @@ function stub() {
     if (path === 'session') return Response.json({ csrfToken: 'c'.repeat(64) });
     if (path === 'projects') return Response.json(listing);
     if (path === 'contexts') return Response.json(snapshot(JSON.parse(String(init.body)).workspace, true).context);
-    const hub = path.match(/^contexts\/ctx-(\w+)(\/resources)?/);
-    if (hub) return Response.json(hub[2] ? { resources: [resource], total: 1 } : snapshot(hub[1], true));
+    const hub = path.match(/^contexts\/([0-9a-f]{32})(\/resources)?/);
+    if (hub) return Response.json(hub[2] ? { resources: [resource], total: 1 } : snapshot(wsOf(hub[1]), true));
     if (path === 'workspace') return Response.json(snapshot('demo', false));
     if (path === 'resources') return Response.json({ resources: [resource], total: 1 });
     if (path === 'operations') return Response.json({ operations: [] });

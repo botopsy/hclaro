@@ -1,0 +1,18 @@
+import { ShieldCheck } from 'lucide-react';
+import type { Route } from '../router';
+import type { View } from '../navigation/config';
+
+// The title, description and safety badge above every page.
+export function PageHeading({
+  route,
+  view
+}: {
+  route: Route;
+  view: View;
+}) {
+  const scoped = route.kind === 'context' ? route : undefined;
+  const onHub = route.kind === 'hub' || route.kind === 'project' || route.kind === 'compare' || route.kind === 'history';
+  const comparing = route.kind === 'compare';
+  const historyPage = route.kind === 'history';
+  return historyPage ? <div className="page-heading"><div><div className="eyebrow">ON THIS MACHINE</div><h1>Operation history</h1><p>What ran, when, against which workspace, and what each reviewed plan proposed. Redacted metadata only.</p></div><span className="read-only-badge"><ShieldCheck size={13} />Never re-runs</span></div> : comparing ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>Compare workspaces</h1><p>Line up the recorded state of two workspaces: dev and prod, or one stack in two roots. Only when you ask.</p></div><span className="read-only-badge"><ShieldCheck size={13} />Read-only</span></div> : onHub ? <div className="page-heading"><div><div className="eyebrow">WORKSPACE HUB</div><h1>{route.kind === 'hub' ? 'Projects' : 'Project workspaces'}</h1><p>{route.kind === 'hub' ? 'Every Terraform and OpenTofu root you work with, in one place.' : 'Open a CLI workspace to read its recorded state in this tab.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{route.kind === 'project' ? 'Changes ask first' : 'Read-only'}</span></div> : <div className="page-heading"><div><div className="eyebrow">{scoped ? `HUB WORKSPACE · ${scoped.workspace.toUpperCase()}` : 'YOUR INFRASTRUCTURE, IN FOCUS'}</div><h1>{view === 'Resources' ? 'Resource explorer' : view === 'Overview' ? 'Workspace overview' : view === 'Import' ? 'Import an existing object' : view === 'Drift' ? 'Drift detection' : view === 'Graph' ? 'Dependency graph' : view === 'Discovery' ? 'Cloud discovery' : view === 'Tools' ? 'Project tools' : view === 'Git' ? 'Git changes' : view}</h1><p>{view === 'Resources' ? 'A clear view of everything recorded in your state.' : view === 'Overview' ? 'The shape of your infrastructure, at a glance.' : view === 'Modules' ? 'Explore the structure behind your resources.' : view === 'Providers' ? 'Provider sources referenced by this state snapshot.' : view === 'Tools' ? 'Validate, check formatting, and list provider requirements and output names. Read-only, and only when you ask.' : view === 'Git' ? 'Branch, commit and the IaC files you changed, with redacted diffs. Read-only: Hclaro never runs checkout, commit or push.' : view === 'Plans' ? 'See every change a plan proposes before anything happens.' : view === 'Drift' ? 'Compare what state records with what providers report, only when you ask.' : view === 'Graph' ? 'See what depends on what, and what a change could reach. Only a plan confirms what will change.' : view === 'Discovery' ? 'Find existing AWS objects this workspace does not record yet, and prepare a reviewed import. Only when you ask.' : view === 'Import' ? 'Bring an object that already exists into state through a reviewed import block and plan.' : view === 'Operations' ? 'Plans and applies run during this session, with sanitized output.' : 'Make this workspace feel like yours.'}</p></div><span className="read-only-badge"><ShieldCheck size={13} />{view === 'Plans' || view === 'Operations' || view === 'Import' ? 'Confirm before apply' : view === 'Drift' ? 'Never writes state' : view === 'Discovery' ? 'Read-only cloud reads' : 'Read-only'}</span></div>;
+}

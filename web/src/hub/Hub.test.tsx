@@ -36,12 +36,14 @@ const inspected = project(network, 'network', {
   lastWorkspace: 'dev',
   inspection: { engine: 'terraform', version: '1.9.8', workspaces: ['default', 'dev', 'prod'], cliDefault: 'dev', hiddenWorkspaces: 0, inspectedAt: '2026-11-05T11:00:00Z' }
 });
+// Context IDs have the server's 32-hex form.
+const ctx: Record<string, string> = { default: '1'.repeat(32), dev: '2'.repeat(32), prod: '3'.repeat(32), demo: '4'.repeat(32) };
 const projects = [inspected, project(platform, 'prod-platform', { status: 'missing', problem: 'The folder no longer exists at this path.' })];
 function snapshot(ws: string): Workspace {
   return {
     status: 'ready',
     capturedAt: '2026-11-05T12:00:00Z',
-    context: { id: `ctx-${ws}`, projectId: network, alias: 'network', rootPath: '/infra/network', engine: 'terraform', workspace: ws, dataDir: '.terraform', createdAt: '2026-11-05T12:00:00Z' },
+    context: { id: ctx[ws], projectId: network, alias: 'network', rootPath: '/infra/network', engine: 'terraform', workspace: ws, dataDir: '.terraform', createdAt: '2026-11-05T12:00:00Z' },
     info: {
       project: 'network', engine: 'terraform', version: '1.9.8', workspace: ws, backend: 'local', executionMode: 'local-cli', initialized: true, providerLock: false, warnings: [],
       capabilities: { canReadState: true, canPlan: false, planReason: 'Hub workspaces are read-only.', canApplySavedPlan: false, supportsImportBlocks: true, supportsGeneratedConfig: true, canImport: false }
@@ -68,10 +70,11 @@ function stub(list: ProjectList) {
     if (path === 'projects/browse') return Response.json({ path: '/infra', parent: '/', project: false, entries: ['network'], truncated: false });
     if (path.endsWith('/inspect')) return Response.json(inspectReply ?? inspected);
     if (path === 'contexts') return Response.json({ ...snapshot(body.workspace).context });
-    const match = path.match(/^contexts\/ctx-(\w+)(\/resources)?/);
-    if (match) {
-      if (hold && match[1] === 'prod') await hold;
-      return Response.json(match[2] ? { resources: [bucket(match[1])], total: 1 } : snapshot(match[1]));
+    const match = path.match(/^contexts\/([0-9a-f]{32})(\/resources)?/);
+    const ws = match && Object.keys(ctx).find(k => ctx[k] === match[1]);
+    if (match && ws) {
+      if (hold && ws === 'prod') await hold;
+      return Response.json(match[2] ? { resources: [bucket(ws)], total: 1 } : snapshot(ws));
     }
     if (path === 'workspace') return Response.json({ ...snapshot('demo'), context: undefined, status: 'error', diagnostic: { code: 'no_launch_project', message: 'No project.' } });
     if (path === 'operations') return Response.json({ operations: [] });
@@ -179,7 +182,7 @@ describe('Workspace Hub', () => {
     expect(await screen.findByRole('button', { name: /dev_logs/ })).toBeInTheDocument();
     const open = calls.find(c => c.url.endsWith('/contexts'))!;
     expect(open.body).toEqual({ projectId: network, workspace: 'dev', reload: false });
-    expect(calls.some(c => c.url.includes('contexts/ctx-dev/resources'))).toBe(true);
+    expect(calls.some(c => c.url.includes(`contexts/${ctx.dev}/resources`))).toBe(true);
     expect(calls.some(c => c.url === '/api/v1/resources' || c.url.startsWith('/api/v1/resources?'))).toBe(false);
     // Hub contexts are read-only: no replacement selection and no workflows.
     expect(screen.queryByLabelText(/for replacement/)).not.toBeInTheDocument();
@@ -203,6 +206,27 @@ describe('Workspace Hub', () => {
     // No call ever asks the server to select a workspace.
     expect(calls.some(c => JSON.stringify(c.body || {}).includes('select'))).toBe(false);
   });
+  it('keeps the latest workspace when switching back before a slow one answers', async () => {
+    stub(listing(projects));
+    app(`/projects/${network}/workspaces/dev/resources`);
+    expect(await screen.findByRole('button', { name: /dev_logs/ })).toBeInTheDocument();
+    let release!: () => void;
+    hold = new Promise(r => {
+      release = r;
+    });
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    expect(await screen.findByText('Reading your workspace')).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'dev');
+    expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/resources`);
+    expect(await screen.findByRole('button', { name: /dev_logs/ })).toBeInTheDocument();
+    // The slow prod answer arrives after the switch back and is never shown here.
+    release();
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.getByRole('button', { name: /dev_logs/ })).toBeInTheDocument();
+    expect(screen.queryByText('prod_logs')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Workspace')).toHaveValue('dev');
+  });
   it('opens Compare workspaces from the sidebar without reading anything', async () => {
     stub(listing(projects));
     app('/projects');
@@ -222,7 +246,7 @@ describe('Workspace Hub', () => {
     expect(window.location.search).toBe('');
     expect(sessionStorage.getItem(`hclaro.profile.${network}`)).toBe('none');
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><App /></QueryClientProvider>);
-    await waitFor(() => expect(calls.some(c => c.url.endsWith(`contexts/ctx-prod/resources/${rid}`))).toBe(true));
+    await waitFor(() => expect(calls.some(c => c.url.endsWith(`contexts/${ctx.prod}/resources/${rid}`))).toBe(true));
     sessionStorage.clear();
   });
   it('ignores malformed deep-link parameters', () => {

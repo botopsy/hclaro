@@ -546,6 +546,8 @@ The Resources view adds a checkbox to managed rows only; the selection (kept acr
 
 The build is TypeScript + Vite + Tailwind, with React, TanStack Query, Lucide and a shadcn-style Button. Vite writes content-hashed files to `internal/ui/dist/assets/` plus `THIRD-PARTY-NOTICES.txt` for runtime dependencies; the Go binary embeds that directory.
 
+`App.tsx` keeps view orchestration only. `web/src/workbench/useWorkbenchContext.ts` owns the selected context: the project and profile, the opened Hub context, and the one typed scope (`PlanScope`) through which workspace, resource, plan and operation reads go. `scopedPath`/`snapshotPath` in `plans/routes.ts` refuse a malformed context ID instead of falling back to launch routes, and queries are keyed by scope, so a late response for a previous workspace or profile never fills the current one. Preferences, the explorer parts, Overview, Settings and the page heading live beside it in `workbench/`.
+
 Styles are plain global CSS. `web/src/styles.css` is only the entry: it imports Tailwind and then the files in `web/src/styles/` in a fixed order (tokens, base, shell, shared views, then one file per feature area). That order is the cascade, so new feature files are appended; the split was checked to produce a byte-identical built stylesheet.
 
 ## Navigation (M21)
