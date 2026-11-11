@@ -1,0 +1,276 @@
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: .3;
+    transform: translateX(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (width >= 1700px) {
+  .explorer {
+    max-height: calc(100vh - 340px);
+  }
+
+
+  .module-panel {
+    width: 220px;
+  }
+
+  .main-content {
+    padding-left: 42px;
+    padding-right: 42px;
+  }
+}
+
+@media (width <= 1350px) {
+
+
+
+  .main-content, .topbar, .context-bar, .statusbar {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .context-bar {
+    gap: 12px;
+  }
+
+  .app {
+    --sidebar-width: 216px;
+  }
+
+  .module-panel {
+    width: 175px;
+  }
+
+  .directory-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width <= 1100px) {
+  .session-label, .snapshot-time {
+    display: none;
+  }
+
+  .context-bar {
+    gap: 10px;
+    font-size: 12px;
+  }
+
+  .context-item {
+    gap: 5px;
+  }
+
+  .app {
+    --sidebar-width: 204px;
+  }
+
+  .brand {
+    gap: 6px;
+    font-size: 20px;
+  }
+
+  .release-badge {
+    font-size: 11px;
+  }
+
+  .stats-grid {
+    gap: 8px;
+  }
+
+  .stat {
+    padding: 15px;
+  }
+
+  .stat > span {
+    font-size: 12px;
+  }
+
+  .stat > strong {
+    font-size: 28px;
+  }
+
+  .overview-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .module-panel {
+    width: 157px;
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+
+
+
+  .inspector-title .resource-icon {
+    display: flex;
+  }
+
+  .resources-table th, .resources-table td {
+    padding-left: 11px;
+    padding-right: 11px;
+  }
+
+  .filter-row select {
+    max-width: 165px;
+  }
+
+  .page-heading p {
+    font-size: 13px;
+  }
+
+  .read-only-badge {
+    font-size: 11px;
+  }
+
+  .filter-count {
+    font-size: 12px;
+  }
+}
+
+@media (width <= 900px) {
+  /* Narrow screens: the sidebar becomes a labelled drawer over the content, opened from the
+     top bar. Closed, it is hidden (and out of the tab order) so the content keeps the full width. */
+  .app, .app.sidebar-compact {
+    --sidebar-width: 0px;
+  }
+
+  .sidebar {
+    visibility: hidden;
+    width: min(280px, 85vw);
+    box-shadow: var(--shadow);
+    transition: transform .18s, visibility .18s;
+    transform: translateX(-100%);
+  }
+
+  .nav-open .sidebar {
+    visibility: visible;
+    transform: none;
+  }
+
+  .sidebar-backdrop {
+    z-index: 24;
+    background: #0008;
+    display: block;
+    position: fixed;
+    inset: 0;
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .sidebar-close {
+    display: grid;
+  }
+
+  .nav-toggle {
+    margin-right: 6px;
+    display: inline-flex !important;
+  }
+
+  .topbar {
+    justify-content: flex-start;
+  }
+
+  .topbar-actions {
+    margin-left: auto;
+  }
+
+  .topbar {
+    height: 58px;
+  }
+
+  .main-content {
+    padding: 28px 20px 20px;
+  }
+
+  .module-panel {
+    width: 160px;
+  }
+
+
+  .context-bar {
+    height: 42px;
+  }
+
+  .filter-row select {
+    max-width: 155px;
+  }
+
+
+  .page-heading {
+    margin-bottom: 25px;
+  }
+
+  .hide-small {
+    display: none;
+  }
+
+  .explorer {
+    max-height: calc(100vh - 320px);
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .setting-row {
+    padding: 21px;
+  }
+
+  .segmented > button {
+    padding: 7px;
+  }
+
+  .breadcrumbs {
+    font-size: 13px;
+  }
+
+  .context-item .mono {
+    font-size: 12px;
+  }
+
+  .statusbar {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, :before, :after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+:root[data-theme="dark"] .theme-to-dark, :root[data-theme="light"] .theme-to-light {
+  display: none;
+}
+
+.skip-link {
+  z-index: 30;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: 6px;
+  padding: 12px 16px;
+  position: fixed;
+  top: -60px;
+  left: 20px;
+}
+
+.skip-link:focus {
+  top: 12px;
+}

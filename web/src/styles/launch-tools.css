@@ -1,0 +1,40 @@
+/* M21: Tools for the project opened from the terminal explains the Hub context first. */
+.launch-tools {
+  flex-direction: column;
+  gap: 18px;
+  max-width: 900px;
+  display: flex;
+}
+
+.launch-tools .surface {
+  flex-direction: column;
+  gap: 16px;
+  display: flex;
+}
+
+.launch-tools-list {
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+}
+
+.launch-tools-list li {
+  align-items: flex-start;
+  gap: 10px;
+  display: flex;
+}
+
+.launch-tools-list li > svg {
+  color: var(--accent-text);
+  margin-top: 2px;
+}
+
+.launch-tools-list li > span {
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  display: flex;
+}

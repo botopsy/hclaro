@@ -390,7 +390,7 @@ This starts the **synthetic** backend at `127.0.0.1:9273` and Vite at `127.0.0.1
 
 `make browser-test` builds an isolated HTTP fixture helper and runs Playwright against the real Go handler using intercepted requests. Install a browser first (`cd web && npx playwright install chromium`; Playwright is held at 1.58 because newer releases do not support macOS 13), or set `HCLARO_CHROME` to an installed Chrome executable. It checks rendering, copying, filters, themes, tablet overflow, secret boundaries, plan, apply-confirmation and import flows, and a 1,000-instance search, and writes screenshots into `docs/screenshots/`. It never reaches a real engine or cloud account.
 
-Brand colours, logo geometry and contrast results are documented in [`docs/design/BRAND.md`](docs/design/BRAND.md). Colours live once as tokens at the top of `web/src/styles.css`; components use the semantic tokens only. `make brand-assets` regenerates the committed favicon, touch icon and `docs/design/assets` from the reference geometry (offline, with the test Chromium).
+Brand colours, logo geometry and contrast results are documented in [`docs/design/BRAND.md`](docs/design/BRAND.md). Colours live once as tokens in `web/src/styles/tokens.css`; components use the semantic tokens only. `make brand-assets` regenerates the committed favicon, touch icon and `docs/design/assets` from the reference geometry (offline, with the test Chromium).
 
 ## Cross-platform binaries
 

@@ -19,7 +19,9 @@ function rule(selector: string) {
 
 // Vitest replaces CSS imports, even ?raw ones, so the stylesheet is read from disk.
 // Git may check it out with CRLF (Windows CI); the parser below expects LF.
-const css = readFileSync(path.join(import.meta.dirname, '../styles.css'), 'utf8').replace(/\r\n/g, '\n');
+// The entry only @imports the split files, so they are inlined in cascade order.
+const read = (file: string) => readFileSync(path.join(import.meta.dirname, '..', file), 'utf8').replace(/\r\n/g, '\n');
+const css = read('styles.css').replace(/^@import "\.\/(styles\/[\w-]+\.css)";.*$/gm, (_, file) => read(file));
 
 const reference = { navy: '#0B1220', ivory: '#F4F4F0', stone: '#E8E8E1', lime: '#C6F432', olive: '#6A8F00' };
 

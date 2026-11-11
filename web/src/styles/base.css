@@ -1,0 +1,74 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 700px;
+  margin: 0;
+}
+
+button, input, select {
+  font: inherit;
+}
+
+button, select {
+  cursor: pointer;
+}
+
+button {
+  color: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .4;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button, input, select, textarea, summary {
+  outline: none;
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, :where([tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+button {
+  transition: background .13s, border-color .13s;
+}
+
+svg {
+  flex-shrink: 0;
+}
+
+h1, h2, h3, p {
+  margin: 0;
+}
+
+button {
+  background: none;
+  border: 0;
+}
+
+select {
+  color: var(--muted);
+  border: 1px solid var(--input);
+  background: var(--surface);
+  border-radius: 6px;
+  max-width: 210px;
+  padding: 7px 27px 7px 10px;
+}
+
+code, .mono {
+  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-size: .88em;
+}
+
+.muted {
+  color: var(--muted);
+}
