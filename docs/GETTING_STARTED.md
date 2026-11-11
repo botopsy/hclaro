@@ -22,7 +22,7 @@ This guide takes you from a clean machine to hclaro showing one of your Terrafor
    ```
 
    On Windows: `Get-FileHash .\hclaro_<version>_windows_amd64.zip -Algorithm SHA256` and compare with the checksums file.
-   Optionally, with the GitHub CLI: `gh attestation verify <archive> -R botopsy/hclaro` checks that the file was built by hclaro's release workflow.
+   The checksums file comes from the same release page as the archive, so a match shows that the download is complete and unchanged, not who published it. To check the publisher, use the GitHub CLI: `gh attestation verify <archive> -R botopsy/hclaro` checks that the file was built by hclaro's release workflow from a tagged commit.
 3. Extract it and put `hclaro` (`hclaro.exe`) in a folder on your `PATH` that only your user can write:
 
    ```sh
@@ -31,8 +31,20 @@ This guide takes you from a clean machine to hclaro showing one of your Terrafor
    ```
 
    On Windows (PowerShell): `Expand-Archive .\hclaro_<version>_windows_amd64.zip $env:LOCALAPPDATA\Programs\hclaro`, then add that folder to your user `Path` in **Settings → System → About → Advanced system settings → Environment Variables** (user variables, not system). Avoid folders that other users or installers can write to, and do not run Hclaro as root or Administrator.
-4. The binaries are not signed. On macOS, if Gatekeeper blocks the first launch, allow it in **System Settings → Privacy & Security**; on Windows, SmartScreen shows **More info → Run anyway**. Only do this for a binary whose checksum you verified.
+4. Beta binaries are **not code-signed or notarized**: Apple and Microsoft have not checked them, and the warnings below are expected. Allow only the one binary whose checksum (and ideally attestation) you verified. Never turn off Gatekeeper (`spctl --master-disable`) or SmartScreen for the whole system.
+   - **macOS.** If you downloaded the archive with a browser, the first `hclaro` run is blocked ("Apple could not verify…"). Open **System Settings → Privacy & Security**, click **Open Anyway** next to the hclaro message, confirm, and run it again. Or, in a terminal, remove the download flag from that one file only: `xattr -d com.apple.quarantine ~/.local/bin/hclaro`. Archives fetched with `curl` carry no such flag and are not blocked.
+   - **Windows.** SmartScreen may show **Windows protected your PC**; choose **More info → Run anyway**. Or, before extracting, unblock just that archive in PowerShell: `Unblock-File .\hclaro_<version>_windows_amd64.zip`.
+   - On macOS you can avoid the warning by installing from source instead (Option B, or `brew install botopsy/tap/hclaro`): a binary you build yourself is not flagged as downloaded.
 5. Check it: `hclaro --version`.
+
+### Option A2: Homebrew (macOS; Linux untested)
+
+```sh
+brew install botopsy/tap/hclaro
+hclaro --version
+```
+
+Homebrew downloads the tagged source archive, checks its pinned SHA-256 and builds it with its own Go. The result is unsigned like the release binaries but is not flagged as downloaded, so Gatekeeper does not block it. Upgrade with `brew upgrade hclaro`; the formula is updated after each release, so it can lag a new GitHub release briefly.
 
 ### Option B: build from source
 

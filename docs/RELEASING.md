@@ -1,6 +1,6 @@
 # Releasing hclaro (draft)
 
-hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub repository. They are built by GitHub Actions (`.github/workflows/release.yml`) when a version tag is pushed, uploaded to a **draft** release, and published by the maintainer after review. Distribution is **GitHub Releases only**; see [Distribution roadmap](#distribution-roadmap) for what comes later and under which conditions.
+hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub repository. They are built by GitHub Actions (`.github/workflows/release.yml`) when a version tag is pushed, uploaded to a **draft** release, and published by the maintainer after review. Distribution is **GitHub Releases**, plus a source-build Homebrew formula in the `botopsy/homebrew-tap` tap; see [Distribution roadmap](#distribution-roadmap) for what comes later and under which conditions.
 
 ## Version scheme
 
@@ -74,19 +74,52 @@ shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing      # sha256su
 gh attestation verify hclaro_<version>_darwin_arm64.tar.gz -R botopsy/hclaro
 ```
 
-The attestation proves the file was built by this repository's `Release` workflow from the tagged commit. It is not a code signature; operating systems still treat the binaries as unsigned.
+The checksums file is published next to the archives, so a match proves only that the download is complete and unchanged; anyone able to replace an archive could replace the checksums too. The attestation proves the file was built by this repository's `Release` workflow from the tagged commit. Neither is a code signature; operating systems still treat the binaries as unsigned.
 
 ## Not provided
 
-- Code signing, macOS notarization and Windows Authenticode. No signing credentials exist; binaries are unsigned and the README says so.
-- Package managers (Homebrew, Scoop, apt, …), installers and auto-update. See below.
+- Code signing, macOS notarization and Windows Authenticode. No signing credentials exist and the release needs none (no Apple Developer membership, no certificate); binaries are unsigned and the README says so. Go's linker gives macOS arm64 binaries an ad-hoc signature, which the OS requires but which identifies no publisher. See [Future code signing](#future-code-signing).
+- Other package managers (Scoop, apt, …), installers and auto-update. See below.
+
+## Homebrew formula
+
+`packaging/homebrew/hclaro.rb` is a source-build formula: it downloads the tag's GitHub source archive (pinned by SHA-256), builds `cmd/hclaro` with the Homebrew Go, and its test checks `hclaro --version`. The web UI is already committed in `internal/ui/dist`, so Node is not needed. A binary built by Homebrew is not marked as downloaded, so Gatekeeper does not block it; it is still unsigned.
+
+The canonical copy lives here; the public tap [`botopsy/homebrew-tap`](https://github.com/botopsy/homebrew-tap) (created 2026-11-11 by owner decision) carries the same file as `Formula/hclaro.rb`, and users install with `brew install botopsy/tap/hclaro`. The tap's default branch has the same ruleset as `master` here except required checks (no deletion, no force-push, pull request required, no bypass), a read-only Actions token, and secret scanning with push protection.
+
+For each release, after the tag is published:
+
+```sh
+v=0.1.0-beta.4   # the new version
+curl -fsSL https://github.com/botopsy/hclaro/archive/refs/tags/v$v.tar.gz | shasum -a 256
+# put the URL and that SHA-256 into packaging/homebrew/hclaro.rb, then test from a throwaway local tap:
+brew tap-new --no-git hclaro-test/local && brew trust hclaro-test/local
+cp packaging/homebrew/hclaro.rb "$(brew --repository)/Library/Taps/hclaro-test/homebrew-local/Formula/"
+brew style hclaro-test/local/hclaro && brew audit --strict --online hclaro-test/local/hclaro
+brew install --build-from-source hclaro-test/local/hclaro && brew test hclaro-test/local/hclaro
+brew uninstall hclaro && brew untap hclaro-test/local
+```
+
+Then open a pull request in `botopsy/homebrew-tap` that copies the tested file to `Formula/hclaro.rb`, merge it, and check `brew install botopsy/tap/hclaro` prints the new version. Rollback: revert that commit in the tap and say so in the release notes.
+
+Do not set `HOMEBREW_NO_INSTALL_FROM_API` for this: Homebrew would clone all of `homebrew-core` first.
+
+## Future code signing
+
+Not implemented: no signing job, secret or placeholder exists. Adding signing needs the owner's decision and accounts, and would change the release like this:
+
+- **macOS Developer ID signing**: a paid Apple Developer Program membership and a Developer ID Application certificate. Signing runs on a macOS runner (`codesign --options runtime --timestamp`) because the current cross-compile on Linux cannot sign; the checksums and attestations must then cover the signed binaries, not the unsigned ones.
+- **Apple notarization**: submit each signed archive with `xcrun notarytool` using an App Store Connect API key, and wait for acceptance. A bare CLI binary inside a `.tar.gz` cannot be stapled, so Gatekeeper checks the ticket online on first launch.
+- **Windows Authenticode**: an OV/EV code-signing certificate, usually held in a cloud HSM or signing service, used by `signtool` (or the service's tool) with an RFC 3161 timestamp on a Windows runner.
+- **Credentials in CI**: kept only in a GitHub environment with required reviewers that only the publish path can use, never available to pull requests, rotated on maintainer change, with revocation steps written down here.
+- **Verification**: the release smoke test checks `codesign --verify --strict` and `spctl --assess` on macOS and `Get-AuthenticodeSignature` on Windows; the docs then replace the Gatekeeper and SmartScreen instructions.
 
 ## Distribution roadmap
 
 Each stage starts only when the conditions listed for it are met and written down here. None is scheduled.
 
 1. **GitHub Releases (now).** Archives, checksums, SBOM and provenance attestations; users install and upgrade by hand ([GETTING_STARTED.md](GETTING_STARTED.md#2-install)). Hclaro never checks for or downloads updates.
-2. **Homebrew tap** (`botopsy/homebrew-tap`), not before the first release without a pre-release suffix. Conditions: a named maintainer who updates the formula for every release; the formula pins the release archive URL and its SHA-256 from the checksums file and is generated by the release workflow from the published draft, not edited by hand; a written rollback (revert the formula commit and say so in the release notes); the tap repository has the same protected-branch and token rules as this one.
+2. **Homebrew tap (now, since 0.1.0-beta.3).** `brew install botopsy/tap/hclaro` builds from source ([Homebrew formula](#homebrew-formula)); the owner moved this ahead of the first release without a pre-release suffix on 2026-11-11. Conditions that still apply: a named maintainer who updates the formula for every release; the formula pins the tag's source archive URL and its SHA-256 and is tested as above before it is pushed; a written rollback (revert the formula commit and say so in the release notes); the tap repository has the same protected-branch and token rules as this one.
 3. **Scoop bucket, apt/rpm repositories, installers (`.pkg`, `.msi`).** Conditions: everything in stage 2, plus code signing for the platform concerned (installers in particular must not ask users to bypass Gatekeeper or SmartScreen), a key-management and rotation plan for any repository signing key, and someone able to answer platform-specific bugs.
 4. **Auto-update: not planned.** It would need a trusted channel design first: signed update metadata verified against a key shipped in the binary, a user-visible opt-in, no network contact without it (Hclaro's local-first promise), and a downgrade/rollback rule consistent with [config-compatibility.md](config-compatibility.md). Until such a design is reviewed, no update check, notification or download is added.
 
