@@ -133,6 +133,9 @@ jobs:
           # CycloneDX SBOM of the Go toolchain/modules and the bundled frontend packages.
           node scripts/release-sbom.mjs "$VERSION" "release/hclaro_${VERSION}_sbom.cdx.json"
           (cd release && sha256sum hclaro_* > "hclaro_${VERSION}_checksums.txt")
+          # Archives hold exactly the expected files with no credential-like content; the SBOM
+          # is valid and lists every module in each binary; checksums cover every file.
+          go run ./scripts/release-check "$VERSION" release
           {
             echo "### Release archives ($VERSION)"
             echo '```'
@@ -243,6 +246,15 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release/hclaro_*
+      - name: Verify provenance attestations
+        # shortcut: non-blocking until it has passed on one real tag (dry runs cannot attest); then remove continue-on-error.
+        continue-on-error: true
+        env:
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for f in release/hclaro_*; do gh attestation verify "$f" --repo "$REPO" --signer-workflow "$REPO/.github/workflows/release.yml" >/dev/null; echo "attested: $f"; done | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Create draft release
         env:
           VERSION: ${{ needs.validate.outputs.version }}

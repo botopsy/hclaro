@@ -21,5 +21,9 @@ export async function writeNotices(modules,output,packages) {
  await fs.writeFile(path.join(output,'THIRD-PARTY-NOTICES.txt'),text)
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+ // Every runtime (non-dev) package in the lockfile can reach the bundle, so each needs a notice.
+ const lock=JSON.parse(await fs.readFile(path.join(root,'web/package-lock.json'),'utf8'))
+ const unlisted=Object.entries(lock.packages).filter(([key,entry])=>key.startsWith('node_modules/')&&!entry.dev&&!entry.devOptional&&!bundledPackages.includes(key.slice('node_modules/'.length)))
+ if(unlisted.length) throw new Error(`Runtime packages missing from bundledPackages (scripts/vendor-notices.mjs): ${unlisted.map(([key])=>key.slice(13)).join(', ')}`)
  await writeNotices(path.join(root,'web/node_modules'),path.join(root,'internal/ui/dist'),bundledPackages)
 }

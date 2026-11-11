@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+Supply-chain checks (M24.23):
+
+- Every release (and dry run) is checked by `scripts/release-check` before anything is published: archives must hold exactly the binary and its five documents, with no credential-like content; the checksums file must cover every file; the SBOM must list the Go toolchain and every module in each binary. The publish job also verifies each provenance attestation. RELEASING.md says what the provenance records and that no SLSA level is claimed.
+- The frontend build fails if a runtime npm package is missing from the third-party notices.
+
 Distribution trust (M24.22):
 
 - Homebrew: `brew install botopsy/tap/hclaro` builds hclaro from the tagged source with Homebrew's Go. The formula lives in `packaging/homebrew/hclaro.rb` and the new public tap `botopsy/homebrew-tap` ([RELEASING.md](docs/RELEASING.md#homebrew-formula)).
