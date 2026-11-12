@@ -286,6 +286,24 @@ func TestApplyFailureOutcomes(t *testing.T) {
 	}
 }
 
+// Shutdown interrupts a running apply and waits for the engine to stop, however short the
+// wait the caller passed.
+func TestCloseWaitsForARunningApply(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, BlockApply: true, ApplyStopDelay: 500 * time.Millisecond}
+	m, _ := setup(t, fake, workspace.Info{})
+	op := approveAndApply(t, m, planned(t, m))
+	waitStage(t, m, op.ID, "Applying")
+	if !m.Applying() {
+		t.Fatal("apply not reported as running")
+	}
+	m.Close(10 * time.Millisecond)
+	done, _, _ := m.Operation(op.ID)
+	if m.Applying() || done.Status != Cancelled || done.Diagnostic == nil || done.Diagnostic.Code != "shutdown" || done.Outcome != "uncertain" {
+		t.Fatalf("%+v %+v", done, done.Diagnostic)
+	}
+	assertTempEmpty(t, m)
+}
+
 func TestOnlyLatestApplicablePlanIsKept(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})

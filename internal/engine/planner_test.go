@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,12 @@ func planHelper() {
 			os.Exit(4)
 		}
 		fmt.Printf("{\"type\":\"apply_start\",\"plan\":%q}\n", b)
+		switch os.Getenv("HCLARO_PLAN_MODE") {
+		case "slowstop":
+			slowStop(args[3], 1)
+		case "finish":
+			slowStop(args[3], 0)
+		}
 		if os.Getenv("HCLARO_PLAN_MODE") == "stale" {
 			fmt.Fprintln(os.Stderr, "Error: Saved plan is stale")
 			os.Exit(1)
@@ -63,6 +70,8 @@ func planHelper() {
 	case "lock":
 		fmt.Fprintln(os.Stderr, "Error acquiring the state lock\nLock Info: DO_NOT_LEAK_HCLARO_TEST_SECRET")
 		os.Exit(1)
+	case "slowstop":
+		slowStop(out, 1)
 	case "hang":
 		interrupted := make(chan os.Signal, 1)
 		signal.Notify(interrupted, os.Interrupt)
@@ -78,6 +87,104 @@ func planHelper() {
 		os.Exit(3)
 	}
 	os.Exit(0)
+}
+
+// slowStop prints its pid, then after the first interrupt keeps running for two seconds,
+// counting further interrupts, writes the count to base+".interrupts" and exits with code.
+func slowStop(base string, code int) {
+	interrupted := make(chan os.Signal, 8)
+	signal.Notify(interrupted, os.Interrupt)
+	fmt.Printf("{\"pid\":%d}\n", os.Getpid())
+	select {
+	case <-interrupted:
+	case <-time.After(30 * time.Second):
+		os.Exit(9)
+	}
+	count := 1
+	for deadline := time.After(2 * time.Second); ; {
+		select {
+		case <-interrupted:
+			count++
+			continue
+		case <-deadline:
+		}
+		break
+	}
+	_ = os.WriteFile(base+".interrupts", []byte(strconv.Itoa(count)), 0o600)
+	os.Exit(code)
+}
+
+// cancelSlowStop runs fn, cancels it after the first output line and returns its error and the
+// number of interrupts the engine recorded ("" when it was killed before recording them).
+func cancelSlowStop(t *testing.T, base string, fn func(context.Context, func([]byte)) error) (error, string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{}, 1)
+	result := make(chan error, 1)
+	go func() { result <- fn(ctx, func([]byte) { started <- struct{}{} }) }()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("helper did not start")
+	}
+	time.Sleep(100 * time.Millisecond) // the helper's signal handler is installed before its first line
+	cancel()
+	var err error
+	select {
+	case err = <-result:
+	case <-time.After(30 * time.Second):
+		t.Fatal("cancel did not stop the engine")
+	}
+	b, _ := os.ReadFile(base + ".interrupts")
+	return err, string(b)
+}
+
+// shortGrace shortens the plan grace period for one test.
+func shortGrace(t *testing.T) {
+	saved := gracePeriod
+	gracePeriod = 500 * time.Millisecond
+	t.Cleanup(func() { gracePeriod = saved })
+}
+
+func TestApplyCancelGetsItsOwnGracePeriodAndOneInterrupt(t *testing.T) {
+	shortGrace(t)
+	c := planCLI(t, "slowstop")
+	path := filepath.Join(t.TempDir(), "saved")
+	if err := os.WriteFile(path, []byte("plan"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, path, line) })
+	if !errors.Is(err, ErrCancelled) {
+		t.Fatal(err)
+	}
+	if interrupts != "1" {
+		t.Fatalf("apply was killed within the plan grace period or interrupted more than once: %q", interrupts)
+	}
+}
+
+func TestApplyThatFinishesAfterCancelIsNotReportedCancelled(t *testing.T) {
+	c := planCLI(t, "finish")
+	path := filepath.Join(t.TempDir(), "saved")
+	if err := os.WriteFile(path, []byte("plan"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, path, line) })
+	if err != nil || interrupts != "1" {
+		t.Fatalf("%v %q", err, interrupts)
+	}
+}
+
+func TestPlanCancelIsKilledAfterGracePeriod(t *testing.T) {
+	shortGrace(t)
+	c := planCLI(t, "slowstop")
+	out := filepath.Join(t.TempDir(), "p")
+	err, interrupts := cancelSlowStop(t, out, func(ctx context.Context, line func([]byte)) error {
+		return c.Plan(ctx, PlanRequest{Out: out}, line)
+	})
+	if !errors.Is(err, ErrCancelled) || interrupts != "" {
+		t.Fatalf("plan was not killed after its grace period: %v %q", err, interrupts)
+	}
 }
 
 func planCLI(t *testing.T, mode string) *CLI {

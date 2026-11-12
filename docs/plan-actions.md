@@ -36,6 +36,16 @@ output, and action names Hclaro does not know.
 Inspect the plan with the engine's own CLI (`terraform show <planfile>` / `tofu show <planfile>`)
 and apply it there if you have checked it is correct.
 
+## Stopping a plan or apply
+
+Cancel in the UI, a timeout or Ctrl+C in the terminal sends the engine one interrupt; the engine
+runs in its own process group, so the terminal's Ctrl+C never reaches it directly. A plan that
+has not stopped 15 seconds later is killed. An apply gets 10 minutes: providers finish in-flight
+calls and the engine writes state, and killing it earlier can lose state or leave a lock. An
+interrupted apply is reported as uncertain unless the engine exits successfully, in which case it
+is reported as applied. When Hclaro is stopped during an apply it says so and waits for the
+engine; pressing Ctrl+C again exits at once and leaves the engine to stop on its own.
+
 ## Reporting a new combination
 
 If a supported engine version emits a combination that should be supported, open an issue with:
