@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"hclaro/internal/imports"
 )
 
 // DiffLine is one displayed diff line. Old and New are 1-based line numbers.
@@ -55,6 +57,11 @@ const (
 	maxDiffOutput = 1 << 20
 	maxDiffLines  = 4000
 	maxNewFile    = 512 << 10
+	// fullContext asks Git for the whole file as context: more lines than fit in
+	// maxDiffOutput, so the redaction sees every block a changed line sits in. The display
+	// is cut back to displayContext lines around each change.
+	fullContext    = "--unified=1048576"
+	displayContext = 3
 )
 
 // Diff returns the redacted line diff of one changed configuration file, named by the ID
@@ -101,7 +108,7 @@ func (s *Service) Diff(ctx context.Context, root, id string) (GitDiff, error) {
 			return GitDiff{File: *file}, err
 		}
 	}
-	raw, overflow, err := s.Runner.Run(ctx, scope.Base, maxDiffOutput, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--unified=3", "HEAD", "--", ":(literal)"+file.Path)
+	raw, overflow, err := s.Runner.Run(ctx, scope.Base, maxDiffOutput, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", fullContext, "HEAD", "--", ":(literal)"+file.Path)
 	if err != nil {
 		return GitDiff{File: *file}, ErrDiffFailed
 	}
@@ -118,12 +125,13 @@ func newFileHunk(text string, d *GitDiff) GitDiffHunk {
 	}
 	h := GitDiffHunk{OldStart: 0, NewStart: 1, Lines: []DiffLine{}}
 	r := &LineRedactor{}
+	forced := imports.SecretLines(lines)
 	for i, l := range lines {
 		if len(h.Lines) == maxDiffLines {
 			d.Truncated = true
 			break
 		}
-		t, red := r.Line(l)
+		t, red := r.line(l, forced[i])
 		if red {
 			d.Redacted++
 		}
@@ -139,8 +147,17 @@ var headerPrefixes = []string{"diff --git ", "index ", "--- ", "+++ ", "new file
 
 // ParseDiff parses unified diff output for one file into redacted hunks. Unknown lines,
 // inconsistent hunk counts and more than one file are refused. Binary diffs are reported
-// without content. overflow marks output that was cut at the size limit.
+// without content. overflow marks output that was cut at the size limit. Output is expected
+// with full context (fullContext); see display for what happens otherwise.
 func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
+	if err := parseDiff(raw, overflow, d); err != nil {
+		d.Hunks = []GitDiffHunk{} // may hold raw, unredacted lines
+		return err
+	}
+	return nil
+}
+
+func parseDiff(raw []byte, overflow bool, d *GitDiff) error {
 	text := string(raw)
 	lines := strings.Split(text, "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
@@ -155,8 +172,6 @@ func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
 	var h *GitDiffHunk
 	oldLeft, newLeft, oldNo, newNo := 0, 0, 0, 0
 	files := 0
-	r := &LineRedactor{}
-	total := 0
 	finish := func() error {
 		if h == nil {
 			return nil
@@ -173,11 +188,6 @@ func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
 			if line == "" {
 				return ErrMalformed
 			}
-			if total == maxDiffLines {
-				d.Truncated = true
-				oldLeft, newLeft = 0, 0
-				break
-			}
 			kind := ""
 			switch line[0] {
 			case ' ':
@@ -190,12 +200,10 @@ func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
 				kind = "add"
 				newNo++
 				newLeft--
-				d.Added++
 			case '-':
 				kind = "delete"
 				oldNo++
 				oldLeft--
-				d.Removed++
 			case '\\':
 				h.Lines = append(h.Lines, DiffLine{Kind: "note", Text: "No newline at end of file"})
 				continue
@@ -205,11 +213,8 @@ func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
 			if oldLeft < 0 || newLeft < 0 {
 				return ErrMalformed
 			}
-			t, red := r.Line(line[1:])
-			if red {
-				d.Redacted++
-			}
-			dl := DiffLine{Kind: kind, Text: t, Redacted: red}
+			// Raw text, replaced by display before ParseDiff returns.
+			dl := DiffLine{Kind: kind, Text: line[1:]}
 			if kind != "add" {
 				dl.Old = oldNo
 			}
@@ -217,7 +222,6 @@ func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
 				dl.New = newNo
 			}
 			h.Lines = append(h.Lines, dl)
-			total++
 			continue
 		}
 		switch {
@@ -231,10 +235,8 @@ func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
 			if err != nil {
 				return err
 			}
-			// The section text (enclosing block) is redacted like any line.
-			if hunk.Section != "" {
-				hunk.Section, _ = (&LineRedactor{}).Line(hunk.Section)
-			}
+			// Git's section text is a line from outside the hunk; it is never shown.
+			hunk.Section = ""
 			h = &hunk
 			oldLeft, newLeft = hunk.OldLines, hunk.NewLines
 			oldNo, newNo = hunk.OldStart-1, hunk.NewStart-1
@@ -244,7 +246,6 @@ func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
 			if hunk.NewLines == 0 {
 				newNo = hunk.NewStart
 			}
-			r = &LineRedactor{}
 		case strings.HasPrefix(line, "Binary files ") || line == "GIT binary patch":
 			d.Binary, d.Notice = true, "Git reports this file as binary; its content is not shown."
 			d.Hunks = []GitDiffHunk{}
@@ -271,9 +272,131 @@ func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
 		if h != nil {
 			d.Hunks = append(d.Hunks, *h)
 		}
+		display(d)
 		return nil
 	}
-	return finish()
+	if err := finish(); err != nil {
+		return err
+	}
+	display(d)
+	return nil
+}
+
+// display redacts the parsed full-context hunks and cuts them to displayContext lines
+// around each change. Each side (context and deleted lines; context and added lines) is
+// analysed whole with imports.SecretLines, so a line inside a secret block is hidden even
+// when the block opens far above it. A side that does not start at line 1 or skips lines
+// (Git did not give full context) has no known enclosing block: all of it is withheld.
+func display(d *GitDiff) {
+	type pos struct{ h, l int }
+	forced := map[pos]bool{}
+	for _, side := range []string{"delete", "add"} {
+		var seg []pos
+		var texts []string
+		flush := func(known bool) {
+			marks := imports.SecretLines(texts)
+			for i, p := range seg {
+				forced[p] = forced[p] || marks[i] || !known
+			}
+			seg, texts = nil, nil
+		}
+		known, prev := true, 0
+		for hi, h := range d.Hunks {
+			for li, l := range h.Lines {
+				if l.Kind != "context" && l.Kind != side {
+					continue
+				}
+				n := l.Old
+				if side == "add" {
+					n = l.New
+				}
+				if n != prev+1 {
+					flush(known)
+					known = false
+				}
+				seg, texts, prev = append(seg, pos{hi, li}), append(texts, l.Text), n
+			}
+		}
+		flush(known)
+	}
+	parsed := d.Hunks
+	d.Hunks, d.Added, d.Removed, d.Redacted = []GitDiffHunk{}, 0, 0, 0
+	shown := 0
+	for hi, h := range parsed {
+		oldR, newR := &LineRedactor{}, &LineRedactor{}
+		near := make([]bool, len(h.Lines))
+		for li, l := range h.Lines {
+			if l.Kind == "add" || l.Kind == "delete" {
+				for k := max(0, li-displayContext); k <= min(len(h.Lines)-1, li+displayContext); k++ {
+					near[k] = true
+				}
+			}
+		}
+		var cur *GitDiffHunk
+		lastOld, lastNew := 0, 0
+		for li, l := range h.Lines {
+			// Both redactors see every line of their side, so heredocs are followed.
+			f := forced[pos{hi, li}]
+			text, red := l.Text, false
+			switch l.Kind {
+			case "context":
+				o, ored := oldR.line(l.Text, f)
+				n, nred := newR.line(l.Text, f)
+				text, red = n, nred
+				if ored && !nred {
+					text, red = o, true
+				}
+			case "delete":
+				text, red = oldR.line(l.Text, f)
+			case "add":
+				text, red = newR.line(l.Text, f)
+			}
+			keep := near[li] || l.Kind == "note" && cur != nil
+			if keep && shown == maxDiffLines {
+				d.Truncated = true
+				return
+			}
+			if keep && cur == nil {
+				// Each side starts at its first line in the hunk; a side without lines starts
+				// after the line before it, as in Git.
+				d.Hunks = append(d.Hunks, GitDiffHunk{OldStart: lastOld, NewStart: lastNew, Lines: []DiffLine{}})
+				cur = &d.Hunks[len(d.Hunks)-1]
+			}
+			if l.Old > 0 {
+				lastOld = l.Old
+			}
+			if l.New > 0 {
+				lastNew = l.New
+			}
+			if !keep {
+				cur = nil
+				continue
+			}
+			if l.Old > 0 && cur.OldLines == 0 {
+				cur.OldStart = l.Old
+			}
+			if l.New > 0 && cur.NewLines == 0 {
+				cur.NewStart = l.New
+			}
+			switch l.Kind {
+			case "context":
+				cur.OldLines++
+				cur.NewLines++
+			case "delete":
+				cur.OldLines++
+				d.Removed++
+			case "add":
+				cur.NewLines++
+				d.Added++
+			}
+			if red {
+				d.Redacted++
+			}
+			l.Text, l.Redacted = text, red
+			cur.Lines = append(cur.Lines, l)
+			shown++
+		}
+	}
 }
 
 // hunkHeader parses "@@ -a,b +c,d @@ section".

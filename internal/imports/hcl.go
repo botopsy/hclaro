@@ -65,12 +65,14 @@ var (
 // RedactGenerated prepares engine-generated configuration for display. The file on disk is
 // not changed. Generated HCL carries attribute values read from the provider, so values
 // under secret-like names, credential-shaped or random-looking values and heredoc bodies
-// are replaced.
+// are replaced. Lines inside a block under a secret-like name, and the value of a secret
+// name/value pair, are replaced too (see SecretLines).
 func RedactGenerated(text string) string {
 	lines := strings.Split(text, "\n")
+	forced := SecretLines(lines)
 	out := make([]string, 0, len(lines))
 	end := ""
-	for _, line := range lines {
+	for i, line := range lines {
 		if end != "" {
 			if strings.TrimSpace(line) == end {
 				end = ""
@@ -88,14 +90,14 @@ func RedactGenerated(text string) string {
 				out = append(out, line)
 				continue
 			}
-			if state.RiskyKey(key) && !emptyValue(value) || state.LooksSecret(value) {
+			if (forced[i] || state.RiskyKey(key)) && !emptyValue(value) || state.LooksSecret(value) {
 				out = append(out, m[1]+m[2]+m[3]+`"[redacted]"`)
 				continue
 			}
 			out = append(out, line)
 			continue
 		}
-		if state.LooksSecret(line) {
+		if forced[i] && !Structural(line) || state.LooksSecret(line) {
 			out = append(out, "  # [redacted line]")
 			continue
 		}
@@ -103,6 +105,9 @@ func RedactGenerated(text string) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+// Structural reports a line holding only brackets, commas and blanks.
+func Structural(line string) bool { return strings.Trim(line, " \t{}[](),") == "" }
 
 func emptyValue(v string) bool {
 	v = strings.TrimSpace(v)

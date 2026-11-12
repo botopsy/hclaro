@@ -106,7 +106,7 @@ func TestAllowedIsReadOnly(t *testing.T) {
 		{"status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all", "--no-renames", "--ignore-submodules=all"},
 		{"status", "--porcelain=v1", "-z", "--untracked-files=normal"}, // the apply preflight
 		{"rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"},
-		{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--unified=3", "HEAD", "--", ":(literal)main.tf"},
+		{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", fullContext, "HEAD", "--", ":(literal)main.tf"},
 	}
 	for _, args := range ok {
 		if !Allowed(args) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"hclaro/internal/imports"
 	"hclaro/internal/state"
 )
 
@@ -24,6 +25,8 @@ var (
 	heredocStart = regexp.MustCompile(`<<-?\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
 	// quoted matches a double-quoted string literal with escapes.
 	quoted = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+	// quotedValue is a value that is one string literal, with an optional trailing comma.
+	quotedValue = regexp.MustCompile(`^"(?:[^"\\]|\\.)*"(,?)$`)
 )
 
 // LineRedactor redacts HCL or JSON configuration lines for display. It keeps state
@@ -38,14 +41,18 @@ type LineRedactor struct {
 
 // Line returns the display form of one configuration line and whether anything was
 // withheld. Control characters are removed and the length is bounded.
-func (r *LineRedactor) Line(line string) (string, bool) {
+func (r *LineRedactor) Line(line string) (string, bool) { return r.line(line, false) }
+
+// line is Line for a line that imports.SecretLines marked (forced): every literal and value
+// on it is withheld, whatever its name.
+func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 	line = displayable(line)
 	if r.heredocEnd != "" {
 		if strings.TrimSpace(line) == r.heredocEnd {
 			r.heredocEnd = ""
 			return line, false
 		}
-		if r.heredocSecret || state.LooksSecret(line) {
+		if r.heredocSecret || forced || state.LooksSecret(line) {
 			return indentOf(line) + Redacted, true
 		}
 		return clip(line), false
@@ -54,34 +61,43 @@ func (r *LineRedactor) Line(line string) (string, bool) {
 	if m := assignment.FindStringSubmatch(line); m != nil {
 		key = m[1]
 	}
-	risky := key != "" && state.RiskyKey(key)
+	risky := forced || key != "" && state.RiskyKey(key)
 	if m := heredocStart.FindStringSubmatch(line); m != nil && !strings.HasPrefix(strings.TrimSpace(line), "#") {
 		r.heredocEnd, r.heredocSecret = m[1], risky
+	}
+	// Under a secret-like name or on a forced line, the whole value goes, not only its
+	// string literals: ["a", 1234] or "a" + var.x would otherwise show part of it. A
+	// reference (var.password) names where a value comes from and is kept.
+	if risky {
+		_, value, ok := cutAssignment(line)
+		// value is trimmed; it ends before any trailing blanks, so its last occurrence is it.
+		head := line[:strings.LastIndex(line, value)]
+		switch {
+		case key != "" && (!ok || reference(value) && !strings.Contains(value, `"`)):
+			// An opening bracket, an empty value, a heredoc or a reference: no value here.
+			// A quoted index (var.m["…"]) is a value.
+		case key != "" && quotedValue.MatchString(value):
+			return clip(head + quotedValue.ReplaceAllString(value, `"`+Redacted+`"$1`)), true
+		case key != "":
+			return clip(head + Redacted), true
+		case !imports.Structural(line):
+			// A list item, a comment or a bare value on a forced line.
+			return indentOf(line) + Redacted, true
+		}
+		if state.Suspicious(line) {
+			return indentOf(line) + Redacted, true
+		}
+		return clip(line), false
 	}
 	redacted := false
 	out := quoted.ReplaceAllStringFunc(line, func(lit string) string {
 		inner := lit[1 : len(lit)-1]
-		// The key itself in a JSON line ("password": "...") is a literal too.
-		if strings.TrimSpace(line[:strings.Index(line, lit)]) == "" && key != "" && inner == key {
-			return lit
-		}
-		if inner == "" {
-			return lit
-		}
-		if risky || state.LooksSecret(inner) {
+		if inner != "" && state.LooksSecret(inner) {
 			redacted = true
 			return `"` + Redacted + `"`
 		}
 		return lit
 	})
-	// An unquoted value under a secret-like name (a number, a reference) is kept only when
-	// it is a reference to another object, which is not a value.
-	if risky && !redacted {
-		if _, value, ok := cutAssignment(out); ok && !reference(value) {
-			out = out[:len(out)-len(value)] + Redacted
-			redacted = true
-		}
-	}
 	// Credential shapes outside string literals (comments, bare words).
 	if !redacted && state.Suspicious(out) {
 		return indentOf(line) + Redacted, true
