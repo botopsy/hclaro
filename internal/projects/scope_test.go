@@ -322,7 +322,9 @@ func TestSameRootSerializesAcrossWorkspacesAndLaunch(t *testing.T) {
 func TestHubReadsHoldASharedClaim(t *testing.T) {
 	hub, ids, _ := scopedHub(t)
 	root := rootOf(t, hub, ids["network"])
-	t.Setenv("HCLARO_FAKE_WORKSPACE", "slow")
+	// The read blocks in `workspace list` until the context is closed, so it is still
+	// loading below however fast the machine is.
+	t.Setenv("HCLARO_FAKE_WORKSPACE", "slow-list")
 	c, _, err := hub.Open(ids["network"], "dev", false)
 	if err != nil {
 		t.Fatal(err)
