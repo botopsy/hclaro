@@ -238,7 +238,6 @@ func TestAdversarialSecretShapes(t *testing.T) {
 		"policy":                `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`,
 		"description":           "Basic tier for the SecurityGroupIngress2024Rule",
 		"tags_json":             `{"Name":"app-a"}`,
-		"not_json":              "{ shown as text",
 		"key_name":              "deployer",
 		"keep_alive":            "30s",
 	} {
@@ -250,5 +249,35 @@ func TestAdversarialSecretShapes(t *testing.T) {
 	env := Redact([]any{map[string]any{"name": "LOG_LEVEL", "value": "info"}}, nil, "env").([]any)
 	if env[0].(map[string]any)["value"] != "info" {
 		t.Errorf("%v", env)
+	}
+}
+
+// Text that starts like JSON but is not exactly one JSON document cannot be inspected, so it
+// is hidden whole: unterminated, followed by a second document or stray bracket, or nested
+// as such inside a valid document. Ordinary text that merely starts with a bracket (a
+// template, an INI section, an IPv6 host) is hidden too: the rule cannot tell them apart.
+func TestNotOneJSONDocumentHidden(t *testing.T) {
+	for _, s := range []string{
+		`{"name":"DB_PASSWORD","value":"hunter2"`,
+		`{"a":1} {"name":"DB_PASSWORD","value":"hunter2"}`,
+		`[{"name":"DB_PASSWORD","value":"hunter2"}]]`,
+		`{"a":1}]`,
+		`{"x":"{\"name\":\"DB_PASSWORD\",\"value\":\"hunter2\""}`,
+		`[1, "{\"a\":1} {\"name\":\"DB_PASSWORD\",\"value\":\"hunter2\"}"]`,
+		"{ shown as text",
+		"[Unit]\nDescription=app",
+		"[::1]:443",
+	} {
+		if got := Redact(s, nil, "container_definitions"); got != Redacted {
+			t.Errorf("%q shown as %v", s, got)
+		}
+		if !EmbeddedSecret(s, "") {
+			t.Errorf("EmbeddedSecret(%q) = false", s)
+		}
+	}
+	for _, s := range []string{`{"Name":"app-a"}`, `[]`, ` {"a":[1,2]} `, `[1e999]`} {
+		if got := Redact(s, nil, "tags_json"); got != s {
+			t.Errorf("%q hidden as %v", s, got)
+		}
 	}
 }
