@@ -22,7 +22,7 @@ var (
 	// assignment matches `name =`, `"name" :` and similar at the start of a line.
 	assignment = regexp.MustCompile(`^\s*"?([A-Za-z0-9_.-]{1,128})"?\s*[=:]`)
 	// heredocStart matches the opening of a heredoc at the end of a line.
-	heredocStart = regexp.MustCompile(`<<-?\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
+	heredocStart = regexp.MustCompile(`<<-?\s*([A-Za-z_][A-Za-z0-9_-]*)\s*$`)
 	// quoted matches a double-quoted string literal with escapes.
 	quoted = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
 	// quotedValue is a value that is one string literal, with an optional trailing comma.

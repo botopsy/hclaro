@@ -9,7 +9,8 @@ import (
 )
 
 var (
-	heredocOpen = regexp.MustCompile(`^<<-?\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
+	// An HCL anchor may hold dashes (<<-EO-F).
+	heredocOpen = regexp.MustCompile(`^<<-?\s*([A-Za-z_][A-Za-z0-9_-]*)\s*$`)
 	// commentKey is a `name =` or `"name":` inside comment text.
 	commentKey = regexp.MustCompile(`"?([A-Za-z0-9_.-]+)"?\s*[=:]`)
 )
@@ -43,7 +44,10 @@ func SecretLines(lines []string) []bool {
 	nextID := 1
 	valueLines := map[int][]int{}
 	pairRisky := map[int]bool{}
-	heredocEnd, heredocRisky, heredocValueOf, inComment, broken := "", false, -1, false, false
+	heredocEnd, heredocRisky, heredocValueOf, heredocStart, inComment, broken := "", false, -1, 0, false, false
+	// cand is the last name or string read; it outlives a line break, a blank line or a
+	// comment, so a key still meets a ":"/"=" written on a later line.
+	cand, haveCand := "", false
 	for i, line := range lines {
 		if broken {
 			out[i] = true
@@ -71,14 +75,17 @@ func SecretLines(lines []string) []bool {
 		if v := top.valueOf; v >= 0 {
 			valueLines[v] = append(valueLines[v], i)
 		}
-		cand, haveCand, afterKey, last := "", false, false, byte(0)
+		afterKey, last, tokens := false, byte(0), false
 		for j := 0; j < len(line) && !broken; {
 			top := &stack[len(stack)-1]
 			c := line[j]
 			// last: the final token's last byte, to see whether the line ends with an operator.
 			// Comments and blanks do not count; a word counts by its last byte (-1 is a value).
-			if c != ' ' && c != '\t' && c != '\r' && !inComment && c != '#' && !strings.HasPrefix(line[j:], "//") && !strings.HasPrefix(line[j:], "/*") && !wordByte(c) {
-				last = c
+			if c != ' ' && c != '\t' && c != '\r' && !inComment && c != '#' && !strings.HasPrefix(line[j:], "//") && !strings.HasPrefix(line[j:], "/*") {
+				tokens = true
+				if !wordByte(c) {
+					last = c
+				}
 			}
 			switch {
 			case inComment:
@@ -106,8 +113,15 @@ func SecretLines(lines []string) []bool {
 				j = len(line)
 			case strings.HasPrefix(line[j:], "/*"):
 				inComment, j = true, j+2
-			case strings.HasPrefix(line[j:], "<<") && heredocOpen.MatchString(line[j:]):
-				heredocEnd = heredocOpen.FindStringSubmatch(line[j:])[1]
+			case strings.HasPrefix(line[j:], "<<"):
+				m := heredocOpen.FindStringSubmatch(line[j:])
+				if m == nil {
+					// "<<" means nothing else in HCL or JSON: an opener HCL rejects
+					// (<<EOF # c) leaves the body's extent unknown.
+					broken, out[i] = true, true
+					continue
+				}
+				heredocEnd, heredocStart, haveCand = m[1], i, false
 				heredocRisky = top.risky || state.RiskyKey(top.key)
 				heredocValueOf = top.valueOf
 				if heredocValueOf < 0 && strings.EqualFold(top.key, "value") {
@@ -172,13 +186,20 @@ func SecretLines(lines []string) []bool {
 			}
 		}
 		// A newline ends an HCL attribute (a key that opened a block was already used),
-		// unless the line ends right after the key or with an operator.
+		// unless the line ends right after the key or with an operator. A blank or
+		// comment-only line changes nothing.
 		top = &stack[len(stack)-1]
-		if !afterKey && (last == 0 || strings.IndexByte("+-*/%&|?:<>!=", last) < 0) {
+		if tokens && !afterKey && (last == 0 || strings.IndexByte("+-*/%&|?:<>!=", last) < 0) {
 			if top.key != "" {
 				top.lastKey = top.key
 			}
 			top.key = ""
+		}
+	}
+	// An unterminated heredoc's end is unknown: everything from its opener on is hidden.
+	if heredocEnd != "" {
+		for i := heredocStart; i < len(out); i++ {
+			out[i] = true
 		}
 	}
 	for id, ls := range valueLines {

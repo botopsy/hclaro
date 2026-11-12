@@ -344,7 +344,7 @@ func findResource(dir string, a Address) (*resourceBlock, error) {
 var (
 	countArg   = regexp.MustCompile(`^\s*count\s*=`)
 	forEachArg = regexp.MustCompile(`^\s*for_each\s*=`)
-	heredocArg = regexp.MustCompile(`<<-?([A-Za-z_][A-Za-z0-9_]*)\s*$`)
+	heredocArg = regexp.MustCompile(`<<-?([A-Za-z_][A-Za-z0-9_-]*)\s*$`)
 )
 
 // metaArguments reads a block body (after its opening brace) line by line and reports

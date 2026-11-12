@@ -59,7 +59,7 @@ func fileContent(to Address, id, provider string) string {
 
 var (
 	assignment = regexp.MustCompile(`^(\s*)("?[A-Za-z0-9_.-]+"?)(\s*=\s*)(.*)$`)
-	heredoc    = regexp.MustCompile(`<<-?([A-Za-z_][A-Za-z0-9_]*)\s*$`)
+	heredoc    = regexp.MustCompile(`<<-?([A-Za-z_][A-Za-z0-9_-]*)\s*$`)
 )
 
 // RedactGenerated prepares engine-generated configuration for display. The file on disk is

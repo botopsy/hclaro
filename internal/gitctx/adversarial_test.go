@@ -175,3 +175,33 @@ func TestEscapedNamesRawOrDecoded(t *testing.T) {
 		}
 	}
 }
+
+// Heredoc and key gaps: an unterminated heredoc or an opener HCL rejects hides what follows,
+// an anchor with a dash is a heredoc, and a key keeps its value across a line break before
+// its ":"/"=", a blank line or a comment.
+func TestHeredocAndKeyGaps(t *testing.T) {
+	for name, text := range map[string]string{
+		"open heredoc, ordinary name": "note = <<EOF\nok\npassword = \"leak01\"\n",
+		"open heredoc, dash":          "note = <<-EOF\nok\n  b = \"leak01\"\n",
+		"opener with comment":         "user_data = <<EOF # c\nleak01\nEOF\nx = \"leak02\"\n",
+		"opener with space":           "user_data = <<EOF \nleak01\nEOF\n",
+		"dashed anchor":               "user_data = <<-EO-F\nleak01\nEO-F\n",
+		"json key, colon next line":   "{\n  \"db_password\"\n  : \"leak01\"\n}\n",
+		"json key, blank, colon":      "{\n  \"db_password\"\n\n  :\n\n  \"leak01\"\n}\n",
+		"hcl key, blank, value":       "password =\n\n  \"leak01\"\n",
+		"hcl key, comment, value":     "password =\n  # the value\n  \"leak01\"\n",
+		"json key, comment, value":    "{\n  \"db_password\":\n  /* v */\n  \"leak01\"\n}\n",
+	} {
+		for view, got := range views(t, text) {
+			if leakMark.MatchString(got) {
+				t.Errorf("%s %s:\n%s", name, view, got)
+			}
+		}
+	}
+	// A dashed anchor ends its heredoc: what follows is shown.
+	for view, got := range views(t, "note = <<EO-F\nok\nEO-F\nx = \"keep01\"\n") {
+		if !strings.Contains(got, "keep01") {
+			t.Errorf("dashed anchor %s:\n%s", view, got)
+		}
+	}
+}
