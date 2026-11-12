@@ -261,6 +261,11 @@ func TestToolRefusalsRunNothing(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	t.Setenv("TF_CLI_ARGS", "")
+	t.Setenv("TF_CLI_ARGS_version", "-json=false")
+	if _, err := hub.StartTool(network, dev.ID, engine.ToolFormat, false); !errors.As(err, &refusal) || refusal.Code != "unsafe_cli_args" {
+		t.Fatalf("%v", err)
+	}
+	t.Setenv("TF_CLI_ARGS_version", "")
 	if lines := spyLines(t, spy); len(lines) != before {
 		t.Fatalf("refusals ran commands: %q", lines[before:])
 	}
