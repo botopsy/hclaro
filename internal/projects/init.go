@@ -80,21 +80,6 @@ func initEnvKey(key string) bool {
 	return strings.HasPrefix(key, "TF_") && !strings.HasPrefix(key, "TF_LOG") && !strings.HasPrefix(key, "TF_VAR_")
 }
 
-// unsafeInitArgs reports inherited TF_CLI_ARGS or TF_CLI_ARGS_init flags other than -no-color.
-func unsafeInitArgs(environ []string) bool {
-	for _, item := range environ {
-		key, value, _ := strings.Cut(item, "=")
-		if key == "TF_CLI_ARGS" || key == "TF_CLI_ARGS_init" {
-			for _, arg := range strings.Fields(value) {
-				if arg != "-no-color" {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
 // initNotices discloses inherited settings without their values.
 func initNotices(environ []string) []string {
 	notices := []string{}
@@ -216,7 +201,7 @@ func (h *Hub) InitStatusFor(id, profileID string) (InitStatus, error) {
 		return refuse("shared_data_dir", "TF_DATA_DIR is an absolute path, so every project would share one data directory and backend initialization. Restart Hclaro without it, or with a relative TF_DATA_DIR.")
 	case executable == "":
 		return refuse("missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine.")
-	case unsafeInitArgs(environ):
+	case engine.UnsafeArgs(environ, "init"):
 		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS or TF_CLI_ARGS_init adds flags other than -no-color, such as -upgrade or -reconfigure. Hclaro does not run init with hidden flags. Restart Hclaro without them.")
 	case s.Busy != "":
 		return refuse("busy", "Another operation is running in this project. Wait for it to finish.")

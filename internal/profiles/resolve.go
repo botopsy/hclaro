@@ -163,7 +163,7 @@ const IdentityNotVerified = "not_verified"
 // None is the context of an operation without a profile: the inherited environment.
 func None(projectID string, environ []string) Resolved {
 	r := Resolved{ProjectID: projectID, VarFiles: []VarFile{}, Env: []EnvStatus{}, Identity: IdentityNotVerified, Notices: []string{}, Issues: []Issue{}, VarIssues: []VarFileError{}}
-	if UnsafeCLIArgs(environ) {
+	if engine.UnsafeArgs(environ) {
 		r.Issues = append(r.Issues, unsafeIssue)
 	}
 	r.Fingerprint = r.fingerprint()
@@ -254,23 +254,6 @@ func (r Resolved) VarFilePaths() []string {
 	return out
 }
 
-// UnsafeCLIArgs reports inherited TF_CLI_ARGS or TF_CLI_ARGS_<command> values with any
-// argument other than -no-color. Names are compared without case, as Windows does.
-func UnsafeCLIArgs(environ []string) bool {
-	for _, item := range environ {
-		key, value, _ := strings.Cut(item, "=")
-		if !strings.HasPrefix(strings.ToUpper(key), "TF_CLI_ARGS") {
-			continue
-		}
-		for _, arg := range strings.Fields(value) {
-			if arg != "-no-color" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // awsCredentialNames are inherited values that would take precedence over AWS_PROFILE in the
 // AWS credential chain. They are not passed when a profile names an AWS profile, so the
 // alias the user chose is the one the provider uses.
@@ -314,7 +297,7 @@ func compositionNotices(p Profile, environ []string) []string {
 // AWS_REGION and AWS_DEFAULT_REGION added. The workspace is set by the engine adapter.
 // Hclaro's own environment is never changed and nothing is persisted.
 func Compose(base []string, r Resolved) ([]string, error) {
-	if UnsafeCLIArgs(base) {
+	if engine.UnsafeArgs(base) {
 		return nil, engine.ErrUnsafeArgs
 	}
 	out := make([]string, 0, len(base)+3)
