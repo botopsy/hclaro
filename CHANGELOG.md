@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Secret handling:
+
+- Fix: the UI (state, plans, drift, comparisons) showed a string that starts like JSON but is not exactly one JSON document, because it could not be inspected for secrets. An unterminated document or one followed by more text, such as `{"name":"DB_PASSWORD","value":"hunter2"` or `{"a":1} {"name":"DB_PASSWORD","value":"hunter2"}`, showed the password. Such a string is now hidden, on its own or inside another JSON string. Visible change: ordinary text that starts with `{` or `[` and is not JSON, such as a `{{ }}` template, an INI section like `[Unit]`, a CloudWatch filter pattern or `[::1]:443`, now appears as `[redacted]`, and a comparison reports it as sensitive instead of showing the difference.
+
 Cost estimates:
 
 - Fix: the input sent to Infracost could contain secret values that a provider does not mark sensitive: the value of a name/value environment pair such as `{"name": "DB_PASSWORD", "value": …}`, and secrets inside JSON-encoded strings such as an ECS `container_definitions`. These values are now removed before Infracost runs, by the same rules that hide them in the UI. A string that starts like JSON but is not one complete JSON document, on its own or inside another JSON string, is also left out of the cost input, since it cannot be checked.

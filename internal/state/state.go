@@ -353,7 +353,9 @@ func EmbeddedSecret(v, key string) bool { return embeddedSecret(v, key, 0) }
 
 // embeddedSecret reports a string holding a JSON document (a container definition, a policy,
 // a serialized environment) in which the redaction policy would hide anything. The whole
-// string is then hidden, since it is displayed as one value.
+// string is then hidden, since it is displayed as one value. Text that starts like JSON but
+// is not exactly one document (unterminated, or with more after it) cannot be inspected and
+// counts as secret; nested strings get the same check through redact.
 func embeddedSecret(v, key string, depth int) bool {
 	trimmed := strings.TrimSpace(v)
 	if trimmed == "" || trimmed[0] != '{' && trimmed[0] != '[' {
@@ -362,8 +364,8 @@ func embeddedSecret(v, key string, depth int) bool {
 	d := json.NewDecoder(strings.NewReader(trimmed))
 	d.UseNumber()
 	var doc any
-	if d.Decode(&doc) != nil {
-		return false
+	if d.Decode(&doc) != nil || d.Decode(new(any)) != io.EOF {
+		return true
 	}
 	return !reflect.DeepEqual(doc, redact(doc, nil, key, depth+1))
 }
