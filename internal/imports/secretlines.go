@@ -164,10 +164,18 @@ func SecretLines(lines []string) []bool {
 					continue
 				}
 				if haveCand {
-					// A ternary branch (c ? "a" : …) never replaces a secret-like key, and a
-					// name carried from an earlier line only fills an empty one: they may
-					// only hide more.
-					if !state.RiskyKey(top.key) && !(carried && top.key != "") {
+					// A name carried from an earlier line may be a key or part of the
+					// statement before (c ?⏎ "a"⏎ : "b"); whichever is secret-like wins, so
+					// it only hides more.
+					switch {
+					case !carried:
+						top.key = cand
+					case state.RiskyKey(top.key):
+					case state.RiskyKey(cand):
+						top.key = cand
+					case top.key == "" && state.RiskyKey(top.lastKey):
+						top.key = top.lastKey
+					case top.key == "":
 						top.key = cand
 					}
 					afterKey = true
@@ -187,7 +195,7 @@ func SecretLines(lines []string) []bool {
 					k++
 				}
 				cand, haveCand, afterKey, carried, j, last = line[j:k], true, false, false, k, line[k-1]
-			case c == ' ' || c == '\t':
+			case c == ' ' || c == '\t' || c == '\r':
 				j++
 			default:
 				haveCand = false

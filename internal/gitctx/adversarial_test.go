@@ -58,7 +58,7 @@ func TestAdversarialFixtures(t *testing.T) {
 		if len(leaks) == 0 || len(keeps) == 0 {
 			t.Fatal("fixture without markers")
 		}
-		for variant, input := range map[string]string{"lf": text, "crlf": strings.ReplaceAll(text, "\n", "\r\n"), "bom": "\ufeff" + text} {
+		for variant, input := range variants(text) {
 			for view, got := range views(t, input) {
 				for _, leak := range leaks {
 					if strings.Contains(got, leak) {
@@ -197,20 +197,31 @@ func TestHeredocAndKeyGaps(t *testing.T) {
 		"value before bad opener":     "env {\n  value = \"leak01\"\n  x = <<EOF # c\n  name = \"DB_PASSWORD\"\n}\n",
 		"value in open heredoc file":  "env {\n  value = \"leak01\"\n  x = <<EOF\n}\n",
 		"restored key, carried name":  "name = \"a\"\n\"x\"\n= \"DB_PASSWORD\"\nvalue = \"leak01\"\n",
+		"carried key over restored":   "region = \"us-east-1\"\n\"db_password\"\n:\n\"leak01\"\n",
+		"carried name after secret":   "password = \"a\"\nx\n/*\nc */ = \"b\"\n+ \"leak01\"\n",
 	} {
-		for view, got := range views(t, text) {
-			if leakMark.MatchString(got) {
-				t.Errorf("%s %s:\n%s", name, view, got)
+		for variant, input := range variants(text) {
+			for view, got := range views(t, input) {
+				if leakMark.MatchString(got) {
+					t.Errorf("%s %s %s:\n%s", name, variant, view, got)
+				}
 			}
 		}
 	}
 	// A dashed anchor ends its heredoc, and an ordinary key split from its ":" stays shown.
 	for _, text := range []string{"note = <<EO-F\nok\nEO-F\nx = \"keep01\"\n", "{\n  \"name\"\n  : \"keep01\"\n}\n",
 		"token = var.a\n/*\n*/\n// c\nx = \"keep01\"\n"} {
-		for view, got := range views(t, text) {
-			if !strings.Contains(got, "keep01") {
-				t.Errorf("%q %s:\n%s", text, view, got)
+		for variant, input := range variants(text) {
+			for view, got := range views(t, input) {
+				if !strings.Contains(got, "keep01") {
+					t.Errorf("%q %s %s:\n%s", text, variant, view, got)
+				}
 			}
 		}
 	}
+}
+
+// variants returns text with LF and CRLF line endings and with a BOM.
+func variants(text string) map[string]string {
+	return map[string]string{"lf": text, "crlf": strings.ReplaceAll(text, "\n", "\r\n"), "bom": "\ufeff" + text}
 }
