@@ -65,9 +65,11 @@ func SecretLines(lines []string) []bool {
 			continue
 		}
 		top := &stack[len(stack)-1]
-		// A line that starts with an operator continues the previous statement.
+		// A line that starts with an operator continues the previous statement (a comment
+		// start counts too, for /* … */ + "b"; a comment-only line gives the key back below).
+		restored := false
 		if t := strings.TrimLeft(line, " \t\ufeff"); t != "" && strings.IndexByte("+*/%&|?:.<>!=", t[0]) >= 0 && top.key == "" {
-			top.key = top.lastKey
+			top.key, restored = top.lastKey, true
 		}
 		// Inside a commented-out block, or a statement whose value continues on this line
 		// ("db_password":⏎ "…", or password = "a" +⏎ "b").
@@ -75,7 +77,8 @@ func SecretLines(lines []string) []bool {
 		if v := top.valueOf; v >= 0 {
 			valueLines[v] = append(valueLines[v], i)
 		}
-		afterKey, last, tokens := false, byte(0), false
+		// carried: cand comes from an earlier line.
+		afterKey, last, tokens, carried := false, byte(0), false, haveCand
 		for j := 0; j < len(line) && !broken; {
 			top := &stack[len(stack)-1]
 			c := line[j]
@@ -107,7 +110,7 @@ func SecretLines(lines []string) []bool {
 				if (strings.EqualFold(top.key, "name") || strings.EqualFold(top.key, "key")) && state.RiskyKey(s) {
 					pairRisky[top.id] = true
 				}
-				cand, haveCand, afterKey, j = s, true, false, end
+				cand, haveCand, afterKey, carried, j = s, true, false, false, end
 			case c == '#' || strings.HasPrefix(line[j:], "//"):
 				commentSecret(line[j:], &out[i])
 				j = len(line)
@@ -161,7 +164,13 @@ func SecretLines(lines []string) []bool {
 					continue
 				}
 				if haveCand {
-					top.key, afterKey = cand, true
+					// A ternary branch (c ? "a" : …) never replaces a secret-like key, and a
+					// name carried from an earlier line only fills an empty one: they may
+					// only hide more.
+					if !state.RiskyKey(top.key) && !(carried && top.key != "") {
+						top.key = cand
+					}
+					afterKey = true
 					out[i] = out[i] || state.RiskyKey(cand)
 					if strings.EqualFold(cand, "value") {
 						valueLines[top.id] = append(valueLines[top.id], i)
@@ -177,7 +186,7 @@ func SecretLines(lines []string) []bool {
 				for k < len(line) && wordByte(line[k]) {
 					k++
 				}
-				cand, haveCand, afterKey, j, last = line[j:k], true, false, k, line[k-1]
+				cand, haveCand, afterKey, carried, j, last = line[j:k], true, false, false, k, line[k-1]
 			case c == ' ' || c == '\t':
 				j++
 			default:
@@ -189,11 +198,22 @@ func SecretLines(lines []string) []bool {
 		// unless the line ends right after the key or with an operator. A blank or
 		// comment-only line changes nothing.
 		top = &stack[len(stack)-1]
-		if tokens && !afterKey && (last == 0 || strings.IndexByte("+-*/%&|?:<>!=", last) < 0) {
+		if restored && !tokens {
+			top.key = ""
+		}
+		switch {
+		case !tokens:
 			if top.key != "" {
 				top.lastKey = top.key
 			}
+		case !afterKey && (last == 0 || strings.IndexByte("+-*/%&|?:<>!=", last) < 0):
+			if top.key != "" {
+				// The last name read was a value, not a key waiting for its ":"/"=".
+				top.lastKey, haveCand = top.key, false
+			}
 			top.key = ""
+		case top.key != "":
+			haveCand = false
 		}
 	}
 	// An unterminated heredoc's end is unknown: everything from its opener on is hidden.
@@ -202,8 +222,10 @@ func SecretLines(lines []string) []bool {
 			out[i] = true
 		}
 	}
+	// When the rest cannot be read, a secret-like name may follow any value seen so far.
+	unknown := broken || heredocEnd != ""
 	for id, ls := range valueLines {
-		if pairRisky[id] {
+		if pairRisky[id] || unknown {
 			for _, l := range ls {
 				out[l] = true
 			}

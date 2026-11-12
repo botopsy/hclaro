@@ -191,6 +191,12 @@ func TestHeredocAndKeyGaps(t *testing.T) {
 		"hcl key, blank, value":       "password =\n\n  \"leak01\"\n",
 		"hcl key, comment, value":     "password =\n  # the value\n  \"leak01\"\n",
 		"json key, comment, value":    "{\n  \"db_password\":\n  /* v */\n  \"leak01\"\n}\n",
+		"operator, blank, value":      "password = \"a\" +\n\n  \"leak01\"\n",
+		"ternary over lines":          "password = cond ?\n  \"a\"\n  : \"b\"\n  + \"leak01\"\n",
+		"comment, then operator":      "password = var.a\n/* c */ + \"leak01\"\n",
+		"value before bad opener":     "env {\n  value = \"leak01\"\n  x = <<EOF # c\n  name = \"DB_PASSWORD\"\n}\n",
+		"value in open heredoc file":  "env {\n  value = \"leak01\"\n  x = <<EOF\n}\n",
+		"restored key, carried name":  "name = \"a\"\n\"x\"\n= \"DB_PASSWORD\"\nvalue = \"leak01\"\n",
 	} {
 		for view, got := range views(t, text) {
 			if leakMark.MatchString(got) {
@@ -198,10 +204,13 @@ func TestHeredocAndKeyGaps(t *testing.T) {
 			}
 		}
 	}
-	// A dashed anchor ends its heredoc: what follows is shown.
-	for view, got := range views(t, "note = <<EO-F\nok\nEO-F\nx = \"keep01\"\n") {
-		if !strings.Contains(got, "keep01") {
-			t.Errorf("dashed anchor %s:\n%s", view, got)
+	// A dashed anchor ends its heredoc, and an ordinary key split from its ":" stays shown.
+	for _, text := range []string{"note = <<EO-F\nok\nEO-F\nx = \"keep01\"\n", "{\n  \"name\"\n  : \"keep01\"\n}\n",
+		"token = var.a\n/*\n*/\n// c\nx = \"keep01\"\n"} {
+		for view, got := range views(t, text) {
+			if !strings.Contains(got, "keep01") {
+				t.Errorf("%q %s:\n%s", text, view, got)
+			}
 		}
 	}
 }
