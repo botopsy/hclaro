@@ -4,7 +4,7 @@
 
 Secret handling:
 
-- Fix: the UI (state, plans, drift, comparisons) showed a string that starts like JSON but is not exactly one JSON document, because it could not be inspected for secrets. An unterminated document or one followed by more text, such as `{"name":"DB_PASSWORD","value":"hunter2"` or `{"a":1} {"name":"DB_PASSWORD","value":"hunter2"}`, showed the password. Such a string is now hidden, on its own or inside another JSON string. Visible change: ordinary text that starts with `{` or `[` and is not JSON, such as a `{{ }}` template, an INI section like `[Unit]`, a CloudWatch filter pattern or `[::1]:443`, now appears as `[redacted]`, and a comparison reports it as sensitive instead of showing the difference.
+- Fix: the UI (state, plans, drift, comparisons) showed a string that starts like JSON but is not exactly one JSON document, because it could not be inspected for secrets. An unterminated document or one followed by more text, such as `{"name":"DB_PASSWORD","value":"hunter2"` or `{"a":1} {"name":"DB_PASSWORD","value":"hunter2"}`, showed the password. Such a string is now hidden, on its own or inside another JSON string. Visible change: ordinary text that starts with `{` or `[` and is not JSON, such as a `{{ }}` template, an INI section like `[Unit]`, a CloudWatch filter pattern or `[::1]:443`, now appears as `[redacted]`, and a comparison reports it as sensitive instead of showing the difference. The cost input now uses this same rule instead of its own copy; it keeps numbers such as `1e999` and documents nested 33 to 64 levels deep, which were dropped before and are inspected like any other value.
 
 Cost estimates:
 

@@ -82,7 +82,7 @@ func clean(value, marker any, key string, depth int) (any, bool) {
 	case nil, bool, json.Number:
 		return v, true
 	case string:
-		if len(v) > maxValueString || state.LooksSecret(v) || state.EmbeddedSecret(v, key) || notOneDocument(v, 0) || strings.ContainsAny(v, "\x00\r\n") {
+		if len(v) > maxValueString || state.LooksSecret(v) || state.EmbeddedSecret(v, key) || strings.ContainsAny(v, "\x00\r\n") {
 			return nil, false
 		}
 		return maskAccounts(v), true
@@ -113,45 +113,6 @@ func clean(value, marker any, key string, depth int) (any, bool) {
 		return out, true
 	}
 	return nil, false
-}
-
-// notOneDocument reports text that starts like JSON but is not exactly one JSON document
-// (unterminated, or with more after it), at the top level or in any string nested inside a
-// valid document. EmbeddedSecret cannot inspect such text, so it is dropped. Nesting deeper
-// than maxValueDepth is dropped too.
-func notOneDocument(v string, depth int) bool {
-	t := strings.TrimSpace(v)
-	if t == "" || t[0] != '{' && t[0] != '[' {
-		return false
-	}
-	var doc any
-	if depth > maxValueDepth || json.Unmarshal([]byte(t), &doc) != nil {
-		return true
-	}
-	return nestedNotOneDocument(doc, depth+1)
-}
-
-func nestedNotOneDocument(v any, depth int) bool {
-	if depth > maxValueDepth {
-		return true
-	}
-	switch x := v.(type) {
-	case string:
-		return notOneDocument(x, depth)
-	case map[string]any:
-		for _, item := range x {
-			if nestedNotOneDocument(item, depth+1) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range x {
-			if nestedNotOneDocument(item, depth+1) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // cleanValues filters a resource's attribute object with its sensitivity markers.
