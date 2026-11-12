@@ -362,19 +362,21 @@ func normalize(raw rawResourceChange, drift bool) (Detail, error) {
 	ch := raw.Change
 	d := Detail{Change: c, Attributes: []AttributeChange{}}
 	var walkErr error
-	d.Attributes, d.Truncated, walkErr = diff(ch)
+	d.Before = state.Redact(ch.Before, ch.BeforeSensitive, "")
+	d.After = state.Redact(ch.After, ch.AfterSensitive, "")
+	d.Attributes, d.Truncated, walkErr = diff(ch, d.Before, d.After)
 	if walkErr != nil {
 		return Detail{}, walkErr
 	}
 	d.AttributeCount = len(d.Attributes)
-	d.Before = state.Redact(ch.Before, ch.BeforeSensitive, "")
-	d.After = overlayUnknown(state.Redact(ch.After, ch.AfterSensitive, ""), ch.AfterUnknown, 0)
+	d.After = overlayUnknown(d.After, ch.AfterUnknown, 0)
 	return d, nil
 }
 
 // diff walks raw before/after values and reports changed leaves. Equality is decided
-// on raw values, so changes to redacted values are still visible as changes.
-func diff(ch rawChange) ([]AttributeChange, bool, error) {
+// on raw values, so changes to redacted values are still visible as changes; displayed
+// values come from the redacted trees, so rows and trees share one policy.
+func diff(ch rawChange, redactedBefore, redactedAfter any) ([]AttributeChange, bool, error) {
 	rows := []AttributeChange{}
 	truncated := false
 	var walk func(path []any, before, after, unknown any, depth int)
@@ -391,7 +393,7 @@ func diff(ch rawChange) ([]AttributeChange, bool, error) {
 		ul, _ := unknown.([]any)
 		switch {
 		case unknown == true:
-			rows = append(rows, row(ch, path, before, nil, true))
+			rows = append(rows, row(ch, path, before, nil, true, redactedBefore, redactedAfter))
 		case depth < maxDepth && (bIsMap || before == nil) && (aIsMap || after == nil) && (bIsMap || aIsMap || um != nil):
 			keys := map[string]bool{}
 			for k := range bm {
@@ -428,7 +430,7 @@ func diff(ch rawChange) ([]AttributeChange, bool, error) {
 			}
 		default:
 			if !reflect.DeepEqual(before, after) {
-				rows = append(rows, row(ch, path, before, after, false))
+				rows = append(rows, row(ch, path, before, after, false, redactedBefore, redactedAfter))
 			}
 		}
 	}
@@ -436,15 +438,15 @@ func diff(ch rawChange) ([]AttributeChange, bool, error) {
 	return rows, truncated, nil
 }
 
-func row(ch rawChange, path []any, before, after any, unknown bool) AttributeChange {
+func row(ch rawChange, path []any, before, after any, unknown bool, redactedBefore, redactedAfter any) AttributeChange {
 	r := AttributeChange{Path: render(path), Unknown: unknown}
 	bs, as := sensitiveAt(ch.BeforeSensitive, path), sensitiveAt(ch.AfterSensitive, path)
 	r.Sensitive = bs || as
-	r.Before = leaf(before, path, markerAt(ch.BeforeSensitive, path))
+	r.Before = shown(before, redactedBefore, path)
 	if unknown {
 		r.After = KnownAfterApply
 	} else {
-		r.After = leaf(after, path, markerAt(ch.AfterSensitive, path))
+		r.After = shown(after, redactedAfter, path)
 	}
 	switch {
 	case unknown:
@@ -464,46 +466,34 @@ func row(ch rawChange, path []any, before, after any, unknown bool) AttributeCha
 	return r
 }
 
-// leaf redacts a value at a path: any risky ancestor key hides it, and the sensitivity
-// marker at the path is applied to the value, including markers nested inside it.
-func leaf(value any, path []any, marker any) any {
-	if value == nil {
+// shown returns the value at path in an already-redacted tree. A key the tree masked,
+// or a path ending inside a redacted value, shows as redacted.
+func shown(raw, redacted any, path []any) any {
+	if raw == nil {
 		return nil
 	}
-	key := ""
 	for _, segment := range path {
-		if k, ok := segment.(string); ok {
-			if state.RiskyKey(k) {
-				return state.Redacted
-			}
-			key = k
-		}
-	}
-	return state.Redact(value, marker, key)
-}
-
-// markerAt returns the sensitivity marker for the value at path: true when the path or
-// any ancestor is marked, otherwise the nested marker tree (or nil).
-func markerAt(marker any, path []any) any {
-	for _, segment := range path {
-		if marker == true {
-			return true
-		}
-		switch m := marker.(type) {
+		switch t := redacted.(type) {
 		case map[string]any:
 			k, _ := segment.(string)
-			marker = m[k]
+			if state.Suspicious(k) || len(k) > 128 {
+				return state.Redacted
+			}
+			redacted = t[k]
 		case []any:
 			i, ok := segment.(int)
-			if !ok || i >= len(m) {
-				return nil
+			if !ok || i >= len(t) {
+				return state.Redacted
 			}
-			marker = m[i]
+			redacted = t[i]
 		default:
-			return nil
+			return state.Redacted
 		}
 	}
-	return marker
+	if redacted == nil {
+		return state.Redacted
+	}
+	return redacted
 }
 
 func sensitiveAt(marker any, path []any) bool {

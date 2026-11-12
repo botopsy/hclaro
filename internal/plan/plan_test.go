@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"hclaro/fixtures"
+	"hclaro/internal/state"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -340,6 +341,49 @@ func TestUnsupportedActionTable(t *testing.T) {
 	for _, supported := range SupportedActions {
 		if Classify(supported) == Unknown {
 			t.Fatalf("%v listed as supported", supported)
+		}
+	}
+}
+
+// Rows must never show a value the redacted tree hides: name/value pairs (either key
+// spelling, nested in lists), values under a secret-shaped key and markers inside a pair.
+func TestRowsFollowRedactedTree(t *testing.T) {
+	input := `{"format_version":"1.2","planned_values":{},"resource_changes":[{"address":"a.b","mode":"managed","type":"a","name":"b","change":{"actions":["update"],
+	"before":{"environment":[{"name":"PLAIN","value":"old1"}],"container":[{"env":[{"value":"oldpair1","name":"API_TOKEN"}]}],"labels":[]},
+	"after":{"environment":[{"name":"DB_PASSWORD","value":"hunter2x"},{"value":"hunter3x","Key":"client_secret"},{"name":"PLAIN","value":"markedx1"}],
+	  "container":[{"env":[{"value":"newpair1","name":"API_TOKEN"}]}],
+	  "AKIAABCDEFGHIJKLMNOP":{"inner":"plainunder1"},
+	  "labels":[{"name":"team","value":"shown-ok"}]},
+	"after_unknown":{},"before_sensitive":{},"after_sensitive":{"environment":[{},{},{"value":true}]}}}]}`
+	r, err := Parse([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := r.Details[r.Changes[0].ID]
+	encoded, _ := json.Marshal(d)
+	for _, secret := range []string{"hunter2x", "hunter3x", "markedx1", "oldpair1", "newpair1", "plainunder1", "AKIAABCDEFGHIJKLMNOP"} {
+		if bytes.Contains(encoded, []byte(secret)) {
+			t.Errorf("%q leaked: %s", secret, encoded)
+		}
+	}
+	if !bytes.Contains(encoded, []byte("shown-ok")) {
+		t.Errorf("ordinary pair value hidden: %s", encoded)
+	}
+	// Every shown row value is the value the tree shows at that path.
+	tree, _ := json.Marshal(struct{ B, A any }{d.Before, d.After})
+	for _, a := range d.Attributes {
+		for _, v := range []any{a.Before, a.After} {
+			if s, ok := v.(string); ok && s != state.Redacted && s != KnownAfterApply && !bytes.Contains(tree, []byte(`"`+s+`"`)) {
+				t.Errorf("row %s shows %q that the tree hides", a.Path, s)
+			}
+		}
+	}
+	if len(d.Attributes) == 0 {
+		t.Fatal("no rows")
+	}
+	for _, a := range d.Attributes {
+		if a.Path == "environment[0].value" && (a.Kind != "changed" || a.After != state.Redacted || a.Before != "old1") {
+			t.Errorf("pair row lost its kind or before value: %+v", a)
 		}
 	}
 }

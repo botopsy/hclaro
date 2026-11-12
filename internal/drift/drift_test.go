@@ -133,3 +133,22 @@ func TestUnrecognizedActionIsNotSafe(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+// Drift rows come from plan rows: name/value pair secrets and values under a
+// secret-shaped key stay hidden even though the provider did not flag them.
+func TestPairValuesStayHidden(t *testing.T) {
+	doc := `{"format_version":"1.2","planned_values":{"root_module":{}},"resource_changes":[],"resource_drift":[{"address":"aws_ecs_task_definition.app","mode":"managed","type":"aws_ecs_task_definition","name":"app","change":{"actions":["update"],
+	"before":{"environment":[{"name":"DB_PASSWORD","value":"old-hunter2x"}]},
+	"after":{"environment":[{"value":"hunter2x","name":"DB_PASSWORD"},{"key":"api_token","value":"hunter3x"}],"AKIAABCDEFGHIJKLMNOP":{"inner":"plainunder1"}},
+	"after_unknown":{},"before_sensitive":{},"after_sensitive":{}}}]}`
+	r := analyze(t, []byte(doc))
+	b, _ := json.Marshal(r.Details)
+	for _, secret := range []string{"hunter2x", "hunter3x", "plainunder1"} {
+		if strings.Contains(string(b), secret) {
+			t.Errorf("%q reached drift details: %s", secret, b)
+		}
+	}
+	if d := r.Details[r.Resources[0].ID]; len(d.Attributes) != 4 {
+		t.Fatalf("rows %+v", d.Attributes)
+	}
+}
