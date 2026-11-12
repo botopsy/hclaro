@@ -2,8 +2,11 @@ package imports
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"hclaro/internal/state"
 )
@@ -11,8 +14,12 @@ import (
 var (
 	// An HCL anchor may hold dashes (<<-EO-F).
 	heredocOpen = regexp.MustCompile(`^<<-?\s*([A-Za-z_][A-Za-z0-9_-]*)\s*$`)
-	// commentKey is a `name =` or `"name":` inside comment text.
-	commentKey = regexp.MustCompile(`"?([A-Za-z0-9_.-]+)"?\s*[=:]`)
+	// commentKey is a `name =` or `"name":` inside comment text (names may hold look-alike
+	// letters or escapes).
+	commentKey = regexp.MustCompile(`"?([^\s"=:#/]+)"?\s*[=:]`)
+	// commentOpen is commented-out text whose value continues on the next lines: an open
+	// bracket, a heredoc, or an assignment or operator at the end.
+	commentOpen = regexp.MustCompile(`(\[|\{|\(|[=:+]|<<-?\s*[A-Za-z_][A-Za-z0-9_-]*)\s*$`)
 )
 
 // SecretLines marks the lines of HCL or JSON configuration whose content must be hidden
@@ -53,6 +60,9 @@ func SecretLines(lines []string) []bool {
 	// cand is the last name or string read; it outlives a line break, a blank line or a
 	// comment, so a key still meets a ":"/"=" written on a later line.
 	cand, haveCand := "", false
+	// commentRun: a commented-out secret-like assignment opened a value that continues on
+	// the following comment lines (# passwords = [⏎ #   "…",).
+	commentRun := false
 	for i, line := range lines {
 		if broken {
 			out[i] = true
@@ -69,6 +79,10 @@ func SecretLines(lines []string) []bool {
 			}
 			continue
 		}
+		if commentRun {
+			t := strings.TrimLeft(line, " \t\ufeff")
+			commentRun = strings.HasPrefix(t, "#") || strings.HasPrefix(t, "//")
+		}
 		top := &stack[len(stack)-1]
 		// A line that starts with an operator continues the previous statement (a comment
 		// start counts too, for /* … */ + "b"; a comment-only line gives the key back below).
@@ -78,7 +92,7 @@ func SecretLines(lines []string) []bool {
 		}
 		// Inside a commented-out block, or a statement whose value continues on this line
 		// ("db_password":⏎ "…", or password = "a" +⏎ "b").
-		out[i] = inComment || top.risky || state.RiskyKey(top.key) || top.contKey != ""
+		out[i] = inComment || commentRun || top.risky || state.RiskyKey(top.key) || top.contKey != ""
 		if v := top.valueOf; v >= 0 {
 			valueLines[v] = append(valueLines[v], i)
 		}
@@ -99,11 +113,11 @@ func SecretLines(lines []string) []bool {
 			case inComment:
 				k := strings.Index(line[j:], "*/")
 				if k < 0 {
-					commentSecret(line[j:], &out[i])
+					out[i] = commentSecret(line[j:]) || out[i]
 					j = len(line)
 					continue
 				}
-				commentSecret(line[j:j+k], &out[i])
+				out[i] = commentSecret(line[j:j+k]) || out[i]
 				inComment, j = false, j+k+2
 			case c == '"':
 				s, end, ok := readString(line, j)
@@ -117,7 +131,10 @@ func SecretLines(lines []string) []bool {
 				}
 				cand, haveCand, afterKey, carried, j = s, true, false, false, end
 			case c == '#' || strings.HasPrefix(line[j:], "//"):
-				commentSecret(line[j:], &out[i])
+				if commentSecret(line[j:]) {
+					out[i] = true
+					commentRun = commentRun || commentOpen.MatchString(strings.TrimRight(line[j:], "\r"))
+				}
 				j = len(line)
 			case strings.HasPrefix(line[j:], "/*"):
 				inComment, j = true, j+2
@@ -204,7 +221,7 @@ func SecretLines(lines []string) []bool {
 				for k < len(line) && wordByte(line[k]) {
 					k++
 				}
-				cand, haveCand, afterKey, carried, j, last = line[j:k], true, false, false, k, line[k-1]
+				cand, haveCand, afterKey, carried, j, last = strings.TrimPrefix(line[j:k], "\ufeff"), true, false, false, k, line[k-1]
 			case c == ' ' || c == '\t' || c == '\r':
 				j++
 			default:
@@ -261,12 +278,13 @@ func SecretLines(lines []string) []bool {
 }
 
 // commentSecret marks a comment that assigns a secret-like name (commented-out code).
-func commentSecret(text string, mark *bool) {
+func commentSecret(text string) bool {
 	for _, m := range commentKey.FindAllStringSubmatch(text, -1) {
-		if state.RiskyKey(m[1]) {
-			*mark = true
+		if state.RiskyKey(m[1]) || state.RiskyKey(unescape(`"`+m[1]+`"`, m[1])) {
+			return true
 		}
 	}
+	return false
 }
 
 // unescape decodes the escapes of a string literal ("p\u0061ssword") so names compare as
@@ -279,14 +297,45 @@ func unescape(literal, raw string) string {
 		return raw
 	}
 	var s string
-	if json.Unmarshal([]byte(literal), &s) != nil || s == raw {
+	if json.Unmarshal([]byte(hclEscapes(literal)), &s) != nil || s == raw {
 		return raw
 	}
 	return raw + "\x00" + s
 }
 
+// hclEscapes rewrites HCL's \UNNNNNNNN escapes, which JSON lacks, as the character itself
+// (or a \u escape for a quote, backslash or control character).
+func hclEscapes(literal string) string {
+	if !strings.Contains(literal, `\U`) {
+		return literal
+	}
+	var b strings.Builder
+	for k := 0; k < len(literal); k++ {
+		if literal[k] != '\\' || k+1 >= len(literal) {
+			b.WriteByte(literal[k])
+			continue
+		}
+		if literal[k+1] == 'U' && k+10 <= len(literal) {
+			if r, err := strconv.ParseUint(literal[k+2:k+10], 16, 32); err == nil && utf8.ValidRune(rune(r)) {
+				if r < 0x20 || r == '"' || r == '\\' {
+					fmt.Fprintf(&b, `\u%04x`, r)
+				} else {
+					b.WriteRune(rune(r))
+				}
+				k += 9
+				continue
+			}
+		}
+		b.WriteString(literal[k : k+2]) // keep the escape, so \\U is not read as \U
+		k++
+	}
+	return b.String()
+}
+
+// wordByte reports a byte of a bare name; bytes of non-ASCII letters count, so a name
+// with a look-alike letter (pаssword) is read whole.
 func wordByte(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '.' || c == '-'
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '.' || c == '-' || c >= 0x80
 }
 
 // readString reads the double-quoted literal starting at line[start], skipping escapes and

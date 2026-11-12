@@ -263,3 +263,45 @@ func TestBracketContinuationAndQuotedKeys(t *testing.T) {
 		}
 	}
 }
+
+// Commented-out values that open on a secret-like assignment, \U escapes and look-alike
+// letters in names.
+func TestCommentedItemsAndEscapes(t *testing.T) {
+	for name, text := range map[string]string{
+		"commented list":         "# passwords = [\n#   \"leak01\",\n# ]\nx = 1\n",
+		"commented map, slashes": "// tokens = {\n//   ci = \"leak01\"\n// }\n",
+		"commented heredoc":      "# user_data = <<EOF\n# leak01\n# EOF\n",
+		"commented value next":   "# password =\n#   \"leak01\"\n",
+		"U escape":               "\"p\\U00000061ssword\" = [\n  \"leak01\",\n]\n",
+		"U escape, pair":         "env {\n  name  = \"DB_P\\U00000041SSWORD\"\n  value = \"leak01\"\n}\n",
+		"cyrillic a":             "pаssword = [\n  \"leak01\",\n]\n",
+		"cyrillic quoted":        "{\n  \"pаsswоrd\": [\n    \"leak01\"\n  ]\n}\n",
+		"greek omicron, pair":    "env {\n  name  = \"DB_PASSWΟRD\"\n  value = \"leak01\"\n}\n",
+		"fullwidth":              "ｔｏｋｅｎ = [\n  \"leak01\",\n]\n",
+		"math bold":              "𝐬𝐞𝐜𝐫𝐞𝐭 = [\n  \"leak01\",\n]\n",
+		"commented look-alike":   "# tоken = [\n#   \"leak01\",\n# ]\n",
+	} {
+		for variant, input := range variants(text) {
+			for view, got := range views(t, input) {
+				if leakMark.MatchString(got) {
+					t.Errorf("%s %s %s:\n%s", name, variant, view, got)
+				}
+			}
+		}
+	}
+	for _, text := range []string{
+		"# passwords = [\n#   \"x\",\n# ]\nx = \"keep01\"\n",
+		"# password = \"x\"\n# keep01 is the bucket\n",
+		"# tags = [\n#   \"keep01\",\n# ]\n",
+		"tags = {\n  Größe = \"keep01\"\n}\n",
+		"\"\\U0001F600\" = \"keep01\"\n",
+	} {
+		for variant, input := range variants(text) {
+			for view, got := range views(t, input) {
+				if !strings.Contains(got, "keep01") {
+					t.Errorf("%q %s %s:\n%s", text, variant, view, got)
+				}
+			}
+		}
+	}
+}
