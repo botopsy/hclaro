@@ -184,7 +184,8 @@ func TestUnroutedMutationsAreRefused(t *testing.T) {
 // mutating route may succeed or fail internally with one. This sweep sends an empty body, so
 // it only proves the request is refused; TestMalformedIDsCannotMutateProjects and
 // TestScopedNearMissIDsReachNoPlan prove which layer refuses it when the body is valid.
-// History routes are not registered on this server; history_test.go covers their IDs.
+// History routes are not registered on this server; TestHistoryDeleteClearAndRetention sends
+// near-miss history IDs to DELETE with a valid body.
 func TestMalformedIDsNeverSucceed(t *testing.T) {
 	s := newHubServer(t)
 	s.hub.ScopedExecution = true // otherwise every scoped route stops at the gate
@@ -228,7 +229,7 @@ func layer(code int, body []byte) string {
 		return "router"
 	case "invalid_request":
 		return "decoder"
-	case "project_not_found", "profile_not_found", "plan_not_found", "context_closed", "operation_not_found":
+	case "project_not_found", "profile_not_found", "plan_not_found", "context_closed", "operation_not_found", "history_not_found":
 		return "id"
 	default:
 		return fmt.Sprintf("%d %s", code, e)
