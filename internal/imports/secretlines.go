@@ -1,22 +1,31 @@
 package imports
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 
 	"hclaro/internal/state"
 )
 
-var heredocOpen = regexp.MustCompile(`^<<-?\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
+var (
+	heredocOpen = regexp.MustCompile(`^<<-?\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
+	// commentKey is a `name =` or `"name":` inside comment text.
+	commentKey = regexp.MustCompile(`"?([A-Za-z0-9_.-]+)"?\s*[=:]`)
+)
 
 // SecretLines marks the lines of HCL or JSON configuration whose content must be hidden
 // because of where they are, not what they say: every line inside a block, list, call or
 // heredoc opened under a secret-like name (passwords = [ … ], user_data = <<EOF … EOF),
-// and the value of a name/value pair whose name is secret-like ({ name = "DB_PASSWORD",
-// value = … }, in either order, on one line or several), as state.RiskyPair does for state.
-// Strings (with ${…} templates) and comments are skipped. The lines must start at the top
-// of the file; text that closes a block it never opened, or a string left open, cannot be
-// placed, so everything from there on is marked. Line-level checks still apply on top.
+// every line assigning a secret-like name (also inside an inline object or after a line
+// that ends with an operator), and the value of a name/value pair whose name is secret-like
+// ({ name = "DB_PASSWORD", value = … }, in either order, on one line or several, also as a
+// heredoc), as state.RiskyPair does for state. A block whose last label or name is
+// secret-like (resource "aws_kms_key" "secrets" { … }, master_password { … }) is hidden whole.
+// Strings (with ${…} templates and escapes) are read, comments are checked for secret-like assignments, and
+// block comments are hidden. The lines must start at the top of the file; text that closes a
+// block it never opened, or a string left open, cannot be placed, so everything from there on
+// is marked. Line-level checks still apply on top.
 func SecretLines(lines []string) []bool {
 	type frame struct {
 		risky bool
@@ -25,13 +34,16 @@ func SecretLines(lines []string) []bool {
 		// valueOf is the frame whose "value" this frame belongs to (value = jsonencode({ … })),
 		// or -1.
 		valueOf int
+		// lastKey: the key of the statement the previous line ended, restored when a line
+		// starts with an operator.
+		lastKey string
 	}
 	out := make([]bool, len(lines))
 	stack := []frame{{valueOf: -1}}
 	nextID := 1
 	valueLines := map[int][]int{}
 	pairRisky := map[int]bool{}
-	heredocEnd, heredocRisky, inComment, broken := "", false, false, false
+	heredocEnd, heredocRisky, heredocValueOf, inComment, broken := "", false, -1, false, false
 	for i, line := range lines {
 		if broken {
 			out[i] = true
@@ -42,27 +54,41 @@ func SecretLines(lines []string) []bool {
 				heredocEnd = ""
 			} else {
 				out[i] = heredocRisky
+				if heredocValueOf >= 0 {
+					valueLines[heredocValueOf] = append(valueLines[heredocValueOf], i)
+				}
 			}
 			continue
 		}
-		// A secret key whose value starts on this line ("db_password":⏎ "…").
-		out[i] = stack[len(stack)-1].risky || state.RiskyKey(stack[len(stack)-1].key)
-		if v := stack[len(stack)-1].valueOf; v >= 0 {
+		top := &stack[len(stack)-1]
+		// A line that starts with an operator continues the previous statement.
+		if t := strings.TrimLeft(line, " \t\ufeff"); t != "" && strings.IndexByte("+*/%&|?:.<>!=", t[0]) >= 0 && top.key == "" {
+			top.key = top.lastKey
+		}
+		// Inside a commented-out block, or a statement whose value continues on this line
+		// ("db_password":⏎ "…", or password = "a" +⏎ "b").
+		out[i] = inComment || top.risky || state.RiskyKey(top.key)
+		if v := top.valueOf; v >= 0 {
 			valueLines[v] = append(valueLines[v], i)
 		}
-		// afterKey: the line so far ends with `key =` or `"key":`, so the value (or its
-		// opening bracket) may follow on the next line.
-		cand, haveCand, afterKey := "", false, false
+		cand, haveCand, afterKey, last := "", false, false, byte(0)
 		for j := 0; j < len(line) && !broken; {
 			top := &stack[len(stack)-1]
 			c := line[j]
+			// last: the final token's last byte, to see whether the line ends with an operator.
+			// Comments and blanks do not count; a word counts by its last byte (-1 is a value).
+			if c != ' ' && c != '\t' && c != '\r' && !inComment && c != '#' && !strings.HasPrefix(line[j:], "//") && !strings.HasPrefix(line[j:], "/*") && !wordByte(c) {
+				last = c
+			}
 			switch {
 			case inComment:
 				k := strings.Index(line[j:], "*/")
 				if k < 0 {
+					commentSecret(line[j:], &out[i])
 					j = len(line)
 					continue
 				}
+				commentSecret(line[j:j+k], &out[i])
 				inComment, j = false, j+k+2
 			case c == '"':
 				s, end, ok := readString(line, j)
@@ -70,34 +96,41 @@ func SecretLines(lines []string) []bool {
 					broken, out[i] = true, true
 					continue
 				}
+				s = unescape(line[j:end], s)
 				if (strings.EqualFold(top.key, "name") || strings.EqualFold(top.key, "key")) && state.RiskyKey(s) {
 					pairRisky[top.id] = true
 				}
 				cand, haveCand, afterKey, j = s, true, false, end
 			case c == '#' || strings.HasPrefix(line[j:], "//"):
+				commentSecret(line[j:], &out[i])
 				j = len(line)
 			case strings.HasPrefix(line[j:], "/*"):
 				inComment, j = true, j+2
 			case strings.HasPrefix(line[j:], "<<") && heredocOpen.MatchString(line[j:]):
 				heredocEnd = heredocOpen.FindStringSubmatch(line[j:])[1]
 				heredocRisky = top.risky || state.RiskyKey(top.key)
-				afterKey, j = false, len(line)
+				heredocValueOf = top.valueOf
+				if heredocValueOf < 0 && strings.EqualFold(top.key, "value") {
+					heredocValueOf = top.id
+				}
+				afterKey, j, last = false, len(line), 0
 			case c == '{' || c == '[' || c == '(':
 				key := top.key
 				if key == "" && haveCand {
-					key = cand // block syntax: master_password { … }
+					key = cand // block syntax: master_password { … } or variable "db_password" { … }
 				}
-				risky := top.risky || state.RiskyKey(key)
-				valueOf := top.valueOf
-				if valueOf < 0 && strings.EqualFold(top.key, "value") {
-					valueOf = top.id
+				// The word just before the bracket counts too, so a key wrongly carried over
+				// from the line before can only hide more.
+				child := frame{id: nextID, valueOf: top.valueOf, risky: top.risky || state.RiskyKey(key) || haveCand && state.RiskyKey(cand)}
+				nextID++
+				if child.valueOf < 0 && strings.EqualFold(top.key, "value") {
+					child.valueOf = top.id
 				}
 				top.key, haveCand, afterKey = "", false, false
-				stack = append(stack, frame{risky: risky, id: nextID, valueOf: valueOf})
-				nextID++
-				out[i] = out[i] || risky
-				if valueOf >= 0 {
-					valueLines[valueOf] = append(valueLines[valueOf], i)
+				stack = append(stack, child)
+				out[i] = out[i] || child.risky
+				if child.valueOf >= 0 {
+					valueLines[child.valueOf] = append(valueLines[child.valueOf], i)
 				}
 				j++
 			case c == '}' || c == ']' || c == ')':
@@ -115,6 +148,7 @@ func SecretLines(lines []string) []bool {
 				}
 				if haveCand {
 					top.key, afterKey = cand, true
+					out[i] = out[i] || state.RiskyKey(cand)
 					if strings.EqualFold(cand, "value") {
 						valueLines[top.id] = append(valueLines[top.id], i)
 					}
@@ -129,7 +163,7 @@ func SecretLines(lines []string) []bool {
 				for k < len(line) && wordByte(line[k]) {
 					k++
 				}
-				cand, haveCand, afterKey, j = line[j:k], true, false, k
+				cand, haveCand, afterKey, j, last = line[j:k], true, false, k, line[k-1]
 			case c == ' ' || c == '\t':
 				j++
 			default:
@@ -138,9 +172,13 @@ func SecretLines(lines []string) []bool {
 			}
 		}
 		// A newline ends an HCL attribute (a key that opened a block was already used),
-		// unless the line ends right after the key.
-		if !afterKey {
-			stack[len(stack)-1].key = ""
+		// unless the line ends right after the key or with an operator.
+		top = &stack[len(stack)-1]
+		if !afterKey && (last == 0 || strings.IndexByte("+-*/%&|?:<>!=", last) < 0) {
+			if top.key != "" {
+				top.lastKey = top.key
+			}
+			top.key = ""
 		}
 	}
 	for id, ls := range valueLines {
@@ -151,6 +189,31 @@ func SecretLines(lines []string) []bool {
 		}
 	}
 	return out
+}
+
+// commentSecret marks a comment that assigns a secret-like name (commented-out code).
+func commentSecret(text string, mark *bool) {
+	for _, m := range commentKey.FindAllStringSubmatch(text, -1) {
+		if state.RiskyKey(m[1]) {
+			*mark = true
+		}
+	}
+}
+
+// unescape decodes the escapes of a string literal ("p\u0061ssword") so names compare as
+// written; a literal that is not plain JSON (a template with nested quotes) stays as read.
+// When decoding changes it, both forms are kept, joined by a NUL, so a name counts as
+// secret-like if either does: decoding "sec\ret" turns \r into a control character and
+// loses the letter the raw form keeps.
+func unescape(literal, raw string) string {
+	if !strings.Contains(raw, `\`) {
+		return raw
+	}
+	var s string
+	if json.Unmarshal([]byte(literal), &s) != nil || s == raw {
+		return raw
+	}
+	return raw + "\x00" + s
 }
 
 func wordByte(c byte) bool {

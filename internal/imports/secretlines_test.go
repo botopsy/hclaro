@@ -26,7 +26,8 @@ func TestSecretLines(t *testing.T) {
 		`}`,                                                // 16
 	}
 	got := SecretLines(text)
-	want := map[int]bool{4: true, 5: true, 6: true, 13: true}
+	// 9: a commented-out secret assignment; 12: a secret-like name is assigned.
+	want := map[int]bool{4: true, 5: true, 6: true, 9: true, 12: true, 13: true}
 	for i := range text {
 		if got[i] != want[i] {
 			t.Errorf("line %d %q: got %v", i, text[i], got[i])
