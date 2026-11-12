@@ -552,6 +552,9 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		environ = os.Environ()
 	}
 	inputs := collectKnown(m.root, e.op.VarFiles, environ)
+	if inputs.incomplete {
+		e.log.Append("warn", knownIncomplete)
+	}
 	undecoded := false
 	request := engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, Replace: e.op.Replace, GenerateConfigOut: generated}
 	if bound != nil {
@@ -634,7 +637,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 			if err != nil {
 				review.Warnings = append(review.Warnings, fmt.Sprintf("The engine did not write %s, or it could not be read. Check the plan diagnostics.", generated))
 			}
-			generatedConfig, generatedTruncated = imports.RedactGenerated(inputs.scrub(text)), truncated
+			generatedConfig, generatedTruncated = inputs.scrub(imports.RedactGenerated(text)), truncated
 		}
 	}
 	result = &Plan{

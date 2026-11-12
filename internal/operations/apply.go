@@ -547,6 +547,9 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 		environ = os.Environ()
 	}
 	inputs := collectKnown(m.root, e.op.VarFiles, environ)
+	if inputs.incomplete {
+		e.log.Append("warn", knownIncomplete)
+	}
 	undecoded := false
 	err = applier.Apply(ctx, a.path, func(line []byte) {
 		level, text, diag, ok := translate(line, "apply", label, inputs)

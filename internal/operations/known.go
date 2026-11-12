@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"hclaro/internal/state"
 )
 
 const (
@@ -15,23 +17,43 @@ const (
 	maxKnown      = 10_000
 )
 
-// known holds input values the engine may echo in diagnostics: TF_VAR_* environment values
-// and string values from the variable files a plan loads. Diagnostics are free text, so any
-// occurrence is replaced before the heuristic line checks run. Values are kept only for the
-// duration of one plan and never returned.
-type known struct{ values []string }
+// known holds values the engine may echo in diagnostics: TF_VAR_* environment values,
+// credential-shaped environment values (AWS_SECRET_ACCESS_KEY, ARM_CLIENT_SECRET, TF_TOKEN_*)
+// and string values from the variable files the engine loads. Diagnostics are free text, so
+// any occurrence is replaced after the line checks have run. Values are kept only for the
+// duration of one operation and never returned. incomplete is set when a variable file could
+// not be read in full or the value cap was reached.
+type known struct {
+	values     []string
+	incomplete bool
+}
 
-// collectKnown reads the selected variable files plus the files the engine loads on its own
-// (terraform.tfvars and *.auto.tfvars, with .json variants) from the project root.
+const knownIncomplete = "Some variable file values could not all be read (an unreadable or very large file, or too many values), so engine output may not hide every input value. Line checks still apply."
+
+// collectKnown reads the environment, the selected variable files and the files the engine
+// loads on its own (terraform.tfvars and *.auto.tfvars, with .json variants) from root.
 func collectKnown(root string, selected []string, environ []string) *known {
+	k := &known{}
 	set := map[string]bool{}
 	add := func(v string) {
-		if len(v) >= minKnownValue && len(set) < maxKnown {
+		switch {
+		case len(v) < minKnownValue || set[v]:
+		case len(set) >= maxKnown:
+			k.incomplete = true
+		default:
 			set[v] = true
 		}
 	}
+	// Environment first, so variable files cannot crowd credentials out of the cap.
 	for _, item := range environ {
-		if key, value, ok := strings.Cut(item, "="); ok && strings.HasPrefix(key, "TF_VAR_") {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok {
+			continue
+		}
+		if state.RiskyKey(key) || strings.HasPrefix(key, "TF_TOKEN_") {
+			add(value)
+		}
+		if strings.HasPrefix(key, "TF_VAR_") {
 			add(value)
 			// A TF_VAR value may itself be an HCL or JSON literal such as a map or list.
 			for _, v := range quoted(value) {
@@ -40,7 +62,9 @@ func collectKnown(root string, selected []string, environ []string) *known {
 		}
 	}
 	names := append([]string{}, selected...)
-	if entries, err := os.ReadDir(root); err == nil {
+	if entries, err := os.ReadDir(root); err != nil {
+		k.incomplete = true
+	} else {
 		for _, e := range entries {
 			n := e.Name()
 			if n == "terraform.tfvars" || n == "terraform.tfvars.json" || strings.HasSuffix(n, ".auto.tfvars") || strings.HasSuffix(n, ".auto.tfvars.json") {
@@ -50,6 +74,9 @@ func collectKnown(root string, selected []string, environ []string) *known {
 	}
 	for _, name := range names {
 		b, err := readBounded(filepath.Join(root, name))
+		if err != nil || len(b) > maxKnownFile {
+			k.incomplete = true
+		}
 		if err != nil {
 			continue
 		}
@@ -63,7 +90,7 @@ func collectKnown(root string, selected []string, environ []string) *known {
 			add(v)
 		}
 	}
-	k := &known{values: make([]string, 0, len(set))}
+	k.values = make([]string, 0, len(set))
 	for v := range set {
 		k.values = append(k.values, v)
 	}
@@ -84,6 +111,19 @@ func (k *known) scrub(text string) string {
 	return text
 }
 
+// scrubSpanning replaces only values that span lines; sanitize scrubs the rest per line.
+func (k *known) scrubSpanning(text string) string {
+	if k == nil {
+		return text
+	}
+	for _, v := range k.values {
+		if strings.Contains(v, "\n") {
+			text = strings.ReplaceAll(text, v, "[redacted]")
+		}
+	}
+	return text
+}
+
 func readBounded(path string) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() {
@@ -94,7 +134,8 @@ func readBounded(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return io.ReadAll(io.LimitReader(f, maxKnownFile))
+	// One byte past the limit tells the caller the file was cut.
+	return io.ReadAll(io.LimitReader(f, maxKnownFile+1))
 }
 
 // quoted returns the contents of every double-quoted HCL string literal, unescaped. It

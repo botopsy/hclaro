@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"hclaro/internal/engine"
-	"hclaro/internal/state"
 )
 
 // Statuses used by initialization in addition to Running, Succeeded, Failed and Cancelled.
@@ -254,7 +253,10 @@ func (r *Inits) execute(ctx context.Context, e *initEntry, req InitRequest) (cod
 		return stopped(), nil, false
 	}
 	r.stage(e, "Initializing")
-	k := initKnown(req.Root, req.Environ)
+	k := collectKnown(req.Root, nil, req.Environ)
+	if k.incomplete {
+		e.log.Append("warn", knownIncomplete)
+	}
 	label := engineLabel(req.Engine)
 	undecoded := false
 	// shown keeps a bounded tail of the sanitized lines for classification; raw output is
@@ -334,10 +336,24 @@ func (r *Inits) classify(e *initEntry, shown, hint string) string {
 	return "init_failed"
 }
 
-// humanLine sanitizes one line of human-readable init output. Box-drawing borders around
-// diagnostics are removed; "Error:" and "Warning:" lines also become diagnostics.
+// snippetLine matches, after the diagnostic border, a quoted source line ("12:   value = ...")
+// or the expression-value annotations under it ("│ var.x is ..." and its "├────" rule). Tree
+// rows such as "├── provider[...]" or "│   ├── ..." from `providers` do not match.
+var snippetLine = regexp.MustCompile(`^(\d+:(\s|$)|├─+\s*$|│ \S)`)
+
+// humanLine sanitizes one line of human-readable engine output. Box-drawing borders around
+// diagnostics are removed and configuration snippets are dropped, as the JSON path drops
+// "snippet"; "Error:" and "Warning:" lines also become diagnostics.
 func humanLine(stream, line string, k *known) (level, text string, diag *EngineDiagnostic) {
-	line = strings.TrimSpace(strings.TrimLeft(stripControls(line), "│╷╵ "))
+	line = stripControls(line)
+	rest := strings.TrimLeft(line, " \t")
+	for _, border := range []string{"│", "╷", "╵"} {
+		rest = strings.TrimPrefix(rest, border)
+	}
+	if snippetLine.MatchString(strings.TrimLeft(rest, " \t")) {
+		return "", "", nil
+	}
+	line = strings.TrimSpace(strings.TrimLeft(line, "│╷╵ "))
 	if line == "" {
 		return "", "", nil
 	}
@@ -354,26 +370,6 @@ func humanLine(stream, line string, k *known) (level, text string, diag *EngineD
 		}
 	}
 	return level, sanitize(line, k, 1), nil
-}
-
-// initKnown adds values of credential-shaped environment variables (for example
-// AWS_SECRET_ACCESS_KEY, ARM_CLIENT_SECRET or TF_TOKEN_*) to the usual known inputs: a
-// backend or registry error may echo them.
-func initKnown(root string, environ []string) *known {
-	k := collectKnown(root, nil, environ)
-	seen := map[string]bool{}
-	for _, v := range k.values {
-		seen[v] = true
-	}
-	for _, item := range environ {
-		key, value, ok := strings.Cut(item, "=")
-		if ok && len(value) >= minKnownValue && !seen[value] && len(k.values) < maxKnown && (state.RiskyKey(key) || strings.HasPrefix(key, "TF_TOKEN_")) {
-			seen[value] = true
-			k.values = append(k.values, value)
-		}
-	}
-	sort.Slice(k.values, func(i, j int) bool { return len(k.values[i]) > len(k.values[j]) })
-	return k
 }
 
 // Cancel requests cancellation of a queued or running initialization.
