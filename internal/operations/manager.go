@@ -377,19 +377,20 @@ func (m *Manager) stage(e *entry, stage string) {
 }
 
 var messages = map[string]string{
-	"state_locked":    "The state is locked by another operation. Hclaro never force-unlocks state. Wait for the other operation to finish, or investigate the lock with your CLI.",
-	"credentials":     "The engine could not authenticate with the backend or a provider. Refresh your credentials (for example, an SSO login) in your terminal, then run the plan again. Hclaro inherits credentials and never stores them.",
-	"init_required":   "This working directory needs initialization, or modules or providers are missing. Run init yourself, then restart Hclaro. Nothing was initialized automatically.",
-	"network":         "A backend or provider endpoint was unreachable. Check VPN and network access, then run the plan again.",
-	"plan_failed":     "The plan failed. Review the engine diagnostics; lines that look like secrets are withheld.",
-	"timeout":         "The plan exceeded its time limit and was stopped. Planning does not change infrastructure; if the engine was stopped forcefully, check for a leftover state lock with your CLI.",
-	"cancelled":       "The plan was cancelled and no plan was kept. Planning does not change infrastructure. If the engine had to be stopped forcefully, a state lock may remain; check with your CLI before retrying, and never force-unlock while another operation may be running.",
-	"unsafe_cli_args": "Inherited TF_CLI_ARGS or TF_CLI_ARGS_plan contains flags other than -no-color. Injected flags could change what a reviewed plan contains, so Hclaro refused to run. Values were not logged.",
-	"workspace_error": "The active workspace could not be confirmed before planning. Check workspace selection with your CLI.",
-	"plan_read":       "The saved plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
-	"plan_format":     "The plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No plan data was returned.",
-	"shutdown":        "Hclaro stopped while the plan was running. No plan was kept.",
-	"scope_changed":   scopeChangedMessage,
+	"state_locked":        "The state is locked by another operation. Hclaro never force-unlocks state. Wait for the other operation to finish, or investigate the lock with your CLI.",
+	"state_unlock_failed": "The engine could not release the state lock after planning, and no plan was kept. Planning does not change infrastructure. The lock may remain: investigate it with your CLI. Hclaro never force-unlocks state.",
+	"credentials":         "The engine could not authenticate with the backend or a provider. Refresh your credentials (for example, an SSO login) in your terminal, then run the plan again. Hclaro inherits credentials and never stores them.",
+	"init_required":       "This working directory needs initialization, or modules or providers are missing. Run init yourself, then restart Hclaro. Nothing was initialized automatically.",
+	"network":             "A backend or provider endpoint was unreachable. Check VPN and network access, then run the plan again.",
+	"plan_failed":         "The plan failed. Review the engine diagnostics; lines that look like secrets are withheld.",
+	"timeout":             "The plan exceeded its time limit and was stopped. Planning does not change infrastructure; if the engine was stopped forcefully, check for a leftover state lock with your CLI.",
+	"cancelled":           "The plan was cancelled and no plan was kept. Planning does not change infrastructure. If the engine had to be stopped forcefully, a state lock may remain; check with your CLI before retrying, and never force-unlock while another operation may be running.",
+	"unsafe_cli_args":     "Inherited TF_CLI_ARGS or TF_CLI_ARGS_plan contains flags other than -no-color. Injected flags could change what a reviewed plan contains, so Hclaro refused to run. Values were not logged.",
+	"workspace_error":     "The active workspace could not be confirmed before planning. Check workspace selection with your CLI.",
+	"plan_read":           "The saved plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
+	"plan_format":         "The plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No plan data was returned.",
+	"shutdown":            "Hclaro stopped while the plan was running. No plan was kept.",
+	"scope_changed":       scopeChangedMessage,
 }
 
 // scopeChangedMessage explains a failed scope revalidation; the log has the specific reason.

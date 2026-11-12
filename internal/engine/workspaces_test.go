@@ -106,3 +106,16 @@ func TestClassifyWorkspace(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyWorkspaceLockReleaseAndAssociation(t *testing.T) {
+	for text, want := range map[string]string{
+		"Error acquiring the state lock\nLock Info:":                  "state_locked",
+		"Error releasing the state lock\nLock Info:":                  "",
+		"Releasing state lock. This may take a few moments...\nError": "",
+		"Error: aws_route_table_association.a: InvalidRouteTableID":    "",
+	} {
+		if got := ClassifyWorkspace(text); got != want {
+			t.Errorf("%q: %q want %q", text, got, want)
+		}
+	}
+}

@@ -415,6 +415,16 @@ func TestClassify(t *testing.T) {
 		"dial tcp: lookup example: no such host":              "network",
 		"Error: Saved plan is stale":                          "stale_plan",
 		"Error: Invalid reference":                            "",
+		// A release error comes after the engine ran; it also prints Lock Info.
+		"Error releasing the state lock\n\nLock Info:\n  ID: x": "state_unlock_failed",
+		"Error: Failed to unlock state: ConditionalCheckFailed":  "state_unlock_failed",
+		"Error locking state: Error acquiring the state lock":    "state_locked",
+		// Normal progress output is not a lock failure.
+		"Acquiring state lock. This may take a few moments...": "",
+		// "association" contains "sso"; only the word counts.
+		"Error: creating aws_route_table_association.a: InvalidRouteTableID.NotFound": "",
+		"Error: reading aws_ssoadmin_permission_set: not found":                      "",
+		"Error: SSO token is invalid":                                                 "credentials",
 	} {
 		if got := Classify(text); got != want {
 			t.Errorf("%q: %q want %q", text, got, want)
