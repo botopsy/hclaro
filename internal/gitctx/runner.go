@@ -6,13 +6,14 @@
 package gitctx
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"hclaro/internal/bounded"
 )
 
 // Runner runs one read-only Git command in dir and returns its standard output, at most
@@ -70,27 +71,6 @@ type Exec struct {
 	Observe func(args []string)
 }
 
-// bounded keeps at most limit bytes and records whether more were written.
-type bounded struct {
-	buf      bytes.Buffer
-	limit    int
-	overflow bool
-}
-
-func (b *bounded) Write(p []byte) (int, error) {
-	if room := b.limit - b.buf.Len(); room > 0 {
-		if len(p) > room {
-			b.buf.Write(p[:room])
-			b.overflow = true
-		} else {
-			b.buf.Write(p)
-		}
-	} else if len(p) > 0 {
-		b.overflow = true
-	}
-	return len(p), nil
-}
-
 // Environ returns environ without GIT_* variables, plus the fixed settings Hclaro uses.
 func Environ(environ []string) []string {
 	out := make([]string, 0, len(environ)+4)
@@ -126,11 +106,11 @@ func (e Exec) Run(ctx context.Context, dir string, limit int, args ...string) ([
 	cmd.Dir = dir
 	cmd.WaitDelay = time.Second
 	cmd.Env = Environ(os.Environ())
-	out := &bounded{limit: limit}
+	out := &bounded.Buffer{Limit: limit}
 	cmd.Stdout = out
 	// stderr is discarded: it can echo paths, remotes or configuration.
 	if err := cmd.Run(); err != nil {
 		return nil, false, err
 	}
-	return out.buf.Bytes(), out.overflow, nil
+	return out.Bytes(), out.Overflow, nil
 }

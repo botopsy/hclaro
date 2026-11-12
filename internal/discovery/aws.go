@@ -7,7 +7,6 @@
 package discovery
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"hclaro/internal/bounded"
 )
 
 // Runner runs one read-only AWS CLI call with environ (nil inherits Hclaro's environment)
@@ -193,26 +194,6 @@ type Exec struct {
 	Observe func(args []string)
 }
 
-type bounded struct {
-	buf      bytes.Buffer
-	limit    int
-	overflow bool
-}
-
-func (b *bounded) Write(p []byte) (int, error) {
-	if room := b.limit - b.buf.Len(); room > 0 {
-		if len(p) > room {
-			b.buf.Write(p[:room])
-			b.overflow = true
-		} else {
-			b.buf.Write(p)
-		}
-	} else if len(p) > 0 {
-		b.overflow = true
-	}
-	return len(p), nil
-}
-
 func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte, error) {
 	if !Allowed(args) {
 		return nil, &CallError{KindRefused}
@@ -237,9 +218,9 @@ func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte,
 	cmd := exec.CommandContext(ctx, exe, argv...)
 	cmd.WaitDelay = time.Second
 	cmd.Env = Environ(environ)
-	out := &bounded{limit: maxOutput}
+	out := &bounded.Buffer{Limit: maxOutput}
 	// stderr is read only to classify the failure; it is never returned or logged.
-	errOut := &bounded{limit: maxStderr}
+	errOut := &bounded.Buffer{Limit: maxStderr}
 	cmd.Stdout, cmd.Stderr = out, errOut
 	if err := cmd.Run(); err != nil {
 		switch {
@@ -248,16 +229,16 @@ func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte,
 		case errors.Is(ctx.Err(), context.DeadlineExceeded):
 			return nil, &CallError{KindTimeout}
 		}
-		return nil, &CallError{Classify(errOut.buf.String())}
+		return nil, &CallError{Classify(errOut.String())}
 	}
-	if out.overflow {
+	if out.Overflow {
 		return nil, &CallError{KindOutputTooLarge}
 	}
 	// AWS CLI v1 prints its version to stderr; v2 to stdout.
-	if args[0] == "--version" && out.buf.Len() == 0 {
-		return errOut.buf.Bytes(), nil
+	if args[0] == "--version" && out.Len() == 0 {
+		return errOut.Bytes(), nil
 	}
-	return out.buf.Bytes(), nil
+	return out.Bytes(), nil
 }
 
 // Classify maps AWS CLI error text to a kind. The text itself is discarded by callers.

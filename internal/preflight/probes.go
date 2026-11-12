@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"hclaro/internal/bounded"
 	"hclaro/internal/state"
 )
 
@@ -28,27 +29,6 @@ const (
 	maxProbeOutput  = 1 << 20
 	maxPaths        = 10
 )
-
-// bounded keeps at most limit bytes and records whether more were written.
-type bounded struct {
-	buf      bytes.Buffer
-	limit    int
-	overflow bool
-}
-
-func (b *bounded) Write(p []byte) (int, error) {
-	if room := b.limit - b.buf.Len(); room > 0 {
-		if len(p) > room {
-			b.buf.Write(p[:room])
-			b.overflow = true
-		} else {
-			b.buf.Write(p)
-		}
-	} else if len(p) > 0 {
-		b.overflow = true
-	}
-	return len(p), nil
-}
 
 // insideRepository reports whether root or a parent has a .git entry. It reads only names.
 func insideRepository(root string) bool {
@@ -163,7 +143,7 @@ func AWSIdentity(ctx context.Context, environ []string) Identity {
 		cmd.Env = append(cmd.Env, item)
 	}
 	cmd.Env = append(cmd.Env, "AWS_PAGER=", "AWS_CLI_AUTO_PROMPT=off")
-	out := &bounded{limit: 64 << 10}
+	out := &bounded.Buffer{Limit: 64 << 10}
 	cmd.Stdout = out
 	if err := cmd.Run(); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -171,7 +151,7 @@ func AWSIdentity(ctx context.Context, environ []string) Identity {
 		}
 		return Identity{State: "failed", Message: "The AWS CLI could not verify the caller identity (credentials missing or expired, or AWS unreachable)."}
 	}
-	return ParseIdentity(out.buf.Bytes())
+	return ParseIdentity(out.Bytes())
 }
 
 // ParseIdentity extracts the account and ARN from get-caller-identity JSON.
