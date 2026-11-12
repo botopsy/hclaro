@@ -29,7 +29,8 @@
 // the selected and a non-empty workspace. New and select also write "environment" in the data
 // directory. Any extra flag, including -force, is refused.
 // HCLARO_FAKE_WORKSPACE selects failures: "unsupported" (backend without workspaces),
-// "locked", "credentials", "slow" (waits for an interrupt after printing a line), "leak"
+// "locked", "credentials", "slow" (new/select/delete wait for an interrupt after printing a
+// line), "slow-list" (`workspace list`, and so every context read, waits for an interrupt), "leak"
 // (echoes a canary and AWS_SECRET_ACCESS_KEY, then succeeds) and "list-fails-after" (succeeds,
 // then every later `workspace list` fails).
 // Project utilities: `validate -json` prints a valid document, or the invalid fixture when a
@@ -97,6 +98,15 @@ func main() {
 		if _, err := os.Stat(".fake-list-broken"); err == nil {
 			fmt.Fprintln(os.Stderr, "Error: failed to list workspaces")
 			os.Exit(1)
+		}
+		if os.Getenv("HCLARO_FAKE_WORKSPACE") == "slow-list" {
+			interrupted := make(chan os.Signal, 1)
+			signal.Notify(interrupted, os.Interrupt)
+			select {
+			case <-interrupted:
+				os.Exit(1)
+			case <-time.After(time.Minute):
+			}
 		}
 		_, _ = os.Stdout.Write(workspaceList())
 	case len(args) == 3 && args[0] == "workspace" && (args[1] == "new" || args[1] == "select" || args[1] == "delete"):
