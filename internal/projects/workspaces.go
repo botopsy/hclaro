@@ -140,22 +140,6 @@ func workspaceNotices(environ []string, action engine.WorkspaceAction, launch bo
 	return notices
 }
 
-// unsafeWorkspaceArgs reports inherited TF_CLI_ARGS or TF_CLI_ARGS_workspace flags other
-// than -no-color.
-func unsafeWorkspaceArgs(environ []string) bool {
-	for _, item := range environ {
-		key, value, _ := strings.Cut(item, "=")
-		if key == "TF_CLI_ARGS" || key == "TF_CLI_ARGS_workspace" || key == "TF_CLI_ARGS_show" {
-			for _, arg := range strings.Fields(value) {
-				if arg != "-no-color" {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
 // staticContext hashes everything a workspace command depends on that can be checked
 // without running the engine: project, root, engine choice and executable identity, data
 // directory, backend metadata, relevant environment and the configuration fingerprint.
@@ -257,8 +241,8 @@ func (h *Hub) ReviewWorkspaceWith(ctx context.Context, id string, action engine.
 		return refuse("delete_unsupported", r.Support.DeleteReason)
 	case !engine.ValidArgWorkspace(target):
 		return refuse("unsafe_name", "This name starts with a dash, so it could be read as a command flag. Manage it with the CLI.")
-	case unsafeWorkspaceArgs(inherited):
-		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS, TF_CLI_ARGS_workspace or TF_CLI_ARGS_show adds flags other than -no-color, which would change the reviewed command. Restart Hclaro without them.")
+	case engine.UnsafeArgs(inherited, "workspace list", "workspace "+string(action), "show"):
+		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS, TF_CLI_ARGS_show or a TF_CLI_ARGS_workspace* setting adds flags other than -no-color, which would change the reviewed command. Restart Hclaro without them.")
 	}
 	name, executable, manager, err := h.WorkspaceManagers(p.RootPath, preference, environ)
 	if err != nil {

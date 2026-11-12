@@ -11,6 +11,10 @@ Apply preflight:
 
 - Fix: the Git check before an apply passed inherited `GIT_*` variables to Git. With `GIT_DIR` or `GIT_INDEX_FILE` pointing at another repository, a project with uncommitted changes could be reported as clean. The check now runs through the same restricted Git runner as the Git context view, which removes every inherited `GIT_*` variable.
 
+Engine environment:
+
+- Fix: for a command of more than one word, Terraform and OpenTofu read `TF_CLI_ARGS_<words joined by _>`, such as `TF_CLI_ARGS_workspace_delete` for `workspace delete` and `TF_CLI_ARGS_workspace_list` for `workspace list`. Hclaro only checked `TF_CLI_ARGS_workspace`, so an inherited `TF_CLI_ARGS_workspace_delete=-force` or `TF_CLI_ARGS_workspace_new=-lock=false` reached the engine. Every engine command now also refuses its full-subcommand variable with anything but `-no-color`, and the workspace review checks it before offering the action. Messages name the variable to unset.
+
 Local API boundary:
 
 - Every POST, PATCH and DELETE request under `/api/` now gets the full checks (session token, exact Origin, CSRF header, JSON body and size limit) whatever its path, so a new route is protected from the moment it exists. Visible change: a POST, PATCH or DELETE to a path that is not a route used to answer `405`; it now answers `401`, `403`, `413` or `415` when a check fails and `404 route_not_found` otherwise. Other methods, such as PUT, still answer `405`.

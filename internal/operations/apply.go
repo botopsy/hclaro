@@ -465,7 +465,7 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	}
 	switch code {
 	case "unsafe_cli_args":
-		message += " " + engine.UnsafeArgsHelp(environOr(e.environ), "apply", "workspace")
+		message += " " + engine.UnsafeArgsHelp(environOr(e.environ), "apply", "workspace show")
 	case "credentials":
 		message += credentialHint(e)
 	}

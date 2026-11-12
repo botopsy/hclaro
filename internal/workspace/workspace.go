@@ -257,7 +257,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	name, err := adapter.Workspace(ctx)
 	if err != nil {
 		if errors.Is(err, engine.ErrUnsafeArgs) {
-			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace settings and restart. Only -no-color is accepted.")
+			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace or TF_CLI_ARGS_workspace_show settings and restart. Only -no-color is accepted.")
 			return
 		}
 		fail("workspace_error", "Unable to determine the active workspace. Check backend initialization and workspace selection with the CLI, then "+again+".")

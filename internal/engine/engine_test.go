@@ -241,3 +241,41 @@ func TestImportSupport(t *testing.T) {
 		}
 	}
 }
+
+func TestUnsafeArgs(t *testing.T) {
+	for _, c := range []struct {
+		env      string
+		commands []string
+		want     bool
+	}{
+		{"TF_CLI_ARGS=-lock=false", []string{"plan"}, true},
+		{"TF_CLI_ARGS_plan=-target=x", []string{"plan"}, true},
+		{"tf_cli_args_plan=-target=x", []string{"plan"}, true},
+		{"TF_CLI_ARGS_apply=-auto-approve", []string{"plan"}, false},
+		{"TF_CLI_ARGS_plan=-no-color", []string{"plan"}, false},
+		{"TF_CLI_ARGS_plan=  -no-color  -no-color ", []string{"plan"}, false},
+		{"TF_CLI_ARGS_plan=-no-color -refresh=false", []string{"plan"}, true},
+		{"TF_CLI_ARGS_plan=", []string{"plan"}, false},
+		{"TF_CLI_ARGSX=-x", []string{"plan"}, false},
+		{"TF_CLI_ARGS_workspace=-force", []string{"workspace delete"}, true},
+		{"TF_CLI_ARGS_workspace_delete=-force", []string{"workspace delete"}, true},
+		{"TF_CLI_ARGS_workspace_delete=-force", []string{"workspace new", "show"}, false},
+		{"TF_CLI_ARGS_workspace_deletex=-force", []string{"workspace delete"}, false},
+		{"TF_CLI_ARGS_providers_lock=-x", []string{"providers lock"}, true},
+		{"TF_CLI_ARGS_force_unlock=-force", []string{"force-unlock"}, true},
+		{"TF_CLI_ARGS_show=-x", []string{""}, false},
+		// No commands means every TF_CLI_ARGS* variable.
+		{"TF_CLI_ARGS_anything=-x", nil, true},
+		{"TF_CLI_ARGSX=-x", nil, true},
+		{"TF_CLI_ARGS_anything=-no-color", nil, false},
+		{"TF_LOG=-x", nil, false},
+	} {
+		if got := UnsafeArgs([]string{c.env}, c.commands...); got != c.want {
+			t.Errorf("UnsafeArgs(%q, %q) = %v", c.env, c.commands, got)
+		}
+		// The help names exactly the variables the check refuses.
+		if got := UnsafeArgsHelp([]string{c.env}, c.commands...) != ""; got != c.want {
+			t.Errorf("UnsafeArgsHelp(%q, %q) non-empty = %v", c.env, c.commands, got)
+		}
+	}
+}

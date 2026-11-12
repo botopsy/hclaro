@@ -459,7 +459,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 			message = fmt.Sprintf("The active workspace changed since Hclaro started (was %q). Restart Hclaro to review the current workspace.", snap.Info.Workspace)
 		}
 		if code == "unsafe_cli_args" {
-			message += " " + engine.UnsafeArgsHelp(environOr(e.environ), "plan", "workspace", "show")
+			message += " " + engine.UnsafeArgsHelp(environOr(e.environ), "plan", "workspace show", "show")
 		}
 		if code == "credentials" {
 			message += credentialHint(e)

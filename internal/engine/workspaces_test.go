@@ -48,6 +48,25 @@ func TestChangeWorkspaceDropsTFWorkspaceAndRefusesHiddenFlags(t *testing.T) {
 			t.Fatalf("%s: %v", env, err)
 		}
 	}
+	// The engines read TF_CLI_ARGS_<subcommand> with words joined by "_" (Terraform 1.5.5
+	// reads TF_CLI_ARGS_workspace_list for `workspace list`, not TF_CLI_ARGS_workspace).
+	for _, env := range []string{"TF_CLI_ARGS_workspace_delete=-force", "tf_cli_args_workspace_delete=-force", "TF_CLI_ARGS_workspace_delete_staging=-force"} {
+		if err := initCLI(t, env).ChangeWorkspace(context.Background(), WorkspaceDelete, "staging", func(string, []byte) {}); !errors.Is(err, ErrUnsafeArgs) {
+			t.Fatalf("%s: %v", env, err)
+		}
+	}
+	if _, err := initCLI(t, "TF_CLI_ARGS_workspace_list=-state=x").ListWorkspaces(context.Background()); !errors.Is(err, ErrUnsafeArgs) {
+		t.Fatalf("workspace list: %v", err)
+	}
+	if _, err := initCLI(t, "TF_CLI_ARGS_workspace_show=-x").Workspace(context.Background()); !errors.Is(err, ErrUnsafeArgs) {
+		t.Fatalf("workspace show: %v", err)
+	}
+	// Another subcommand's variable and a flag position do not count as the command.
+	for _, env := range []string{"TF_CLI_ARGS_workspace_new=-force", "TF_CLI_ARGS_workspace_select_x=-force"} {
+		if err := initCLI(t, env).ChangeWorkspace(context.Background(), WorkspaceSelect, "dev", func(string, []byte) {}); errors.Is(err, ErrUnsafeArgs) {
+			t.Fatalf("%s refused for workspace select dev", env)
+		}
+	}
 	if err := initCLI(t, "TF_CLI_ARGS_workspace=-no-color").ChangeWorkspace(context.Background(), WorkspaceSelect, "dev", func(string, []byte) {}); errors.Is(err, ErrUnsafeArgs) {
 		t.Fatal("-no-color refused")
 	}

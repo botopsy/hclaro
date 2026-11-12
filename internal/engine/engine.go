@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -74,8 +75,42 @@ func ReadAdvice(err error, fallback string) string {
 // flagName matches a bare flag name; anything after "=" is a value and is never reported.
 var flagName = regexp.MustCompile(`^--?[A-Za-z][A-Za-z0-9_-]{0,40}$`)
 
-// UnsafeArgsHelp explains which inherited TF_CLI_ARGS variables block the commands (none
-// means any TF_CLI_ARGS*) and how to remove them. It names variables and flag names only, never values;
+// unsafeArgsVar reports whether the variable key is read for one of commands, each a
+// subcommand as typed ("workspace select"). The engines read TF_CLI_ARGS and
+// TF_CLI_ARGS_<subcommand> with words joined by "_" and dashes turned into "_"
+// (TF_CLI_ARGS_workspace_select); every leading word group counts, so TF_CLI_ARGS_workspace
+// does too. No commands means any TF_CLI_ARGS*. Names compare without case, as Windows does.
+func unsafeArgsVar(key string, commands []string) bool {
+	upper := strings.ToUpper(key)
+	if upper == "TF_CLI_ARGS" || len(commands) == 0 && strings.HasPrefix(upper, "TF_CLI_ARGS") {
+		return true
+	}
+	for _, c := range commands {
+		name := "TF_CLI_ARGS"
+		for _, word := range strings.Fields(c) {
+			name += "_" + strings.ToUpper(strings.ReplaceAll(word, "-", "_"))
+			if upper == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// UnsafeArgs reports an inherited TF_CLI_ARGS variable read for one of commands (see
+// unsafeArgsVar) that adds anything other than -no-color.
+func UnsafeArgs(environ []string, commands ...string) bool {
+	for _, item := range environ {
+		key, value, _ := strings.Cut(item, "=")
+		if unsafeArgsVar(key, commands) && slices.ContainsFunc(strings.Fields(value), func(arg string) bool { return arg != "-no-color" }) {
+			return true
+		}
+	}
+	return false
+}
+
+// UnsafeArgsHelp explains which inherited TF_CLI_ARGS variables block the commands (see
+// unsafeArgsVar) and how to remove them. It names variables and flag names only, never values;
 // arguments that are not a plain flag are counted, not shown. It returns "" when none block.
 // shortcut: a secret passed space-separated after a flag and itself shaped like "-name" would
 // be named; such values are not expected from TF_CLI_ARGS.
@@ -83,12 +118,7 @@ func UnsafeArgsHelp(environ []string, commands ...string) string {
 	found, unset := []string{}, []string{}
 	for _, item := range environ {
 		key, value, _ := strings.Cut(item, "=")
-		upper := strings.ToUpper(key)
-		relevant := upper == "TF_CLI_ARGS" || len(commands) == 0 && strings.HasPrefix(upper, "TF_CLI_ARGS_")
-		for _, c := range commands {
-			relevant = relevant || upper == strings.ToUpper("TF_CLI_ARGS_"+c)
-		}
-		if !relevant {
+		if !unsafeArgsVar(key, commands) {
 			continue
 		}
 		names, other := []string{}, 0
@@ -168,16 +198,17 @@ func (c *CLI) commandEnv(ctx context.Context, dropWorkspace bool, selected strin
 	if environ == nil {
 		environ = os.Environ()
 	}
+	// The subcommand is every argument before the first flag; extra trailing words such as a
+	// workspace name only make the check stricter.
+	words := args
+	if i := slices.IndexFunc(args, func(arg string) bool { return strings.HasPrefix(arg, "-") }); i >= 0 {
+		words = args[:i]
+	}
+	if UnsafeArgs(environ, strings.Join(words, " ")) {
+		return nil, ErrUnsafeArgs
+	}
 	for _, item := range environ {
-		key, value, _ := strings.Cut(item, "=")
-		// Windows environment names are case-insensitive, so the check is too.
-		if strings.EqualFold(key, "TF_CLI_ARGS") || strings.EqualFold(key, "TF_CLI_ARGS_"+args[0]) {
-			for _, arg := range strings.Fields(value) {
-				if arg != "-no-color" {
-					return nil, ErrUnsafeArgs
-				}
-			}
-		}
+		key, _, _ := strings.Cut(item, "=")
 		if strings.HasPrefix(strings.ToUpper(key), "TF_LOG") || key == "TF_IN_AUTOMATION" || key == "CHECKPOINT_DISABLE" || dropWorkspace && strings.EqualFold(key, "TF_WORKSPACE") {
 			continue
 		}

@@ -514,7 +514,7 @@ func (h *Hub) inspect(ctx context.Context, p Record) (name, version string, name
 	list, err := adapter.ListWorkspaces(ctx)
 	if err != nil {
 		if errors.Is(err, engine.ErrUnsafeArgs) {
-			return name, version, names, "", 0, diag("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace settings and restart Hclaro. Only -no-color is accepted.")
+			return name, version, names, "", 0, diag("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace or TF_CLI_ARGS_workspace_list settings and restart Hclaro. Only -no-color is accepted.")
 		}
 		return name, version, names, "", 0, diag("workspace_list", "Unable to list workspaces. "+engine.ReadAdvice(err, "Check backend access, credentials and SSO/VPN with the CLI, then inspect again."))
 	}
@@ -618,7 +618,7 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 		list, err := adapter.ListWorkspaces(ctx)
 		if err != nil {
 			if errors.Is(err, engine.ErrUnsafeArgs) {
-				return diag("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace settings and restart Hclaro. Only -no-color is accepted.")
+				return diag("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_workspace or TF_CLI_ARGS_workspace_list settings and restart Hclaro. Only -no-color is accepted.")
 			}
 			return diag("workspace_list", "Unable to list workspaces. "+engine.ReadAdvice(err, "Check backend access, credentials and SSO/VPN with the CLI, then read this workspace again."))
 		}

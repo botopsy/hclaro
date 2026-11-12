@@ -51,23 +51,6 @@ func toolNotices(environ []string, tool engine.Tool) []string {
 	return notices
 }
 
-// unsafeToolArgs reports inherited TF_CLI_ARGS or TF_CLI_ARGS_<command> flags other than
-// -no-color. The engine adapter refuses them too; checking here refuses before any process.
-func unsafeToolArgs(environ []string, tool engine.Tool) bool {
-	command := engine.ToolArgs(tool, true, false)[0]
-	for _, item := range environ {
-		key, value, _ := strings.Cut(item, "=")
-		if key == "TF_CLI_ARGS" || key == "TF_CLI_ARGS_"+command || key == "TF_CLI_ARGS_version" {
-			for _, arg := range strings.Fields(value) {
-				if arg != "-no-color" {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
 const (
 	maxFormatFiles   = 5000
 	maxFormatFolders = 1000
@@ -188,7 +171,7 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 		return refuse("shared_data_dir", "TF_DATA_DIR is an absolute path, so every project would share one data directory. Restart Hclaro without it, or with a relative TF_DATA_DIR.")
 	}
 	environ := os.Environ()
-	if unsafeToolArgs(environ, tool) {
+	if engine.UnsafeArgs(environ, engine.ToolArgs(tool, true, false)[0], "version") {
 		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS or a command-specific TF_CLI_ARGS_* setting adds flags other than -no-color, which would change this command. Restart Hclaro without them.")
 	}
 	preference := p.EnginePreference
