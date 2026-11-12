@@ -199,6 +199,11 @@ func TestHeredocAndKeyGaps(t *testing.T) {
 		"restored key, carried name":  "name = \"a\"\n\"x\"\n= \"DB_PASSWORD\"\nvalue = \"leak01\"\n",
 		"carried key over restored":   "region = \"us-east-1\"\n\"db_password\"\n:\n\"leak01\"\n",
 		"carried name after secret":   "password = \"a\"\nx\n/*\nc */ = \"b\"\n+ \"leak01\"\n",
+		// Heredoc bodies are opaque text (JSON, YAML, shell): hidden under any name.
+		"heredoc json pair":        "container_definitions = <<EOF\n[{\"environment\": [{\"name\": \"DB_PASSWORD\", \"value\": \"leak01\"}]}]\nEOF\n",
+		"heredoc json pair, lines": "container_definitions = <<-EOF\n  [{\n    \"name\": \"DB_PASSWORD\",\n    \"value\": \"leak01\"\n  }]\n  EOF\n",
+		"heredoc yaml secret":      "content = <<EOT\nclient_secret: leak01\nEOT\n",
+		"heredoc plain body":       "user_data = <<EOF\nexport X=leak01\nEOF\n",
 	} {
 		for variant, input := range variants(text) {
 			for view, got := range views(t, input) {
@@ -209,7 +214,7 @@ func TestHeredocAndKeyGaps(t *testing.T) {
 		}
 	}
 	// A dashed anchor ends its heredoc, and an ordinary key split from its ":" stays shown.
-	for _, text := range []string{"note = <<EO-F\nok\nEO-F\nx = \"keep01\"\n", "{\n  \"name\"\n  : \"keep01\"\n}\n",
+	for _, text := range []string{"note = <<EO-F\nok\nEO-F\nx = \"keep01\"\n", "content = <<EOT\nclient_secret: x\nEOT\nname = \"keep01\"\n", "{\n  \"name\"\n  : \"keep01\"\n}\n",
 		"token = var.a\n/*\n*/\n// c\nx = \"keep01\"\n"} {
 		for variant, input := range variants(text) {
 			for view, got := range views(t, input) {

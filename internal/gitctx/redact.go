@@ -31,12 +31,11 @@ var (
 
 // LineRedactor redacts HCL or JSON configuration lines for display. It keeps state
 // across the lines of one hunk to follow heredocs. It is a heuristic, not a parser: any
-// literal assigned to a secret-like name, any credential-shaped literal and every line of
-// a heredoc under a secret-like name is replaced. Missing sensitivity flags prove nothing,
-// so the policy is the state redactor's (state.RiskyKey, state.LooksSecret).
+// literal assigned to a secret-like name, any credential-shaped literal and every heredoc
+// body line (opaque JSON, YAML or shell text) is replaced. Missing sensitivity flags prove
+// nothing, so the policy is the state redactor's (state.RiskyKey, state.LooksSecret).
 type LineRedactor struct {
-	heredocEnd    string
-	heredocSecret bool
+	heredocEnd string
 }
 
 // Line returns the display form of one configuration line and whether anything was
@@ -52,10 +51,7 @@ func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 			r.heredocEnd = ""
 			return line, false
 		}
-		if r.heredocSecret || forced || state.LooksSecret(line) {
-			return indentOf(line) + Redacted, true
-		}
-		return clip(line), false
+		return indentOf(line) + Redacted, true
 	}
 	key := ""
 	// On a forced line, quoted text before ":"/"=" that is not a secret-like name may be
@@ -65,7 +61,7 @@ func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 	}
 	risky := forced || key != "" && state.RiskyKey(key)
 	if m := heredocStart.FindStringSubmatch(line); m != nil && !strings.HasPrefix(strings.TrimSpace(line), "#") {
-		r.heredocEnd, r.heredocSecret = m[1], risky
+		r.heredocEnd = m[1]
 	}
 	// Under a secret-like name or on a forced line, the whole value goes, not only its
 	// string literals: ["a", 1234] or "a" + var.x would otherwise show part of it. A
