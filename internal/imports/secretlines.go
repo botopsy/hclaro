@@ -38,6 +38,11 @@ func SecretLines(lines []string) []bool {
 		// lastKey: the key of the statement the previous line ended, restored when a line
 		// starts with an operator.
 		lastKey string
+		// bracketKey: a secret-like statement that a bracket on this line interrupted;
+		// contKey: one that continues after its bracket closed, on a line that ended with
+		// an operator (password = upper("a") +⏎ "b"). They only mark lines: key, lastKey
+		// and the name/value pair rule are not changed by them.
+		bracketKey, contKey string
 	}
 	out := make([]bool, len(lines))
 	stack := []frame{{valueOf: -1}}
@@ -73,7 +78,7 @@ func SecretLines(lines []string) []bool {
 		}
 		// Inside a commented-out block, or a statement whose value continues on this line
 		// ("db_password":⏎ "…", or password = "a" +⏎ "b").
-		out[i] = inComment || top.risky || state.RiskyKey(top.key)
+		out[i] = inComment || top.risky || state.RiskyKey(top.key) || top.contKey != ""
 		if v := top.valueOf; v >= 0 {
 			valueLines[v] = append(valueLines[v], i)
 		}
@@ -125,7 +130,7 @@ func SecretLines(lines []string) []bool {
 					continue
 				}
 				heredocEnd, heredocStart, haveCand = m[1], i, false
-				heredocRisky = top.risky || state.RiskyKey(top.key)
+				heredocRisky = top.risky || state.RiskyKey(top.key) || top.contKey != ""
 				heredocValueOf = top.valueOf
 				if heredocValueOf < 0 && strings.EqualFold(top.key, "value") {
 					heredocValueOf = top.id
@@ -138,10 +143,15 @@ func SecretLines(lines []string) []bool {
 				}
 				// The word just before the bracket counts too, so a key wrongly carried over
 				// from the line before can only hide more.
-				child := frame{id: nextID, valueOf: top.valueOf, risky: top.risky || state.RiskyKey(key) || haveCand && state.RiskyKey(cand)}
+				child := frame{id: nextID, valueOf: top.valueOf, risky: top.risky || state.RiskyKey(key) || haveCand && state.RiskyKey(cand) || top.contKey != ""}
 				nextID++
 				if child.valueOf < 0 && strings.EqualFold(top.key, "value") {
 					child.valueOf = top.id
+				}
+				if state.RiskyKey(top.key) {
+					top.bracketKey = top.key
+				} else if top.contKey != "" {
+					top.bracketKey = top.contKey
 				}
 				top.key, haveCand, afterKey = "", false, false
 				stack = append(stack, child)
@@ -187,7 +197,7 @@ func SecretLines(lines []string) []bool {
 				haveCand = false
 				j++
 			case c == ',':
-				top.key, haveCand = "", false
+				top.key, top.bracketKey, top.contKey, haveCand = "", "", "", false
 				j++
 			case wordByte(c):
 				k := j
@@ -209,12 +219,14 @@ func SecretLines(lines []string) []bool {
 		if restored && !tokens {
 			top.key = ""
 		}
+		ends := tokens && !afterKey && (last == 0 || strings.IndexByte("+-*/%&|?:<>!=", last) < 0)
 		switch {
 		case !tokens:
 			if top.key != "" {
 				top.lastKey = top.key
 			}
-		case !afterKey && (last == 0 || strings.IndexByte("+-*/%&|?:<>!=", last) < 0):
+		case ends:
+			top.contKey = ""
 			if top.key != "" {
 				// The last name read was a value, not a key waiting for its ":"/"=".
 				top.lastKey, haveCand = top.key, false
@@ -222,6 +234,12 @@ func SecretLines(lines []string) []bool {
 			top.key = ""
 		case top.key != "":
 			haveCand = false
+		}
+		if tokens {
+			if !ends && top.bracketKey != "" {
+				top.contKey = top.bracketKey
+			}
+			top.bracketKey = ""
 		}
 	}
 	// An unterminated heredoc's end is unknown: everything from its opener on is hidden.
