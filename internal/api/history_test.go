@@ -179,6 +179,22 @@ func TestHistoryDeleteClearAndRetention(t *testing.T) {
 		return strings.Join(names, ",")
 	}
 	beforeFiles, beforeCalls := projectFiles(), len(s.fake.Calls())
+	// Near misses of a real entry's ID, with the body the route accepts, stop at the router or
+	// the ID check and leave the history file unchanged; the real delete below then succeeds.
+	_, _, historyPath := s.store.Status()
+	historyBefore, err := os.ReadFile(historyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, variant := range nearMisses(a) {
+		w := s.do("DELETE", "/api/v1/history/"+variant, `{}`)
+		if l := layer(w.Code, w.Body.Bytes()); l != "router" && l != "id" {
+			t.Errorf("DELETE history %q: refused by %s: %s", variant, l, w.Body)
+		}
+	}
+	if after, _ := os.ReadFile(historyPath); string(after) != string(historyBefore) {
+		t.Fatal("a near-miss history ID changed the history file")
+	}
 	if w := s.do("DELETE", "/api/v1/history/"+a, `{}`); w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}

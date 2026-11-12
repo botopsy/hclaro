@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Cost estimates:
+
+- Fix: the input sent to Infracost could contain secret values that a provider does not mark sensitive: the value of a name/value environment pair such as `{"name": "DB_PASSWORD", "value": …}`, and secrets inside JSON-encoded strings such as an ECS `container_definitions`. These values are now removed before Infracost runs, by the same rules that hide them in the UI. A string that starts like JSON but is not one complete JSON document, on its own or inside another JSON string, is also left out of the cost input, since it cannot be checked.
+- Fix: the Cost estimate tab of a plan in a Hub workspace requested the launch project's cost routes, which cannot know a Hub plan, and failed. It now says that cost estimates are available only for the project Hclaro was opened with from the terminal, and makes no cost requests.
+
+Local API boundary:
+
+- Every POST, PATCH and DELETE request under `/api/` now gets the full checks (session token, exact Origin, CSRF header, JSON body and size limit) whatever its path, so a new route is protected from the moment it exists. Visible change: a POST, PATCH or DELETE to a path that is not a route used to answer `405`; it now answers `401`, `403`, `413` or `415` when a check fails and `404 route_not_found` otherwise. Other methods, such as PUT, still answer `405`.
+- The health, snapshot and resource routes accept only GET and HEAD. A POST, PATCH or DELETE to them used to answer `405`; it now answers `404 route_not_found`.
+
 Hub layout (M24.26):
 
 - Fix: in a Hub workspace, the context bar was wider than the window at common laptop widths (1839px of page in a 1512px window), so the page scrolled sideways and New tab and the snapshot time were cut off. The bar now wraps to a second row when its items do not fit; the launch project's bar is unchanged. A new browser check (`scripts/browser-hub.mjs`, part of `make browser-test`) opens a Hub workspace and its Tools page with the fake engines and fails on horizontal overflow at 1512, 1280 and 1100px.

@@ -578,10 +578,8 @@ func TestScopedApplyRequestValidation(t *testing.T) {
 	}
 	wantError(t, s.do("POST", base+"preflight", `{"verifyIdentity":false,"profileId":"x"}`), 400, "invalid_request")
 	wantError(t, s.do("POST", base+"approval", `{"preflightBinding":"x","acknowledged":[],"all":true}`), 400, "invalid_request")
-	// A malformed plan ID is no route (the catch-all answers 404).
-	if w := s.do("POST", "/api/v1/contexts/"+cid+"/plans/not-an-id/apply", `{}`); w.Code != 404 {
-		t.Fatalf("%d %s", w.Code, w.Body)
-	}
+	// A malformed plan ID matches the route and stops at the plan lookup.
+	wantError(t, s.do("POST", "/api/v1/contexts/"+cid+"/plans/not-an-id/apply", `{}`), 404, "plan_not_found")
 	wantError(t, s.do("POST", "/api/v1/contexts/"+strings.Repeat("e", 32)+"/plans/"+pid+"/apply", `{}`), 404, "context_closed")
 
 	s.hub.ScopedExecution = false
