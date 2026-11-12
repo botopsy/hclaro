@@ -32,8 +32,9 @@ var (
 // `status` is run with GIT_OPTIONAL_LOCKS=0 so it does not refresh the index either.
 var readOnly = map[string]map[string]bool{
 	"rev-parse": {"--path-format=absolute": true, "--show-toplevel": true, "--git-dir": true, "--git-common-dir": true},
-	"status":    {"--porcelain=v2": true, "--branch": true, "-z": true, "--untracked-files=all": true, "--no-renames": true, "--ignore-submodules=all": true},
-	"diff":      {"--no-ext-diff": true, "--no-textconv": true, "--no-color": true, "--no-renames": true, "--unified=3": true, "HEAD": true, "--": true},
+	// --porcelain=v1 and --untracked-files=normal are the apply preflight's status.
+	"status": {"--porcelain=v2": true, "--porcelain=v1": true, "--branch": true, "-z": true, "--untracked-files=all": true, "--untracked-files=normal": true, "--no-renames": true, "--ignore-submodules=all": true},
+	"diff":   {"--no-ext-diff": true, "--no-textconv": true, "--no-color": true, "--no-renames": true, "--unified=3": true, "HEAD": true, "--": true},
 }
 
 // Allowed reports whether args is a permitted read-only command: a known subcommand, only

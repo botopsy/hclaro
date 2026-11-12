@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"hclaro/internal/gitctx"
 	"hclaro/internal/plan"
 )
 
@@ -324,7 +325,7 @@ func TestGitStatusDisposableRepository(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	root := t.TempDir()
-	if r := GitStatus(context.Background(), root); r.State != GitNotRepo && r.State != GitClean && r.State != GitDirty {
+	if r := GitStatus(context.Background(), root, gitctx.Exec{}.Run); r.State != GitNotRepo && r.State != GitClean && r.State != GitDirty {
 		// TempDir may sit inside a repository on some machines; only "not a repo" or a status is valid.
 		t.Fatalf("%+v", r)
 	}
@@ -337,14 +338,34 @@ func TestGitStatusDisposableRepository(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Skip("git init failed")
 	}
-	if r := GitStatus(context.Background(), repo); r.State != GitClean {
+	if r := GitStatus(context.Background(), repo, gitctx.Exec{}.Run); r.State != GitClean {
 		t.Fatalf("%+v", r)
 	}
 	if err := os.WriteFile(filepath.Join(repo, "main.tf"), []byte("# x\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if r := GitStatus(context.Background(), repo); r.State != GitDirty || r.Untracked != 1 || r.Paths[0] != "main.tf" {
+	if r := GitStatus(context.Background(), repo, gitctx.Exec{}.Run); r.State != GitDirty || r.Untracked != 1 || r.Paths[0] != "main.tf" {
 		t.Fatalf("%+v", r)
+	}
+	// An inherited GIT_DIR pointing at another repository that tracks the same file must not
+	// make the root look clean: the probe describes the root's own repository.
+	other := filepath.Join(root, "other")
+	for _, args := range [][]string{{"init", "-q", other}, {"-C", other, "add", "main.tf"}, {"-C", other, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x"}} {
+		if args[0] == "-C" {
+			if err := os.WriteFile(filepath.Join(other, "main.tf"), []byte("# x\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
+	if r := GitStatus(context.Background(), repo, gitctx.Exec{}.Run); r.State != GitDirty || r.Untracked != 1 || r.Paths[0] != "main.tf" {
+		t.Fatalf("inherited GIT_DIR changed the result: %+v", r)
 	}
 }
 
