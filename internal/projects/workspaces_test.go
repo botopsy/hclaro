@@ -265,6 +265,14 @@ func TestWorkspaceRefusalsRunNothing(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	os.Unsetenv("TF_CLI_ARGS_workspace")
+	// The engines read the joined subcommand's variable for multi-word commands.
+	for _, key := range []string{"TF_CLI_ARGS_workspace_new", "TF_CLI_ARGS_workspace_list", "tf_cli_args_workspace_new"} {
+		t.Setenv(key, "-force")
+		if r := review(t, hub, network, engine.WorkspaceNew, "qa"); r.Code != "unsafe_cli_args" {
+			t.Fatalf("%s: %+v", key, r)
+		}
+		os.Unsetenv(key)
+	}
 	t.Setenv("TF_WORKSPACE", "prod")
 	if r := review(t, hub, network, engine.WorkspaceDelete, "prod"); r.Code != "workspace_active" {
 		t.Fatalf("%+v", r)

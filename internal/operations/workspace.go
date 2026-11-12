@@ -59,7 +59,7 @@ func WorkspaceCommand(engineName string, action engine.WorkspaceAction, name str
 }
 
 var workspaceMessages = map[string]string{
-	"unsafe_cli_args":        "Inherited TF_CLI_ARGS or TF_CLI_ARGS_workspace adds flags other than -no-color, which would change the reviewed command. Nothing was run. Restart Hclaro without them.",
+	"unsafe_cli_args":        "Inherited TF_CLI_ARGS or a TF_CLI_ARGS_workspace* setting adds flags other than -no-color, which would change the reviewed command. Nothing was run. Restart Hclaro without them.",
 	"engine_version":         "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13. Nothing was run.",
 	"path_changed":           "The project folder, its engine or its environment changed after you reviewed this. Nothing was run. Review it again.",
 	"workspace_list":         "Workspaces could not be listed just before running, so Hclaro did not run the command. Check backend access and credentials with the CLI, then review again.",
