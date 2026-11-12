@@ -26,8 +26,39 @@ hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub reposito
    ./dist/hclaro-$(go env GOOS)-$(go env GOARCH) --version
    ```
 
-4. Re-run the GitHub settings checklist (`docs/audits/M24-github-settings-checklist.md`): no critical row may be FAIL or NOT_VERIFIED. Check the public-beta checklist (`docs/audits/M22-public-beta-checklist.md`) for open items.
+4. Run the [GitHub settings check](#github-settings-check): do not tag while any control fails or cannot be confirmed.
 5. Check that the release notes claim no engine, backend, provider or platform beyond the PASS rows of [support-matrix.md](support-matrix.md). Green CI is the mocked tier only.
+
+## GitHub settings check
+
+Before each release, confirm these with read-only `gh api` calls (as a repository admin) and logged-out requests. A failing or unconfirmed control blocks the tag.
+
+| Control | Expected |
+| --- | --- |
+| Visibility | Public, license Apache-2.0. |
+| `master` ruleset | Active, no bypass: no deletion, no force-push, pull request required, required checks `changes`, `linux`, `windows`, `macos`. |
+| `v*` tag rulesets | Active: no deletion, update or force-push; tag creation only through the release path. |
+| Private vulnerability reporting | Enabled; `/security/policy` reachable logged out. |
+| Secret scanning | Secret scanning and push protection enabled; no open alerts. |
+| Actions token | Default `GITHUB_TOKEN` read-only and unable to approve pull requests; workflows declare `contents: read`, and only the `publish` job gets write, OIDC and attestation permissions. |
+| Release secrets | No repository Actions secrets, environments, deploy keys or webhooks. |
+| Collaborators | Only the owner's accounts, with MFA (owner confirms; the API does not show it). |
+| Public assets | Logged out: the repository, Releases page and the previous release's assets return 200. |
+
+Not blocking: pull requests from outside contributors need approval before workflows run (`fork-pr-contributor-approval` is `all_external_contributors`), and only collaborators can open pull requests; this has not been tested with a non-collaborator account.
+
+```sh
+R=botopsy/hclaro
+gh api repos/$R --jq '{visibility,license:.license.spdx_id,security_and_analysis}'
+gh api repos/$R/rulesets; gh api repos/$R/rulesets/<id>
+gh api repos/$R/private-vulnerability-reporting
+gh api repos/$R/actions/permissions/workflow
+gh api repos/$R/actions/permissions/fork-pr-contributor-approval
+gh api repos/$R/collaborators --jq '.[]|{login,role_name}'
+gh api repos/$R/actions/secrets; gh api repos/$R/environments; gh api repos/$R/keys; gh api repos/$R/hooks
+gh api repos/$R/secret-scanning/alerts --jq '[.[]|select(.state=="open")]|length'
+curl -s -o /dev/null -w '%{http_code}' -L <url>   # logged out
+```
 
 ## Tag and publish
 
@@ -88,24 +119,24 @@ The SBOM lists what is compiled or bundled into the binary; it does not list bui
 
 ## Homebrew formula
 
-`packaging/homebrew/hclaro.rb` is a source-build formula: it downloads the tag's GitHub source archive (pinned by SHA-256), builds `cmd/hclaro` with the Homebrew Go, and its test checks `hclaro --version`. The web UI is already committed in `internal/ui/dist`, so Node is not needed. A binary built by Homebrew is not marked as downloaded, so Gatekeeper does not block it; it is still unsigned.
+The formula `Formula/hclaro.rb` in the public tap [`botopsy/homebrew-tap`](https://github.com/botopsy/homebrew-tap) is a source-build formula: it downloads the tag's GitHub source archive (pinned by SHA-256), builds `cmd/hclaro` with the Homebrew Go, and its test checks `hclaro --version`. The web UI is already committed in `internal/ui/dist`, so Node is not needed. A binary built by Homebrew is not marked as downloaded, so Gatekeeper does not block it; it is still unsigned.
 
-The canonical copy lives here; the public tap [`botopsy/homebrew-tap`](https://github.com/botopsy/homebrew-tap) (created 2026-11-11 by owner decision) carries the same file as `Formula/hclaro.rb`, and users install with `brew install botopsy/tap/hclaro`. The tap's default branch has the same ruleset as `master` here except required checks (no deletion, no force-push, pull request required, no bypass), a read-only Actions token, and secret scanning with push protection.
+The tap is the only copy of the formula (this repository no longer carries one); users install with `brew install botopsy/tap/hclaro`. The tap's default branch has the same ruleset as `master` here except required checks (no deletion, no force-push, pull request required, no bypass), a read-only Actions token, and secret scanning with push protection.
 
 For each release, after the tag is published:
 
 ```sh
 v=0.1.0-beta.4   # the new version
 curl -fsSL https://github.com/botopsy/hclaro/archive/refs/tags/v$v.tar.gz | shasum -a 256
-# put the URL and that SHA-256 into packaging/homebrew/hclaro.rb, then test from a throwaway local tap:
+# in a clone of botopsy/homebrew-tap, put the URL and that SHA-256 into Formula/hclaro.rb, then test from a throwaway local tap:
 brew tap-new --no-git hclaro-test/local && brew trust hclaro-test/local
-cp packaging/homebrew/hclaro.rb "$(brew --repository)/Library/Taps/hclaro-test/homebrew-local/Formula/"
+cp <tap clone>/Formula/hclaro.rb "$(brew --repository)/Library/Taps/hclaro-test/homebrew-local/Formula/"
 brew style hclaro-test/local/hclaro && brew audit --strict --online hclaro-test/local/hclaro
 brew install --build-from-source hclaro-test/local/hclaro && brew test hclaro-test/local/hclaro
 brew uninstall hclaro && brew untap hclaro-test/local
 ```
 
-Then open a pull request in `botopsy/homebrew-tap` that copies the tested file to `Formula/hclaro.rb`, merge it, and check `brew install botopsy/tap/hclaro` prints the new version. Rollback: revert that commit in the tap and say so in the release notes.
+Then open a pull request in `botopsy/homebrew-tap` with the tested change, merge it, and check `brew install botopsy/tap/hclaro` prints the new version. Rollback: revert that commit in the tap and say so in the release notes.
 
 Do not set `HOMEBREW_NO_INSTALL_FROM_API` for this: Homebrew would clone all of `homebrew-core` first.
 

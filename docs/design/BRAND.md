@@ -249,8 +249,6 @@ else referenced them.
 
 ## 8. Screenshots
 
-Captured in both themes from `make demo-hub` (synthetic projects, fake engine, all non-local requests
-blocked) at 1440 × 900 with reduced motion, and the collapsed sidebar at 860 px:
-`screenshots/{hub,hub-project,overview,resources,settings,collapsed-sidebar}-{light,dark}.png`.
-Plan, apply, import, replace, drift, discovery and cost screens are captured in dark mode by
-`make browser-test` in `docs/screenshots/`.
+`screenshots/brand-sheet.png` is the only committed design screenshot. Plan, apply, import, replace,
+drift, discovery and cost screens are captured in dark mode by `make browser-test` in
+`.cache/screenshots/` (not committed).

@@ -21,7 +21,7 @@ The version check (`engine.Supported`) accepts stable **Terraform 1.5–1.17** a
 
 | ID | Engine | Version | Platform | Backend | Execution mode | Operation | Test environment | Date | Status | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| RE-01 | Terraform | 1.5.5 | darwin/amd64 | local (default) | local-cli | State read, plan, failing plan, lock contention, cancel, 4,013-change plan | Real engine, disposable project, built-in `terraform_data` only, no providers | 2026-11-05 | PASS | [M02 real engine run](archive/verification/M02-verification.md#real-engine-run) |
+| RE-01 | Terraform | 1.5.5 | darwin/amd64 | local (default) | local-cli | State read, plan, failing plan, lock contention, cancel, 4,013-change plan | Real engine, disposable project, built-in `terraform_data` only, no providers | 2026-11-05 | PASS | [Terraform 1.5.5 local run](qualification/terraform-1.5.5-local.md#real-engine-run) |
 | RE-02 | Terraform | 1.5.5 | any | local | local-cli | Saved-plan apply, `-replace` | — | — | NOT_TESTED | — |
 | RE-03 | Terraform | 1.5.5 | any | local | local-cli | Import blocks, generated config | — | — | NOT_TESTED | — |
 | RE-04 | Terraform | 1.5.5 | any | local | local-cli | `init`, workspace new/select/delete, per-context `TF_WORKSPACE` | — | — | NOT_TESTED | — |

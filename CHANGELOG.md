@@ -40,7 +40,7 @@ Supply-chain checks (M24.23):
 
 Distribution trust (M24.22):
 
-- Homebrew: `brew install botopsy/tap/hclaro` builds hclaro from the tagged source with Homebrew's Go. The formula lives in `packaging/homebrew/hclaro.rb` and the new public tap `botopsy/homebrew-tap` ([RELEASING.md](docs/RELEASING.md#homebrew-formula)).
+- Homebrew: `brew install botopsy/tap/hclaro` builds hclaro from the tagged source with Homebrew's Go. The formula lives in the new public tap `botopsy/homebrew-tap` ([RELEASING.md](docs/RELEASING.md#homebrew-formula)).
 - Install docs explain what checksums and attestations do and do not prove, and how to allow one unsigned binary past Gatekeeper or SmartScreen without turning either off. RELEASING.md describes what future code signing and notarization would need; none is implemented.
 
 Secret handling (M24.12):
@@ -93,6 +93,10 @@ Configuration compatibility and distribution policy (M24.24):
 - A future `history.json` schema upgrade first keeps the original as `history.json.schema-<n>-<time>`; without that copy the file is left unchanged and history is read-only.
 - `cost-estimates.json` written by a newer Hclaro is no longer replaced when an estimate completes.
 - New `docs/config-compatibility.md` (rules for every configuration file, upgrading, going back, backups), a distribution roadmap in `docs/RELEASING.md`, and upgrade, rollback and safer PATH instructions in `docs/GETTING_STARTED.md`. Versioned fixtures in `internal/{projects,profiles,history}/testdata/compat` pin the current formats.
+
+Documentation:
+
+- Removed the milestone verification notes (`docs/archive/`), the one-off launch audit reports (`docs/audits/`) and screenshots of the pre-beta UI. The recorded Terraform 1.5.5 run behind support matrix row RE-01 moved to `docs/qualification/terraform-1.5.5-local.md`, and the pre-release GitHub settings check moved into `docs/RELEASING.md`. `make browser-test` now writes its screenshots to `.cache/screenshots/` instead of changing tracked files; only the README and brand-sheet screenshots stay committed.
 
 ## 0.1.0-beta.3 — 2026-11-09
 
