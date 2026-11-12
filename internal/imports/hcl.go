@@ -85,9 +85,19 @@ func RedactGenerated(text string) string {
 		if m := assignment.FindStringSubmatch(line); m != nil {
 			key := strings.Trim(m[2], `"`)
 			value := m[4]
+			// On a forced line a quoted key that is not a secret-like name may be the
+			// secret itself (a map key).
+			hideKey := forced[i] && strings.HasPrefix(m[2], `"`) && !state.RiskyKey(key)
 			if h := heredoc.FindStringSubmatch(value); h != nil {
 				end = h[1]
+				if hideKey {
+					line = "  # [redacted line]"
+				}
 				out = append(out, line)
+				continue
+			}
+			if hideKey {
+				out = append(out, "  # [redacted line]")
 				continue
 			}
 			if (forced[i] || state.RiskyKey(key)) && !emptyValue(value) || state.LooksSecret(value) {

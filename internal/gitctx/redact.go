@@ -58,7 +58,9 @@ func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 		return clip(line), false
 	}
 	key := ""
-	if m := assignment.FindStringSubmatch(line); m != nil {
+	// On a forced line, quoted text before ":"/"=" that is not a secret-like name may be
+	// a map key or a list item that is the secret itself: it is not kept as a key.
+	if m := assignment.FindStringSubmatch(line); m != nil && !(forced && strings.Contains(m[0], `"`) && !state.RiskyKey(m[1])) {
 		key = m[1]
 	}
 	risky := forced || key != "" && state.RiskyKey(key)

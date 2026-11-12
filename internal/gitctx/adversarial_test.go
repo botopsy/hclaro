@@ -225,3 +225,41 @@ func TestHeredocAndKeyGaps(t *testing.T) {
 func variants(text string) map[string]string {
 	return map[string]string{"lf": text, "crlf": strings.ReplaceAll(text, "\n", "\r\n"), "bom": "\ufeff" + text}
 }
+
+// A statement continues after a closing bracket that ends with an operator, and quoted text
+// at the start of a hidden line is not kept as if it were a key: it may be a map key or a
+// list item, which can be the secret itself.
+func TestBracketContinuationAndQuotedKeys(t *testing.T) {
+	for name, text := range map[string]string{
+		"call, operator":        "password = upper(\"a\") +\n  \"leak01\"\n",
+		"list, operator":        "password = join(\",\", [\"a\"]) +\n  \"leak01\"\n",
+		"multiline call":        "password = format(\n  \"%s\",\n  var.a,\n) +\n  \"leak01\"\n",
+		"index, ternary":        "token = var.m[\"a\"] != \"\" ?\n  \"leak01\" : null\n",
+		"secret map key":        "passwords = {\n  \"leak01\" = \"admin\"\n}\n",
+		"secret map key, colon": "{\n  \"tokens\": {\n    \"leak01\": \"ci\"\n  }\n}\n",
+		"secret list, compare":  "secrets = [\n  \"leak01\" == var.x ? 1 : 2,\n]\n",
+		"pair, quoted key":      "env {\n  name = \"DB_PASSWORD\"\n  value = {\n    \"leak01\" = 1\n  }\n}\n",
+	} {
+		for variant, input := range variants(text) {
+			for view, got := range views(t, input) {
+				if leakMark.MatchString(got) {
+					t.Errorf("%s %s %s:\n%s", name, variant, view, got)
+				}
+			}
+		}
+	}
+	for _, text := range []string{
+		"name = upper(\"a\")\nx = \"keep01\"\n",
+		"x = f(\"a\") + \"b\"\ny = \"keep01\"\n",
+		"tags = {\n  \"keep01\" = \"x\"\n}\n",
+		"password = f(var.a)\nx = \"keep01\"\n",
+	} {
+		for variant, input := range variants(text) {
+			for view, got := range views(t, input) {
+				if !strings.Contains(got, "keep01") {
+					t.Errorf("%q %s %s:\n%s", text, variant, view, got)
+				}
+			}
+		}
+	}
+}
