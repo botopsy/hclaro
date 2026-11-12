@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"hclaro/internal/bounded"
 )
 
 // Runner runs one allowlisted Infracost CLI call with environ and returns its standard
@@ -218,26 +220,6 @@ func (Exec) Find() bool {
 	return err == nil
 }
 
-type bounded struct {
-	buf      bytes.Buffer
-	limit    int
-	overflow bool
-}
-
-func (b *bounded) Write(p []byte) (int, error) {
-	if room := b.limit - b.buf.Len(); room > 0 {
-		if len(p) > room {
-			b.buf.Write(p[:room])
-			b.overflow = true
-		} else {
-			b.buf.Write(p)
-		}
-	} else if len(p) > 0 {
-		b.overflow = true
-	}
-	return len(p), nil
-}
-
 func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte, error) {
 	if !Allowed(args) {
 		return nil, fail(KindRefused)
@@ -261,23 +243,23 @@ func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte,
 		cmd.Dir = filepath.Dir(args[2])
 	}
 	cmd.WaitDelay = 5 * time.Second
-	stdout, stderr := &bounded{limit: maxOutput}, &bounded{limit: maxStderr}
+	stdout, stderr := &bounded.Buffer{Limit: maxOutput}, &bounded.Buffer{Limit: maxStderr}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	runErr := cmd.Run()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if stdout.overflow {
+	if stdout.Overflow {
 		return nil, fail(KindOutputTooLarge)
 	}
 	if runErr != nil {
-		return nil, fail(Classify(stderr.buf.String()))
+		return nil, fail(Classify(stderr.String()))
 	}
 	if len(args) == 1 {
 		// Some versions print the version on stderr.
-		return append(stdout.buf.Bytes(), stderr.buf.Bytes()...), nil
+		return append(stdout.Bytes(), stderr.Bytes()...), nil
 	}
-	return stdout.buf.Bytes(), nil
+	return stdout.Bytes(), nil
 }
 
 // Classify maps Infracost stderr to an error kind. The text itself is discarded.

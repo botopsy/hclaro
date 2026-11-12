@@ -135,6 +135,8 @@ func Detect(root, preferred string) (*CLI, error) {
 	return nil, errors.New("install Terraform or OpenTofu on PATH, or select --engine")
 }
 
+// boundedBuffer fails the command once its output passes max (unlike bounded.Buffer, which
+// only flags overflow): a state larger than the limit is refused, never read in part.
 type boundedBuffer struct {
 	b   []byte
 	max int

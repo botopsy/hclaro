@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os/exec"
 	"time"
+
+	"hclaro/internal/bounded"
 )
 
 // Grapher runs `graph` without arguments and nothing else. It is a separate interface so the
@@ -30,25 +32,6 @@ func GraphSupport(name, version string) bool { return Supported(name, version) }
 // is passed, so no saved plan or user-chosen path ever reaches the engine.
 func GraphArgs() []string { return []string{"graph"} }
 
-// overflowBuffer keeps at most max bytes and records that more were written. It never fails
-// the writer, so the engine cannot block on a full pipe.
-type overflowBuffer struct {
-	b        []byte
-	max      int
-	overflow bool
-}
-
-func (o *overflowBuffer) Write(p []byte) (int, error) {
-	n := len(p)
-	if room := o.max - len(o.b); room < n {
-		o.overflow = true
-		p = p[:max(room, 0)]
-	}
-	o.b = append(o.b, p...)
-	// The full length is reported so the copy keeps draining the pipe.
-	return n, nil
-}
-
 // Graph runs `graph` in the project root with the shared subprocess policy and returns its
 // stdout. Stderr is classified, never returned.
 func (c *CLI) Graph(ctx context.Context) ([]byte, error) {
@@ -66,7 +49,7 @@ func (c *CLI) Graph(ctx context.Context) ([]byte, error) {
 		return nil
 	}
 	cmd.WaitDelay = gracePeriod
-	stdout := &overflowBuffer{max: GraphMaxBytes}
+	stdout := &bounded.Buffer{Limit: GraphMaxBytes}
 	stderr := &boundedTail{max: 64 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err = cmd.Run()
@@ -81,10 +64,10 @@ func (c *CLI) Graph(ctx context.Context) ([]byte, error) {
 		}
 		return nil, &ExitError{Code: code, Hint: Classify(stderr.String())}
 	}
-	if stdout.overflow {
+	if stdout.Overflow {
 		return nil, ErrGraphTooLarge
 	}
-	return stdout.b, nil
+	return stdout.Bytes(), nil
 }
 
 // Graph returns GraphDOT, GraphErr, or waits for cancellation with BlockGraph.

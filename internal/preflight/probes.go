@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"hclaro/internal/bounded"
 	"hclaro/internal/state"
 )
 
@@ -29,27 +30,6 @@ const (
 	maxPaths        = 10
 )
 
-// bounded keeps at most limit bytes and records whether more were written.
-type bounded struct {
-	buf      bytes.Buffer
-	limit    int
-	overflow bool
-}
-
-func (b *bounded) Write(p []byte) (int, error) {
-	if room := b.limit - b.buf.Len(); room > 0 {
-		if len(p) > room {
-			b.buf.Write(p[:room])
-			b.overflow = true
-		} else {
-			b.buf.Write(p)
-		}
-	} else if len(p) > 0 {
-		b.overflow = true
-	}
-	return len(p), nil
-}
-
 // insideRepository reports whether root or a parent has a .git entry. It reads only names.
 func insideRepository(root string) bool {
 	for dir := root; ; {
@@ -64,31 +44,27 @@ func insideRepository(root string) bool {
 	}
 }
 
-// GitStatus runs `git status --porcelain=v1 -z` in root with a fixed argument list. The
-// repository's fsmonitor and untracked cache are disabled on the command line, optional
-// index locks are skipped and prompts are off, so status neither runs repository-configured
-// programs for these features nor writes to the repository. stderr is discarded.
-func GitStatus(ctx context.Context, root string) GitResult {
+// GitRunner runs one allowlisted, read-only Git command in dir and returns at most limit
+// bytes of stdout and whether more was written. gitctx.Exec.Run is the real one: it disables
+// fsmonitor, the untracked cache, optional locks and prompts, drops inherited GIT_*
+// variables and discards stderr.
+type GitRunner func(ctx context.Context, dir string, limit int, args ...string) ([]byte, bool, error)
+
+// GitStatus runs `git status --porcelain=v1 -z --untracked-files=normal` in root through run,
+// so status neither runs repository-configured programs nor writes to the repository, and
+// an inherited GIT_DIR or GIT_INDEX_FILE cannot make it describe another repository.
+func GitStatus(ctx context.Context, root string, run GitRunner) GitResult {
 	if !insideRepository(root) {
 		return GitResult{State: GitNotRepo, Paths: []string{}}
 	}
-	exe, err := exec.LookPath("git")
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	out, overflow, err := run(ctx, root, maxProbeOutput, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
 	if err != nil {
 		return GitResult{State: GitUnavailable, Paths: []string{}}
 	}
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-C", root, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
-	cmd.Dir = root
-	cmd.WaitDelay = time.Second
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
-	out := &bounded{limit: maxProbeOutput}
-	cmd.Stdout = out
-	if cmd.Run() != nil {
-		return GitResult{State: GitUnavailable, Paths: []string{}}
-	}
-	r := ParsePorcelain(out.buf.Bytes())
-	r.Incomplete = out.overflow
+	r := ParsePorcelain(out)
+	r.Incomplete = overflow
 	return r
 }
 
@@ -167,7 +143,7 @@ func AWSIdentity(ctx context.Context, environ []string) Identity {
 		cmd.Env = append(cmd.Env, item)
 	}
 	cmd.Env = append(cmd.Env, "AWS_PAGER=", "AWS_CLI_AUTO_PROMPT=off")
-	out := &bounded{limit: 64 << 10}
+	out := &bounded.Buffer{Limit: 64 << 10}
 	cmd.Stdout = out
 	if err := cmd.Run(); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -175,7 +151,7 @@ func AWSIdentity(ctx context.Context, environ []string) Identity {
 		}
 		return Identity{State: "failed", Message: "The AWS CLI could not verify the caller identity (credentials missing or expired, or AWS unreachable)."}
 	}
-	return ParseIdentity(out.buf.Bytes())
+	return ParseIdentity(out.Bytes())
 }
 
 // ParseIdentity extracts the account and ARN from get-caller-identity JSON.

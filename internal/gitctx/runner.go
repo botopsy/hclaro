@@ -6,13 +6,14 @@
 package gitctx
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"hclaro/internal/bounded"
 )
 
 // Runner runs one read-only Git command in dir and returns its standard output, at most
@@ -32,8 +33,9 @@ var (
 // `status` is run with GIT_OPTIONAL_LOCKS=0 so it does not refresh the index either.
 var readOnly = map[string]map[string]bool{
 	"rev-parse": {"--path-format=absolute": true, "--show-toplevel": true, "--git-dir": true, "--git-common-dir": true},
-	"status":    {"--porcelain=v2": true, "--branch": true, "-z": true, "--untracked-files=all": true, "--no-renames": true, "--ignore-submodules=all": true},
-	"diff":      {"--no-ext-diff": true, "--no-textconv": true, "--no-color": true, "--no-renames": true, "--unified=3": true, "HEAD": true, "--": true},
+	// --porcelain=v1 and --untracked-files=normal are the apply preflight's status.
+	"status": {"--porcelain=v2": true, "--porcelain=v1": true, "--branch": true, "-z": true, "--untracked-files=all": true, "--untracked-files=normal": true, "--no-renames": true, "--ignore-submodules=all": true},
+	"diff":   {"--no-ext-diff": true, "--no-textconv": true, "--no-color": true, "--no-renames": true, "--unified=3": true, "HEAD": true, "--": true},
 }
 
 // Allowed reports whether args is a permitted read-only command: a known subcommand, only
@@ -67,27 +69,6 @@ type Exec struct {
 	Timeout time.Duration
 	// Observe, when set, is called with each permitted argv before it runs (tests).
 	Observe func(args []string)
-}
-
-// bounded keeps at most limit bytes and records whether more were written.
-type bounded struct {
-	buf      bytes.Buffer
-	limit    int
-	overflow bool
-}
-
-func (b *bounded) Write(p []byte) (int, error) {
-	if room := b.limit - b.buf.Len(); room > 0 {
-		if len(p) > room {
-			b.buf.Write(p[:room])
-			b.overflow = true
-		} else {
-			b.buf.Write(p)
-		}
-	} else if len(p) > 0 {
-		b.overflow = true
-	}
-	return len(p), nil
 }
 
 // Environ returns environ without GIT_* variables, plus the fixed settings Hclaro uses.
@@ -125,11 +106,11 @@ func (e Exec) Run(ctx context.Context, dir string, limit int, args ...string) ([
 	cmd.Dir = dir
 	cmd.WaitDelay = time.Second
 	cmd.Env = Environ(os.Environ())
-	out := &bounded{limit: limit}
+	out := &bounded.Buffer{Limit: limit}
 	cmd.Stdout = out
 	// stderr is discarded: it can echo paths, remotes or configuration.
 	if err := cmd.Run(); err != nil {
 		return nil, false, err
 	}
-	return out.buf.Bytes(), out.overflow, nil
+	return out.Bytes(), out.Overflow, nil
 }

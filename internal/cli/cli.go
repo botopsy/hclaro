@@ -226,7 +226,10 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager.Recorder = operationHistory
 	// Apply preflight: Git status is read with a fixed argv; the AWS caller identity probe
 	// runs only when the user asks for it in the preflight dialog.
-	manager.GitProbe = preflight.GitStatus
+	gitProbe := func(ctx context.Context, root string) preflight.GitResult {
+		return preflight.GitStatus(ctx, root, gitctx.Exec{}.Run)
+	}
+	manager.GitProbe = gitProbe
 	// Git context (M15): read-only Git commands with fixed argv, source fingerprints of
 	// plans and validated editor links. One service, so file IDs match across routes.
 	gitService := gitctx.New()
@@ -234,7 +237,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	hub.Git = gitService
 	manager.IdentityProbe = preflight.AWSIdentity
 	// Hub execution scopes (when enabled) gather the same preflight facts.
-	hub.GitProbe, hub.IdentityProbe = preflight.GitStatus, preflight.AWSIdentity
+	hub.GitProbe, hub.IdentityProbe = gitProbe, preflight.AWSIdentity
 	// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
 	manager.Discovery = discovery.New(discovery.Exec{})
 	hub.Discovery = manager.Discovery
