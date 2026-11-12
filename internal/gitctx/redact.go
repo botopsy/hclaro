@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"hclaro/internal/imports"
 	"hclaro/internal/state"
 )
 
@@ -38,14 +39,18 @@ type LineRedactor struct {
 
 // Line returns the display form of one configuration line and whether anything was
 // withheld. Control characters are removed and the length is bounded.
-func (r *LineRedactor) Line(line string) (string, bool) {
+func (r *LineRedactor) Line(line string) (string, bool) { return r.line(line, false) }
+
+// line is Line for a line that imports.SecretLines marked (forced): every literal and value
+// on it is withheld, whatever its name.
+func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 	line = displayable(line)
 	if r.heredocEnd != "" {
 		if strings.TrimSpace(line) == r.heredocEnd {
 			r.heredocEnd = ""
 			return line, false
 		}
-		if r.heredocSecret || state.LooksSecret(line) {
+		if r.heredocSecret || forced || state.LooksSecret(line) {
 			return indentOf(line) + Redacted, true
 		}
 		return clip(line), false
@@ -54,7 +59,7 @@ func (r *LineRedactor) Line(line string) (string, bool) {
 	if m := assignment.FindStringSubmatch(line); m != nil {
 		key = m[1]
 	}
-	risky := key != "" && state.RiskyKey(key)
+	risky := forced || key != "" && state.RiskyKey(key)
 	if m := heredocStart.FindStringSubmatch(line); m != nil && !strings.HasPrefix(strings.TrimSpace(line), "#") {
 		r.heredocEnd, r.heredocSecret = m[1], risky
 	}
@@ -82,8 +87,9 @@ func (r *LineRedactor) Line(line string) (string, bool) {
 			redacted = true
 		}
 	}
-	// Credential shapes outside string literals (comments, bare words).
-	if !redacted && state.Suspicious(out) {
+	// Credential shapes outside string literals (comments, bare words), and anything but
+	// brackets on a forced line without an assignment (a list item, a comment).
+	if !redacted && (state.Suspicious(out) || forced && key == "" && !imports.Structural(out)) {
 		return indentOf(line) + Redacted, true
 	}
 	return clip(out), redacted
