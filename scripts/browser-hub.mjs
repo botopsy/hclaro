@@ -53,8 +53,8 @@ try{
  await page.locator('.context-bar').getByText('dev',{exact:true}).waitFor()
  await page.getByRole('button',{name:/dev_main.*aws_db_instance/}).waitFor()
  await noOverflow('Hub workspace')
- await fs.mkdir('docs/screenshots',{recursive:true})
- await page.screenshot({path:'docs/screenshots/hub-workspace-dark.png',fullPage:true})
+ await fs.mkdir('.cache/screenshots',{recursive:true})
+ await page.screenshot({path:'.cache/screenshots/hub-workspace-dark.png',fullPage:true})
 
  await page.goto(`${origin}/projects/${network}/workspaces/prod/tools`)
  for(const [tool,shot] of [['Format check','tools-fmt-dark.png'],['Outputs','tools-outputs-dark.png']]) {
@@ -64,7 +64,7 @@ try{
   await noOverflow(`Tools ${tool}`)
   // Clicking Run scrolls the card into view; a full-page capture draws the sticky sidebar at that offset.
   await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0)})
-  await page.screenshot({path:`docs/screenshots/${shot}`,fullPage:true})
+  await page.screenshot({path:`.cache/screenshots/${shot}`,fullPage:true})
  }
  assert.deepEqual(errors,[])
  console.log('Hub browser check passed: no horizontal overflow at 1512, 1280 and 1100px.')

@@ -160,15 +160,15 @@ func TestSupportMatrix(t *testing.T) {
 
 	// The validator refuses PASS rows that are not backed by real, recorded evidence.
 	header := "\n## Matrix\n\n| ID | Engine | Version | Platform | Backend | Execution mode | Operation | Test environment | Date | Status | Evidence |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
-	real := "[M02 real engine run](archive/verification/M02-verification.md#real-engine-run)"
+	real := "[Terraform 1.5.5 local run](qualification/terraform-1.5.5-local.md#real-engine-run)"
 	for name, row := range map[string]string{
 		"no evidence":       "| X | Terraform | 1.5.5 | any | s3 | local-cli | plan | Real engine | 2026-11-10 | PASS | — |",
 		"no date":           "| X | Terraform | 1.5.5 | any | s3 | local-cli | plan | Real engine | — | PASS | " + real + " |",
 		"synthetic":         "| X | Terraform | 1.5.5 | any | s3 | local-cli | plan | Fake engine in CI | 2026-11-10 | PASS | " + real + " |",
 		"missing file":      "| X | Terraform | 1.5.5 | any | s3 | local-cli | plan | Real engine | 2026-11-10 | PASS | [x](archive/none.md#run) |",
-		"missing section":   "| X | Terraform | 1.5.5 | any | s3 | local-cli | plan | Real engine | 2026-11-10 | PASS | [x](archive/verification/M02-verification.md#no-such-run) |",
+		"missing section":   "| X | Terraform | 1.5.5 | any | s3 | local-cli | plan | Real engine | 2026-11-10 | PASS | [x](qualification/terraform-1.5.5-local.md#no-such-run) |",
 		"other version":     "| X | OpenTofu | 1.8.0 | any | local | local-cli | plan | Real engine | 2026-11-10 | PASS | " + real + " |",
-		"no results":        "| X | Terraform | 1.5.5 | any | local | local-cli | plan | Real engine | 2026-11-10 | PASS | [x](archive/verification/M02-verification.md#open-items) |",
+		"no results":        "| X | Terraform | 1.5.5 | any | local | local-cli | plan | Real engine | 2026-11-10 | PASS | [x](qualification/terraform-1.5.5-local.md#repeating-the-run) |",
 		"unknown status":    "| X | Terraform | 1.5.5 | any | local | local-cli | plan | Real engine | 2026-11-10 | CERTIFIED | — |",
 		"blocked, no test":  "| X | any | any | any | cloud | remote-exec | apply | Refused | — | BLOCKED | — |",
 		"blocked, bad test": "| X | any | any | any | cloud | remote-exec | apply | `TestDoesNotExist` | — | BLOCKED | — |",
