@@ -605,7 +605,7 @@ func (m *Manager) SweepStale(now time.Time) int {
 	if err != nil {
 		return 0
 	}
-	cutoff := now.Add(-(m.PlanMaxAge + m.ApplyTimeout))
+	cutoff := now.Add(-(m.PlanMaxAge + m.ApplyTimeout + engine.ApplyGracePeriod))
 	removed := 0
 	for _, e := range entries {
 		// ReadDir does not follow symlinks, so a link named like a plan directory is skipped.

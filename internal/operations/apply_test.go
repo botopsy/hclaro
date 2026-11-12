@@ -256,13 +256,16 @@ func TestApplyFailureOutcomes(t *testing.T) {
 		expectReloaded bool
 		lines          [][]byte
 		blockAndCancel bool
+		finishes       bool
 	}{
 		"stale":     {err: &engine.ExitError{Code: 1, Hint: "stale_plan"}, code: "stale_plan", outcome: "not_applied", status: Failed, expectReloaded: true},
 		"failed":    {err: &engine.ExitError{Code: 1}, code: "apply_failed", outcome: "uncertain", status: Failed, expectReloaded: true},
 		"cancelled": {blockAndCancel: true, code: "apply_cancelled", outcome: "uncertain", status: Cancelled, expectReloaded: true},
+		// The engine exited 0 after the interrupt: it applied, so the outcome is not uncertain.
+		"finished after cancel": {blockAndCancel: true, finishes: true, code: "applied", outcome: "applied", status: Succeeded, expectReloaded: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyErr: tc.err, BlockApply: tc.blockAndCancel}
+			fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyErr: tc.err, BlockApply: tc.blockAndCancel, ApplyFinishesAfterCancel: tc.finishes}
 			m, _ := setup(t, fake, workspace.Info{})
 			m.Reload = func(context.Context) {}
 			id := planned(t, m)
@@ -274,7 +277,11 @@ func TestApplyFailureOutcomes(t *testing.T) {
 				}
 			}
 			done := wait(t, m, op.ID)
-			if done.Status != tc.status || done.Diagnostic == nil || done.Diagnostic.Code != tc.code || done.Outcome != tc.outcome || done.StateReloaded != tc.expectReloaded {
+			code := "applied"
+			if done.Diagnostic != nil {
+				code = done.Diagnostic.Code
+			}
+			if done.Status != tc.status || code != tc.code || done.Outcome != tc.outcome || done.StateReloaded != tc.expectReloaded {
 				t.Fatalf("%+v %+v", done, done.Diagnostic)
 			}
 			// Never retried, never re-planned: the artifact is gone.
@@ -418,7 +425,7 @@ func TestRemoteExecutionNeverRetainsArtifact(t *testing.T) {
 func TestSweepStaleRemovesOnlyOldPlanDirectories(t *testing.T) {
 	m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 	now := time.Now()
-	old := now.Add(-(m.PlanMaxAge + m.ApplyTimeout + time.Minute))
+	old := now.Add(-(m.PlanMaxAge + m.ApplyTimeout + engine.ApplyGracePeriod + time.Minute))
 	mk := func(name string, mod time.Time) string {
 		dir := filepath.Join(m.TempDir, name)
 		if err := os.Mkdir(dir, 0o700); err != nil {
@@ -433,8 +440,8 @@ func TestSweepStaleRemovesOnlyOldPlanDirectories(t *testing.T) {
 		return dir
 	}
 	stale := mk("hclaro-plan-1", old)
-	// A live instance may still apply a plan this recent.
-	recent := mk("hclaro-plan-2", now.Add(-m.PlanMaxAge))
+	// A live instance may still apply a plan this recent, its apply still in its grace period.
+	recent := mk("hclaro-plan-2", now.Add(-(m.PlanMaxAge + m.ApplyTimeout + time.Minute)))
 	other := mk("unrelated-1", old)
 	// A symlink named like a plan directory is never followed or removed.
 	target := mk("link-target", old)

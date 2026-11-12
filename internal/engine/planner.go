@@ -338,9 +338,11 @@ type Fake struct {
 	GeneratedConfig []byte
 	// Block makes Plan wait for cancellation, to exercise cancel paths.
 	Block bool
-	// BlockApply makes Apply wait for cancellation, then take ApplyStopDelay to stop.
-	BlockApply     bool
-	ApplyStopDelay time.Duration
+	// BlockApply makes Apply wait for cancellation, then take ApplyStopDelay to stop and
+	// return ErrCancelled, or nil with ApplyFinishesAfterCancel.
+	BlockApply               bool
+	ApplyStopDelay           time.Duration
+	ApplyFinishesAfterCancel bool
 	Delay      time.Duration
 	// InitLines and InitStderr are emitted by Init on stdout and stderr; InitErr is its
 	// result, BlockInit makes it wait for cancellation and InitDataDir is created on success.
@@ -499,6 +501,9 @@ func (m *Fake) Apply(ctx context.Context, path string, line func([]byte)) error 
 	if m.BlockApply {
 		<-ctx.Done()
 		time.Sleep(m.ApplyStopDelay)
+		if m.ApplyFinishesAfterCancel {
+			return nil
+		}
 		return ErrCancelled
 	}
 	return m.ApplyErr

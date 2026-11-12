@@ -43,8 +43,9 @@ runs in its own process group, so the terminal's Ctrl+C never reaches it directl
 has not stopped 15 seconds later is killed. An apply gets 10 minutes: providers finish in-flight
 calls and the engine writes state, and killing it earlier can lose state or leave a lock. An
 interrupted apply is reported as uncertain unless the engine exits successfully, in which case it
-is reported as applied. When Hclaro is stopped during an apply it says so and waits for the
-engine; pressing Ctrl+C again exits at once and leaves the engine to stop on its own.
+is reported as applied. When Hclaro is stopped during an apply it says so and waits up to the
+same 10 minutes for the engine. Do not force-quit Hclaro then: the engine writes its output to
+Hclaro and can be stopped mid-apply.
 
 ## Reporting a new combination
 

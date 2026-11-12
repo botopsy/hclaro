@@ -30,8 +30,6 @@ func run() int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	// After the first signal, a second one ends Hclaro at once instead of waiting for shutdown.
-	context.AfterFunc(ctx, cancel)
 	if err := cli.Run(ctx, o, os.Stdout, version); err != nil {
 		fmt.Fprintln(os.Stderr, "hclaro:", err)
 		return 1

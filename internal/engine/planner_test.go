@@ -122,13 +122,19 @@ func cancelSlowStop(t *testing.T, base string, fn func(context.Context, func([]b
 	defer cancel()
 	started := make(chan struct{}, 1)
 	result := make(chan error, 1)
-	go func() { result <- fn(ctx, func([]byte) { started <- struct{}{} }) }()
+	go func() {
+		result <- fn(ctx, func(b []byte) {
+			// The helper prints its pid only after installing its interrupt handler.
+			if strings.Contains(string(b), `"pid"`) {
+				started <- struct{}{}
+			}
+		})
+	}()
 	select {
 	case <-started:
 	case <-time.After(10 * time.Second):
 		t.Fatal("helper did not start")
 	}
-	time.Sleep(100 * time.Millisecond) // the helper's signal handler is installed before its first line
 	cancel()
 	var err error
 	select {
