@@ -182,3 +182,35 @@ func TestHunkStartAtTop(t *testing.T) {
 		}
 	}
 }
+
+// The displayed text, not only the flag: trailing blanks must not expose the start of a
+// value, and a quoted index in a reference is a value.
+func TestSecretLineText(t *testing.T) {
+	for in, want := range map[string]string{
+		`  password = "hunter2"   `:     `  password = "[redacted]"`,
+		"  api_token = 12345  \t":       `  api_token = [redacted]`,
+		`  password = var.m["hunter2"]`: `  password = [redacted]`,
+		`  password = var.db_password`:  `  password = var.db_password`,
+		`  "client_secret": "abc",`:     `  "client_secret": "[redacted]",`,
+	} {
+		got, _ := (&LineRedactor{}).Line(in)
+		if got != want {
+			t.Errorf("%q: got %q want %q", in, got, want)
+		}
+	}
+	// The same through a forced line in a diff.
+	lines := []string{"passwords = [", "  1234   ", `  var.m["5678"],`, "]", "# x"}
+	var d GitDiff
+	if err := ParseDiff([]byte(fullDiff(lines, 4, "# y")), false, &d); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(d)
+	if strings.Contains(string(b), "12") || strings.Contains(string(b), "5678") {
+		t.Errorf("%s", b)
+	}
+	// A malformed diff returns no lines at all.
+	var bad GitDiff
+	if err := ParseDiff([]byte("@@ -1,3 +1,3 @@\n \"hunter2\"\n*x\n"), false, &bad); err == nil || len(bad.Hunks) != 0 {
+		t.Fatalf("%v %+v", err, bad)
+	}
+}

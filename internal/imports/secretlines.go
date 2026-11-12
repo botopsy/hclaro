@@ -45,7 +45,8 @@ func SecretLines(lines []string) []bool {
 			}
 			continue
 		}
-		out[i] = stack[len(stack)-1].risky
+		// A secret key whose value starts on this line ("db_password":⏎ "…").
+		out[i] = stack[len(stack)-1].risky || state.RiskyKey(stack[len(stack)-1].key)
 		if v := stack[len(stack)-1].valueOf; v >= 0 {
 			valueLines[v] = append(valueLines[v], i)
 		}
@@ -80,7 +81,7 @@ func SecretLines(lines []string) []bool {
 			case strings.HasPrefix(line[j:], "<<") && heredocOpen.MatchString(line[j:]):
 				heredocEnd = heredocOpen.FindStringSubmatch(line[j:])[1]
 				heredocRisky = top.risky || state.RiskyKey(top.key)
-				j = len(line)
+				afterKey, j = false, len(line)
 			case c == '{' || c == '[' || c == '(':
 				key := top.key
 				if key == "" && haveCand {
@@ -170,6 +171,8 @@ func readString(line string, start int) (string, int, bool) {
 			depth := 1
 			for k += 2; k < len(line) && depth > 0; k++ {
 				switch line[k] {
+				case '\\':
+					k++ // an escaped quote in a JSON-encoded template: ${var.m[\"k\"]}
 				case '{':
 					depth++
 				case '}':

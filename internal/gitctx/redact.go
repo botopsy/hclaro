@@ -70,13 +70,16 @@ func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 	// reference (var.password) names where a value comes from and is kept.
 	if risky {
 		_, value, ok := cutAssignment(line)
+		// value is trimmed; it ends before any trailing blanks, so its last occurrence is it.
+		head := line[:strings.LastIndex(line, value)]
 		switch {
-		case key != "" && (!ok || reference(value)):
+		case key != "" && (!ok || reference(value) && !strings.Contains(value, `"`)):
 			// An opening bracket, an empty value, a heredoc or a reference: no value here.
+			// A quoted index (var.m["…"]) is a value.
 		case key != "" && quotedValue.MatchString(value):
-			return clip(line[:len(line)-len(value)] + quotedValue.ReplaceAllString(value, `"`+Redacted+`"$1`)), true
+			return clip(head + quotedValue.ReplaceAllString(value, `"`+Redacted+`"$1`)), true
 		case key != "":
-			return clip(line[:len(line)-len(value)] + Redacted), true
+			return clip(head + Redacted), true
 		case !imports.Structural(line):
 			// A list item, a comment or a bare value on a forced line.
 			return indentOf(line) + Redacted, true

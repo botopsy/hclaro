@@ -38,6 +38,7 @@ func TestSecretLines(t *testing.T) {
 		{"env {", `  name = "DB_PASSWORD"`, "  value = jsonencode({", "    a = 1234", "  })", "}"},
 		{"{", `  "db_password":`, "  [", "    1234", "  ]", "}"},
 		{`variable "db_password" {`, "  default = 1234", "}"},
+		{"{", `  "db_password":`, `    "1234"`, "}"},
 	} {
 		got := SecretLines(lines)
 		for i, l := range lines {
@@ -45,6 +46,10 @@ func TestSecretLines(t *testing.T) {
 				t.Errorf("%q: line %d not marked", lines, i)
 			}
 		}
+	}
+	// An escaped quote in a JSON-encoded template does not end the string.
+	if got := SecretLines([]string{`{`, `  "a": "${var.m[\"k\"]}",`, `  "b": "c"`, `}`}); got[2] {
+		t.Errorf("escaped template: %v", got)
 	}
 	// A closer with no opener, or an unterminated string, hides the rest.
 	for _, lines := range [][]string{{`  "a",`, `  ]`, `  b = "c"`}, {`  a = "open`, `  b = "c"`}} {

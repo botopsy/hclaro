@@ -150,6 +150,14 @@ var headerPrefixes = []string{"diff --git ", "index ", "--- ", "+++ ", "new file
 // without content. overflow marks output that was cut at the size limit. Output is expected
 // with full context (fullContext); see display for what happens otherwise.
 func ParseDiff(raw []byte, overflow bool, d *GitDiff) error {
+	if err := parseDiff(raw, overflow, d); err != nil {
+		d.Hunks = []GitDiffHunk{} // may hold raw, unredacted lines
+		return err
+	}
+	return nil
+}
+
+func parseDiff(raw []byte, overflow bool, d *GitDiff) error {
 	text := string(raw)
 	lines := strings.Split(text, "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
