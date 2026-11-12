@@ -58,7 +58,7 @@ func TestAdversarialFixtures(t *testing.T) {
 		if len(leaks) == 0 || len(keeps) == 0 {
 			t.Fatal("fixture without markers")
 		}
-		for variant, input := range map[string]string{"lf": text, "crlf": strings.ReplaceAll(text, "\n", "\r\n"), "bom": "\ufeff" + text} {
+		for variant, input := range variants(text) {
 			for view, got := range views(t, input) {
 				for _, leak := range leaks {
 					if strings.Contains(got, leak) {
@@ -174,4 +174,54 @@ func TestEscapedNamesRawOrDecoded(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Heredoc and key gaps: an unterminated heredoc or an opener HCL rejects hides what follows,
+// an anchor with a dash is a heredoc, and a key keeps its value across a line break before
+// its ":"/"=", a blank line or a comment.
+func TestHeredocAndKeyGaps(t *testing.T) {
+	for name, text := range map[string]string{
+		"open heredoc, ordinary name": "note = <<EOF\nok\npassword = \"leak01\"\n",
+		"open heredoc, dash":          "note = <<-EOF\nok\n  b = \"leak01\"\n",
+		"opener with comment":         "user_data = <<EOF # c\nleak01\nEOF\nx = \"leak02\"\n",
+		"opener with space":           "user_data = <<EOF \nleak01\nEOF\n",
+		"dashed anchor":               "user_data = <<-EO-F\nleak01\nEO-F\n",
+		"json key, colon next line":   "{\n  \"db_password\"\n  : \"leak01\"\n}\n",
+		"json key, blank, colon":      "{\n  \"db_password\"\n\n  :\n\n  \"leak01\"\n}\n",
+		"hcl key, blank, value":       "password =\n\n  \"leak01\"\n",
+		"hcl key, comment, value":     "password =\n  # the value\n  \"leak01\"\n",
+		"json key, comment, value":    "{\n  \"db_password\":\n  /* v */\n  \"leak01\"\n}\n",
+		"operator, blank, value":      "password = \"a\" +\n\n  \"leak01\"\n",
+		"ternary over lines":          "password = cond ?\n  \"a\"\n  : \"b\"\n  + \"leak01\"\n",
+		"comment, then operator":      "password = var.a\n/* c */ + \"leak01\"\n",
+		"value before bad opener":     "env {\n  value = \"leak01\"\n  x = <<EOF # c\n  name = \"DB_PASSWORD\"\n}\n",
+		"value in open heredoc file":  "env {\n  value = \"leak01\"\n  x = <<EOF\n}\n",
+		"restored key, carried name":  "name = \"a\"\n\"x\"\n= \"DB_PASSWORD\"\nvalue = \"leak01\"\n",
+		"carried key over restored":   "region = \"us-east-1\"\n\"db_password\"\n:\n\"leak01\"\n",
+		"carried name after secret":   "password = \"a\"\nx\n/*\nc */ = \"b\"\n+ \"leak01\"\n",
+	} {
+		for variant, input := range variants(text) {
+			for view, got := range views(t, input) {
+				if leakMark.MatchString(got) {
+					t.Errorf("%s %s %s:\n%s", name, variant, view, got)
+				}
+			}
+		}
+	}
+	// A dashed anchor ends its heredoc, and an ordinary key split from its ":" stays shown.
+	for _, text := range []string{"note = <<EO-F\nok\nEO-F\nx = \"keep01\"\n", "{\n  \"name\"\n  : \"keep01\"\n}\n",
+		"token = var.a\n/*\n*/\n// c\nx = \"keep01\"\n"} {
+		for variant, input := range variants(text) {
+			for view, got := range views(t, input) {
+				if !strings.Contains(got, "keep01") {
+					t.Errorf("%q %s %s:\n%s", text, variant, view, got)
+				}
+			}
+		}
+	}
+}
+
+// variants returns text with LF and CRLF line endings and with a BOM.
+func variants(text string) map[string]string {
+	return map[string]string{"lf": text, "crlf": strings.ReplaceAll(text, "\n", "\r\n"), "bom": "\ufeff" + text}
 }
