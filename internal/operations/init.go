@@ -337,8 +337,9 @@ func (r *Inits) classify(e *initEntry, shown, hint string) string {
 }
 
 // snippetLine matches, after the diagnostic border, a quoted source line ("12:   value = ...")
-// or the expression-value annotations under it ("│ var.x is ..." and its "├──" rule).
-var snippetLine = regexp.MustCompile(`^(\d+:(\s|$)|[│├])`)
+// or the expression-value annotations under it ("│ var.x is ..." and its "├────" rule). Tree
+// rows such as "├── provider[...]" or "│   ├── ..." from `providers` do not match.
+var snippetLine = regexp.MustCompile(`^(\d+:(\s|$)|├─+\s*$|│ \S)`)
 
 // humanLine sanitizes one line of human-readable engine output. Box-drawing borders around
 // diagnostics are removed and configuration snippets are dropped, as the JSON path drops

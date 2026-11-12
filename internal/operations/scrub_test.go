@@ -128,7 +128,8 @@ func TestHumanLineDropsSnippets(t *testing.T) {
 			t.Errorf("%q -> %q", line, text)
 		}
 	}
-	for _, line := range []string{`│ An argument named "value" is not expected here.`, `│   on main.tf line 12, in resource "x" "y":`, `Upgraded at 12:30 today`} {
+	for _, line := range []string{`│ An argument named "value" is not expected here.`, `│   on main.tf line 12, in resource "x" "y":`, `Upgraded at 12:30 today`,
+		`├── provider[registry.terraform.io/hashicorp/aws] ~> 5.0`, `│   ├── provider[registry.terraform.io/hashicorp/random]`, `│   │   └── module.child`, `└── module.network`} {
 		if _, text, _ := humanLine("stderr", line, nil); text == "" {
 			t.Errorf("%q dropped", line)
 		}
