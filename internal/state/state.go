@@ -161,17 +161,25 @@ var riskyKeyParts = []string{
 // are compared as lower-case letters and digits only, so privateKey, x-api-key and names
 // with invisible separators match like private_key and api_key.
 func RiskyKey(key string) bool {
-	key = alnum(key)
-	for _, part := range riskyKeyParts {
-		if strings.Contains(key, alnum(part)) {
-			return true
+	// Folded and with other letters dropped: folding alone would turn pass\u0430word
+	// into passaword.
+	for _, k := range []string{alnum(key, false), alnum(key, true)} {
+		for _, part := range riskyKeyParts {
+			if strings.Contains(k, alnum(part, false)) {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func alnum(s string) string {
+// alnum keeps lower-case ASCII letters and digits; with lookalike, letters that look like
+// them are mapped to them first.
+func alnum(s string, lookalike bool) string {
 	return strings.Map(func(r rune) rune {
+		if lookalike {
+			r = fold(r)
+		}
 		switch {
 		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
 			return r
@@ -180,6 +188,44 @@ func alnum(s string) string {
 		}
 		return -1
 	}, s)
+}
+
+// lookalikes maps Cyrillic, Greek and other letters that look like Latin ones, so
+// pаssword (Cyrillic а) compares like password.
+// shortcut: a hand-picked table, not the full Unicode confusables list; extend it when a
+// missed look-alike is found.
+var lookalikes = map[rune]rune{
+	'а': 'a', 'в': 'b', 'е': 'e', 'ѕ': 's', 'і': 'i', 'ј': 'j', 'к': 'k', 'м': 'm', 'н': 'h', 'о': 'o',
+	'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'х': 'x', 'һ': 'h', 'ԁ': 'd', 'ԛ': 'q', 'ԝ': 'w', 'ү': 'y',
+	'ӏ': 'l', 'А': 'a', 'В': 'b', 'Е': 'e', 'К': 'k', 'М': 'm', 'Н': 'h', 'О': 'o', 'Р': 'p', 'С': 'c',
+	'Т': 't', 'Х': 'x', 'Ѕ': 's', 'І': 'i', 'Ј': 'j', 'Ү': 'y', 'Ԁ': 'd', 'Ԛ': 'q', 'Ԝ': 'w', 'Ӏ': 'l',
+	'α': 'a', 'ε': 'e', 'ι': 'i', 'κ': 'k', 'ν': 'v', 'ο': 'o', 'ρ': 'p', 'τ': 't', 'υ': 'u', 'χ': 'x',
+	'Α': 'a', 'Β': 'b', 'Ε': 'e', 'Ζ': 'z', 'Η': 'h', 'Ι': 'i', 'Κ': 'k', 'Μ': 'm', 'Ν': 'n', 'Ο': 'o',
+	'Ρ': 'p', 'Τ': 't', 'Υ': 'y', 'Χ': 'x', 'ı': 'i', 'ɡ': 'g', 'օ': 'o', 'ս': 'u', 'հ': 'h', 'ո': 'n',
+}
+
+// fold maps a look-alike, fullwidth or mathematical letter or digit to ASCII.
+func fold(r rune) rune {
+	switch {
+	case r < 0x80:
+		return r
+	case r >= 0xFF10 && r <= 0xFF19: // fullwidth digits
+		return r - 0xFF10 + '0'
+	case r >= 0xFF21 && r <= 0xFF3A, r >= 0xFF41 && r <= 0xFF5A: // fullwidth letters
+		return r - 0xFF00 + 0x20
+	case r >= 0x1D400 && r <= 0x1D6A3: // mathematical letters: 52 per style, A-Z then a-z
+		if i := (r - 0x1D400) % 52; i < 26 {
+			return 'a' + i
+		} else {
+			return 'a' + i - 26
+		}
+	case r >= 0x1D7CE && r <= 0x1D7FF: // mathematical digits: 10 per style
+		return '0' + (r-0x1D7CE)%10
+	}
+	if l, ok := lookalikes[r]; ok {
+		return l
+	}
+	return r
 }
 
 var (

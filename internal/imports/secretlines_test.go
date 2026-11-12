@@ -87,3 +87,17 @@ func TestRedactGeneratedMultiline(t *testing.T) {
 		t.Errorf("ordinary lines hidden:\n%s", got)
 	}
 }
+
+func TestHCLEscapes(t *testing.T) {
+	for in, want := range map[string]string{
+		`"p\U00000061ss"`: `"pass"`,
+		`"\\U00000061"`:   `"\\U00000061"`, // an escaped backslash, then U
+		`"\U00000022"`:    `"\u0022"`,
+		`"\U0011FFFF"`:    `"\U0011FFFF"`, // not a rune: kept, so JSON rejects it
+		`"\U0000006"`:     `"\U0000006"`,
+	} {
+		if got := hclEscapes(in); got != want {
+			t.Errorf("hclEscapes(%s) = %s, want %s", in, got, want)
+		}
+	}
+}
