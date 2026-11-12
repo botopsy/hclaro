@@ -23,8 +23,9 @@ var (
 )
 
 // SecretLines marks the lines of HCL or JSON configuration whose content must be hidden
-// because of where they are, not what they say: every line inside a block, list, call or
-// heredoc opened under a secret-like name (passwords = [ … ], user_data = <<EOF … EOF),
+// because of where they are, not what they say: every heredoc body line, whatever its name
+// (opaque JSON, YAML or shell text), every line inside a block, list or call opened under a
+// secret-like name (passwords = [ … ]),
 // every line assigning a secret-like name (also inside an inline object or after a line
 // that ends with an operator), and the value of a name/value pair whose name is secret-like
 // ({ name = "DB_PASSWORD", value = … }, in either order, on one line or several, also as a
@@ -56,7 +57,7 @@ func SecretLines(lines []string) []bool {
 	nextID := 1
 	valueLines := map[int][]int{}
 	pairRisky := map[int]bool{}
-	heredocEnd, heredocRisky, heredocValueOf, heredocStart, inComment, broken := "", false, -1, 0, false, false
+	heredocEnd, heredocValueOf, heredocStart, inComment, broken := "", -1, 0, false, false
 	// cand is the last name or string read; it outlives a line break, a blank line or a
 	// comment, so a key still meets a ":"/"=" written on a later line.
 	cand, haveCand := "", false
@@ -72,7 +73,8 @@ func SecretLines(lines []string) []bool {
 			if strings.TrimSpace(line) == heredocEnd {
 				heredocEnd = ""
 			} else {
-				out[i] = heredocRisky
+				// A heredoc body is opaque text (JSON, YAML, shell): hidden under any name.
+				out[i] = true
 				if heredocValueOf >= 0 {
 					valueLines[heredocValueOf] = append(valueLines[heredocValueOf], i)
 				}
@@ -147,7 +149,6 @@ func SecretLines(lines []string) []bool {
 					continue
 				}
 				heredocEnd, heredocStart, haveCand = m[1], i, false
-				heredocRisky = top.risky || state.RiskyKey(top.key) || top.contKey != ""
 				heredocValueOf = top.valueOf
 				if heredocValueOf < 0 && strings.EqualFold(top.key, "value") {
 					heredocValueOf = top.id
