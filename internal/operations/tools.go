@@ -288,7 +288,10 @@ func (r *Inits) executeTool(ctx context.Context, e *initEntry, req ToolRequest) 
 	if ctx.Err() != nil {
 		return r.stopped(e), nil
 	}
-	k := initKnown(req.Root, req.Environ)
+	k := collectKnown(req.Root, nil, req.Environ)
+	if k.incomplete {
+		e.log.Append("warn", knownIncomplete)
+	}
 	run := toolRun{r: r, e: e, k: k}
 	switch req.Tool {
 	case engine.ToolValidate:

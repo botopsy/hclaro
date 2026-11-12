@@ -347,6 +347,9 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 		environ = os.Environ()
 	}
 	inputs := collectKnown(m.root, e.op.VarFiles, environ)
+	if inputs.incomplete {
+		e.log.Append("warn", knownIncomplete)
+	}
 	request := engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, RefreshOnly: true}
 	if bound != nil {
 		request.Parallelism, request.LockTimeoutSeconds = bound.Parallelism, bound.LockTimeoutSeconds

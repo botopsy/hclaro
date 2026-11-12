@@ -230,12 +230,14 @@ func word(s string) string {
 	return "unknown"
 }
 
-// sanitize keeps at most maxLines lines of free text. Known input values are replaced first;
-// then any line that looks like a credential or an assignment to a risky attribute name is
-// withheld. The line checks are heuristic: a secret that is neither a known input nor
-// recognizable, such as one returned by a provider API, can still pass.
+// sanitize keeps at most maxLines lines of free text. Any line that looks like a credential
+// (including long random-looking strings) or an assignment to a risky attribute name is
+// withheld; known input values are then replaced in the lines that are kept. The checks run
+// on the unscrubbed line, so a known value equal to a key word such as "password" cannot hide
+// the name that makes the line risky. The checks are heuristic: a secret that is neither a
+// known input nor recognizable can still pass.
 func sanitize(text string, k *known, maxLines int) string {
-	lines := strings.Split(strings.TrimSpace(k.scrub(stripControls(text))), "\n")
+	lines := strings.Split(strings.TrimSpace(k.scrubSpanning(stripControls(text))), "\n")
 	out := make([]string, 0, min(len(lines), maxLines))
 	for i, line := range lines {
 		if i == maxLines {
@@ -244,13 +246,15 @@ func sanitize(text string, k *known, maxLines int) string {
 		}
 		lower := strings.ToLower(line)
 		switch {
-		case state.Suspicious(line):
+		case state.LooksSecret(line):
 			out = append(out, "[line withheld: looks like a secret]")
 		case state.RiskyKey(lower) && strings.ContainsAny(line, "=:\""):
 			out = append(out, "[line withheld: references a sensitive attribute]")
-		case len(line) > 500:
-			out = append(out, line[:500]+"…")
 		default:
+			// Scrubbed before the cut, so a known value at the boundary is not half shown.
+			if line = k.scrub(line); len(line) > 500 {
+				line = line[:500] + "…"
+			}
 			out = append(out, line)
 		}
 	}

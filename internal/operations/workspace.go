@@ -214,7 +214,10 @@ func (r *Inits) executeWorkspace(ctx context.Context, e *initEntry, req Workspac
 	r.stage(e, "Running workspace "+string(req.Action))
 	r.update(e, func(o *Operation) { o.Workspace.Ran = true })
 	ran = true
-	k := initKnown(req.Root, req.Environ)
+	k := collectKnown(req.Root, nil, req.Environ)
+	if k.incomplete {
+		e.log.Append("warn", knownIncomplete)
+	}
 	var shown strings.Builder
 	err = req.Manager.ChangeWorkspace(ctx, req.Action, req.Name, func(stream string, line []byte) {
 		level, text, diag := humanLine(stream, string(line), k)
