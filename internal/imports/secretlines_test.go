@@ -32,6 +32,20 @@ func TestSecretLines(t *testing.T) {
 			t.Errorf("line %d %q: got %v", i, text[i], got[i])
 		}
 	}
+	// A pair whose value spans lines, a JSON key whose value starts on the next line, and a
+	// block label that looks like a secret name.
+	for _, lines := range [][]string{
+		{"env {", `  name = "DB_PASSWORD"`, "  value = jsonencode({", "    a = 1234", "  })", "}"},
+		{"{", `  "db_password":`, "  [", "    1234", "  ]", "}"},
+		{`variable "db_password" {`, "  default = 1234", "}"},
+	} {
+		got := SecretLines(lines)
+		for i, l := range lines {
+			if strings.Contains(l, "1234") && !got[i] {
+				t.Errorf("%q: line %d not marked", lines, i)
+			}
+		}
+	}
 	// A closer with no opener, or an unterminated string, hides the rest.
 	for _, lines := range [][]string{{`  "a",`, `  ]`, `  b = "c"`}, {`  a = "open`, `  b = "c"`}} {
 		got := SecretLines(lines)

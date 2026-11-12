@@ -137,3 +137,48 @@ func TestDiffHeredocWithRealGit(t *testing.T) {
 	}
 	t.Fatal("web.tf not in status")
 }
+
+// On a secret line the whole value goes, not only its string literals; a block label that
+// looks like a secret name hides the block (a multi-line default = "…" would leak).
+func TestForcedLinesHideBareValues(t *testing.T) {
+	cases := map[string][]string{
+		"list":      {"passwords = [", `  "a", 1234,`, "]"},
+		"pair":      {"env = [", `  { name = "DB_PASSWORD", value = 1234 },`, "]"},
+		"json":      {"{", `  "secrets": {`, `    "pin": 1234, "note": "x"`, "  }", "}"},
+		"label":     {`variable "db_password" {`, "  default = 1234", "}"},
+		"valuecall": {"env {", `  name = "DB_PASSWORD"`, "  value = jsonencode({", "    a = 1234", "  })", "}"},
+		"jsonnext":  {"{", `  "db_password":`, "  [", "    1234", "  ]", "}"},
+		"single":    {`  password = ["a", 1234]`},
+	}
+	for name, lines := range cases {
+		lines = append(lines, "# x")
+		var d GitDiff
+		if err := ParseDiff([]byte(fullDiff(lines, len(lines)-1, "# y")), false, &d); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		b, _ := json.Marshal(d)
+		if strings.Contains(string(b), "1234") {
+			t.Errorf("%s leaked:\n%s", name, b)
+		}
+	}
+}
+
+// Hunk numbers follow Git's when a hunk starts with a changed line.
+func TestHunkStartAtTop(t *testing.T) {
+	for name, c := range map[string]struct{ raw, want string }{
+		"add":     {"@@ -1,3 +1,4 @@\n+top\n a\n b\n c\n", "-1,3 +1,4"},
+		"delete":  {"@@ -1,3 +1,2 @@\n-a\n b\n c\n", "-1,3 +1,2"},
+		"replace": {"@@ -1,3 +1,3 @@\n-a\n+z\n b\n c\n", "-1,3 +1,3"},
+		"only":    {"@@ -0,0 +1,1 @@\n+new\n", "-0,0 +1,1"},
+		"gone":    {"@@ -1,1 +0,0 @@\n-old\n", "-1,1 +0,0"},
+	} {
+		var d GitDiff
+		if err := ParseDiff([]byte(c.raw), false, &d); err != nil || len(d.Hunks) != 1 {
+			t.Fatalf("%s: %v %+v", name, err, d)
+		}
+		h := d.Hunks[0]
+		if got := fmt.Sprintf("-%d,%d +%d,%d", h.OldStart, h.OldLines, h.NewStart, h.NewLines); got != c.want {
+			t.Errorf("%s: %s want %s", name, got, c.want)
+		}
+	}
+}

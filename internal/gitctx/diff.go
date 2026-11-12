@@ -343,37 +343,32 @@ func display(d *GitDiff) {
 			case "add":
 				text, red = newR.line(l.Text, f)
 			}
-			if l.Kind != "note" {
-				if l.Old > 0 {
-					lastOld = l.Old
-				}
-				if l.New > 0 {
-					lastNew = l.New
-				}
-			}
 			keep := near[li] || l.Kind == "note" && cur != nil
+			if keep && shown == maxDiffLines {
+				d.Truncated = true
+				return
+			}
+			if keep && cur == nil {
+				// Each side starts at its first line in the hunk; a side without lines starts
+				// after the line before it, as in Git.
+				d.Hunks = append(d.Hunks, GitDiffHunk{OldStart: lastOld, NewStart: lastNew, Lines: []DiffLine{}})
+				cur = &d.Hunks[len(d.Hunks)-1]
+			}
+			if l.Old > 0 {
+				lastOld = l.Old
+			}
+			if l.New > 0 {
+				lastNew = l.New
+			}
 			if !keep {
 				cur = nil
 				continue
 			}
-			if shown == maxDiffLines {
-				d.Truncated = true
-				return
+			if l.Old > 0 && cur.OldLines == 0 {
+				cur.OldStart = l.Old
 			}
-			if cur == nil {
-				d.Hunks = append(d.Hunks, GitDiffHunk{OldStart: lastOld, NewStart: lastNew, Lines: []DiffLine{}})
-				cur = &d.Hunks[len(d.Hunks)-1]
-				// A hunk starts at its first line on each side, or after the line before it.
-				if l.Kind == "add" || l.Kind == "note" {
-					cur.OldStart = lastOld
-				} else {
-					cur.OldStart = l.Old
-				}
-				if l.Kind == "delete" || l.Kind == "note" {
-					cur.NewStart = lastNew
-				} else {
-					cur.NewStart = l.New
-				}
+			if l.New > 0 && cur.NewLines == 0 {
+				cur.NewStart = l.New
 			}
 			switch l.Kind {
 			case "context":

@@ -25,6 +25,8 @@ var (
 	heredocStart = regexp.MustCompile(`<<-?\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
 	// quoted matches a double-quoted string literal with escapes.
 	quoted = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+	// quotedValue is a value that is one string literal, with an optional trailing comma.
+	quotedValue = regexp.MustCompile(`^"(?:[^"\\]|\\.)*"(,?)$`)
 )
 
 // LineRedactor redacts HCL or JSON configuration lines for display. It keeps state
@@ -63,33 +65,38 @@ func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 	if m := heredocStart.FindStringSubmatch(line); m != nil && !strings.HasPrefix(strings.TrimSpace(line), "#") {
 		r.heredocEnd, r.heredocSecret = m[1], risky
 	}
+	// Under a secret-like name or on a forced line, the whole value goes, not only its
+	// string literals: ["a", 1234] or "a" + var.x would otherwise show part of it. A
+	// reference (var.password) names where a value comes from and is kept.
+	if risky {
+		_, value, ok := cutAssignment(line)
+		switch {
+		case key != "" && (!ok || reference(value)):
+			// An opening bracket, an empty value, a heredoc or a reference: no value here.
+		case key != "" && quotedValue.MatchString(value):
+			return clip(line[:len(line)-len(value)] + quotedValue.ReplaceAllString(value, `"`+Redacted+`"$1`)), true
+		case key != "":
+			return clip(line[:len(line)-len(value)] + Redacted), true
+		case !imports.Structural(line):
+			// A list item, a comment or a bare value on a forced line.
+			return indentOf(line) + Redacted, true
+		}
+		if state.Suspicious(line) {
+			return indentOf(line) + Redacted, true
+		}
+		return clip(line), false
+	}
 	redacted := false
 	out := quoted.ReplaceAllStringFunc(line, func(lit string) string {
 		inner := lit[1 : len(lit)-1]
-		// The key itself in a JSON line ("password": "...") is a literal too.
-		if strings.TrimSpace(line[:strings.Index(line, lit)]) == "" && key != "" && inner == key {
-			return lit
-		}
-		if inner == "" {
-			return lit
-		}
-		if risky || state.LooksSecret(inner) {
+		if inner != "" && state.LooksSecret(inner) {
 			redacted = true
 			return `"` + Redacted + `"`
 		}
 		return lit
 	})
-	// An unquoted value under a secret-like name (a number, a reference) is kept only when
-	// it is a reference to another object, which is not a value.
-	if risky && !redacted {
-		if _, value, ok := cutAssignment(out); ok && !reference(value) {
-			out = out[:len(out)-len(value)] + Redacted
-			redacted = true
-		}
-	}
-	// Credential shapes outside string literals (comments, bare words), and anything but
-	// brackets on a forced line without an assignment (a list item, a comment).
-	if !redacted && (state.Suspicious(out) || forced && key == "" && !imports.Structural(out)) {
+	// Credential shapes outside string literals (comments, bare words).
+	if !redacted && state.Suspicious(out) {
 		return indentOf(line) + Redacted, true
 	}
 	return clip(out), redacted

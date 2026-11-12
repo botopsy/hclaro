@@ -22,9 +22,12 @@ func SecretLines(lines []string) []bool {
 		risky bool
 		key   string
 		id    int
+		// valueOf is the frame whose "value" this frame belongs to (value = jsonencode({ … })),
+		// or -1.
+		valueOf int
 	}
 	out := make([]bool, len(lines))
-	stack := []frame{{}}
+	stack := []frame{{valueOf: -1}}
 	nextID := 1
 	valueLines := map[int][]int{}
 	pairRisky := map[int]bool{}
@@ -43,7 +46,12 @@ func SecretLines(lines []string) []bool {
 			continue
 		}
 		out[i] = stack[len(stack)-1].risky
-		cand, haveCand := "", false
+		if v := stack[len(stack)-1].valueOf; v >= 0 {
+			valueLines[v] = append(valueLines[v], i)
+		}
+		// afterKey: the line so far ends with `key =` or `"key":`, so the value (or its
+		// opening bracket) may follow on the next line.
+		cand, haveCand, afterKey := "", false, false
 		for j := 0; j < len(line) && !broken; {
 			top := &stack[len(stack)-1]
 			c := line[j]
@@ -64,7 +72,7 @@ func SecretLines(lines []string) []bool {
 				if (strings.EqualFold(top.key, "name") || strings.EqualFold(top.key, "key")) && state.RiskyKey(s) {
 					pairRisky[top.id] = true
 				}
-				cand, haveCand, j = s, true, end
+				cand, haveCand, afterKey, j = s, true, false, end
 			case c == '#' || strings.HasPrefix(line[j:], "//"):
 				j = len(line)
 			case strings.HasPrefix(line[j:], "/*"):
@@ -79,10 +87,17 @@ func SecretLines(lines []string) []bool {
 					key = cand // block syntax: master_password { … }
 				}
 				risky := top.risky || state.RiskyKey(key)
-				top.key, haveCand = "", false
-				stack = append(stack, frame{risky: risky, id: nextID})
+				valueOf := top.valueOf
+				if valueOf < 0 && strings.EqualFold(top.key, "value") {
+					valueOf = top.id
+				}
+				top.key, haveCand, afterKey = "", false, false
+				stack = append(stack, frame{risky: risky, id: nextID, valueOf: valueOf})
 				nextID++
 				out[i] = out[i] || risky
+				if valueOf >= 0 {
+					valueLines[valueOf] = append(valueLines[valueOf], i)
+				}
 				j++
 			case c == '}' || c == ']' || c == ')':
 				if len(stack) == 1 {
@@ -98,7 +113,7 @@ func SecretLines(lines []string) []bool {
 					continue
 				}
 				if haveCand {
-					top.key = cand
+					top.key, afterKey = cand, true
 					if strings.EqualFold(cand, "value") {
 						valueLines[top.id] = append(valueLines[top.id], i)
 					}
@@ -113,7 +128,7 @@ func SecretLines(lines []string) []bool {
 				for k < len(line) && wordByte(line[k]) {
 					k++
 				}
-				cand, haveCand, j = line[j:k], true, k
+				cand, haveCand, afterKey, j = line[j:k], true, false, k
 			case c == ' ' || c == '\t':
 				j++
 			default:
@@ -121,8 +136,11 @@ func SecretLines(lines []string) []bool {
 				j++
 			}
 		}
-		// A newline ends an HCL attribute; a key that opened a block was already used.
-		stack[len(stack)-1].key = ""
+		// A newline ends an HCL attribute (a key that opened a block was already used),
+		// unless the line ends right after the key.
+		if !afterKey {
+			stack[len(stack)-1].key = ""
+		}
 	}
 	for id, ls := range valueLines {
 		if pairRisky[id] {
