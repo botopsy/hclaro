@@ -217,6 +217,18 @@ func NewHub(registry *Registry, launch string) *Hub {
 	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), WorkspaceManagers: DefaultWorkspaceManagers, Tools: DefaultTools, Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, Executors: DefaultExecutors, MaxScopes: 4, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, reviews: map[string]*pendingReview{}, scopes: map[string]*Scope{}, envKey: newEnvKey(), loads: make(chan struct{}, 3)}
 }
 
+// Applying reports whether any execution scope is running an apply.
+func (h *Hub) Applying() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, s := range h.scopes {
+		if s.manager.Applying() {
+			return true
+		}
+	}
+	return false
+}
+
 // Close cancels context reads, execution scopes and initializations and waits for them to
 // stop. Scopes delete their saved plans.
 func (h *Hub) Close() {

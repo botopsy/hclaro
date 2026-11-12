@@ -93,8 +93,15 @@ const MaxReplace = 50
 
 const (
 	maxLine       = 1 << 20
-	gracePeriod   = 15 * time.Second
 	showPlanLimit = 5 * time.Minute
+)
+
+// gracePeriod is how long an interrupted engine may take to stop before it is killed.
+// ApplyGracePeriod is longer: providers finish in-flight calls and the engine writes state,
+// and killing it then can lose state or leave a lock. Variables only so tests can shorten them.
+var (
+	gracePeriod      = 15 * time.Second
+	ApplyGracePeriod = 10 * time.Minute
 )
 
 func planArgs(request PlanRequest) ([]string, error) {
@@ -177,7 +184,10 @@ func (c *CLI) Plan(ctx context.Context, request PlanRequest, line func([]byte)) 
 	if err != nil {
 		return err
 	}
-	return c.stream(ctx, args, line)
+	if err := c.stream(ctx, args, gracePeriod, line); err != nil || ctx.Err() == nil {
+		return err
+	}
+	return ErrCancelled
 }
 
 // Apply applies the saved plan at path and streams machine-readable UI lines.
@@ -186,31 +196,26 @@ func (c *CLI) Apply(ctx context.Context, path string, line func([]byte)) error {
 	if err != nil {
 		return err
 	}
-	return c.stream(ctx, args, line)
+	// A clean exit after an interrupt means the engine finished applying; it is not reported
+	// as cancelled.
+	return c.stream(ctx, args, ApplyGracePeriod, line)
 }
 
-func (c *CLI) stream(ctx context.Context, args []string, line func([]byte)) error {
+// stream runs the engine in its own process group (see startGroup) and returns nil whenever
+// it exits 0, even after cancellation; a non-zero exit after cancellation is ErrCancelled.
+func (c *CLI) stream(ctx context.Context, args []string, grace time.Duration, line func([]byte)) error {
 	cmd, err := c.command(ctx, args...)
 	if err != nil {
 		return err
 	}
-	// Interrupt first so the engine can stop providers and release a state lock;
-	// the process is killed only after the grace period.
-	prepareInterrupt(cmd)
-	cmd.Cancel = func() error {
-		if err := interrupt(cmd.Process); err != nil {
-			return cmd.Process.Kill()
-		}
-		return nil
-	}
-	cmd.WaitDelay = gracePeriod
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
 	stderr := &boundedTail{max: 64 << 10}
 	cmd.Stderr = stderr
-	if err := cmd.Start(); err != nil {
+	exited, err := startGroup(ctx, cmd, grace)
+	if err != nil {
 		return errors.New("engine could not be started")
 	}
 	reader := bufio.NewReaderSize(stdout, 64<<10)
@@ -224,6 +229,11 @@ func (c *CLI) stream(ctx context.Context, args []string, line func([]byte)) erro
 		}
 	}
 	err = cmd.Wait()
+	exited()
+	// After cancellation Wait reports the context error even for exit status 0.
+	if cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		return nil
+	}
 	if ctx.Err() != nil {
 		return ErrCancelled
 	}
@@ -328,8 +338,11 @@ type Fake struct {
 	GeneratedConfig []byte
 	// Block makes Plan wait for cancellation, to exercise cancel paths.
 	Block bool
-	// BlockApply makes Apply wait for cancellation.
-	BlockApply bool
+	// BlockApply makes Apply wait for cancellation, then take ApplyStopDelay to stop and
+	// return ErrCancelled, or nil with ApplyFinishesAfterCancel.
+	BlockApply               bool
+	ApplyStopDelay           time.Duration
+	ApplyFinishesAfterCancel bool
 	Delay      time.Duration
 	// InitLines and InitStderr are emitted by Init on stdout and stderr; InitErr is its
 	// result, BlockInit makes it wait for cancellation and InitDataDir is created on success.
@@ -487,6 +500,10 @@ func (m *Fake) Apply(ctx context.Context, path string, line func([]byte)) error 
 	}
 	if m.BlockApply {
 		<-ctx.Done()
+		time.Sleep(m.ApplyStopDelay)
+		if m.ApplyFinishesAfterCancel {
+			return nil
+		}
 		return ErrCancelled
 	}
 	return m.ApplyErr

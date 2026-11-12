@@ -66,14 +66,6 @@ func (c *CLI) streamLines(ctx context.Context, limit time.Duration, dropWorkspac
 	if err != nil {
 		return err
 	}
-	prepareGroup(cmd)
-	cmd.Cancel = func() error {
-		if err := interruptGroup(cmd.Process); err != nil {
-			return killGroup(cmd.Process)
-		}
-		return nil
-	}
-	cmd.WaitDelay = gracePeriod + 5*time.Second
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -82,21 +74,10 @@ func (c *CLI) streamLines(ctx context.Context, limit time.Duration, dropWorkspac
 	if err != nil {
 		return err
 	}
-	if err := cmd.Start(); err != nil {
+	exited, err := startGroup(ctx, cmd, gracePeriod)
+	if err != nil {
 		return errors.New("engine could not be started")
 	}
-	exited := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			select {
-			case <-exited:
-			case <-time.After(gracePeriod):
-				_ = killGroup(cmd.Process)
-			}
-		case <-exited:
-		}
-	}()
 	tail := &boundedTail{max: 64 << 10}
 	var mu sync.Mutex
 	var readers sync.WaitGroup
@@ -121,7 +102,7 @@ func (c *CLI) streamLines(ctx context.Context, limit time.Duration, dropWorkspac
 	go read("stderr", stderr)
 	readers.Wait()
 	err = cmd.Wait()
-	close(exited)
+	exited()
 	if ctx.Err() != nil {
 		return ErrCancelled
 	}
@@ -134,6 +115,37 @@ func (c *CLI) streamLines(ctx context.Context, limit time.Duration, dropWorkspac
 		return &ExitError{Code: code, Hint: classify(tail.String())}
 	}
 	return nil
+}
+
+// startGroup starts cmd in its own process group, so a terminal Ctrl+C aimed at Hclaro does
+// not reach the engine: cancellation sends the one interrupt, to the engine and the plugins it
+// started, and the group is killed only if it is still running after grace. Call the returned
+// func once Wait has returned.
+func startGroup(ctx context.Context, cmd *exec.Cmd, grace time.Duration) (func(), error) {
+	prepareGroup(cmd)
+	cmd.Cancel = func() error {
+		if err := interruptGroup(cmd.Process); err != nil {
+			return killGroup(cmd.Process)
+		}
+		return nil
+	}
+	cmd.WaitDelay = grace + 5*time.Second
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	exited := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			select {
+			case <-exited:
+			case <-time.After(grace):
+				_ = killGroup(cmd.Process)
+			}
+		case <-exited:
+		}
+	}()
+	return func() { close(exited) }, nil
 }
 
 func containsAny(text string, parts ...string) bool {

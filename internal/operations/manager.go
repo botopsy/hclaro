@@ -426,6 +426,15 @@ func (m *Manager) Running() bool {
 	return m.running != nil
 }
 
+// Applying reports whether an apply is running.
+func (m *Manager) Applying() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.applyingLocked()
+}
+
+func (m *Manager) applyingLocked() bool { return m.running != nil && m.running.op.Kind == "apply" }
+
 func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 	defer m.wg.Done()
 	defer e.cancel()
@@ -864,6 +873,10 @@ func (m *Manager) Reread() error {
 func (m *Manager) Close(wait time.Duration) {
 	m.mu.Lock()
 	m.closed = true
+	if wait > 0 && m.applyingLocked() {
+		// The interrupted engine may take ApplyGracePeriod to finish writing state.
+		wait = max(wait, engine.ApplyGracePeriod+10*time.Second)
+	}
 	m.mu.Unlock()
 	m.stop()
 	done := make(chan struct{})

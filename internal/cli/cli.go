@@ -302,6 +302,9 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 			serveErr = errors.New("local HTTP server stopped unexpectedly")
 		}
 	}
+	if manager.Applying() || hub.Applying() {
+		fmt.Fprintf(output, "An apply is running. Hclaro interrupts it once and waits up to %s for the engine to finish writing state.\nDo not force-quit Hclaro: the engine writes to Hclaro and could be stopped mid-apply.\n", engine.ApplyGracePeriod)
+	}
 	cancel()
 	// A running plan or init is interrupted and its private temp files removed before exit.
 	manager.Close(20 * time.Second)
