@@ -514,19 +514,56 @@ func TestClosingAScopeCancelsReleasesAndDeletes(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "saved plan not deleted on reload", func() bool { return len(planDirs(t, hub.TempDir)) == 0 })
-	// Removing a project cancels its running operation and releases the root.
+	// Edits that would close a context are refused while its scope runs an operation
+	// (M26.08); nothing is closed or cancelled.
 	t.Setenv("HCLARO_FAKE_PLAN", "slow")
-	_, s = openScope(t, hub, ids["network"], "dev", "")
+	c, s := openScope(t, hub, ids["network"], "dev", "")
 	op, err = s.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitStage(t, s, op.ID, "Planning")
-	if err := hub.Remove(ids["network"]); err != nil {
+	engineName, alias := "tofu", "renamed"
+	if err := hub.Remove(ids["network"]); !errors.Is(err, ErrBusy) {
+		t.Fatalf("remove while planning: %v", err)
+	}
+	if _, err := hub.Update(ids["network"], Change{EnginePreference: &engineName}); !errors.Is(err, ErrBusy) {
+		t.Fatalf("engine change while planning: %v", err)
+	}
+	if _, err := hub.Update(ids["network"], Change{RootPath: &root}); !errors.Is(err, ErrBusy) {
+		t.Fatalf("path change while planning: %v", err)
+	}
+	if err := hub.CloseContext(c.ID); !errors.Is(err, ErrBusy) {
+		t.Fatalf("close while planning: %v", err)
+	}
+	if err := hub.ProfileBusy(ids["network"], ""); !errors.Is(err, ErrBusy) {
+		t.Fatalf("profile busy: %v", err)
+	}
+	if err := hub.ProfileBusy(ids["platform"], ""); err != nil {
+		t.Fatalf("another project is not busy: %v", err)
+	}
+	// Metadata edits do not close contexts and still go through.
+	if _, err := hub.Update(ids["network"], Change{Alias: &alias}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := hub.Context(c.ID); err != nil {
+		t.Fatal("a refused edit closed the context")
+	}
+	if op, _, _ := s.Operation(op.ID); op.Status != operations.Running {
+		t.Fatalf("a refused edit stopped the plan: %+v", op)
+	}
+	// Once the operation ended, removing the project closes the scope and releases the root.
+	if _, err := s.Cancel(op.ID); err != nil {
 		t.Fatal(err)
 	}
 	if done := waitDone(t, s, op.ID); done.Status != operations.Cancelled {
 		t.Fatalf("%+v", done)
+	}
+	if err := hub.Remove(ids["network"]); err != nil {
+		t.Fatal(err)
+	}
+	if _, reason, _ := hub.Context(c.ID); reason != "project_removed" {
+		t.Fatalf("reason %q", reason)
 	}
 	eventually(t, "claim not released", func() bool { _, busy := hub.Locks.Holder(root); return !busy })
 	if _, err := s.startPlan(nil, nil); !errors.Is(err, operations.ErrClosed) {
@@ -794,8 +831,17 @@ func TestPreviewAndEvictionKeepReviewedPlans(t *testing.T) {
 	if _, ok := s.Plan(planID); !ok || !s.manager.KeepsPlan() || len(planDirs(t, hub.TempDir)) != 1 {
 		t.Fatalf("reviewed plan lost: %v", planDirs(t, hub.TempDir))
 	}
-	// Once the plan is no longer kept, the scope makes room again.
-	s.manager.Close(0)
+	// Closing the view explicitly deletes the saved plan and makes room again.
+	if err := hub.CloseContext(kept.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, reason, _ := hub.Context(kept.ID); reason != "closed" {
+		t.Fatalf("reason %q", reason)
+	}
+	if err := hub.CloseContext(kept.ID); !errors.Is(err, ErrContextNotFound) {
+		t.Fatalf("second close: %v", err)
+	}
+	eventually(t, "saved plan not deleted on close", func() bool { return len(planDirs(t, hub.TempDir)) == 0 })
 	if _, err := hub.Execution(third.ID); err != nil {
 		t.Fatal(err)
 	}

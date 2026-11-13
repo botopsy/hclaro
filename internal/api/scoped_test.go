@@ -660,3 +660,68 @@ func TestScopedReadsNeverEvictAReviewedPlan(t *testing.T) {
 		t.Fatalf("reviewed plan lost: %+v", detail.Apply)
 	}
 }
+
+// M26.08: while a Hub workspace runs an operation, edits that would close its view (project
+// path or engine, removal, its profile) and closing the view are refused, so the operation is
+// never cancelled by them. Afterwards DELETE closes the view and deletes its saved plan.
+func TestScopedViewsCloseOnlyWhenIdle(t *testing.T) {
+	s := newScopedServer(t)
+	prod, err := s.hub.Profiles.Create(s.ids["network"], profiles.Input{Name: "prod", AWSProfile: "prod-sso"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cid := s.openLoaded("network", "prod", prod.ID)
+	t.Setenv("HCLARO_FAKE_PLAN", "slow")
+	op := s.plan(cid)
+	project := "/api/v1/projects/" + s.ids["network"]
+	for _, step := range [][3]string{
+		{"PATCH", project, `{"engine":"tofu"}`},
+		{"PATCH", project, fmt.Sprintf(`{"rootPath":%q}`, s.roots["network"])},
+		{"DELETE", project, `{}`},
+		{"PATCH", project + "/execution-profiles/" + prod.ID, `{"name":"prod","awsProfile":"other","expectedRevision":1}`},
+		{"DELETE", project + "/execution-profiles/" + prod.ID, `{"expectedRevision":1}`},
+		{"DELETE", "/api/v1/contexts/" + cid, `{}`},
+	} {
+		wantError(t, s.do(step[0], step[1], step[2]), 409, "project_busy")
+	}
+	if p, err := s.hub.Profiles.Get(s.ids["network"], prod.ID); err != nil || p.Revision != 1 {
+		t.Fatalf("a refused edit changed the profile: %+v %v", p, err)
+	}
+	if w := s.do("PATCH", project, `{"alias":"renamed"}`); w.Code != 200 {
+		t.Fatalf("alias: %d %s", w.Code, w.Body)
+	}
+	if running := decode[scopedOp](t, s.do("GET", "/api/v1/contexts/"+cid+"/operations/"+op.ID, "")); running.Status != operations.Running || running.CancelRequested {
+		t.Fatalf("%+v", running)
+	}
+	if w := s.do("POST", "/api/v1/contexts/"+cid+"/operations/"+op.ID+"/cancel", `{}`); w.Code != 202 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	s.waitScoped(cid, op.ID)
+	t.Setenv("HCLARO_FAKE_PLAN", "")
+	planned := s.waitScoped(cid, s.plan(cid).ID)
+	if planned.PlanID == "" || len(planFiles(t, s.hub.TempDir)) != 1 {
+		t.Fatalf("%+v", planned)
+	}
+	if w := s.do("DELETE", "/api/v1/contexts/"+cid, `{}`); w.Code != 200 {
+		t.Fatalf("close: %d %s", w.Code, w.Body)
+	}
+	body := wantError(t, s.do("GET", "/api/v1/contexts/"+cid+"/plans", ""), 404, "context_closed")
+	if !strings.Contains(body["reason"], "was closed") {
+		t.Fatalf("%v", body)
+	}
+	wantError(t, s.do("DELETE", "/api/v1/contexts/"+cid, `{}`), 404, "context_closed")
+	for deadline := time.Now().Add(10 * time.Second); len(planFiles(t, s.hub.TempDir)) != 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("saved plan kept after close")
+		}
+	}
+}
+
+func planFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, "hclaro-plan-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return matches
+}

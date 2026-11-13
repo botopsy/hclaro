@@ -64,7 +64,7 @@ func (e *ScopeError) Error() string { return e.Message }
 var (
 	// ErrScopedDisabled answers every scoped request while the gate is off.
 	ErrScopedDisabled = &ScopeError{Code: CodeScopedDisabled, Message: "Plans and applies in Hub workspaces are not enabled in this session. Nothing ran."}
-	errCapacity       = &ScopeError{Code: CodeCapacityExceeded, Message: "Every open Hub workspace is running an operation or keeps a reviewed plan. Wait for an operation to finish, or close a workspace view you no longer need, then try again. Nothing was closed."}
+	errCapacity       = &ScopeError{Code: CodeCapacityExceeded, Message: "Every open Hub workspace is running an operation or keeps a reviewed plan. Wait for an operation to finish, or apply or discard a reviewed plan (reading its workspace again discards it), then try again. Nothing was closed."}
 )
 
 func unsupportedScope(message string) *ScopeError {

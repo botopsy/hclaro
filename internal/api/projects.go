@@ -230,6 +230,22 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			writeJSON(w, 200, workspaceBody(c.Snapshot(), c))
 		}
 	})
+	// Closing a view deletes its scope's saved plan, approval and results. It is refused
+	// while an operation runs there.
+	mux.HandleFunc("DELETE /api/v1/contexts/{cid}", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		switch err := hub.CloseContext(r.PathValue("cid")); {
+		case errors.Is(err, projects.ErrContextNotFound):
+			openContext(w, r, hub)
+		case err != nil:
+			projectError(w, hub, err)
+		default:
+			writeJSON(w, 200, map[string]bool{"closed": true})
+		}
+	})
 	mux.HandleFunc("GET /api/v1/contexts/{cid}/resources", func(w http.ResponseWriter, r *http.Request) {
 		if c := contextOf(w, r); c != nil {
 			listResources(w, r, c.Snapshot())
@@ -257,6 +273,7 @@ func openContext(w http.ResponseWriter, r *http.Request, hub *projects.Hub) *pro
 			"profile_changed":   "The execution profile of this view was edited. Open the workspace again to use the current profile.",
 			"profile_removed":   "The execution profile of this view was deleted. Choose another profile.",
 			"scope_changed":     "The project, engine, execution profile, environment or backend of this workspace changed, so it was closed. Open the workspace again.",
+			"closed":            "This workspace view was closed. Open the workspace again.",
 		}[reason]
 		if message == "" {
 			message = "This workspace view is no longer open. Open the workspace again."
