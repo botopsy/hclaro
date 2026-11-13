@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"regexp"
@@ -75,7 +74,7 @@ func gitRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.M
 				return
 			}
 			if s, root, ok := resolve(w, r); ok {
-				ctx, cancel := context.WithTimeout(r.Context(), gitTimeout)
+				ctx, cancel := withDeadline(w, r, gitTimeout)
 				defer cancel()
 				writeJSON(w, 200, s.Status(ctx, root))
 			}
@@ -95,7 +94,7 @@ func gitRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.M
 			if !ok {
 				return
 			}
-			ctx, cancel := context.WithTimeout(r.Context(), gitTimeout)
+			ctx, cancel := withDeadline(w, r, gitTimeout)
 			defer cancel()
 			diff, err := s.Diff(ctx, root, body.FileID)
 			if err != nil {

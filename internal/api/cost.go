@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -78,7 +77,7 @@ func costRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), optInTimeout)
+		ctx, cancel := withDeadline(w, r, optInTimeout)
 		defer cancel()
 		caps, err := svc.OptIn(ctx, body.DisclosureVersion)
 		if err != nil {

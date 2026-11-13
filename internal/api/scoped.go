@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -134,7 +133,7 @@ func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		op, err := s.StartReviewedPlan(ctx, body.VarFiles, body.Replace, body.ContextFingerprint)
 		var rejected *operations.RejectError
@@ -209,7 +208,9 @@ func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		report, err := s.Preflight(r.Context(), r.PathValue("pid"), operations.PreflightRequest{VerifyIdentity: body.VerifyIdentity})
+		ctx, cancel := withDeadline(w, r, preflightTimeout)
+		defer cancel()
+		report, err := s.Preflight(ctx, r.PathValue("pid"), operations.PreflightRequest{VerifyIdentity: body.VerifyIdentity})
 		if err != nil {
 			scopedApplyError(w, r, hub, err)
 			return
@@ -245,7 +246,7 @@ func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		approval, err := s.Approve(ctx, r.PathValue("pid"), operations.ApprovalRequest{Binding: body.Binding, Acknowledged: body.Acknowledged})
 		if err != nil {
@@ -277,7 +278,7 @@ func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		op, err := s.StartApply(ctx, r.PathValue("pid"), body.Token, body.Confirmation)
 		if err != nil {

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"os"
@@ -155,7 +154,7 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), verifyTimeout)
+		ctx, cancel := withDeadline(w, r, verifyTimeout)
 		defer cancel()
 		identity, err := svc.Verify(ctx, pin, environ)
 		if err != nil {
@@ -270,7 +269,7 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), verifyTimeout)
+		ctx, cancel := withDeadline(w, r, verifyTimeout)
 		defer cancel()
 		prefill, err := svc.Prepare(ctx, id, cid, pin, environ, manager.Snapshot(), body.AcknowledgeUnknown)
 		if err != nil {
