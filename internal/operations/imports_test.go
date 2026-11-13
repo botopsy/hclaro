@@ -199,6 +199,23 @@ func TestImportRefusalsWriteNothingAndRunNothing(t *testing.T) {
 	}
 }
 
+// hashicorp/aws v5 records an RDS resource ID (db-…) as the id and the import ID as the
+// identifier; the collision check must compare the identifier.
+func TestImportRefusesAnRDSInstanceManagedUnderAWSv5(t *testing.T) {
+	fake := &engine.Fake{}
+	m, _ := importSetup(t, fake, map[string]string{"main.tf": `resource "aws_db_instance" "copy" {}` + "\n"})
+	fake.StateJSON = []byte(`{"format_version": "1.0", "values": {"root_module": {"resources": [{"address": "aws_db_instance.orders", "mode": "managed", "type": "aws_db_instance", "name": "orders", "provider_name": "registry.terraform.io/hashicorp/aws", "values": {"id": "db-ABCDEFGHIJKLMNOPQRSTUVWXYZ", "identifier": "orders"}, "sensitive_values": {}}]}}}`)
+	m.store.Load(context.Background(), fake, "terraform")
+	req := imports.Request{Address: "aws_db_instance.copy", ID: "orders", File: "imports.tf"}
+	p := m.PreviewImport(req)
+	if !p.Blocked || len(p.Issues) != 1 || p.Issues[0].Code != "id_in_state" || !strings.Contains(p.Issues[0].Message, "aws_db_instance.orders") {
+		t.Fatalf("%+v", p.Issues)
+	}
+	if _, err := m.StartImport(ImportRequest{Request: req, PreviewSHA256: p.SHA256}); rejected(err) != "import_blocked" {
+		t.Fatal(err)
+	}
+}
+
 func TestImportUnavailableWithoutLocalPlanning(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State

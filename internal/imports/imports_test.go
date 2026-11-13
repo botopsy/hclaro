@@ -185,6 +185,69 @@ func TestCheckCollisionsAndConfiguration(t *testing.T) {
 	}
 }
 
+func TestCheckFindsImportAndMovedBlocksInJSON(t *testing.T) {
+	for name, content := range map[string]string{
+		"object.tf.json":  `{"import": {"to": "aws_s3_bucket.legacy_logs", "id": "x"}}`,
+		"array.tf.json":   `{"import": [{"to": "aws_s3_bucket.other", "id": "y"}, {"to": "aws_s3_bucket.legacy_logs", "id": "x"}]}`,
+		"moved.tofu.json": `{"moved": [{"from": "aws_s3_bucket.old", "to": "aws_s3_bucket.legacy_logs"}]}`,
+	} {
+		root := project(t, map[string]string{"main.tf": mainTF, name: content})
+		p := Check(env(t, root), Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"})
+		if codes(p) != "error:import_exists" || !strings.Contains(p.Issues[0].Message, name) {
+			t.Errorf("%s: %q %+v", name, codes(p), p.Issues)
+		}
+	}
+	// Blocks targeting other addresses do not collide.
+	root := project(t, map[string]string{"main.tf": mainTF, "other.tf.json": `{"import": [{"to": "aws_s3_bucket.other", "id": "y"}], "resource": {}}`})
+	if p := Check(env(t, root), Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"}); p.Blocked {
+		t.Errorf("%+v", p.Issues)
+	}
+}
+
+func TestCheckFailsClosedOnUnreadableConfiguration(t *testing.T) {
+	req := Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"}
+	for name, content := range map[string]string{
+		"broken.tf.json": `{"import": [{"to": "aws_s3_bucket.legacy_logs"`,
+		"shape.tf.json":  `{"import": "aws_s3_bucket.legacy_logs"}`,
+	} {
+		root := project(t, map[string]string{"main.tf": mainTF, name: content})
+		if p := Check(env(t, root), req); !p.Blocked || !strings.Contains(codes(p), "error:config_unreadable") {
+			t.Errorf("%s: %q", name, codes(p))
+		}
+	}
+	// A resource block that does not decode is not reported as found.
+	root := project(t, map[string]string{"res.tf.json": `{"resource": {"aws_s3_bucket": {"json_only": "not a block"}}}`})
+	if p := Check(env(t, root), Request{Address: "aws_s3_bucket.json_only", ID: "x-1", File: "imports.tf"}); codes(p) != "warning:config_unverified" || p.Config != "unknown" {
+		t.Errorf("resource shape: %q %s", codes(p), p.Config)
+	}
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		return
+	}
+	root = project(t, map[string]string{"main.tf": mainTF, "locked.tf": "import {\n  to = aws_s3_bucket.legacy_logs\n}\n"})
+	if err := os.Chmod(filepath.Join(root, "locked.tf"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if p := Check(env(t, root), req); !p.Blocked || !strings.Contains(codes(p), "error:config_unreadable") {
+		t.Errorf("unreadable .tf: %q", codes(p))
+	}
+}
+
+func TestCheckUsesStateIDsOfTheType(t *testing.T) {
+	root := project(t, map[string]string{"main.tf": mainTF})
+	e := env(t, root)
+	e.Index = state.Index{Resources: []state.Resource{{Address: "aws_s3_bucket.artifacts", Mode: "managed", Type: "aws_s3_bucket", Attributes: map[string]any{"id": "internal-1", "bucket": "hclaro-legacy-logs"}}}}
+	req := Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"}
+	if p := Check(e, req); p.Blocked {
+		t.Fatalf("without StateIDs only id is compared: %q", codes(p))
+	}
+	e.StateIDs = func(typ string, attrs map[string]any) ([]string, bool) {
+		return []string{attrs["bucket"].(string)}, typ == "aws_s3_bucket"
+	}
+	if p := Check(e, req); codes(p) != "error:id_in_state" || !strings.Contains(p.Issues[0].Message, "aws_s3_bucket.artifacts") {
+		t.Fatalf("%q %+v", codes(p), p.Issues)
+	}
+}
+
 func TestCheckModuleConfiguration(t *testing.T) {
 	root := project(t, map[string]string{
 		"main.tf":                         `module "network" { source = "./modules/network" }`,

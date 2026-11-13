@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"hclaro/internal/discovery"
 	"hclaro/internal/imports"
 	"hclaro/internal/plan"
 	"hclaro/internal/workspace"
@@ -46,7 +47,7 @@ func (m *Manager) importEnv(snap workspace.Snapshot) imports.Env {
 	if snap.Diagnostic != nil && snap.Diagnostic.Code == "state_absent" {
 		status = "empty"
 	}
-	return imports.Env{Root: m.root, DataDir: data, Engine: snap.Info.Engine, Snapshot: status, Index: snap.Index, SupportsGenerate: snap.Info.Capabilities.SupportsGeneratedConfig}
+	return imports.Env{Root: m.root, DataDir: data, Engine: snap.Info.Engine, Snapshot: status, Index: snap.Index, SupportsGenerate: snap.Info.Capabilities.SupportsGeneratedConfig, StateIDs: discovery.StateIDs}
 }
 
 // PreviewImport checks a request against the current snapshot and configuration. It

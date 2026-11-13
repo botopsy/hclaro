@@ -1,9 +1,6 @@
 package discovery
 
 import (
-	"slices"
-	"strings"
-
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
 )
@@ -75,23 +72,12 @@ func indexState(snap workspace.Snapshot) bindingIndex {
 		if r.Mode != "managed" {
 			continue
 		}
-		t, ok := TypeByName(r.Type)
+		attrs, _ := r.Attributes.(map[string]any)
+		ids, ok := StateIDs(r.Type, attrs)
 		if !ok {
 			continue
 		}
-		attrs, _ := r.Attributes.(map[string]any)
-		b := stateBinding{address: r.Address, resourceID: r.ID, arn: stringAttr(attrs, "arn")}
-		keys := t.StateKeys
-		// hashicorp/aws v4 used the identifier as the ID of aws_db_instance (v5 uses the
-		// resource ID, db-…, which is not an import ID).
-		if r.Type == "aws_db_instance" {
-			keys = append(slices.Clone(keys), "id")
-		}
-		for _, key := range keys {
-			if v := stringAttr(attrs, key); v != "" && t.idShape.MatchString(v) && !(key == "id" && r.Type == "aws_db_instance" && strings.HasPrefix(v, "db-")) {
-				b.ids = append(b.ids, v)
-			}
-		}
+		b := stateBinding{address: r.Address, resourceID: r.ID, arn: stringAttr(attrs, "arn"), ids: ids}
 		if b.arn != "" && !arnShape.MatchString(b.arn) {
 			b.arn = ""
 		}

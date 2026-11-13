@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"hclaro/internal/state"
@@ -63,6 +64,9 @@ type Env struct {
 	Snapshot         string
 	Index            state.Index
 	SupportsGenerate bool
+	// StateIDs returns the import IDs a state instance records for types it knows (the
+	// discovery catalog; that package imports this one), compared besides the id.
+	StateIDs func(typ string, attrs map[string]any) ([]string, bool)
 }
 
 const (
@@ -125,7 +129,7 @@ func Check(env Env, req Request) (p Preview) {
 				if r.Mode != "managed" || r.Type != address.Type {
 					continue
 				}
-				if attrs, ok := r.Attributes.(map[string]any); ok && attrs["id"] == req.ID {
+				if slices.Contains(env.stateIDs(r), req.ID) {
 					fail("id_in_state", fmt.Sprintf("An object with this ID is already managed as %s. Importing it again would let two addresses manage one object.", r.Address))
 					break
 				}
@@ -174,7 +178,9 @@ func Check(env Env, req Request) (p Preview) {
 			fail("file_exists", fmt.Sprintf("%s already exists. The engine refuses to overwrite it, and so does Hclaro; choose another file name.", p.GeneratedFile))
 		}
 	}
-	if existing := importTargets(env.Root, p.Address); existing != "" {
+	if existing, err := importTargets(env.Root, p.Address); err != nil {
+		fail("config_unreadable", "The root module configuration could not be read completely, so Hclaro cannot rule out an existing import or moved block for this address. Check file permissions and syntax first.")
+	} else if existing != "" {
 		fail("import_exists", fmt.Sprintf("%s already contains an import or moved block targeting %s. Review that block instead of adding another.", existing, p.Address))
 	}
 
@@ -184,6 +190,20 @@ func Check(env Env, req Request) (p Preview) {
 		p.Recipe = recipe(env.Engine, address, req.ID, req.Provider, req.File, p.GeneratedFile)
 	}
 	return p
+}
+
+func (env Env) stateIDs(r state.Resource) []string {
+	attrs, _ := r.Attributes.(map[string]any)
+	var ids []string
+	// An exact id match is always a collision, even in a shape the catalog does not compare.
+	if id, _ := attrs["id"].(string); id != "" {
+		ids = append(ids, id)
+	}
+	if env.StateIDs != nil {
+		more, _ := env.StateIDs(r.Type, attrs)
+		ids = append(ids, more...)
+	}
+	return ids
 }
 
 // Digest binds a preview to its destination files and exact content.
@@ -327,7 +347,11 @@ func findResource(dir string, a Address) (*resourceBlock, error) {
 			return nil, err
 		}
 		if strings.HasSuffix(name, ".json") {
-			if block := jsonResource(b, a); block != nil {
+			block, err := jsonResource(b, a)
+			if err != nil {
+				return nil, err
+			}
+			if block != nil {
 				block.file = name
 				return block, nil
 			}
@@ -402,24 +426,30 @@ func metaArguments(body []byte) (count, forEach bool) {
 	return count, forEach
 }
 
-func jsonResource(b []byte, a Address) *resourceBlock {
+// jsonBlocks decodes a JSON block body, which is one object or an array of objects.
+func jsonBlocks(raw json.RawMessage) ([]map[string]json.RawMessage, error) {
+	if bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
+		var bodies []map[string]json.RawMessage
+		return bodies, json.Unmarshal(raw, &bodies)
+	}
+	var body map[string]json.RawMessage
+	return []map[string]json.RawMessage{body}, json.Unmarshal(raw, &body)
+}
+
+func jsonResource(b []byte, a Address) (*resourceBlock, error) {
 	var doc struct {
 		Resource map[string]map[string]json.RawMessage `json:"resource"`
 	}
-	if json.Unmarshal(b, &doc) != nil {
-		return nil
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return nil, err
 	}
 	raw, ok := doc.Resource[a.Type][a.Name]
 	if !ok {
-		return nil
+		return nil, nil
 	}
-	var bodies []map[string]json.RawMessage
-	if bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
-		_ = json.Unmarshal(raw, &bodies)
-	} else {
-		var body map[string]json.RawMessage
-		_ = json.Unmarshal(raw, &body)
-		bodies = append(bodies, body)
+	bodies, err := jsonBlocks(raw)
+	if err != nil {
+		return nil, err
 	}
 	block := &resourceBlock{}
 	for _, body := range bodies {
@@ -428,7 +458,7 @@ func jsonResource(b []byte, a Address) *resourceBlock {
 		block.count = block.count || c
 		block.forEach = block.forEach || f
 	}
-	return block
+	return block, nil
 }
 
 // keyIssues compares the instance key with the block's count/for_each. These are warnings:
@@ -454,27 +484,63 @@ func keyIssues(a Address, block *resourceBlock, warn func(code, message string))
 var targetLine = regexp.MustCompile(`(?m)^[ \t]*to[ \t]*=[ \t]*([^\s#]+)`)
 
 // importTargets returns the first root module file whose import or moved blocks target
-// address. Import blocks are only valid in the root module.
-func importTargets(root, address string) string {
+// address. Import blocks are only valid in the root module. A file that cannot be read or
+// decoded is an error: it may hold such a block.
+func importTargets(root, address string) (string, error) {
 	names, err := configFiles(root)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	for _, name := range names {
-		if strings.HasSuffix(name, ".json") {
-			continue
-		}
 		b, err := readBounded(filepath.Join(root, name), maxConfigFile)
 		if err != nil {
+			return "", err
+		}
+		if strings.HasSuffix(name, ".json") {
+			found, err := jsonTargets(b, address)
+			if err != nil {
+				return "", err
+			}
+			if found {
+				return name, nil
+			}
 			continue
 		}
 		for _, m := range targetLine.FindAllSubmatch(b, -1) {
 			if string(m[1]) == address {
-				return name
+				return name, nil
 			}
 		}
 	}
-	return ""
+	return "", nil
+}
+
+// jsonTargets reports whether a JSON configuration file has an import or moved block whose
+// "to" is address.
+func jsonTargets(b []byte, address string) (bool, error) {
+	var doc struct {
+		Import json.RawMessage `json:"import"`
+		Moved  json.RawMessage `json:"moved"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return false, err
+	}
+	for _, raw := range []json.RawMessage{doc.Import, doc.Moved} {
+		if raw == nil {
+			continue
+		}
+		bodies, err := jsonBlocks(raw)
+		if err != nil {
+			return false, err
+		}
+		for _, body := range bodies {
+			var to string
+			if json.Unmarshal(body["to"], &to) == nil && strings.TrimSpace(to) == address {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // shellQuote quotes s for POSIX shells. Recipes are shown for copying, never executed.
