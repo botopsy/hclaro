@@ -162,7 +162,7 @@ func phrase(p *Plan) string {
 }
 
 // retainLocked records a new plan's artifact, superseding any previous one. Caller holds mu.
-func (m *Manager) retainLocked(p *Plan, kept *artifact) {
+func (m *Manager) retainLocked(p *Plan, kept *artifact, leftover bool) {
 	if kept == nil {
 		snap := m.store.Get()
 		switch reason := ineligible(p); {
@@ -172,6 +172,9 @@ func (m *Manager) retainLocked(p *Plan, kept *artifact) {
 			m.notes[p.ID] = snap.Info.Capabilities.ApplyReason
 		default:
 			m.notes[p.ID] = "The saved plan file was not kept, so this plan cannot be applied."
+		}
+		if leftover {
+			m.notes[p.ID] += " " + leftNote
 		}
 		return
 	}

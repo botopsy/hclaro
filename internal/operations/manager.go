@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -478,7 +479,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 			}
 			m.plans = m.plans[len(m.plans)-maxPlans:]
 		}
-		m.retainLocked(result, kept)
+		m.retainLocked(result, kept, e.artifactLeft)
 	case code == "cancelled" || code == "shutdown":
 		o.Status = Cancelled
 	default:
@@ -630,7 +631,9 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	zero := 0
 	m.stage(e, "Reading plan")
 	if err := os.Chmod(out, 0o600); err != nil {
-		e.log.Append("error", "Hclaro could not restrict access to the saved plan file, so it was not read.")
+		if !errors.Is(err, fs.ErrNotExist) {
+			e.log.Append("error", "Hclaro could not restrict access to the saved plan file, so it was not read.")
+		}
 		return nil, nil, "plan_read", &zero
 	}
 	digest, err := sha256File(out)

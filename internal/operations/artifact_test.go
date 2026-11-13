@@ -15,12 +15,17 @@ import (
 	"hclaro/internal/workspace"
 )
 
-// readOnly makes dir undeletable until the test ends: its files cannot be unlinked.
-func readOnly(t *testing.T, dir string) {
+func skipUnenforcedPermissions(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("directory permissions are not enforced here")
 	}
+}
+
+// readOnly makes dir undeletable until the test ends: its files cannot be unlinked. Callers
+// skip first (skipUnenforcedPermissions).
+func readOnly(t *testing.T, dir string) {
+	t.Helper()
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -28,15 +33,23 @@ func readOnly(t *testing.T, dir string) {
 }
 
 // lockingPlanner makes the saved plan's folder read-only when the plan is read back, so the
-// cleanup that follows fails.
-type lockingPlanner struct {
-	*engine.Fake
-	t *testing.T
-}
+// cleanup that follows fails. It runs on the operation's goroutine: the test skips and
+// restores (restoreTemp) itself.
+type lockingPlanner struct{ *engine.Fake }
 
 func (p lockingPlanner) ShowPlan(ctx context.Context, path string) ([]byte, error) {
-	readOnly(p.t, filepath.Dir(path))
+	_ = os.Chmod(filepath.Dir(path), 0o500)
 	return p.Fake.ShowPlan(ctx, path)
+}
+
+// restoreTemp makes the manager's plan folders deletable again when the test ends.
+func restoreTemp(t *testing.T, m *Manager) {
+	t.Cleanup(func() {
+		entries, _ := os.ReadDir(m.TempDir)
+		for _, e := range entries {
+			_ = os.Chmod(filepath.Join(m.TempDir, e.Name()), 0o700)
+		}
+	})
 }
 
 func assertReportedLeft(t *testing.T, terminal *bytes.Buffer, texts ...string) {
@@ -52,6 +65,7 @@ func assertReportedLeft(t *testing.T, terminal *bytes.Buffer, texts ...string) {
 }
 
 func TestFailedApplyCleanupIsNotReportedAsDeleted(t *testing.T) {
+	skipUnenforcedPermissions(t)
 	m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 	var terminal bytes.Buffer
 	m.Terminal = &terminal
@@ -76,14 +90,16 @@ func TestFailedApplyCleanupIsNotReportedAsDeleted(t *testing.T) {
 }
 
 func TestFailedApplyRefusalCleanupIsNotReportedAsDeleted(t *testing.T) {
+	skipUnenforcedPermissions(t)
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	var terminal bytes.Buffer
 	m.Terminal = &terminal
 	id := planned(t, m)
 	m.mu.Lock()
-	readOnly(t, m.artifact.dir)
+	dir := m.artifact.dir
 	m.mu.Unlock()
+	readOnly(t, dir)
 	// The workspace changes after approval: the run refuses before the engine applies.
 	fake.SetWorkspace("prod")
 	done := wait(t, m, approveAndApply(t, m, id).ID)
@@ -94,11 +110,13 @@ func TestFailedApplyRefusalCleanupIsNotReportedAsDeleted(t *testing.T) {
 }
 
 func TestFailedPlanCleanupIsNotReportedAsDeleted(t *testing.T) {
+	skipUnenforcedPermissions(t)
 	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
 	m, _ := setup(t, fake, workspace.Info{})
+	restoreTemp(t, m)
 	var terminal bytes.Buffer
 	m.Terminal = &terminal
-	m.planner = lockingPlanner{fake, t}
+	m.planner = lockingPlanner{fake}
 	op, err := m.StartPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -107,15 +125,19 @@ func TestFailedPlanCleanupIsNotReportedAsDeleted(t *testing.T) {
 	if done.Status != Succeeded {
 		t.Fatalf("%+v", done)
 	}
-	assertReportedLeft(t, &terminal, logText(t, m, done.ID))
+	p, _ := m.Plan(done.PlanID)
+	_, status := m.ContextStatus(p)
+	assertReportedLeft(t, &terminal, logText(t, m, done.ID), status.Reason)
 }
 
 func TestFailedDriftCleanupIsNotReportedAsDeleted(t *testing.T) {
+	skipUnenforcedPermissions(t)
 	fake := &engine.Fake{PlanJSON: fixtures.DriftMixed}
 	m, _ := setup(t, fake, workspace.Info{})
+	restoreTemp(t, m)
 	var terminal bytes.Buffer
 	m.Terminal = &terminal
-	m.planner = lockingPlanner{fake, t}
+	m.planner = lockingPlanner{fake}
 	op, _ := scanAndWait(t, m, DriftStart{})
 	assertReportedLeft(t, &terminal, logText(t, m, op.ID))
 }
