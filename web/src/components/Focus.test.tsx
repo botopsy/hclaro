@@ -28,7 +28,29 @@ function Harness() {
   </>;
 }
 
+// A parent that re-renders with fresh props, like the views behind the apply dialog while operations poll.
+function PollingParent({ tick }: { tick: number }) {
+  const [open, setOpen] = useState(true);
+  return <>
+   <button>Poll {tick}</button>
+   {open && <Modal onClose={() => setOpen(false)} />}
+  </>;
+}
+
 describe('keyboard focus', () => {
+  it('keeps focus and typed text in a dialog input when the parent re-renders', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<PollingParent tick={0} />);
+    await user.type(screen.getByLabelText('Notes'), 'apply');
+    rerender(<PollingParent tick={1} />);
+    expect(screen.getByRole('button', { name: 'Poll 1' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Notes')).toHaveFocus();
+    await user.type(screen.getByLabelText('Notes'), ' now');
+    expect(screen.getByLabelText('Notes')).toHaveValue('apply now');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('keeps Tab inside a dialog across every focusable control and restores focus on Escape', async () => {
     const user = userEvent.setup();
     render(<Harness />);
