@@ -69,6 +69,16 @@ describe('Operation history', () => {
     expect(mutations()).toHaveLength(0);
   });
 
+  it('labels an operation kind it does not know as possibly changing infrastructure', async () => {
+    const unknown = { ...plan, kind: 'unknown', plan: undefined, outcome: { result: 'unknown', summary: 'May have changed infrastructure.', verified: false } } as HistoryEntry;
+    serve(url => url.includes('/api/v1/history?') ? Response.json({ ...page, entries: [unknown], total: 1 }) : undefined);
+    view();
+    const row = within(await screen.findByRole('table')).getAllByRole('row')[1];
+    expect(within(row).getByText('Unknown operation')).toBeInTheDocument();
+    expect(within(row).getByText('Unknown · may be changed')).toBeInTheDocument();
+    expect(within(row).queryByText(/Plan/)).toBeNull();
+  });
+
   it('sends filters to the server and resets them', async () => {
     const user = userEvent.setup();
     view();

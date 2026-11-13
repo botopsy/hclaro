@@ -126,7 +126,7 @@ func kind(op operations.Operation, p *operations.Plan) string {
 	switch op.Kind {
 	case "plan":
 		switch {
-		case p != nil && slices.Contains(Kinds, p.Kind):
+		case p != nil && slices.Contains([]string{"plan", "replace", "import"}, p.Kind):
 			return p.Kind
 		case op.Import != nil:
 			return "import"
@@ -137,7 +137,7 @@ func kind(op operations.Operation, p *operations.Plan) string {
 	case "apply", "drift", "graph", "init", "workspace", "tool":
 		return op.Kind
 	}
-	return "plan"
+	return KindUnknown
 }
 
 // convert turns an operation record into a history entry. It copies only metadata that the
@@ -328,13 +328,14 @@ func outcome(e HistoryEntry, op operations.Operation, r operations.Record) Outco
 		}
 		return Outcome{Result: "not_completed", Summary: "The project tool did not finish. It does not change infrastructure."}
 	}
-	return Outcome{Result: "unknown", Summary: "The outcome is unknown."}
+	return Outcome{Result: "unknown", Summary: "This version of Hclaro does not know this kind of operation. It may have changed infrastructure or state; check state with your CLI and run a new plan."}
 }
 
 // scrubEntry applies clean to every string of an entry read from disk, so a hand-edited
 // file cannot bring a secret-shaped value into the API.
 func scrubEntry(e HistoryEntry) HistoryEntry {
-	e.Kind, e.Action, e.Engine = word(e.Kind), word(e.Action), word(e.Engine)
+	// An unrecognised kind is kept, marked unknown, rather than dropped or shown as given.
+	e.Kind, e.Action, e.Engine = kindOf(e.Kind).Kind, word(e.Action), word(e.Engine)
 	if !versionRe.MatchString(e.EngineVersion) {
 		e.EngineVersion = ""
 	}
