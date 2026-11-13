@@ -127,6 +127,8 @@ export type Operation = {
   stateReloaded: boolean;
   // Applies only: the apply ran, but reading state again afterwards failed.
   stateReloadFailed?: boolean;
+  // Applies only: the saved plan file could not be deleted afterwards; the terminal names it.
+  planFileLeft?: boolean;
   diagnostic?: {
     code: string;
     message: string;

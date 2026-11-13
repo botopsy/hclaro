@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -74,12 +75,14 @@ type Operation struct {
 	Outcome       string `json:"outcome,omitempty"`
 	StateReloaded bool   `json:"stateReloaded"`
 	// StateReloadFailed is set when an apply ran but reading state again afterwards failed.
-	StateReloadFailed bool               `json:"stateReloadFailed,omitempty"`
-	Diagnostic        *Diagnostic        `json:"diagnostic,omitempty"`
-	Diagnostics       []EngineDiagnostic `json:"engineDiagnostics"`
-	CancelRequested   bool               `json:"cancelRequested"`
-	LogDropped        int64              `json:"logDropped"`
-	LogRetained       bool               `json:"logRetained"`
+	StateReloadFailed bool `json:"stateReloadFailed,omitempty"`
+	// PlanFileLeft is set when an apply could not delete its saved plan file afterwards.
+	PlanFileLeft    bool               `json:"planFileLeft,omitempty"`
+	Diagnostic      *Diagnostic        `json:"diagnostic,omitempty"`
+	Diagnostics     []EngineDiagnostic `json:"engineDiagnostics"`
+	CancelRequested bool               `json:"cancelRequested"`
+	LogDropped      int64              `json:"logDropped"`
+	LogRetained     bool               `json:"logRetained"`
 	// ProjectID, Notices and LockfileChanged are set for Hub initializations. Notices disclose
 	// inherited settings that were ignored; LockfileChanged is set once the engine has run.
 	ProjectID       string   `json:"projectId,omitempty"`
@@ -146,6 +149,8 @@ type entry struct {
 	// Hclaro's environment. It is never serialized.
 	environ []string
 	meta    recordMeta
+	// artifactLeft is set when a plan or scan could not delete its saved plan file.
+	artifactLeft bool
 }
 
 type Manager struct {
@@ -155,6 +160,10 @@ type Manager struct {
 	applier engine.Applier
 	root    string
 	TempDir string
+	// Terminal receives the folder of a saved plan file Hclaro could not delete. Nil in tests.
+	Terminal io.Writer
+	// chmod makes saved plan folders and files private; tests replace it to make it fail.
+	chmod   func(string, fs.FileMode) error
 	Timeout time.Duration
 	// ApplyTimeout bounds an apply; PlanMaxAge bounds how long a saved plan stays
 	// applicable; ApprovalTTL bounds how long a confirmation token is valid.
@@ -230,7 +239,7 @@ const (
 func NewManager(store *workspace.Store, planner engine.Planner, root string) *Manager {
 	base, stop := context.WithCancel(context.Background())
 	applier, _ := planner.(engine.Applier)
-	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, Locks: rootlock.New()}
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, Locks: rootlock.New(), chmod: os.Chmod}
 }
 
 func newID() string {
@@ -472,7 +481,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 			}
 			m.plans = m.plans[len(m.plans)-maxPlans:]
 		}
-		m.retainLocked(result, kept)
+		m.retainLocked(result, kept, e.artifactLeft)
 	case code == "cancelled" || code == "shutdown":
 		o.Status = Cancelled
 	default:
@@ -498,7 +507,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 	switch {
 	case result != nil:
 		e.log.Append("info", fmt.Sprintf("Plan ready for review: %d resource change(s), %d output change(s).", len(result.Changes), len(result.Outputs)))
-		if kept == nil {
+		if kept == nil && !e.artifactLeft {
 			e.log.Append("info", "The saved plan file was deleted after review data was extracted; this plan cannot be applied.")
 		}
 	case code != "":
@@ -547,17 +556,16 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	if name != snap.Info.Workspace {
 		return nil, nil, "workspace_changed", nil
 	}
-	dir, err := os.MkdirTemp(m.TempDir, "hclaro-plan-")
+	dir, err := m.newArtifactDir(planDirPrefix)
 	if err != nil {
 		return nil, nil, "plan_failed", nil
 	}
 	defer func() {
-		if kept == nil {
-			_ = os.RemoveAll(dir)
+		if kept == nil && !m.removeArtifactDir(dir) {
+			e.artifactLeft = true
+			e.log.Append("error", leftNote)
 		}
 	}()
-	// MkdirTemp creates 0700 directories; enforce it in case of an unusual umask policy.
-	_ = os.Chmod(dir, 0o700)
 	out := filepath.Join(dir, "plan.tfplan")
 	// Taken before the engine runs, so edits made while planning count as a context change.
 	// An engine-generated import configuration file is excluded here and checked below.
@@ -624,7 +632,12 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	}
 	zero := 0
 	m.stage(e, "Reading plan")
-	_ = os.Chmod(out, 0o600)
+	if err := m.chmod(out, 0o600); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			e.log.Append("error", "Hclaro could not restrict access to the saved plan file, so it was not read.")
+		}
+		return nil, nil, "plan_read", &zero
+	}
 	digest, err := sha256File(out)
 	if err != nil {
 		return nil, nil, "plan_read", &zero
@@ -911,6 +924,13 @@ func (m *Manager) Close(wait time.Duration) {
 	case <-time.After(wait):
 	}
 	m.mu.Lock()
-	m.releaseLocked("Hclaro stopped and deleted the saved plan.")
-	m.mu.Unlock()
+	defer m.mu.Unlock()
+	if a := m.artifact; a != nil && a.applying {
+		// The engine may still read the file; the apply deletes it when the engine returns.
+		if m.Terminal != nil {
+			fmt.Fprintf(m.Terminal, "An apply was still running when Hclaro stopped, so its saved plan was not deleted. If %s still exists after the engine exits, delete it yourself.\n", a.dir)
+		}
+		return
+	}
+	m.releaseLocked("Hclaro stopped.")
 }

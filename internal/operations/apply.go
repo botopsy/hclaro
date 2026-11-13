@@ -162,7 +162,7 @@ func phrase(p *Plan) string {
 }
 
 // retainLocked records a new plan's artifact, superseding any previous one. Caller holds mu.
-func (m *Manager) retainLocked(p *Plan, kept *artifact) {
+func (m *Manager) retainLocked(p *Plan, kept *artifact, leftover bool) {
 	if kept == nil {
 		snap := m.store.Get()
 		switch reason := ineligible(p); {
@@ -173,12 +173,14 @@ func (m *Manager) retainLocked(p *Plan, kept *artifact) {
 		default:
 			m.notes[p.ID] = "The saved plan file was not kept, so this plan cannot be applied."
 		}
+		if leftover {
+			m.notes[p.ID] += " " + leftNote
+		}
 		return
 	}
 	m.releaseLocked("A newer plan replaced this one. Only the most recent applicable plan is kept.")
 	if m.closed {
-		_ = os.RemoveAll(kept.dir)
-		m.notes[p.ID] = "Hclaro stopped and deleted the saved plan."
+		m.notes[p.ID] = "Hclaro stopped. " + deletedNote(m.removeArtifactDir(kept.dir))
 		return
 	}
 	m.artifact = kept
@@ -186,23 +188,64 @@ func (m *Manager) retainLocked(p *Plan, kept *artifact) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if m.artifact == kept && !kept.applying {
-			m.releaseLocked(expiredReason(m.PlanMaxAge) + " Its saved file was deleted.")
+			m.releaseLocked(expiredReason(m.PlanMaxAge))
 		}
 	})
 }
 
-// releaseLocked deletes the retained artifact and records why. Caller holds mu.
-func (m *Manager) releaseLocked(note string) {
+// releaseLocked deletes the retained artifact and records why, followed by whether the file
+// was deleted. The plan is never applicable again either way. Caller holds mu.
+func (m *Manager) releaseLocked(reason string) (deleted bool) {
 	a := m.artifact
 	if a == nil {
-		return
+		return true
 	}
 	if a.timer != nil {
 		a.timer.Stop()
 	}
-	_ = os.RemoveAll(a.dir)
+	deleted = m.removeArtifactDir(a.dir)
 	m.artifact = nil
-	m.notes[a.planID] = note
+	m.notes[a.planID] = reason + " " + deletedNote(deleted)
+	return deleted
+}
+
+// Saved plan files hold plaintext secrets. They live in private directories named with these
+// prefixes, which SweepStale uses to find the ones a killed Hclaro left behind.
+const planDirPrefix, driftDirPrefix = "hclaro-plan-", "hclaro-drift-"
+
+// leftNote replaces "deleted" wherever a saved plan file could not be removed. The folder is
+// named only on the terminal: notes and logs avoid absolute temp paths (PRD S-04).
+const leftNote = "Hclaro could not delete the saved plan file, which holds values in plaintext. The terminal running Hclaro names its folder; delete it yourself."
+
+func deletedNote(deleted bool) string {
+	if deleted {
+		return "The saved plan file was deleted."
+	}
+	return leftNote
+}
+
+// newArtifactDir creates a private 0700 directory for a saved plan file.
+func (m *Manager) newArtifactDir(prefix string) (string, error) {
+	dir, err := os.MkdirTemp(m.TempDir, prefix)
+	if err != nil {
+		return "", err
+	}
+	// MkdirTemp creates 0700 directories; enforce it in case of an unusual umask policy.
+	if err := m.chmod(dir, 0o700); err != nil {
+		m.removeArtifactDir(dir)
+		return "", err
+	}
+	return dir, nil
+}
+
+// removeArtifactDir deletes a saved plan directory and reports whether it is gone. A failure
+// is printed on the terminal with the folder, for the user to delete.
+func (m *Manager) removeArtifactDir(dir string) bool {
+	err := os.RemoveAll(dir)
+	if err != nil && m.Terminal != nil {
+		fmt.Fprintf(m.Terminal, "Hclaro could not delete a saved plan folder, which holds values in plaintext: %v\nDelete %s yourself.\n", err, dir)
+	}
+	return err == nil
 }
 
 // ApplyStatus reports whether p can be applied now. currentFingerprint is the context
@@ -394,8 +437,8 @@ var applyMessages = map[string]string{
 	"applied":                  "Apply finished. The state view was reloaded from the engine.",
 	"workspace_changed":        "The active workspace no longer matches this plan. Nothing was applied.",
 	"workspace_error":          "The active workspace could not be confirmed. Nothing was applied.",
-	"artifact_changed":         "The saved plan file changed after review. Nothing was applied, and the file was deleted.",
-	"unknown_actions":          "The plan contains an action combination Hclaro does not support. Nothing was applied, and the saved file was deleted.",
+	"artifact_changed":         "The saved plan file changed after review. Nothing was applied.",
+	"unknown_actions":          "The plan contains an action combination Hclaro does not support. Nothing was applied.",
 	"unsafe_cli_args":          "Inherited TF_CLI_ARGS or TF_CLI_ARGS_apply contains flags other than -no-color. Nothing was applied. Values were not logged.",
 	"stale_plan":               "The engine refused the saved plan because state changed after it was created. Nothing was applied. Run a new plan and review it again.",
 	"state_locked":             "The state is locked by another operation, so the engine did not apply. Hclaro never force-unlocks state.",
@@ -407,9 +450,9 @@ var applyMessages = map[string]string{
 	"apply_cancelled":          "The apply was interrupted. Infrastructure may be partly changed: resources being created or destroyed when it stopped can be incomplete. Review the reloaded state and run a new plan. If the engine had to be stopped forcefully, a state lock may remain.",
 	"apply_timeout":            "The apply exceeded its time limit and was stopped. Infrastructure may be partly changed. Review the reloaded state and run a new plan.",
 	"shutdown":                 "Hclaro stopped while the apply was running. Infrastructure may be partly changed. Check state with your CLI.",
-	"scope_changed":            scopeChangedMessage + " Nothing was applied, and the saved file was deleted.",
-	"configuration_unreadable": "Hclaro could not read the configuration right before applying, so it cannot confirm the plan is current. Nothing was applied, and the saved file was deleted. The log names the file or limit.",
-	"context_changed":          "Configuration, variable files, the lock file, the execution profile or the planning environment changed after this plan was approved. Nothing was applied, and the saved file was deleted. Run a new plan.",
+	"scope_changed":            scopeChangedMessage + " Nothing was applied.",
+	"configuration_unreadable": "Hclaro could not read the configuration right before applying, so it cannot confirm the plan is current. Nothing was applied. The log names the file or limit.",
+	"context_changed":          "Configuration, variable files, the lock file, the execution profile or the planning environment changed after this plan was approved. Nothing was applied. Run a new plan.",
 }
 
 func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
@@ -420,15 +463,16 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	// A saved plan is applied at most once: the file is deleted whatever the result.
 	note := "This plan was applied. A saved plan can only be applied once."
 	if code != "applied" {
-		note = "An apply of this plan was attempted. The saved file was deleted; run a new plan."
+		note = "An apply of this plan was attempted. Run a new plan."
 	}
 	if !started {
-		note = "The apply was refused before the engine ran, and the saved file was deleted. Run a new plan."
+		note = "The apply was refused before the engine ran. Run a new plan."
 	}
+	var deleted bool
 	if m.artifact == a {
-		m.releaseLocked(note)
+		deleted = m.releaseLocked(note)
 	} else {
-		_ = os.RemoveAll(a.dir)
+		deleted = m.removeArtifactDir(a.dir)
 	}
 	m.mu.Unlock()
 	reloaded, reloadFailure := false, ""
@@ -455,6 +499,7 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	o.Stage = "Finished"
 	o.StateReloaded = reloaded
 	o.StateReloadFailed = reloadFailure != ""
+	o.PlanFileLeft = !deleted
 	switch {
 	case code == "applied":
 		o.Status = Succeeded
@@ -481,6 +526,7 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 		message += credentialHint(e)
 	}
 	if code != "applied" {
+		message += " " + deletedNote(deleted)
 		o.Diagnostic = &Diagnostic{Code: code, Message: message}
 	}
 	o.LogDropped = e.log.Dropped()
@@ -492,6 +538,9 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 		level = "error"
 	}
 	e.log.Append(level, message)
+	if code == "applied" && !deleted {
+		e.log.Append("error", leftNote)
+	}
 	if reloadFailure != "" {
 		e.log.Append("warn", reloadFailure)
 	}
@@ -630,14 +679,15 @@ func (m *Manager) SweepStale(now time.Time) int {
 	removed := 0
 	for _, e := range entries {
 		// ReadDir does not follow symlinks, so a link named like a plan directory is skipped.
-		if !e.IsDir() || !strings.HasPrefix(e.Name(), "hclaro-plan-") && !strings.HasPrefix(e.Name(), "hclaro-drift-") {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), planDirPrefix) && !strings.HasPrefix(e.Name(), driftDirPrefix) {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil || !info.ModTime().Before(cutoff) {
 			continue
 		}
-		if os.RemoveAll(filepath.Join(base, e.Name())) == nil {
+		// A folder that cannot be deleted is named on the terminal.
+		if m.removeArtifactDir(filepath.Join(base, e.Name())) {
 			removed++
 		}
 	}

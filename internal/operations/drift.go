@@ -277,7 +277,11 @@ func (m *Manager) runDrift(ctx context.Context, e *entry, snap workspace.Snapsho
 	case code != "":
 		e.log.Append("error", driftMessage(code))
 	}
-	e.log.Append("info", "The refresh-only plan file was deleted. It cannot be applied, and no state was written.")
+	if e.artifactLeft {
+		e.log.Append("error", leftNote+" It cannot be applied, and no state was written.")
+	} else {
+		e.log.Append("info", "The refresh-only plan file was deleted. It cannot be applied, and no state was written.")
+	}
 	m.recordFinal(e, nil, func(r *Record) {
 		r.DriftStatus, r.DriftOutcome = status, outcome
 		if status == ScanCompleted || status == ScanPartial {
@@ -331,14 +335,13 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 	case name != snap.Info.Workspace:
 		return nil, "", false, "workspace_changed", nil
 	}
-	dir, err := os.MkdirTemp(m.TempDir, "hclaro-drift-")
+	dir, err := m.newArtifactDir(driftDirPrefix)
 	if err != nil {
 		return nil, "", false, "plan_failed", nil
 	}
 	// The refresh-only plan holds refreshed values in plaintext and, applied, would write
 	// state. It is never kept.
-	defer os.RemoveAll(dir)
-	_ = os.Chmod(dir, 0o700)
+	defer func() { e.artifactLeft = !m.removeArtifactDir(dir) }()
 	out := filepath.Join(dir, "drift.tfplan")
 	// Taken before the engine runs, so edits made while scanning make the result stale.
 	fingerprint, err = m.fingerprintFor(snap, e.op.VarFiles, "", bound, e.environ)
@@ -417,7 +420,9 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 
 // readDrift reads a saved refresh-only plan back as JSON and classifies it.
 func (m *Manager) readDrift(ctx context.Context, planner engine.Planner, path string) (*drift.Result, bool, string) {
-	_ = os.Chmod(path, 0o600)
+	if m.chmod(path, 0o600) != nil {
+		return nil, false, "plan_read"
+	}
 	document, err := planner.ShowPlan(ctx, path)
 	if ctx.Err() != nil {
 		return nil, true, ""

@@ -576,6 +576,7 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot, hash bool) (*Scope, 
 	m := operations.NewManager(c.store, planner, p.RootPath)
 	m.Locks = h.Locks
 	m.TempDir = h.TempDir
+	m.Terminal = h.Terminal
 	m.Git = h.Git
 	if h.History != nil {
 		m.Recorder = h.History
