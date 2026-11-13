@@ -48,7 +48,7 @@ CI step names say which tier ran. They never stand for each other.
 | Tier | Where | What it proves |
 | --- | --- | --- |
 | Mocked | CI on every pull request and on master (Linux, macOS, Windows) | Behavior against fake Terraform/OpenTofu/AWS/Infracost CLIs and synthetic state and plans, plus parser tests over output recorded once from real engines (rows RE-08 to RE-10). Says nothing about running a real engine. |
-| Local real-engine | Manual, on a maintainer machine, disposable project, local backend, no providers that reach a network | Real engine output parses and the flows work end to end (rows RE-*). |
+| Local real-engine | Manual, on a maintainer machine, disposable project, local backend, no providers that reach a network | Real engine output parses and the flows work end to end (rows RE-01 to RE-07; RE-08 to RE-10 cover parsing recorded output only). |
 | Sandbox cloud | Manual, owner-approved, [AWS sandbox runbook](qualification/aws-sandbox.md) | Real backends, providers and credentials (rows BE-*, PR-*, DS-*). Never in routine CI. |
 
 ## Platforms

@@ -2,6 +2,7 @@ digraph G {
   rankdir = "RL";
   node [shape = rect, fontname = "sans-serif"];
   "data.terraform_remote_state.pending" [label="data.terraform_remote_state.pending"];
+  "terraform_data.counted_gone" [label="terraform_data.counted_gone"];
   "terraform_data.created" [label="terraform_data.created"];
   "terraform_data.gone" [label="terraform_data.gone"];
   "terraform_data.old_name" [label="terraform_data.old_name"];
@@ -15,6 +16,11 @@ digraph G {
     label = "module.group"
     fontname = "sans-serif"
     "module.group.terraform_data.this" [label="terraform_data.this"];
+  }
+  subgraph "cluster_module.old" {
+    label = "module.old"
+    fontname = "sans-serif"
+    "module.old.terraform_data.this" [label="terraform_data.this"];
   }
   "data.terraform_remote_state.pending" -> "terraform_data.created";
 }

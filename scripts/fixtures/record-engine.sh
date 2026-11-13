@@ -14,7 +14,7 @@ trap 'rm -rf "$work"' EXIT
 cp -R "$src/." "$work/"
 mv "$work/state.json" "$work/terraform.tfstate"
 cd "$work"
-run() { env -i PATH=/usr/bin:/bin HOME="$work" CHECKPOINT_DISABLE=1 "$bin" "$@"; }
+run() { env -i TZ=UTC PATH=/usr/bin:/bin HOME="$work" CHECKPOINT_DISABLE=1 "$bin" "$@"; }
 run init -input=false -no-color >/dev/null
 run version -json >"$out/version.json"
 # plan exits 0; a failure here means the recording is wrong, so set -e stops.

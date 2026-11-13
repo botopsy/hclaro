@@ -17,7 +17,7 @@ func TestRealEngineStreams(t *testing.T) {
 				"terraform_data.replaced: plan to replace (cannot_update)",
 				"terraform_data.renamed: plan to move",
 				"data.terraform_remote_state.pending: plan to read (read_because_dependency_pending)",
-				"Plan: 5 to add, 3 to change, 3 to destroy.",
+				"Plan: 5 to add, 3 to change, 6 to destroy.",
 				"Output changes: 3",
 			},
 			"drift": {"Drift scan started (refresh-only plan)", "Refresh-only plan complete."},

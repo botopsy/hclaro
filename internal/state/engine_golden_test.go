@@ -21,7 +21,7 @@ func TestRealEngineStates(t *testing.T) {
 			if err != nil {
 				t.Fatalf("real state rejected: %v", err)
 			}
-			if index.Managed != 8 || index.Data != 0 || index.Types["terraform_data"] != 8 {
+			if index.Managed != 11 || index.Data != 0 || index.Types["terraform_data"] != 11 {
 				t.Fatalf("managed %d data %d types %v", index.Managed, index.Data, index.Types)
 			}
 			found := false
