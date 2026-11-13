@@ -110,3 +110,57 @@ func TestUnreadableConfigurationFailsADriftScanBeforeTheEngine(t *testing.T) {
 		t.Fatalf("log: %s", text)
 	}
 }
+
+func TestUnreadableConfigurationRefusesAtTheApplyTimeRecheck(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	m, root := setup(t, fake, workspace.Info{})
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions are not enforced here")
+	}
+	writeFile(t, root, "locked/main.tf", "# module\n")
+	dir := filepath.Join(root, "locked")
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	id := planned(t, m)
+	// The Verify hook runs with the claim held, after StartApply checked the fingerprint.
+	m.Verify = func(ctx context.Context, kind string) *Diagnostic {
+		if kind == "apply" {
+			if err := os.Chmod(dir, 0); err != nil {
+				t.Error(err)
+			}
+		}
+		return nil
+	}
+	done := wait(t, m, approveAndApply(t, m, id).ID)
+	if done.Status != Failed || done.Diagnostic == nil || done.Diagnostic.Code != "configuration_unreadable" || done.Outcome != "not_applied" {
+		t.Fatalf("%+v %+v", done, done.Diagnostic)
+	}
+	if text := logText(t, m, done.ID); !strings.Contains(text, `"locked"`) {
+		t.Fatalf("log: %s", text)
+	}
+	if applyCalls(fake) != 0 {
+		t.Fatal("engine apply ran")
+	}
+	assertTempEmpty(t, m)
+}
+
+func TestUnreadableReasonSurvivesAnEarlierRefusal(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	m, root := setup(t, fake, workspace.Info{})
+	id := planned(t, m)
+	planned(t, m) // supersedes id: its saved file is no longer kept
+	lockDir(t, root)
+	p, _ := m.Plan(id)
+	if _, status := m.ContextStatus(p); status.Code != "not_applicable" || !strings.Contains(status.ConfigurationReason, `"locked"`) {
+		t.Fatalf("%+v", status)
+	}
+}
+
+func TestUnreadableConfigurationRefusesAGraph(t *testing.T) {
+	fake := &engine.Fake{GraphDOT: fixtures.GraphTerraform}
+	m, root := setup(t, fake, workspace.Info{})
+	lockDir(t, root)
+	done, _ := graphAndWait(t, m, GraphStart{})
+	if done.Diagnostic == nil || done.Diagnostic.Code != "configuration_unreadable" || slices.Contains(fake.Calls(), "graph") {
+		t.Fatalf("%+v %+v", done, fake.Calls())
+	}
+}

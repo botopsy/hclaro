@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"hclaro/internal/state"
 )
 
 var varFilePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
@@ -129,13 +131,20 @@ func readError(root, dataDir string, err error) error {
 	if !errors.As(err, &pe) {
 		return errors.New("a file could not be read")
 	}
+	// A name that looks like a secret is withheld, as the Git views do.
+	shown := func(rel string) string {
+		if len(rel) > 200 || state.Suspicious(rel) {
+			return "a file whose name is withheld"
+		}
+		return fmt.Sprintf("%q", filepath.ToSlash(rel))
+	}
 	name := "a configuration file"
 	if rel, relErr := filepath.Rel(root, pe.Path); relErr == nil && rel == "." {
 		name = "the project folder"
 	} else if relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		name = fmt.Sprintf("%q", filepath.ToSlash(rel))
+		name = shown(rel)
 	} else if rel, relErr := filepath.Rel(dataDir, pe.Path); relErr == nil {
-		name = fmt.Sprintf("%q in the data directory", filepath.ToSlash(rel))
+		name = shown(rel) + " in the data directory"
 	}
 	return fmt.Errorf("%s could not be read (%v)", name, pe.Err)
 }

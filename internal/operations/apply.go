@@ -48,6 +48,9 @@ type ApplyStatus struct {
 	Code             string `json:"code,omitempty"`
 	ArtifactRetained bool   `json:"artifactRetained"`
 	ExpiresAt        string `json:"expiresAt,omitempty"`
+	// ConfigurationReason is set when the configuration could not be read, now or when
+	// planning, whichever refusal Code names.
+	ConfigurationReason string `json:"configurationReason,omitempty"`
 }
 
 // Approval is a one-time, short-lived confirmation token bound to one plan and its saved

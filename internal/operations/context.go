@@ -149,7 +149,7 @@ func (m *Manager) contextFingerprint(varFiles []string, c *ExecutionContext, wha
 	}
 	fp, err := m.fingerprintFor(snap, varFiles, "", c, environ)
 	if err != nil {
-		return "", &RejectError{"configuration_unreadable", "Hclaro could not read the configuration, so it cannot tell whether it changed since this " + what + " was created: " + err.Error() + ". " + next}
+		return "", &RejectError{"configuration_unreadable", "Hclaro could not read the configuration, so it cannot tell whether it changed since this " + what + " was created: " + err.Error() + ". Make it readable, or smaller than the limit, then try again."}
 	}
 	return fp, nil
 }
@@ -194,6 +194,12 @@ func (m *Manager) ContextStatus(p *Plan) (changed bool, status ApplyStatus) {
 	if src := m.SourceStatus(p); status.Available && (src.FilesChanged || src.State == "unknown") {
 		status = ApplyStatus{Reason: src.Message + " Run a new plan.", ArtifactRetained: status.ArtifactRetained}
 		changed = true
+	}
+	switch {
+	case rej != nil && rej.Code == "configuration_unreadable":
+		status.ConfigurationReason = rej.Reason
+	case p.Fingerprint == "":
+		status.ConfigurationReason = unreadablePlan
 	}
 	return changed, status
 }

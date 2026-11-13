@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -88,6 +89,14 @@ func TestFingerprintNamesWhatCouldNotBeRead(t *testing.T) {
 	fp, err := FingerprintExcept(root, nil, nil)
 	if fp != "" || err == nil || err.Error() != `"modules/net" could not be read (permission denied)` {
 		t.Fatalf("%q %v", fp, err)
+	}
+}
+
+func TestFingerprintWithholdsSecretLikeNames(t *testing.T) {
+	key := "AKIAABCDEFGHIJKLMNOP"
+	err := readError("/r", "/r/.terraform", &fs.PathError{Op: "open", Path: "/r/" + key + "/main.tf", Err: fs.ErrPermission})
+	if strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "withheld") {
+		t.Fatal(err)
 	}
 }
 
