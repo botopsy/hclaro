@@ -112,13 +112,18 @@ func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 	out := b.String()
 	// A literal the plain pattern finds (a string nested in a template) is still judged on
 	// its own, so nothing hidden by the older reading becomes visible.
+	oldSecret := false
 	for _, lit := range quoted.FindAllString(line, -1) {
-		if inner := lit[1 : len(lit)-1]; inner != "" && state.LooksSecret(inner) && strings.Contains(out, inner) {
-			return indentOf(line) + Redacted, true
+		if inner := lit[1 : len(lit)-1]; inner != "" && state.LooksSecret(inner) {
+			oldSecret = true
+			if strings.Contains(out, inner) {
+				return indentOf(line) + Redacted, true
+			}
 		}
 	}
-	// Credential shapes outside string literals (comments, bare words).
-	if !redacted && state.Suspicious(out) {
+	// Credential shapes outside string literals (comments, bare words); a line whose
+	// literals the plain pattern finds harmless is checked whole, as before.
+	if !redacted && state.Suspicious(out) || !oldSecret && state.Suspicious(line) {
 		return indentOf(line) + Redacted, true
 	}
 	return clip(out), redacted

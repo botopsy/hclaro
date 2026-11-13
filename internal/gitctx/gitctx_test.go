@@ -767,6 +767,16 @@ func TestLineRedactorReadsTemplates(t *testing.T) {
 			t.Errorf("%q: shown as %q", in, got)
 		}
 	}
+	// A template secret does not stop the whole-line check for other credentials.
+	for _, in := range []string{
+		`  description = "${"` + secret + `"}" # ghp_abcdefghijklmnopqrstuv`,
+		`  description = "${"` + secret + `"}" # see https://u:p@h/x`,
+		`  tags = { "note": "${"` + secret + `"}", "db_password": "hunter2" }`,
+	} {
+		if got, _ := (&LineRedactor{}).Line(in); got != "  "+Redacted {
+			t.Errorf("%q: shown as %q", in, got)
+		}
+	}
 	// Each literal of a line is still judged on its own.
 	if got, _ := (&LineRedactor{}).Line(`  tags = { a = "web", b = "` + secret + `" }`); got != `  tags = { a = "web", b = "[redacted]" }` {
 		t.Errorf("got %q", got)
