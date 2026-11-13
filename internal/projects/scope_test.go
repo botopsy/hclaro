@@ -566,6 +566,8 @@ func TestClosingAScopeCancelsReleasesAndDeletes(t *testing.T) {
 		t.Fatalf("reason %q", reason)
 	}
 	eventually(t, "claim not released", func() bool { _, busy := hub.Locks.Holder(root); return !busy })
+	// The scope's manager is closed in a goroutine after Remove returns.
+	hub.wg.Wait()
 	if _, err := s.startPlan(nil, nil); !errors.Is(err, operations.ErrClosed) {
 		t.Fatalf("closed scope still plans: %v", err)
 	}
