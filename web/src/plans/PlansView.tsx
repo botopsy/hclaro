@@ -186,8 +186,9 @@ function ApplyResult({ operation }: { operation: Operation }) {
    </ol></div></div>}
    {operation.import && (ok ? <p>Imported <code>{operation.import.address}</code>. It appears in the resource explorer once the reloaded state records it.</p> : <ImportRecovery target={operation.import} applied />)}
    {operation.stateReloadFailed && <p className="plan-warning" role="alert"><TriangleAlert size={14} />State could not be read again after the apply, so the explorer may be out of date. Read the workspace again, or check state with your CLI.</p>}
-   <p className="muted">{operation.stateReloaded ? 'The explorer shows what the engine recorded, not live cloud inventory. ' : ''}{!operation.planFileLeft && planFile}</p>
-   {operation.planFileLeft && <p className="plan-warning" role="alert"><TriangleAlert size={14} />{planFile}</p>}
+   {(operation.stateReloaded || !operation.planFileLeft) && <p className="muted">{operation.stateReloaded ? 'The explorer shows what the engine recorded, not live cloud inventory. ' : ''}{!operation.planFileLeft && planFile}</p>}
+   {/* A failed apply's diagnostic already says the file was left. */}
+   {operation.planFileLeft && ok && <p className="plan-warning" role="alert"><TriangleAlert size={14} />{planFile}</p>}
    <Diagnostics operation={operation} />
   </section>;
 }
