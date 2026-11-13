@@ -846,3 +846,24 @@ func TestPreviewAndEvictionKeepReviewedPlans(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// M26.08: a context closed from an operation's goroutine (a scope change found under the
+// claim) is closed by a goroutine Hub.Close waits for; after Close nothing new is started.
+func TestCloseLaterIsTrackedAndStopsWithTheHub(t *testing.T) {
+	hub, ids, _ := scopedHub(t)
+	c, _ := openScope(t, hub, ids["network"], "default", "")
+	hub.closeLater(c.ID, CodeScopeChanged)
+	hub.Close()
+	// Close waited for the pending close.
+	if _, reason, err := hub.Context(c.ID); err == nil || reason != CodeScopeChanged {
+		t.Fatalf("%v %q", err, reason)
+	}
+	hub.mu.Lock()
+	hub.contexts[c.ID] = c
+	hub.mu.Unlock()
+	hub.closeLater(c.ID, CodeScopeChanged)
+	hub.wg.Wait()
+	if _, _, err := hub.Context(c.ID); err != nil {
+		t.Fatal("closeLater ran after Close")
+	}
+}

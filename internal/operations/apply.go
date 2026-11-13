@@ -400,6 +400,7 @@ var applyMessages = map[string]string{
 	"apply_timeout":       "The apply exceeded its time limit and was stopped. Infrastructure may be partly changed. Review the reloaded state and run a new plan.",
 	"shutdown":            "Hclaro stopped while the apply was running. Infrastructure may be partly changed. Check state with your CLI.",
 	"scope_changed":       scopeChangedMessage + " Nothing was applied, and the saved file was deleted.",
+	"context_changed":     "Configuration, variable files, the lock file, the execution profile or the planning environment changed after this plan was approved. Nothing was applied, and the saved file was deleted. Run a new plan.",
 }
 
 func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
@@ -530,7 +531,8 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	}
 	// Defensive: re-verify immediately before the engine runs that the reviewed plan has no
 	// unsupported action combination, independently of the earlier checks.
-	if p, ok := m.Plan(e.op.PlanID); !ok || p.ID != a.planID || unsupportedReason(p) != "" {
+	p, ok := m.Plan(e.op.PlanID)
+	if !ok || p.ID != a.planID || unsupportedReason(p) != "" {
 		return "unknown_actions", nil, false
 	}
 	// A Hub workspace's scope is revalidated last, with the root claim held: project folder,
@@ -540,6 +542,12 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 			return stopped(), nil, false
 		}
 		return "scope_changed", nil, false
+	}
+	// The context fingerprint (configuration, variable files, lock file, data directory,
+	// profile and planning environment) is recomputed last, with the root claim held, so an
+	// edit made after approval refuses the apply.
+	if current, _ := m.currentFingerprint(p); current == "" || current != a.fingerprint {
+		return "context_changed", nil, false
 	}
 	m.stage(e, "Applying")
 	label := engineLabel(a.engine)

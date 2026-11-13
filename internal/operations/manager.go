@@ -201,7 +201,9 @@ type Manager struct {
 	scans         []*DriftScan
 	graphs        []*GraphRun
 	running       *entry
-	artifact      *artifact
+	// starting is set while StartImport revalidates a Hub scope without holding mu.
+	starting bool
+	artifact *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.
 	notes  map[string]string
 	base   context.Context
@@ -421,11 +423,12 @@ func (m *Manager) verify(ctx context.Context, e *entry, kind string) (ok, change
 // scopeChangedCode is the Verify diagnostic code of a real scope change.
 const scopeChangedCode = "scope_changed"
 
-// Running reports whether an operation is running or being cancelled.
+// Running reports whether an operation is running or being cancelled, or an import is
+// being revalidated before it starts.
 func (m *Manager) Running() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.running != nil
+	return m.running != nil || m.starting
 }
 
 // Applying reports whether an apply is running.

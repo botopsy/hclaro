@@ -186,11 +186,14 @@ type Hub struct {
 	IdentityProbe preflight.IdentityProbe
 	// Discovery is the session's AWS discovery service. A scope's verifications, scans and
 	// prepared imports are dropped (running scans cancelled) when the scope closes.
-	Discovery   *discovery.Service
-	MaxScopes   int
-	TempDir     string
-	base        context.Context
-	stop        context.CancelFunc
+	Discovery *discovery.Service
+	MaxScopes int
+	TempDir   string
+	base      context.Context
+	stop      context.CancelFunc
+	// mu guards the maps below. Lock order: mu, then an operations.Manager's own lock (Busy
+	// and Close read it under mu); never take mu while holding a manager's lock, and never run
+	// an engine command under either.
 	mu          sync.Mutex
 	inspections map[string]*Inspection
 	contexts    map[string]*Context

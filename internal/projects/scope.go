@@ -772,8 +772,23 @@ func (s *Scope) verify(ctx context.Context, kind string) *operations.Diagnostic 
 	}
 	// Closing waits for this operation, so it cannot run on the operation's goroutine. It
 	// cancels the operation's context, so the result is decided here, before that.
-	go s.hub.closeContext(s.ContextID, CodeScopeChanged)
+	s.hub.closeLater(s.ContextID, CodeScopeChanged)
 	return &operations.Diagnostic{Code: CodeScopeChanged, Message: message}
+}
+
+// closeLater closes a context on another goroutine, counted in h.wg so that Hub.Close waits
+// for it. Once Close has begun it does nothing: Close closes every scope itself.
+func (h *Hub) closeLater(cid, reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.base.Err() != nil {
+		return
+	}
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		h.closeContext(cid, reason)
+	}()
 }
 
 // closeContext closes a read context and its scope.
