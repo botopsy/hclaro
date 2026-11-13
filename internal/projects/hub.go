@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"io"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/history"
 	"io/fs"
@@ -189,8 +190,10 @@ type Hub struct {
 	Discovery *discovery.Service
 	MaxScopes int
 	TempDir   string
-	base      context.Context
-	stop      context.CancelFunc
+	// Terminal receives the folder of a scope's saved plan file that could not be deleted.
+	Terminal io.Writer
+	base     context.Context
+	stop     context.CancelFunc
 	// mu guards the maps below. Lock order: mu, then an operations.Manager's own lock (Busy
 	// and Close read it under mu); never take mu while holding a manager's lock, and never run
 	// an engine command under either.

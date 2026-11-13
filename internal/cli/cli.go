@@ -218,6 +218,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	host := listener.Addr().String()
 	manager := operations.NewManager(store, planner, root)
+	manager.Terminal, hub.Terminal = output, output
 	// Hub initialization and the launch project's plans share one claim per project root.
 	manager.Locks = hub.Locks
 	// Execution profiles of the launch project bind a plan to a profile's environment; the
