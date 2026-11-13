@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -69,8 +70,10 @@ type ResourceType struct {
 	// idShape is the documented import ID format; a state identifier in another format is
 	// not compared (it is not proof that the object is untracked).
 	idShape *regexp.Regexp
-	args    []string
-	parse   func(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error)
+	// resourceID is a state identifier in import ID shape that is not an import ID.
+	resourceID *regexp.Regexp
+	args       []string
+	parse      func(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error)
 }
 
 // parseContext carries what a page parser needs to build ARNs and fill the account.
@@ -92,7 +95,7 @@ func init() {
 		{Type: "aws_subnet", idShape: subnetID, Service: "ec2", Label: "Subnets", Operation: "ec2:DescribeSubnets", ImportID: "Subnet ID (subnet-…)", StateKeys: []string{"id"}, Permissions: "ec2:DescribeSubnets", args: []string{"ec2", "describe-subnets"}, parse: parseSubnets},
 		{Type: "aws_security_group", idShape: sgID, Service: "ec2", Label: "Security groups", Operation: "ec2:DescribeSecurityGroups", ImportID: "Security group ID (sg-…)", StateKeys: []string{"id"}, Permissions: "ec2:DescribeSecurityGroups", args: []string{"ec2", "describe-security-groups"}, parse: parseSecurityGroups},
 		{Type: "aws_s3_bucket", idShape: bucketName, Service: "s3", Label: "S3 buckets", Global: true, Operation: "s3:ListAllMyBuckets", ImportID: "Bucket name", StateKeys: []string{"id", "bucket"}, Permissions: "s3:ListAllMyBuckets", args: []string{"s3api", "list-buckets"}, parse: parseBuckets},
-		{Type: "aws_db_instance", idShape: dbID, Service: "rds", Label: "RDS DB instances", Operation: "rds:DescribeDBInstances", ImportID: "DB instance identifier", StateKeys: []string{"identifier"}, Permissions: "rds:DescribeDBInstances", args: []string{"rds", "describe-db-instances"}, parse: parseDBInstances},
+		{Type: "aws_db_instance", idShape: dbID, Service: "rds", Label: "RDS DB instances", Operation: "rds:DescribeDBInstances", ImportID: "DB instance identifier", StateKeys: []string{"identifier", "id"}, resourceID: dbResourceID, Permissions: "rds:DescribeDBInstances", args: []string{"rds", "describe-db-instances"}, parse: parseDBInstances},
 	}
 }
 
@@ -104,6 +107,22 @@ func TypeByName(name string) (ResourceType, bool) {
 		}
 	}
 	return ResourceType{}, false
+}
+
+// StateIDs returns the import IDs a managed instance of a supported type records in state,
+// in the type's documented shape. Withheld values are skipped. ok is false for unsupported
+// types.
+func StateIDs(typ string, attrs map[string]any) (ids []string, ok bool) {
+	t, ok := TypeByName(typ)
+	if !ok {
+		return nil, false
+	}
+	for _, key := range t.StateKeys {
+		if v := stringAttr(attrs, key); v != "" && t.idShape.MatchString(v) && (t.resourceID == nil || !t.resourceID.MatchString(v)) && !slices.Contains(ids, v) {
+			ids = append(ids, v)
+		}
+	}
+	return ids, true
 }
 
 // Regions are the commercial AWS regions a scan can select. Opt-in regions are listed;
@@ -140,10 +159,13 @@ var (
 	// Bucket names: 3-63 characters, lower case, digits, dots and hyphens.
 	bucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
 	dbID       = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]{0,62}$`)
-	cidr       = regexp.MustCompile(`^[0-9a-f:.]{2,45}/[0-9]{1,3}$`)
-	azName     = regexp.MustCompile(`^[a-z]{2}(-gov)?-[a-z]+-[0-9]{1,2}[a-z]$`)
-	safeWord   = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
-	arnShape   = regexp.MustCompile(`^arn:aws(-cn|-us-gov|-iso[a-z]?)?:[a-z0-9-]{1,20}:[a-z0-9-]*:[0-9]{0,12}:[A-Za-z0-9+=,.@/:_-]{1,512}$`)
+	// hashicorp/aws v4 recorded the identifier as the aws_db_instance id; v5 records the
+	// resource ID (db- and upper case; identifiers are stored in lower case).
+	dbResourceID = regexp.MustCompile(`^db-[A-Z0-9]+$`)
+	cidr         = regexp.MustCompile(`^[0-9a-f:.]{2,45}/[0-9]{1,3}$`)
+	azName       = regexp.MustCompile(`^[a-z]{2}(-gov)?-[a-z]+-[0-9]{1,2}[a-z]$`)
+	safeWord     = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	arnShape     = regexp.MustCompile(`^arn:aws(-cn|-us-gov|-iso[a-z]?)?:[a-z0-9-]{1,20}:[a-z0-9-]*:[0-9]{0,12}:[A-Za-z0-9+=,.@/:_-]{1,512}$`)
 )
 
 // candidateID is a stable opaque ID from the type and the provider identifier.

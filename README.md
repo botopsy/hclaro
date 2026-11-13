@@ -368,10 +368,10 @@ The **Cost estimate** tab of a reviewed plan shows a clearly labelled estimate o
 
 **Import & discovery → Import existing** brings an object that already exists outside Terraform/OpenTofu into state. Enter the resource instance address (managed resources only, with its count index or for_each key if the block uses one), the provider's import ID, an optional provider reference such as `aws.west`, and the name of a **new** file in the root module. **Check and preview** writes nothing and runs nothing. It reports:
 
-- the address is already in state, or an object of the same type with that `id` is already managed elsewhere (both block the import);
+- the address is already in state, or an object of the same type with that `id` (or, for the discovery types, the same identifier, such as an RDS DB instance identifier) is already managed elsewhere (both block the import);
 - a missing resource block (blocks the import unless the engine generates one), or a block that could not be verified;
 - an instance key that does not match the block's `count`/`for_each` (warning; the check is textual, the plan is authoritative);
-- an existing import or moved block for the same address, an existing destination file, override file names, and import IDs that look like credentials (all block the import).
+- an existing import or moved block for the same address (in `.tf`, `.tofu` or their JSON forms), a root configuration file that cannot be read or decoded, an existing destination file, override file names, and import IDs that look like credentials (all block the import).
 
 The preview shows the exact new file. **Write file and plan import** needs a separate consent checkbox. Hclaro then writes the file without overwriting anything (temporary file, then a hard link that fails if the name exists; symlinks and a swapped project directory are refused) and runs a full plan, exactly like **Run plan**: you review the import together with every other change the plan contains. Applying uses the normal apply dialog. Because an import writes state, it always requires typing `apply <workspace>`.
 

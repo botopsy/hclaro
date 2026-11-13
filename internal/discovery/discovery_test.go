@@ -627,6 +627,12 @@ func TestMatchIsExactAndConservative(t *testing.T) {
 	}
 	// An aws_db_instance tracked by hashicorp/aws v4 (ID = identifier) and v5 (identifier).
 	db := c("aws_db_instance", "orders", "")
+	// Identifiers are lower case, so a v4 id such as db-prod is an identifier, not a v5
+	// resource ID.
+	prod := c("aws_db_instance", "db-prod", "")
+	if got := Match([]CloudResourceCandidate{prod}, snapshot(res("aws_db_instance", "aws_db_instance.p", map[string]any{"id": "db-prod"}))); got[0].Status != MatchTracked {
+		t.Errorf("db-prod: %s", got[0].Status)
+	}
 	for _, attrs := range []map[string]any{{"id": "orders"}, {"id": "db-ABCDEFGHIJKLMNOP", "identifier": "orders"}} {
 		if got := Match([]CloudResourceCandidate{db}, snapshot(res("aws_db_instance", "aws_db_instance.o", attrs))); got[0].Status != MatchTracked {
 			t.Errorf("db %v: %s", attrs, got[0].Status)
