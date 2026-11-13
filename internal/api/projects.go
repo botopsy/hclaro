@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"regexp"
@@ -159,9 +158,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		// The engine reads can outlast the server's default write timeout.
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(inspectTimeout + 10*time.Second))
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		summary, err := hub.Inspect(ctx, r.PathValue("id"))
 		if err != nil {
@@ -358,8 +355,7 @@ func workspaceRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			reasonJSON(w, 400, "invalid_profile", "Choose an execution profile of this project.")
 			return
 		}
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(inspectTimeout + 10*time.Second))
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		review, err := hub.ReviewWorkspaceWith(ctx, r.PathValue("id"), body.Action, body.Name, body.ProfileID)
 		if err != nil {

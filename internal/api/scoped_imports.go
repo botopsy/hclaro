@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 
@@ -72,7 +71,7 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		preview, err := s.PreviewImport(ctx, body)
 		if err != nil {
@@ -117,7 +116,7 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		if body.DiscoveryToken != "" {
 			stale := hub.Discovery == nil || !idPattern.MatchString(body.DiscoveryToken)

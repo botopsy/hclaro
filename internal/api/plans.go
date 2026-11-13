@@ -35,6 +35,10 @@ type planSummary struct {
 	Drift       int            `json:"drift"`
 }
 
+// preflightTimeout bounds the apply checks: the Git probe (10 s) and the identity probe
+// (20 s) run concurrently inside it.
+const preflightTimeout = 30 * time.Second
+
 func summarize(p *operations.Plan) planSummary {
 	changes := 0
 	for action, n := range p.Summary {
@@ -210,7 +214,9 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			errorJSON(w, 404, "plan_not_found")
 			return
 		}
-		report, err := manager.Preflight(r.Context(), r.PathValue("id"), operations.PreflightRequest{VerifyIdentity: body.VerifyIdentity})
+		ctx, cancel := withDeadline(w, r, preflightTimeout)
+		defer cancel()
+		report, err := manager.Preflight(ctx, r.PathValue("id"), operations.PreflightRequest{VerifyIdentity: body.VerifyIdentity})
 		if err != nil {
 			applyError(w, err)
 			return

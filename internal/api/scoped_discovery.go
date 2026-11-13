@@ -38,7 +38,7 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			errorJSON(w, 404, "scan_not_found")
 			return nil, nil, discovery.Pin{}, nil, false
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		pin, environ, err := scopeDiscoveryPin(ctx, s, check, reviewed)
 		if err != nil {
@@ -103,7 +103,7 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), verifyTimeout)
+		ctx, cancel := withDeadline(w, r, verifyTimeout)
 		defer cancel()
 		identity, err := svc.Verify(ctx, pin, environ)
 		if err != nil {
@@ -206,7 +206,7 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), verifyTimeout)
+		ctx, cancel := withDeadline(w, r, verifyTimeout)
 		defer cancel()
 		prefill, err := svc.Prepare(ctx, id, cand, pin, environ, s.Snapshot(), body.AcknowledgeUnknown)
 		if err != nil {

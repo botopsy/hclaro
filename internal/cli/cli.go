@@ -265,7 +265,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		hub.LaunchChanged = func() { _ = manager.Reread() }
 	}
 	// Request contexts derive from runCtx so event streams end promptly on shutdown.
-	// SSE responses extend their own write deadline per event.
+	// WriteTimeout covers short handlers only: SSE responses extend their own write deadline per
+	// event, and handlers that run engines or probes extend it past their own bound (withDeadline).
 	server := &http.Server{Handler: api.Handler(store, manager, hub, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	loaded := make(chan struct{})
 	// The startup read holds a shared claim, taken before the server accepts requests, so a

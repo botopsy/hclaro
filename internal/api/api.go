@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
@@ -14,6 +16,14 @@ import (
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
 )
+
+// withDeadline bounds the request context by d and moves the response write deadline past
+// it, so a handler that runs that long is not cut off by the server's WriteTimeout. A later
+// call replaces the deadline, so handlers with several bounded steps call it per step.
+func withDeadline(w http.ResponseWriter, r *http.Request, d time.Duration) (context.Context, context.CancelFunc) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d + 10*time.Second))
+	return context.WithTimeout(r.Context(), d)
+}
 
 func writeJSON(w http.ResponseWriter, code int, value any) {
 	w.Header().Set("Content-Type", "application/json")

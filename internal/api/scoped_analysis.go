@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 
@@ -133,7 +132,7 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		op, scan, err := s.StartDriftScan(ctx, body.VarFiles, body.ContextFingerprint)
 		if err != nil {
@@ -209,7 +208,7 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
 		op, run, err := s.StartGraph(ctx, body.ContextFingerprint)
 		if err != nil {
