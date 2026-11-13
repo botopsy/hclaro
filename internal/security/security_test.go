@@ -1,6 +1,7 @@
 package security
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -162,6 +163,54 @@ func TestMaliciousLocalPage(t *testing.T) {
 				if strings.HasPrefix(k, "Access-Control-") {
 					t.Fatalf("CORS header %s", k)
 				}
+			}
+			if strings.Contains(w.Body.String(), csrf) || strings.Contains(w.Body.String(), token) {
+				t.Fatal("token in refusal")
+			}
+		})
+	}
+}
+
+// M26.14: every refusal is JSON {error, reason} so the client shows the real reason instead
+// of "unable to reach the server"; the CSRF refusal has its own code the client retries on.
+func TestRefusalsAreJSON(t *testing.T) {
+	token, csrf := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	handler := Guard("127.0.0.1:9273", token, csrf, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	origin := "http://127.0.0.1:9273"
+	for _, tc := range []struct {
+		name, method, host, origin, csrf, contentType, body, auth, code string
+		status                                                          int
+	}{
+		{"host", "GET", "localhost:9273", "", "", "", "", token, "forbidden_origin", 403},
+		{"query", "GET", "127.0.0.1:9273", "", "", "", "", token, "invalid_request", 400},
+		{"GET body", "GET", "127.0.0.1:9273", "", "", "", "x", token, "invalid_request", 400},
+		{"mutating origin", "POST", "127.0.0.1:9273", "", csrf, "application/json", "{}", token, "forbidden_origin", 403},
+		{"csrf", "POST", "127.0.0.1:9273", origin, "wrong", "application/json", "{}", token, "csrf_invalid", 403},
+		{"content type", "POST", "127.0.0.1:9273", origin, csrf, "text/plain", "{}", token, "json_required", 415},
+		{"body size", "POST", "127.0.0.1:9273", origin, csrf, "application/json", "", token, "body_size", 413},
+		{"method", "PUT", "127.0.0.1:9273", origin, csrf, "application/json", "{}", token, "method_not_allowed", 405},
+		{"session", "GET", "127.0.0.1:9273", "", "", "", "", "", "unauthorized", 401},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := "/api/v1/plans"
+			if tc.name == "query" {
+				path += "?q=" + strings.Repeat("a", 4097)
+			}
+			r := httptest.NewRequest(tc.method, "http://127.0.0.1:9273"+path, strings.NewReader(tc.body))
+			r.Host = tc.host
+			for k, v := range map[string]string{"Origin": tc.origin, "X-Hclaro-CSRF": tc.csrf, "Content-Type": tc.contentType} {
+				if v != "" {
+					r.Header.Set(k, v)
+				}
+			}
+			if tc.auth != "" {
+				r.Header.Set("Authorization", "Bearer "+tc.auth)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+			var body struct{ Error, Reason string }
+			if w.Code != tc.status || w.Header().Get("Content-Type") != "application/json" || json.Unmarshal(w.Body.Bytes(), &body) != nil || body.Error != tc.code || body.Reason == "" {
+				t.Fatalf("status %d, type %q, body %q", w.Code, w.Header().Get("Content-Type"), w.Body.String())
 			}
 			if strings.Contains(w.Body.String(), csrf) || strings.Contains(w.Body.String(), token) {
 				t.Fatal("token in refusal")

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api, post } from '../api';
+import { api, post, sessionQuery } from '../api';
 import type { ContextInfo, Operation, Workspace } from '../types';
 import type { Route } from '../router';
 import { projectsQuery } from '../hub/HubView';
@@ -41,7 +41,7 @@ export function useWorkbenchContext(route: Route, generation: number) {
   });
   // Plans and applies in a Hub workspace exist only when the server enables them (M24.06);
   // the UI never enables them on its own, and the server refuses them either way.
-  const session = useQuery({ queryKey: ['session'], queryFn: () => api<{ capabilities?: { scopedExecution?: boolean } }>('session'), staleTime: Infinity });
+  const session = useQuery(sessionQuery);
   const hubExecution = !!session.data?.capabilities?.scopedExecution;
   // Where this tab's plans and operations live: the launch project, or only this Hub
   // workspace's own open context.

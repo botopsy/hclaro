@@ -39,9 +39,9 @@ export class ApiError extends Error {
     super(message);
   }
 }
-// Server-side refusals carry a specific reason (for example, why a plan cannot be applied).
-async function failure(response: Response): Promise<never> {
-  if (response.status === 401) throw new ApiError('unauthorized', 'This session is locked. Open the private URL printed by the running Hclaro CLI.');
+// Server-side refusals, including the request guard's, carry a code and a specific reason.
+async function failure(response: Response): Promise<ApiError> {
+  if (response.status === 401) return new ApiError('unauthorized', 'This session is locked. Open the private URL printed by the running Hclaro CLI.');
   let code = '';
   let reason = '';
   try {
@@ -49,47 +49,43 @@ async function failure(response: Response): Promise<never> {
     code = body.error || '';
     reason = body.reason || '';
   } catch {/* Non-JSON errors use the generic message. */}
-  throw new ApiError(code, reason || messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.');
+  return new ApiError(code, reason || messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.');
 }
-export async function api<T>(path: string): Promise<T> {
-  const response = await fetch(`/api/v1/${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`
-    },
-    cache: 'no-store'
-  });
-  if (!response.ok) {
-    if (response.status === 401) throw new Error('This session is locked. Open the private URL printed by the running Hclaro CLI.');
-    // Hub routes explain refusals, for example a workspace view that was closed.
-    let code = '';
-    let reason = '';
-    try {
-      const body = await response.json() as { error?: string; reason?: string };
-      code = body.error || '';
-      reason = body.reason || '';
-    } catch {/* Non-JSON errors use the generic message. */}
-    throw new ApiError(code, reason || 'Unable to read the local snapshot. Check that Hclaro is still running, then retry.');
+export type Session = { csrfToken: string; capabilities?: { scopedExecution?: boolean } };
+// The one /session read: it serves the capabilities query and the CSRF header of mutations.
+async function fetchSession(): Promise<Session> {
+  const session = await request<Session>('GET', 'session');
+  csrf = session.csrfToken;
+  return session;
+}
+export const sessionQuery = { queryKey: ['session'], queryFn: fetchSession, staleTime: Infinity };
+// Every API call goes through here and throws only ApiError for a refusal. Mutating requests
+// carry the per-launch CSRF token in a header (the server also checks Origin); a CSRF refusal
+// refetches the token and retries once, since the guard ran no handler.
+async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, retried = false): Promise<T> {
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (method !== 'GET') {
+    if (!csrf) await fetchSession();
+    headers['Content-Type'] = 'application/json';
+    headers['X-Hclaro-CSRF'] = csrf;
   }
-  return response.json() as Promise<T>;
+  const response = await fetch(`/api/v1/${path}`, { method, headers, body: method === 'GET' ? undefined : JSON.stringify(body), cache: 'no-store' });
+  if (response.ok) return response.json() as Promise<T>;
+  const error = await failure(response);
+  if (error.code === 'csrf_invalid' && !retried) {
+    await fetchSession();
+    return request<T>(method, path, body, true);
+  }
+  throw error;
 }
-// Mutating requests carry the per-launch CSRF token in a header; the server also checks Origin.
-export async function post<T>(path: string, body: unknown): Promise<T> {
-  return send<T>('POST', path, body);
+export function api<T>(path: string): Promise<T> {
+  return request<T>('GET', path);
 }
-export async function send<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body: unknown): Promise<T> {
-  if (!csrf) csrf = (await api<{ csrfToken: string }>('session')).csrfToken;
-  const response = await fetch(`/api/v1/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'X-Hclaro-CSRF': csrf
-    },
-    body: JSON.stringify(body),
-    cache: 'no-store'
-  });
-  if (!response.ok) return failure(response);
-  return response.json() as Promise<T>;
+export function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>('POST', path, body);
+}
+export function send<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body: unknown): Promise<T> {
+  return request<T>(method, path, body);
 }
 // A new browser tab has its own sessionStorage, so the session travels in the URL fragment,
 // which is never sent to the server and is removed from history on arrival.
@@ -113,7 +109,7 @@ export async function streamEvents(path: string, after: number, handlers: Stream
     cache: 'no-store',
     signal
   });
-  if (!response.ok) return failure(response);
+  if (!response.ok) throw await failure(response);
   if (!response.body) return false;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -152,7 +148,7 @@ export async function download(path: string, filename: string) {
     },
     cache: 'no-store'
   });
-  if (!response.ok) return failure(response);
+  if (!response.ok) throw await failure(response);
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement('a');
   link.href = url;

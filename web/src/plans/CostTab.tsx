@@ -205,11 +205,13 @@ function ItemRow({ item, currency }: { item: CostLineItem; currency: string }) {
 function SavedEstimates() {
   const client = useQueryClient();
   const saved = useQuery({ queryKey: ['cost-history'], queryFn: () => api<{ records: CostAggregate[]; persisted: boolean }>('cost/history') });
+  const [error, setError] = useState('');
   const records = saved.data?.records ?? [];
   if (!saved.data?.persisted || records.length === 0) return null;
   return <details className="cost-saved">
    <summary>Earlier estimates for this project ({records.length}, saved locally as totals only)</summary>
    <table className="resources-table"><thead><tr><th scope="col">When</th><th scope="col">Workspace</th><th scope="col">Monthly change</th><th scope="col">Coverage</th></tr></thead><tbody>{records.map(r => <tr key={r.id}><td>{clock(r.createdAt)}</td><td>{r.workspace}</td><td>{signed(r.monthlyDelta)} {r.currency}</td><td>{r.coveragePercent === null ? '—' : `${r.coveragePercent}%`}</td></tr>)}</tbody></table>
-   <Button variant="ghost" size="small" onClick={() => void post('cost/history/clear', {}).then(() => client.invalidateQueries({ queryKey: ['cost-history'] }))}>Clear saved estimates</Button>
+   <Button variant="ghost" size="small" onClick={() => { setError(''); post('cost/history/clear', {}).then(() => client.invalidateQueries({ queryKey: ['cost-history'] }), (e: Error) => setError(e.message)); }}>Clear saved estimates</Button>
+   {error && <p className="dialog-error" role="alert">{error}</p>}
   </details>;
 }
