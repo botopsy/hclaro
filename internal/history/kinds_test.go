@@ -38,12 +38,17 @@ func TestUnknownKindIsKeptAndMarkedOnReRead(t *testing.T) {
 	finished(s, 1, "plan", operations.Succeeded, t0)
 	var doc map[string]any
 	_ = json.Unmarshal([]byte(readFile(t, s)), &doc)
-	doc["entries"].([]any)[0].(map[string]any)["kind"] = "destroy"
+	e := doc["entries"].([]any)[0].(map[string]any)
+	e["kind"], e["projectName"] = "destroy", "password="+canary
 	b, _ := json.Marshal(doc)
 	_ = os.WriteFile(s.path, b, 0o600)
 	got := open(t, dir).List(Filter{})
 	if len(got) != 1 || got[0].Kind != KindUnknown {
 		t.Fatalf("%+v", got)
+	}
+	// An entry that used to be dropped is now served, so it must pass the same scrubbing.
+	if b, _ := json.Marshal(got); strings.Contains(string(b), canary) {
+		t.Fatalf("canary served from a kept unknown entry: %s", b)
 	}
 	if got := open(t, dir).List(Filter{Kind: KindUnknown}); len(got) != 1 {
 		t.Fatal("unknown entries cannot be filtered")
