@@ -162,8 +162,9 @@ type Manager struct {
 	// Reinspect reads the launch project's folder metadata again. With Reload it lets
 	// Reread pick up changes made outside Hclaro's plans, such as an init. Nil disables Reread.
 	Reinspect func() workspace.Info
-	// Locks, when set, is shared with Hub initialization so a plan, import or apply never
-	// runs in a root that is being initialized, and the other way around.
+	// Locks is shared with the Hub so a plan, import or apply never runs in a root that is
+	// being initialized, and the other way around. NewManager gives a private set; the
+	// server replaces it with the Hub's. It must not be nil.
 	Locks *rootlock.Set
 	// Binder resolves execution profiles of the launch project; nil disables profiles.
 	// Bind returns the planner for a profile's environment and workspace; nil keeps the
@@ -223,7 +224,7 @@ const (
 func NewManager(store *workspace.Store, planner engine.Planner, root string) *Manager {
 	base, stop := context.WithCancel(context.Background())
 	applier, _ := planner.(engine.Applier)
-	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID}
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, Locks: rootlock.New()}
 }
 
 func newID() string {
@@ -859,13 +860,16 @@ func (m *Manager) Reread() error {
 	case m.store.Get().Status == "loading":
 		return ErrLoading
 	}
-	if _, busy := m.Locks.Holder(m.root); busy {
+	// A shared claim keeps a Hub init or workspace command off the root while state is read.
+	release, ok := m.Locks.AcquireShared(m.root)
+	if !ok {
 		return ErrBusy
 	}
 	m.store.Reset(m.Reinspect())
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
+		defer release()
 		m.Reload(m.base)
 	}()
 	return nil
