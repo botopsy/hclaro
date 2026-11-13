@@ -85,6 +85,19 @@ func TestRereadIsRefusedWhileBusy(t *testing.T) {
 	if _, err := m.StartPlan(nil, nil); !errors.Is(err, ErrLoading) {
 		t.Fatalf("plan while rereading: %v", err)
 	}
+	// The read holds a shared claim: a Hub init or workspace command waits for it.
+	if _, ok := m.Locks.Acquire(root, "init"); ok {
+		t.Fatal("Hub init claimed the root while launch state was read")
+	}
 	close(block)
 	waitStatus(t, m)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if release, ok := m.Locks.Acquire(root, "init"); ok {
+			release()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("read claim not released")
+		}
+	}
 }

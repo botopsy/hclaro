@@ -82,6 +82,11 @@ func (h *Hub) Resolve(projectID, profileID string) (profiles.Resolved, Record, e
 	return profiles.Resolve(profile, p.RootPath, os.Environ()), p, nil
 }
 
+// isLaunch reports whether root is the folder Hclaro was launched with, under any spelling.
+func (h *Hub) isLaunch(root string) bool {
+	return h.Launch != "" && (root == h.Launch || sameDir(root, h.Launch))
+}
+
 // LaunchID returns the registry ID of the project Hclaro was launched with, or "" when it is
 // not registered. Execution profiles belong to registered projects only.
 func (h *Hub) LaunchID() string {
@@ -90,7 +95,7 @@ func (h *Hub) LaunchID() string {
 	}
 	records, _ := h.Registry.List()
 	for _, p := range records {
-		if p.RootPath == h.Launch {
+		if h.isLaunch(p.RootPath) {
 			return p.ID
 		}
 	}

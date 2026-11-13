@@ -1,6 +1,9 @@
 package rootlock
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -27,11 +30,66 @@ func TestOneHolderPerRoot(t *testing.T) {
 	if _, held := s.Holder("/infra/dev"); held {
 		t.Fatal("not released")
 	}
-	var nilSet *Set
-	if r, ok := nilSet.Acquire("/x", "plan"); !ok {
-		t.Fatal("nil set must not block")
-	} else {
-		r()
+}
+
+// spellings returns other paths of dir: a symbolic link and, on a case-insensitive file
+// system, the same path in other case.
+func spellings(t *testing.T, dir string) []string {
+	var out []string
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(dir, link); err == nil {
+		out = append(out, link)
+	}
+	upper := filepath.Join(filepath.Dir(dir), strings.ToUpper(filepath.Base(dir)))
+	if _, err := os.Stat(upper); err == nil {
+		out = append(out, upper)
+	}
+	if len(out) == 0 {
+		t.Skip("no symbolic links and a case-sensitive file system")
+	}
+	return out
+}
+
+func TestSpellingsOfOneFolderShareAClaim(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "infra")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, other := range spellings(t, dir) {
+		s := New()
+		release, ok := s.Acquire(dir, "plan")
+		if !ok {
+			t.Fatal("first claim refused")
+		}
+		if _, ok := s.Acquire(other, "init"); ok {
+			t.Fatalf("%s: exclusive claim accepted under another spelling", other)
+		}
+		if _, ok := s.AcquireShared(other); ok {
+			t.Fatalf("%s: shared claim accepted under another spelling", other)
+		}
+		if h, held := s.Holder(other); !held || h != "plan" {
+			t.Fatalf("%s: holder %q %v", other, h, held)
+		}
+		release()
+		read, ok := s.AcquireShared(other)
+		if !ok {
+			t.Fatalf("%s: shared claim refused after release", other)
+		}
+		if _, ok := s.Acquire(dir, "init"); ok {
+			t.Fatalf("%s: exclusive claim accepted during a read under another spelling", other)
+		}
+		if n := s.Readers(dir); n != 1 {
+			t.Fatalf("%s: %d readers", other, n)
+		}
+		read()
+		if again, ok := s.Acquire(dir, "init"); !ok {
+			t.Fatalf("%s: claim leaked after release through another spelling", other)
+		} else {
+			again()
+		}
+		if len(s.roots) != 0 {
+			t.Fatalf("%s: %d claims left", other, len(s.roots))
+		}
 	}
 }
 

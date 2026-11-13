@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/history"
 	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
 )
@@ -214,5 +216,47 @@ func TestLaunchBinder(t *testing.T) {
 	}
 	if list, _, _ := hub.Profiles.List(network); len(list) != 0 {
 		t.Fatalf("profiles of a removed project: %+v", list)
+	}
+}
+
+// otherSpelling returns another path of dir: its upper-case name on a case-insensitive file
+// system, otherwise a symbolic link. Hclaro may be launched from either.
+func otherSpelling(t *testing.T, dir string) string {
+	t.Helper()
+	upper := filepath.Join(filepath.Dir(dir), strings.ToUpper(filepath.Base(dir)))
+	if upper != dir && sameDir(upper, dir) {
+		return upper
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Skip("no symbolic links and a case-sensitive file system")
+	}
+	return link
+}
+
+func TestLaunchUnderAnotherSpellingIsTheRegisteredProject(t *testing.T) {
+	hub, ids, _ := profileFixture(t)
+	network := ids["network"]
+	summary, _ := hub.Summary(network)
+	hub.Launch = otherSpelling(t, summary.RootPath)
+	if got := hub.LaunchID(); got != network {
+		t.Fatalf("launch ID %q, want %q", got, network)
+	}
+	if s, _ := hub.Summary(network); !s.Launch {
+		t.Fatal("registered project not flagged as the launch project")
+	}
+	store := &history.Store{}
+	hub.UseHistory(store)
+	if id, _, ok := store.Project(hub.Launch); !ok || id != network {
+		t.Fatalf("history project %q %v", id, ok)
+	}
+	// A launch plan's claim makes the Hub report the project busy and refuse its init.
+	release, _ := hub.Locks.Acquire(hub.Launch, "plan")
+	defer release()
+	if s, _ := hub.Summary(network); s.Busy != "plan" {
+		t.Fatalf("busy %q", s.Busy)
+	}
+	if _, ok := hub.Locks.Acquire(summary.RootPath, "init"); ok {
+		t.Fatal("Hub init claimed the root of a running launch plan")
 	}
 }

@@ -16,10 +16,10 @@ func (h *Hub) UseHistory(store *history.Store) {
 	store.Project = func(root string) (string, string, bool) {
 		records, _ := h.Registry.List()
 		for _, p := range records {
-			if p.RootPath == root {
+			if p.RootPath == root || sameDir(p.RootPath, root) {
 				name := p.Alias
 				if name == "" {
-					name = filepath.Base(root)
+					name = filepath.Base(p.RootPath)
 				}
 				return p.ID, name, true
 			}

@@ -268,8 +268,17 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	// SSE responses extend their own write deadline per event.
 	server := &http.Server{Handler: api.Handler(store, manager, hub, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	loaded := make(chan struct{})
+	// The startup read holds a shared claim, taken before the server accepts requests, so a
+	// Hub init or workspace command waits for it.
+	readRelease := func() {}
+	if root != "" {
+		if release, ok := hub.Locks.AcquireShared(root); ok {
+			readRelease = release
+		}
+	}
 	go func() {
 		defer close(loaded)
+		defer readRelease()
 		if root != "" {
 			store.Load(runCtx, adapter, engineName)
 		}

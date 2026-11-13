@@ -342,7 +342,7 @@ func check(root string) (status, problem string) {
 }
 
 func (h *Hub) summary(p Record) Summary {
-	s := Summary{ID: p.ID, Alias: p.Alias, RootPath: p.RootPath, EnginePreference: p.EnginePreference, Pinned: p.Pinned, AddedAt: p.AddedAt, LastOpenedAt: p.LastOpenedAt, LastWorkspace: p.LastWorkspace, Backend: "unknown", ExecutionMode: "unsupported", Launch: h.Launch != "" && h.Launch == p.RootPath}
+	s := Summary{ID: p.ID, Alias: p.Alias, RootPath: p.RootPath, EnginePreference: p.EnginePreference, Pinned: p.Pinned, AddedAt: p.AddedAt, LastOpenedAt: p.LastOpenedAt, LastWorkspace: p.LastWorkspace, Backend: "unknown", ExecutionMode: "unsupported", Launch: h.isLaunch(p.RootPath)}
 	s.Status, s.Problem = check(p.RootPath)
 	s.Busy, _ = h.Locks.Holder(p.RootPath)
 	if s.Status == StatusReady {

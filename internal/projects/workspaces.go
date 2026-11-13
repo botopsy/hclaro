@@ -196,7 +196,7 @@ func (h *Hub) ReviewWorkspaceWith(ctx context.Context, id string, action engine.
 	inherited := os.Environ()
 	environ := inherited
 	data, shared := dataDir()
-	launch := h.Launch != "" && h.Launch == p.RootPath
+	launch := h.isLaunch(p.RootPath)
 	r := WorkspaceReview{ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Action: action, Name: target, Backend: "unknown", ExecutionMode: "unsupported", DataDir: data, Workspaces: []string{}, Notices: workspaceNotices(environ, action, launch), Launch: launch}
 	preference, composed, execution, profileErr := h.execution(p, profileID)
 	profile := ""
