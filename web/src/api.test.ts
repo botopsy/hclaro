@@ -76,6 +76,15 @@ describe('request path', () => {
     expect(calls.map(c => c.method + ' ' + (c.csrf ?? ''))).toEqual(['POST old', 'GET ', 'POST new']);
   });
 
+  it('shares one /session read between the session query and a first mutation', async () => {
+    vi.resetModules();
+    const fresh = await import('./api');
+    stub(call => call.url.endsWith('/session') ? Response.json({ csrfToken: 'z' }) : Response.json({}));
+    await Promise.all([fresh.sessionQuery.queryFn(), fresh.post('plans', {})]);
+    expect(calls.filter(c => c.url.endsWith('/session'))).toHaveLength(1);
+    expect(calls.find(c => c.method === 'POST')?.csrf).toBe('z');
+  });
+
   it('does not retry other refusals', async () => {
     stub(call => call.url.endsWith('/session') ? Response.json({ csrfToken: 'x' }) : refusal(403, 'forbidden_origin', 'Wrong page.'));
     await expect(post('plans', {})).rejects.toMatchObject({ code: 'forbidden_origin', message: 'Wrong page.' });

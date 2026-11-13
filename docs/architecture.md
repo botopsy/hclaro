@@ -438,7 +438,8 @@ The UI routes are `/projects`, `/projects/<id>`, `/projects/<id>/workspaces/<nam
 
 ## HTTP contract
 
-Every API endpoint requires `Authorization: Bearer <launch-token>`:
+Every API endpoint requires `Authorization: Bearer <launch-token>`. Requests the guard in `internal/security` refuses before any route runs get JSON `{error, reason}` with fixed text: 403 `forbidden_origin`, 403 `csrf_invalid` (the client refetches `/session` and retries once), 400 `invalid_request`, 415 `json_required`, 413 `body_size`, 405 `method_not_allowed`, 401 `unauthorized`.
+
 
 | Route | Response |
 | --- | --- |

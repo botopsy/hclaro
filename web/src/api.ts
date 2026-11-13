@@ -53,10 +53,14 @@ async function failure(response: Response): Promise<ApiError> {
 }
 export type Session = { csrfToken: string; capabilities?: { scopedExecution?: boolean } };
 // The one /session read: it serves the capabilities query and the CSRF header of mutations.
-async function fetchSession(): Promise<Session> {
-  const session = await request<Session>('GET', 'session');
-  csrf = session.csrfToken;
-  return session;
+// Concurrent callers share the request in flight; nothing is kept after it settles.
+let pendingSession: Promise<Session> | undefined;
+function fetchSession(): Promise<Session> {
+  pendingSession ??= request<Session>('GET', 'session').then(session => {
+    csrf = session.csrfToken;
+    return session;
+  }).finally(() => { pendingSession = undefined; });
+  return pendingSession;
 }
 export const sessionQuery = { queryKey: ['session'], queryFn: fetchSession, staleTime: Infinity };
 // Every API call goes through here and throws only ApiError for a refusal. Mutating requests
