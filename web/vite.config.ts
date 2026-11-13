@@ -8,12 +8,14 @@ export default defineConfig({
       server.middlewares.use((req, res, next) => {
         if (req.headers.host !== '127.0.0.1:5173' || req.headers.origin && req.headers.origin !== 'http://127.0.0.1:5173' || req.headers['sec-fetch-site'] === 'cross-site') {
           res.statusCode = 403;
-          res.end('forbidden local origin');
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'forbidden_origin', reason: 'This request did not come from the Hclaro page on this address.' }));
           return;
         }
         if (req.method !== 'GET' && req.method !== 'HEAD') {
           res.statusCode = 405;
-          res.end('read-only development server');
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'method_not_allowed', reason: 'The development server is read-only.' }));
           return;
         }
         next();

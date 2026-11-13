@@ -49,6 +49,15 @@ afterEach(() => {
 });
 
 describe('Cost estimate tab', () => {
+  it('shows why clearing saved estimates was refused', async () => {
+    const record = { id: '1', createdAt: '2026-11-09T09:00:00Z', workspace: 'demo', monthlyDelta: '1.00', currency: 'USD', coveragePercent: 100 };
+    serve(ready, estimate, url => url.endsWith('/cost/history') ? Response.json({ records: [record], persisted: true }) : undefined,
+      url => url.endsWith('/cost/history/clear') ? Response.json({ error: 'csrf_invalid', reason: 'Reload the page and try again.' }, { status: 403 }) : undefined);
+    await openCost();
+    await userEvent.click(await screen.findByText(/Earlier estimates for this project/));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear saved estimates' }));
+    expect(await screen.findByText('Reload the page and try again.')).toBeInTheDocument();
+  });
   it('in a Hub workspace explains estimates are launch-only and calls no cost route', async () => {
     serve(ready, estimate);
     await openCost(plan, { kind: 'context', contextId: 'f'.repeat(32) });
