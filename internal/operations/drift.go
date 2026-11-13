@@ -90,21 +90,22 @@ type DriftScanView struct {
 const maxScans = 10
 
 var driftMessages = map[string]string{
-	"state_locked":      "The state is locked by another operation, so the scan could not read it. Hclaro never force-unlocks state. Wait for the other operation to finish, or investigate the lock with your CLI.",
-	"credentials":       "The engine could not authenticate with the backend or a provider, or was denied access (for example, an expired SSO session or a missing permission). Sign in again in your terminal, check permissions, then scan again.",
-	"init_required":     "This working directory needs initialization, or modules or providers are missing. Run init yourself, then read the project again. Nothing was initialized automatically.",
-	"network":           "A backend or provider endpoint was unreachable. Check VPN and network access, then scan again.",
-	"plan_failed":       "The refresh-only plan failed. Review the engine diagnostics; lines that look like secrets are withheld.",
-	"timeout":           "The scan exceeded its time limit and was stopped. If the engine was stopped forcefully, check for a leftover state lock with your CLI.",
-	"cancelled":         "The scan was cancelled. No state was written. If the engine had to be stopped forcefully, a state lock may remain; check with your CLI before retrying.",
-	"unsafe_cli_args":   "Inherited TF_CLI_ARGS or TF_CLI_ARGS_plan contains flags other than -no-color. Injected flags could change what the scan does, so Hclaro refused to run. Values were not logged.",
-	"workspace_error":   "The active workspace could not be confirmed before scanning. Check workspace selection with your CLI.",
-	"plan_read":         "The refresh-only plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
-	"plan_format":       "The refresh-only plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No scan data was returned.",
-	"not_refresh_only":  "The engine returned a plan that proposes resource changes, which a refresh-only plan never does. The result cannot be trusted as a drift scan and was discarded.",
-	"shutdown":          "Hclaro stopped while the scan was running. No result was kept.",
-	"scope_changed":     scopeChangedMessage,
-	"workspace_changed": "The active workspace changed since Hclaro read this project. Read the project again before scanning.",
+	"state_locked":             "The state is locked by another operation, so the scan could not read it. Hclaro never force-unlocks state. Wait for the other operation to finish, or investigate the lock with your CLI.",
+	"credentials":              "The engine could not authenticate with the backend or a provider, or was denied access (for example, an expired SSO session or a missing permission). Sign in again in your terminal, check permissions, then scan again.",
+	"init_required":            "This working directory needs initialization, or modules or providers are missing. Run init yourself, then read the project again. Nothing was initialized automatically.",
+	"network":                  "A backend or provider endpoint was unreachable. Check VPN and network access, then scan again.",
+	"plan_failed":              "The refresh-only plan failed. Review the engine diagnostics; lines that look like secrets are withheld.",
+	"timeout":                  "The scan exceeded its time limit and was stopped. If the engine was stopped forcefully, check for a leftover state lock with your CLI.",
+	"cancelled":                "The scan was cancelled. No state was written. If the engine had to be stopped forcefully, a state lock may remain; check with your CLI before retrying.",
+	"unsafe_cli_args":          "Inherited TF_CLI_ARGS or TF_CLI_ARGS_plan contains flags other than -no-color. Injected flags could change what the scan does, so Hclaro refused to run. Values were not logged.",
+	"workspace_error":          "The active workspace could not be confirmed before scanning. Check workspace selection with your CLI.",
+	"plan_read":                "The refresh-only plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
+	"plan_format":              "The refresh-only plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No scan data was returned.",
+	"not_refresh_only":         "The engine returned a plan that proposes resource changes, which a refresh-only plan never does. The result cannot be trusted as a drift scan and was discarded.",
+	"shutdown":                 "Hclaro stopped while the scan was running. No result was kept.",
+	"scope_changed":            scopeChangedMessage,
+	"workspace_changed":        "The active workspace changed since Hclaro read this project. Read the project again before scanning.",
+	"configuration_unreadable": "Hclaro could not read the configuration, so a scan result could not be tied to it. Nothing was run. The log names the file or limit; fix it, then scan again.",
 }
 
 // DriftCapability reports whether a drift scan can run for the current launch snapshot and,
@@ -340,7 +341,11 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 	_ = os.Chmod(dir, 0o700)
 	out := filepath.Join(dir, "drift.tfplan")
 	// Taken before the engine runs, so edits made while scanning make the result stale.
-	fingerprint = m.fingerprintFor(snap, e.op.VarFiles, "", bound, e.environ)
+	fingerprint, err = m.fingerprintFor(snap, e.op.VarFiles, "", bound, e.environ)
+	if err != nil {
+		e.log.Append("error", unreadableNote(err))
+		return nil, "", false, "configuration_unreadable", nil
+	}
 	m.stage(e, "Scanning")
 	environ := e.environ
 	if environ == nil {
@@ -540,10 +545,10 @@ func (m *Manager) view(s DriftScan) DriftScanView {
 	case s.fingerprint == "":
 		v.StaleReason = "This scan has no recorded context."
 	default:
-		current, reason := m.contextFingerprint(s.VarFiles, s.Context, "scan", "Scan again with the current profile.")
+		current, rej := m.contextFingerprint(s.VarFiles, s.Context, "scan", "Scan again with the current profile.")
 		switch {
-		case reason != "":
-			v.StaleReason = reason
+		case rej != nil:
+			v.StaleReason = rej.Reason
 		case current != s.fingerprint:
 			v.StaleReason = "Configuration, variable files, the data directory or the planning environment changed since this scan. Scan again to see current drift."
 		}

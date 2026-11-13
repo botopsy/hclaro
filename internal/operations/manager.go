@@ -565,7 +565,11 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	if e.op.Import != nil {
 		generated = e.op.Import.GeneratedFile
 	}
-	fingerprint := m.fingerprintFor(snap, e.op.VarFiles, generated, bound, e.environ)
+	// An unreadable configuration still gets a reviewable plan; it cannot be applied.
+	fingerprint, fpErr := m.fingerprintFor(snap, e.op.VarFiles, generated, bound, e.environ)
+	if fpErr != nil {
+		e.log.Append("warn", unreadableNote(fpErr)+" This plan can be reviewed but not applied.")
+	}
 	var source *gitctx.PlanSourceFingerprint
 	if m.Git != nil {
 		source = m.Git.Record(ctx, m.root)
@@ -651,8 +655,8 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		review.Warnings = append(review.Warnings, importWarnings(review, e.op.Import.Address)...)
 		if generated != "" {
 			// The generated file is new; any other edit made while planning still counts.
-			if m.fingerprintFor(snap, e.op.VarFiles, generated, bound, e.environ) == fingerprint {
-				fingerprint = m.fingerprintFor(snap, e.op.VarFiles, "", bound, e.environ)
+			if again, err := m.fingerprintFor(snap, e.op.VarFiles, generated, bound, e.environ); err == nil && again == fingerprint {
+				fingerprint, _ = m.fingerprintFor(snap, e.op.VarFiles, "", bound, e.environ)
 				// The source now includes the generated file, which the plan was made with.
 				if m.Git != nil {
 					source = m.Git.Record(ctx, m.root)
@@ -728,11 +732,13 @@ func environOr(environ []string) []string {
 
 // Fingerprint identifies the plan context: engine, version, workspace, variable file
 // selection, configuration files, engine data directory and planning environment.
+// It is "" when the configuration could not be read.
 func (m *Manager) Fingerprint(snap workspace.Snapshot, varFiles []string) string {
-	return m.fingerprintExcept(snap, varFiles, "")
+	fp, _ := m.fingerprintExcept(snap, varFiles, "")
+	return fp
 }
 
-func (m *Manager) fingerprintExcept(snap workspace.Snapshot, varFiles []string, skip string) string {
+func (m *Manager) fingerprintExcept(snap workspace.Snapshot, varFiles []string, skip string) (string, error) {
 	return workspace.FingerprintExcept(m.root, os.Environ(), map[string]bool{skip: skip != ""}, append([]string{snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}, varFiles...)...)
 }
 

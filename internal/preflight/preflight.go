@@ -115,6 +115,8 @@ type Input struct {
 	// planning environment changed; ProfileReason explains a changed or removed profile.
 	FingerprintMatch bool
 	ProfileReason    string
+	// Unreadable explains a fingerprint that could not be computed, now or when planning.
+	Unreadable string
 	// ArtifactRetained is false when the saved plan file is gone. DigestMatch is nil when
 	// the file could not be hashed.
 	ArtifactRetained bool
@@ -185,7 +187,9 @@ func Evaluate(in Input) []Check {
 	} else if in.ProfileName != "" {
 		out = append(out, check(CheckProfile, "Execution profile is unchanged", Block, Pass, "Profile "+in.ProfileName+" has the same revision and context fingerprint.", ""))
 	}
-	if in.FingerprintMatch {
+	if in.Unreadable != "" {
+		out = append(out, check(CheckFingerprint, "Configuration and planning environment are unchanged", Block, Fail, in.Unreadable, rerun))
+	} else if in.FingerprintMatch {
 		out = append(out, check(CheckFingerprint, "Configuration and planning environment are unchanged", Block, Pass, "Configuration, variable files, the lock file and the planning environment match the plan's context fingerprint.", ""))
 	} else {
 		out = append(out, check(CheckFingerprint, "Configuration and planning environment are unchanged", Block, Fail, "Configuration, variable files, the lock file, the execution profile or the planning environment changed since this plan was created.", rerun))

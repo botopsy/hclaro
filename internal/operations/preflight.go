@@ -84,7 +84,16 @@ func notRequested() preflight.Identity { return preflight.Identity{State: "not_r
 // facts collects the preflight input for p. It hashes the artifact and probes Git; the
 // identity is passed in because it is only probed on request.
 func (m *Manager) facts(ctx context.Context, p *Plan, identity preflight.Identity) preflight.Input {
-	current, reason := m.currentFingerprint(p)
+	current, rej := m.currentFingerprint(p)
+	var reason, unreadable string
+	switch {
+	case rej != nil && rej.Code == "configuration_unreadable":
+		unreadable = rej.Reason
+	case rej != nil:
+		reason = rej.Reason
+	case p.Fingerprint == "":
+		unreadable = unreadablePlan
+	}
 	snap := m.store.Get()
 	m.mu.Lock()
 	a := m.artifact
@@ -95,6 +104,7 @@ func (m *Manager) facts(ctx context.Context, p *Plan, identity preflight.Identit
 		Current:          preflight.Recorded{Engine: snap.Info.Engine, Version: snap.Info.Version, Workspace: snap.Info.Workspace},
 		FingerprintMatch: current != "" && current == p.Fingerprint,
 		ProfileReason:    reason,
+		Unreadable:       unreadable,
 		ArtifactRetained: retained,
 		ArtifactNote:     m.notes[p.ID],
 		Digest:           p.ArtifactSHA256,
