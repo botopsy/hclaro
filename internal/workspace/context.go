@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"io/fs"
@@ -12,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"hclaro/internal/state"
 )
 
 var varFilePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
@@ -58,15 +61,17 @@ const (
 //   - the given labels such as engine, version, workspace and selected variable files.
 //
 // Provider plugin binaries are covered only through .terraform.lock.hcl checksums.
-// An empty result means a walk exceeded its limits.
+// An empty result means a file could not be read or a walk exceeded its limits;
+// FingerprintExcept says which.
 func Fingerprint(root string, environ []string, labels ...string) string {
-	return FingerprintExcept(root, environ, nil, labels...)
+	fp, _ := FingerprintExcept(root, environ, nil, labels...)
+	return fp
 }
 
 // FingerprintExcept is Fingerprint with root-level files in skip left out. Import plans use
 // it to tell an engine-generated configuration file apart from other edits made while the
-// plan ran.
-func FingerprintExcept(root string, environ []string, skip map[string]bool, labels ...string) string {
+// plan ran. The error names the file that could not be read, or the limit hit.
+func FingerprintExcept(root string, environ []string, skip map[string]bool, labels ...string) (string, error) {
 	h := sha256.New()
 	field := func(b []byte) {
 		h.Write(b)
@@ -98,19 +103,50 @@ func FingerprintExcept(root string, environ []string, skip map[string]bool, labe
 		dataDir = filepath.Join(root, dataDir)
 	}
 	budget := &walkBudget{skip: skip}
-	if hashTree(h, root, root, budget) != nil {
-		return ""
+	if err := hashTree(h, root, root, budget); err != nil {
+		return "", readError(root, dataDir, err)
 	}
 	field([]byte("data"))
 	for _, name := range []string{"terraform.tfstate", "environment", filepath.Join("modules", "modules.json")} {
 		if err := hashFile(h, dataDir, filepath.Join(dataDir, name), budget); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return ""
+			return "", readError(root, dataDir, err)
 		}
 	}
 	if err := hashTree(h, dataDir, filepath.Join(dataDir, "modules"), budget); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return ""
+		return "", readError(root, dataDir, err)
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// readError rewords a walk error without absolute paths: the path relative to root (or
+// to the data directory when that lies outside root) and the cause or limit.
+func readError(root, dataDir string, err error) error {
+	switch {
+	case errors.Is(err, errFiles):
+		return fmt.Errorf("the configuration has more than %d files Hclaro reads", maxFingerprintFiles)
+	case errors.Is(err, errBytes):
+		return fmt.Errorf("the configuration is larger than %d MiB", maxFingerprintBytes>>20)
+	}
+	var pe *fs.PathError
+	if !errors.As(err, &pe) {
+		return errors.New("a file could not be read")
+	}
+	// A name that looks like a secret is withheld, as the Git views do.
+	shown := func(rel string) string {
+		if len(rel) > 200 || state.Suspicious(rel) {
+			return "a file whose name is withheld"
+		}
+		return fmt.Sprintf("%q", filepath.ToSlash(rel))
+	}
+	name := "a configuration file"
+	if rel, relErr := filepath.Rel(root, pe.Path); relErr == nil && rel == "." {
+		name = "the project folder"
+	} else if relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		name = shown(rel)
+	} else if rel, relErr := filepath.Rel(dataDir, pe.Path); relErr == nil {
+		name = shown(rel) + " in the data directory"
+	}
+	return fmt.Errorf("%s could not be read (%v)", name, pe.Err)
 }
 
 type walkBudget struct {
@@ -162,8 +198,11 @@ func hashFile(h hash.Hash, base, path string, budget *walkBudget) error {
 	}
 	budget.files++
 	budget.bytes += info.Size()
-	if budget.files > maxFingerprintFiles || budget.bytes > maxFingerprintBytes {
-		return errLimit
+	if budget.files > maxFingerprintFiles {
+		return errFiles
+	}
+	if budget.bytes > maxFingerprintBytes {
+		return errBytes
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -178,4 +217,7 @@ func hashFile(h hash.Hash, base, path string, budget *walkBudget) error {
 	return err
 }
 
-var errLimit = errors.New("fingerprint limits exceeded")
+var (
+	errFiles = errors.New("fingerprint file limit exceeded")
+	errBytes = errors.New("fingerprint size limit exceeded")
+)

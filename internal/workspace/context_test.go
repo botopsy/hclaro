@@ -1,8 +1,11 @@
 package workspace
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +71,39 @@ func TestFingerprintDataDir(t *testing.T) {
 	write(t, filepath.Join(root, ".terraform", "environment"), "ignored")
 	if Fingerprint(root, env) != before {
 		t.Fatal("default data directory read although TF_DATA_DIR is set")
+	}
+}
+
+func TestFingerprintNamesWhatCouldNotBeRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions are not enforced here")
+	}
+	root := t.TempDir()
+	write(t, filepath.Join(root, "main.tf"), "")
+	write(t, filepath.Join(root, "modules", "net", "main.tf"), "")
+	dir := filepath.Join(root, "modules", "net")
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	fp, err := FingerprintExcept(root, nil, nil)
+	if fp != "" || err == nil || err.Error() != `"modules/net" could not be read (permission denied)` {
+		t.Fatalf("%q %v", fp, err)
+	}
+}
+
+func TestFingerprintWithholdsSecretLikeNames(t *testing.T) {
+	key := "AKIAABCDEFGHIJKLMNOP"
+	err := readError("/r", "/r/.terraform", &fs.PathError{Op: "open", Path: "/r/" + key + "/main.tf", Err: fs.ErrPermission})
+	if strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "withheld") {
+		t.Fatal(err)
+	}
+}
+
+func TestFingerprintLimitsAreNamed(t *testing.T) {
+	for err, want := range map[error]string{errFiles: "more than 10000 files", errBytes: "larger than 256 MiB"} {
+		if got := readError("/r", "/r/.terraform", err).Error(); !strings.Contains(got, want) {
+			t.Errorf("%s: %s", want, got)
+		}
 	}
 }

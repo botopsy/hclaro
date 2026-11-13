@@ -103,21 +103,22 @@ const maxGraphs = 5
 const GraphMaxAge = 12 * time.Hour
 
 var graphMessages = map[string]string{
-	"credentials":       "The engine could not read the backend (for example, an expired SSO session or a missing permission). Sign in again in your terminal, then generate the graph again.",
-	"init_required":     "This working directory needs initialization, or modules or providers are missing. Run init yourself, then read the project again. Nothing was initialized automatically.",
-	"network":           "The backend was unreachable. Check VPN and network access, then generate the graph again.",
-	"state_locked":      "The state is locked by another operation, so the engine could not read it. Hclaro never force-unlocks state.",
-	"graph_failed":      "The engine could not produce a graph. Run `graph` with your CLI to see the error; its output is not shown here because it may contain secrets.",
-	"graph_format":      "The graph output could not be read as the DOT format the engines produce. Nothing was kept.",
-	"graph_too_large":   "The graph exceeds Hclaro's size limits (16 MiB, 20,000 nodes or 200,000 edges). Nothing was kept.",
-	"graph_unavailable": "This engine adapter cannot generate graphs.",
-	"timeout":           "Generating the graph exceeded its time limit and was stopped.",
-	"cancelled":         "Generating the graph was cancelled. Nothing was kept.",
-	"unsafe_cli_args":   "Inherited TF_CLI_ARGS or TF_CLI_ARGS_graph contains flags other than -no-color. Injected flags could change what the graph shows, so Hclaro refused to run. Values were not logged.",
-	"workspace_error":   "The active workspace could not be confirmed before generating the graph. Check workspace selection with your CLI.",
-	"workspace_changed": "The active workspace changed since Hclaro read this project. Read the project again first.",
-	"shutdown":          "Hclaro stopped while the graph was being generated. Nothing was kept.",
-	"scope_changed":     scopeChangedMessage,
+	"credentials":              "The engine could not read the backend (for example, an expired SSO session or a missing permission). Sign in again in your terminal, then generate the graph again.",
+	"init_required":            "This working directory needs initialization, or modules or providers are missing. Run init yourself, then read the project again. Nothing was initialized automatically.",
+	"network":                  "The backend was unreachable. Check VPN and network access, then generate the graph again.",
+	"state_locked":             "The state is locked by another operation, so the engine could not read it. Hclaro never force-unlocks state.",
+	"graph_failed":             "The engine could not produce a graph. Run `graph` with your CLI to see the error; its output is not shown here because it may contain secrets.",
+	"graph_format":             "The graph output could not be read as the DOT format the engines produce. Nothing was kept.",
+	"graph_too_large":          "The graph exceeds Hclaro's size limits (16 MiB, 20,000 nodes or 200,000 edges). Nothing was kept.",
+	"graph_unavailable":        "This engine adapter cannot generate graphs.",
+	"timeout":                  "Generating the graph exceeded its time limit and was stopped.",
+	"cancelled":                "Generating the graph was cancelled. Nothing was kept.",
+	"unsafe_cli_args":          "Inherited TF_CLI_ARGS or TF_CLI_ARGS_graph contains flags other than -no-color. Injected flags could change what the graph shows, so Hclaro refused to run. Values were not logged.",
+	"workspace_error":          "The active workspace could not be confirmed before generating the graph. Check workspace selection with your CLI.",
+	"workspace_changed":        "The active workspace changed since Hclaro read this project. Read the project again first.",
+	"shutdown":                 "Hclaro stopped while the graph was being generated. Nothing was kept.",
+	"scope_changed":            scopeChangedMessage,
+	"configuration_unreadable": "Hclaro could not read the configuration, so a graph could not be tied to it. Nothing was run. The log names the file or limit; fix it, then generate the graph again.",
 }
 
 func graphMessage(code string) string {
@@ -284,7 +285,11 @@ func (m *Manager) executeGraph(ctx context.Context, e *entry, snap workspace.Sna
 		return nil, "", "workspace_changed", nil
 	}
 	// Taken before the engine runs, so edits made meanwhile make the result stale.
-	fingerprint = m.fingerprintFor(snap, nil, "", bound, e.environ)
+	fingerprint, err = m.fingerprintFor(snap, nil, "", bound, e.environ)
+	if err != nil {
+		e.log.Append("error", unreadableNote(err))
+		return nil, "", "configuration_unreadable", nil
+	}
 	m.stage(e, "Generating graph")
 	dot, err := grapher.Graph(ctx)
 	if err != nil {
@@ -386,10 +391,10 @@ func (m *Manager) graphStaleReason(r GraphRun) string {
 	case r.fingerprint == "":
 		return "This graph has no recorded context."
 	}
-	current, reason := m.contextFingerprint(nil, r.Context, "graph", "Generate it again with the current profile.")
+	current, rej := m.contextFingerprint(nil, r.Context, "graph", "Generate it again with the current profile.")
 	switch {
-	case reason != "":
-		return reason
+	case rej != nil:
+		return rej.Reason
 	case current != r.fingerprint:
 		return "Configuration, the data directory or the environment changed since this graph was generated. Generate it again to see current dependencies."
 	}

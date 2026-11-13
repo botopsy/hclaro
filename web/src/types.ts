@@ -383,6 +383,8 @@ export type ApplyStatus = {
   reason?: string;
   // Stable refusal code when unavailable, such as unknown_actions.
   code?: string;
+  // Set when the configuration could not be read, whichever refusal code wins (M26.12).
+  configurationReason?: string;
   artifactRetained: boolean;
   expiresAt?: string;
 };

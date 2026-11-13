@@ -48,6 +48,9 @@ type ApplyStatus struct {
 	Code             string `json:"code,omitempty"`
 	ArtifactRetained bool   `json:"artifactRetained"`
 	ExpiresAt        string `json:"expiresAt,omitempty"`
+	// ConfigurationReason is set when the configuration could not be read, now or when
+	// planning, whichever refusal Code names.
+	ConfigurationReason string `json:"configurationReason,omitempty"`
 }
 
 // Approval is a one-time, short-lived confirmation token bound to one plan and its saved
@@ -81,6 +84,9 @@ type RejectError struct {
 func (e *RejectError) Error() string { return e.Reason }
 
 func reject(code, reason string) error { return &RejectError{code, reason} }
+
+// unreadablePlan explains a plan whose configuration could not be fingerprinted when it ran.
+const unreadablePlan = "Hclaro could not read the configuration when this plan was created, so it cannot confirm the plan is current. The plan log names the file or limit. Fix it, then run a new plan."
 
 // unsupportedReason explains why a plan with unrecognized action combinations can never be
 // applied, or returns "". It recomputes from the recorded action lists each time, so the
@@ -202,13 +208,13 @@ func (m *Manager) releaseLocked(note string) {
 // ApplyStatus reports whether p can be applied now. currentFingerprint is the context
 // fingerprint recomputed by the caller.
 func (m *Manager) ApplyStatus(p *Plan, currentFingerprint string) ApplyStatus {
-	return m.applyStatus(p, currentFingerprint, "")
+	return m.applyStatus(p, currentFingerprint, nil)
 }
 
-func (m *Manager) applyStatus(p *Plan, currentFingerprint, profileReason string) ApplyStatus {
+func (m *Manager) applyStatus(p *Plan, currentFingerprint string, rej *RejectError) ApplyStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.checkLocked(p, currentFingerprint, profileReason); err != nil {
+	if err := m.checkLocked(p, currentFingerprint, rej); err != nil {
 		retained := m.artifact != nil && m.artifact.planID == p.ID
 		status := ApplyStatus{Reason: err.Error(), ArtifactRetained: retained}
 		var r *RejectError
@@ -221,8 +227,8 @@ func (m *Manager) applyStatus(p *Plan, currentFingerprint, profileReason string)
 }
 
 // checkLocked verifies everything that can be checked without running the engine.
-// Caller holds mu.
-func (m *Manager) checkLocked(p *Plan, currentFingerprint, profileReason string) error {
+// Caller holds mu. rej is the refusal from recomputing the fingerprint, if any.
+func (m *Manager) checkLocked(p *Plan, currentFingerprint string, rej *RejectError) error {
 	snap := m.store.Get()
 	a := m.artifact
 	if reason := unsupportedReason(p); reason != "" {
@@ -243,10 +249,12 @@ func (m *Manager) checkLocked(p *Plan, currentFingerprint, profileReason string)
 		return reject("not_applicable", snap.Info.Capabilities.ApplyReason)
 	case time.Since(a.created) >= m.PlanMaxAge:
 		return reject("plan_expired", expiredReason(m.PlanMaxAge))
-	case profileReason != "":
-		return reject("context_changed", profileReason)
+	case rej != nil:
+		return rej
 	case snap.Info.Engine != a.engine || snap.Info.Version != a.version || snap.Info.Workspace != a.workspace:
 		return reject("context_changed", "The engine, its version or the workspace changed since this plan was created. Run a new plan.")
+	case a.fingerprint == "":
+		return reject("configuration_unreadable", unreadablePlan)
 	case currentFingerprint == "" || currentFingerprint != a.fingerprint:
 		return reject("context_changed", "Configuration, variable files, the lock file or the planning environment changed since this plan was created. Run a new plan.")
 	}
@@ -274,10 +282,10 @@ func (m *Manager) Approve(id string, req ApprovalRequest) (Approval, error) {
 	if !ok {
 		return Approval{}, ErrNotFound
 	}
-	current, reason := m.currentFingerprint(p)
+	current, rej := m.currentFingerprint(p)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.checkLocked(p, current, reason); err != nil {
+	if err := m.checkLocked(p, current, rej); err != nil {
 		return Approval{}, err
 	}
 	a := m.artifact
@@ -318,7 +326,7 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	m.mu.Unlock()
 	checks := preflight.Evaluate(m.facts(m.base, p, identity))
 	blockers, ack := acknowledgements(checks)
-	current, reason := m.currentFingerprint(p)
+	current, rej := m.currentFingerprint(p)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a := m.artifact
@@ -333,7 +341,7 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	if want := phrase(p); want != "" && subtle.ConstantTimeCompare([]byte(typed), []byte(want)) != 1 {
 		return Operation{}, reject("confirmation_mismatch", "The typed confirmation did not match. Nothing was applied.")
 	}
-	if err := m.checkLocked(p, current, reason); err != nil {
+	if err := m.checkLocked(p, current, rej); err != nil {
 		return Operation{}, err
 	}
 	b, err := m.checkBindingLocked(a, granted.binding)
@@ -383,24 +391,25 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 }
 
 var applyMessages = map[string]string{
-	"applied":             "Apply finished. The state view was reloaded from the engine.",
-	"workspace_changed":   "The active workspace no longer matches this plan. Nothing was applied.",
-	"workspace_error":     "The active workspace could not be confirmed. Nothing was applied.",
-	"artifact_changed":    "The saved plan file changed after review. Nothing was applied, and the file was deleted.",
-	"unknown_actions":     "The plan contains an action combination Hclaro does not support. Nothing was applied, and the saved file was deleted.",
-	"unsafe_cli_args":     "Inherited TF_CLI_ARGS or TF_CLI_ARGS_apply contains flags other than -no-color. Nothing was applied. Values were not logged.",
-	"stale_plan":          "The engine refused the saved plan because state changed after it was created. Nothing was applied. Run a new plan and review it again.",
-	"state_locked":        "The state is locked by another operation, so the engine did not apply. Hclaro never force-unlocks state.",
-	"state_unlock_failed": "The engine ran the apply but could not release the state lock afterwards. Changes may have been made; review the reloaded state. The lock may remain: investigate it with your CLI. Hclaro never force-unlocks state.",
-	"credentials":         "The engine could not authenticate with the backend or a provider. Some changes may have been made before the failure. Review the reloaded state and refresh your credentials.",
-	"network":             "A backend or provider endpoint was unreachable. Some changes may have been made before the failure. Review the reloaded state.",
-	"init_required":       "The engine reported missing initialization. Nothing was initialized automatically.",
-	"apply_failed":        "The apply failed. Some changes may have been made before the error. Review the diagnostics and the reloaded state; the saved plan cannot be reused.",
-	"apply_cancelled":     "The apply was interrupted. Infrastructure may be partly changed: resources being created or destroyed when it stopped can be incomplete. Review the reloaded state and run a new plan. If the engine had to be stopped forcefully, a state lock may remain.",
-	"apply_timeout":       "The apply exceeded its time limit and was stopped. Infrastructure may be partly changed. Review the reloaded state and run a new plan.",
-	"shutdown":            "Hclaro stopped while the apply was running. Infrastructure may be partly changed. Check state with your CLI.",
-	"scope_changed":       scopeChangedMessage + " Nothing was applied, and the saved file was deleted.",
-	"context_changed":     "Configuration, variable files, the lock file, the execution profile or the planning environment changed after this plan was approved. Nothing was applied, and the saved file was deleted. Run a new plan.",
+	"applied":                  "Apply finished. The state view was reloaded from the engine.",
+	"workspace_changed":        "The active workspace no longer matches this plan. Nothing was applied.",
+	"workspace_error":          "The active workspace could not be confirmed. Nothing was applied.",
+	"artifact_changed":         "The saved plan file changed after review. Nothing was applied, and the file was deleted.",
+	"unknown_actions":          "The plan contains an action combination Hclaro does not support. Nothing was applied, and the saved file was deleted.",
+	"unsafe_cli_args":          "Inherited TF_CLI_ARGS or TF_CLI_ARGS_apply contains flags other than -no-color. Nothing was applied. Values were not logged.",
+	"stale_plan":               "The engine refused the saved plan because state changed after it was created. Nothing was applied. Run a new plan and review it again.",
+	"state_locked":             "The state is locked by another operation, so the engine did not apply. Hclaro never force-unlocks state.",
+	"state_unlock_failed":      "The engine ran the apply but could not release the state lock afterwards. Changes may have been made; review the reloaded state. The lock may remain: investigate it with your CLI. Hclaro never force-unlocks state.",
+	"credentials":              "The engine could not authenticate with the backend or a provider. Some changes may have been made before the failure. Review the reloaded state and refresh your credentials.",
+	"network":                  "A backend or provider endpoint was unreachable. Some changes may have been made before the failure. Review the reloaded state.",
+	"init_required":            "The engine reported missing initialization. Nothing was initialized automatically.",
+	"apply_failed":             "The apply failed. Some changes may have been made before the error. Review the diagnostics and the reloaded state; the saved plan cannot be reused.",
+	"apply_cancelled":          "The apply was interrupted. Infrastructure may be partly changed: resources being created or destroyed when it stopped can be incomplete. Review the reloaded state and run a new plan. If the engine had to be stopped forcefully, a state lock may remain.",
+	"apply_timeout":            "The apply exceeded its time limit and was stopped. Infrastructure may be partly changed. Review the reloaded state and run a new plan.",
+	"shutdown":                 "Hclaro stopped while the apply was running. Infrastructure may be partly changed. Check state with your CLI.",
+	"scope_changed":            scopeChangedMessage + " Nothing was applied, and the saved file was deleted.",
+	"configuration_unreadable": "Hclaro could not read the configuration right before applying, so it cannot confirm the plan is current. Nothing was applied, and the saved file was deleted. The log names the file or limit.",
+	"context_changed":          "Configuration, variable files, the lock file, the execution profile or the planning environment changed after this plan was approved. Nothing was applied, and the saved file was deleted. Run a new plan.",
 }
 
 func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
@@ -546,7 +555,10 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	// The context fingerprint (configuration, variable files, lock file, data directory,
 	// profile and planning environment) is recomputed last, with the root claim held, so an
 	// edit made after approval refuses the apply.
-	if current, _ := m.currentFingerprint(p); current == "" || current != a.fingerprint {
+	if current, rej := m.currentFingerprint(p); rej != nil && rej.Code == "configuration_unreadable" {
+		e.log.Append("error", rej.Reason)
+		return "configuration_unreadable", nil, false
+	} else if current == "" || current != a.fingerprint {
 		return "context_changed", nil, false
 	}
 	m.stage(e, "Applying")

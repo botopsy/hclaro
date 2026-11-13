@@ -104,7 +104,7 @@ function LaunchCostTab({ plan }: { plan: Plan }) {
      <Button variant="ghost" size="small" onClick={() => void optOut()} disabled={busy}><Power size={13} />Turn off</Button>
     </div>
     {plan.contextChanged
-     ? <p className="plan-warning" role="alert"><TriangleAlert size={14} />The context changed since this plan was made. Run a new plan to estimate current changes.</p>
+     ? <p className="plan-warning" role="alert"><TriangleAlert size={14} />{plan.apply.configurationReason ?? 'The context changed since this plan was made. Run a new plan to estimate current changes.'}</p>
      : current?.status !== 'running' && <div className="cost-start"><p>Estimating sends price lookups for this plan’s resources to <code>{caps.disclosure?.endpoint}</code>. Plans and applies do not wait for it.</p><Button onClick={() => void start()} disabled={busy}><Play size={14} />{current ? 'Estimate again' : 'Estimate cost'}</Button></div>}
     {estimate.error && <p className="plan-warning" role="alert">{estimate.error.message}</p>}
     {current && <EstimateView estimate={current} busy={busy} onCancel={() => void cancel(current.id)} />}

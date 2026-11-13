@@ -116,7 +116,7 @@ func (m *Manager) bound(environ []string, ws string) engine.Planner {
 
 // fingerprintFor is the plan fingerprint; with a profile it covers the composed
 // environment and the profile's context fingerprint.
-func (m *Manager) fingerprintFor(snap workspace.Snapshot, varFiles []string, skip string, c *ExecutionContext, environ []string) string {
+func (m *Manager) fingerprintFor(snap workspace.Snapshot, varFiles []string, skip string, c *ExecutionContext, environ []string) (string, error) {
 	if c == nil {
 		return m.fingerprintExcept(snap, varFiles, skip)
 	}
@@ -125,27 +125,39 @@ func (m *Manager) fingerprintFor(snap workspace.Snapshot, varFiles []string, ski
 }
 
 // currentFingerprint recomputes a plan's fingerprint now. For a profile-bound plan the
-// profile is resolved again; reason explains a changed or removed profile.
-func (m *Manager) currentFingerprint(p *Plan) (fingerprint, reason string) {
+// profile is resolved again. A refusal is context_changed for a changed or removed profile
+// and configuration_unreadable when the configuration could not be read.
+func (m *Manager) currentFingerprint(p *Plan) (string, *RejectError) {
 	return m.contextFingerprint(p.VarFiles, p.Context, "plan", "Run a new plan with the current profile.")
 }
 
 // contextFingerprint recomputes the fingerprint of an operation context now; what names
 // the kind of result ("plan", "scan") in the reason and next says what to do.
-func (m *Manager) contextFingerprint(varFiles []string, c *ExecutionContext, what, next string) (fingerprint, reason string) {
+func (m *Manager) contextFingerprint(varFiles []string, c *ExecutionContext, what, next string) (string, *RejectError) {
 	snap := m.store.Get()
-	if c == nil {
-		return m.Fingerprint(snap, varFiles), ""
+	var environ []string
+	if c != nil {
+		changed := &RejectError{"context_changed", "The execution profile " + c.ProfileName + " was changed or removed after this " + what + " was created. " + next}
+		if m.Binder == nil {
+			return "", changed
+		}
+		b, err := m.Binder(c.ProfileID)
+		if err != nil || b.Context.Fingerprint != c.Fingerprint {
+			return "", changed
+		}
+		environ = b.Environ
 	}
-	changed := "The execution profile " + c.ProfileName + " was changed or removed after this " + what + " was created. " + next
-	if m.Binder == nil {
-		return "", changed
+	fp, err := m.fingerprintFor(snap, varFiles, "", c, environ)
+	if err != nil {
+		return "", &RejectError{"configuration_unreadable", "Hclaro could not read the configuration, so it cannot tell whether it changed since this " + what + " was created: " + err.Error() + ". Make it readable, or smaller than the limit, then try again."}
 	}
-	b, err := m.Binder(c.ProfileID)
-	if err != nil || b.Context.Fingerprint != c.Fingerprint {
-		return "", changed
-	}
-	return m.fingerprintFor(snap, varFiles, "", c, b.Environ), ""
+	return fp, nil
+}
+
+// unreadableNote is logged when the configuration cannot be fingerprinted at the start
+// of an operation.
+func unreadableNote(err error) string {
+	return "Hclaro could not read the configuration: " + err.Error() + "."
 }
 
 // SourceStatus compares the plan's recorded source fingerprint with the working tree now.
@@ -177,11 +189,17 @@ func sourceFacts(st gitctx.SourceStatus) *preflight.SourceFacts {
 // A source change (IaC files of local modules outside the root, which the context
 // fingerprint does not cover) also makes the plan unavailable for apply.
 func (m *Manager) ContextStatus(p *Plan) (changed bool, status ApplyStatus) {
-	current, reason := m.currentFingerprint(p)
-	changed, status = current == "" || current != p.Fingerprint, m.applyStatus(p, current, reason)
+	current, rej := m.currentFingerprint(p)
+	changed, status = current == "" || current != p.Fingerprint, m.applyStatus(p, current, rej)
 	if src := m.SourceStatus(p); status.Available && (src.FilesChanged || src.State == "unknown") {
 		status = ApplyStatus{Reason: src.Message + " Run a new plan.", ArtifactRetained: status.ArtifactRetained}
 		changed = true
+	}
+	switch {
+	case rej != nil && rej.Code == "configuration_unreadable":
+		status.ConfigurationReason = rej.Reason
+	case p.Fingerprint == "":
+		status.ConfigurationReason = unreadablePlan
 	}
 	return changed, status
 }
