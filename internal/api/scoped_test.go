@@ -697,7 +697,9 @@ func TestScopedViewsCloseOnlyWhenIdle(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	s.waitScoped(cid, op.ID)
+	// A scope keeps the environment it was created with, so a fresh view plans normally.
 	t.Setenv("HCLARO_FAKE_PLAN", "")
+	cid = s.openLoaded("network", "prod", prod.ID)
 	planned := s.waitScoped(cid, s.plan(cid).ID)
 	if planned.PlanID == "" || len(planFiles(t, s.hub.TempDir)) != 1 {
 		t.Fatalf("%+v", planned)

@@ -185,7 +185,7 @@ Path segments `{cid}`, `{pid}`, `{oid}` are 32 lowercase hex characters. Each mu
 | `scoped_execution_disabled` | 404 | Gate off; the scoped route is not available in this session. Nothing ran. |
 | `execution_unsupported` | 409 | Backend is `remote-exec`, unknown or unsupported, engine version unsupported, or project not initialized. Reason text says which. |
 | `scope_changed` | 409 | Identity revalidation failed. `detail` is one of `root_changed`, `engine_changed`, `profile_changed`, `workspace_missing`, `backend_changed`, `data_dir_changed`, `environment_changed`. The context is closed; reopen it. |
-| `capacity_exceeded` | 409 | Every context or execution scope is busy; nothing was evicted. |
+| `capacity_exceeded` | 409 | Every context or execution scope is busy or keeps a reviewed plan (M26.08); nothing was evicted. |
 
 A plan, operation or change ID that exists in another scope (or in the launch manager) answers exactly like a missing one (`404 plan_not_found` / `operation_not_found`), with the same body and timing class. Error messages never contain a root path other than the context's own, an executable path, environment values or engine stderr (redacted engine diagnostics keep the existing rules).
 

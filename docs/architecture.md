@@ -329,7 +329,7 @@ Replacement uses `POST …/plans` with `replace`: opaque resource IDs that must 
 
 An absolute `TF_DATA_DIR` applies to every project at once, so a shared data directory could pair one project's configuration with another's backend initialization: inspection reports `shared_data_dir` and contexts are refused. A relative value resolves inside each root and is shown read-only. `TF_CLI_ARGS*` keeps the M1 rule (only `-no-color`).
 
-Unregistering a project, repairing its path or changing its engine closes its contexts at once and cancels reads in progress; their IDs answer `404 context_closed` with the reason (`project_removed`, `project_changed`, `reloaded`, `evicted`, `initialized`, `workspace_deleted`). A context ID only ever reads its own store, so a resource ID from one context is never found through another. Context responses carry no executable path or environment values.
+Unregistering a project, repairing its path or changing its engine closes its contexts at once and cancels reads in progress (refused with `409 project_busy` while one of their execution scopes runs an operation); their IDs answer `404 context_closed` with the reason (`project_removed`, `project_changed`, `reloaded`, `evicted`, `initialized`, `workspace_deleted`, `closed`). A context ID only ever reads its own store, so a resource ID from one context is never found through another. Context responses carry no executable path or environment values.
 
 ### Initialization
 
