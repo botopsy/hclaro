@@ -268,20 +268,28 @@ func (c *CLI) ShowPlan(ctx context.Context, path string) ([]byte, error) {
 	return c.run(ctx, showPlanLimit, "show", "-json", path)
 }
 
+// classes is the one engine failure table, matched in order against lowercased text. A
+// release error is printed after the engine ran (with its own Lock Info), so it is checked
+// before acquisition and is never a "did not run" lock failure.
+var classes = []struct {
+	code string
+	re   *regexp.Regexp
+}{
+	{"stale_plan", regexp.MustCompile(`saved plan is stale|plan file is stale|saved plan no longer valid`)},
+	{"state_unlock_failed", regexp.MustCompile(`error releasing the state lock|failed to unlock state|error unlocking state`)},
+	{"state_locked", regexp.MustCompile(`error acquiring the state lock|error locking state|lock info:|conditionalcheckfailed`)},
+	{"init_required", regexp.MustCompile(`backend initialization required|module not installed|required plugins are not installed|inconsistent dependency lock file|please run "(terraform|tofu) init"`)},
+	{"credentials", regexp.MustCompile(`credential|expiredtoken|token has expired|\bsso\b|unauthorized|authenticat|access ?denied|forbidden`)},
+	{"network", regexp.MustCompile(`no such host|i/o timeout|connection refused|network is unreachable|tls handshake timeout`)},
+}
+
 // Classify maps engine diagnostics text to a coarse failure category without retaining it.
 func Classify(text string) string {
 	lower := strings.ToLower(text)
-	switch {
-	case strings.Contains(lower, "saved plan is stale") || strings.Contains(lower, "plan file is stale") || strings.Contains(lower, "saved plan no longer valid"):
-		return "stale_plan"
-	case strings.Contains(lower, "state lock") || strings.Contains(lower, "lock info") || strings.Contains(lower, "conditionalcheckfailed"):
-		return "state_locked"
-	case strings.Contains(lower, "backend initialization required") || strings.Contains(lower, "module not installed") || strings.Contains(lower, "required plugins are not installed") || strings.Contains(lower, "inconsistent dependency lock file") || strings.Contains(lower, "please run \"terraform init\"") || strings.Contains(lower, "please run \"tofu init\""):
-		return "init_required"
-	case strings.Contains(lower, "credential") || strings.Contains(lower, "expiredtoken") || strings.Contains(lower, "token has expired") || strings.Contains(lower, "sso") || strings.Contains(lower, "unauthorized") || strings.Contains(lower, "authenticat") || strings.Contains(lower, "access denied") || strings.Contains(lower, "accessdenied") || strings.Contains(lower, "forbidden"):
-		return "credentials"
-	case strings.Contains(lower, "no such host") || strings.Contains(lower, "i/o timeout") || strings.Contains(lower, "connection refused") || strings.Contains(lower, "network is unreachable") || strings.Contains(lower, "tls handshake timeout"):
-		return "network"
+	for _, c := range classes {
+		if c.re.MatchString(lower) {
+			return c.code
+		}
 	}
 	return ""
 }

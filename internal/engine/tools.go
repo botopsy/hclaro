@@ -235,6 +235,7 @@ func typeLabel(t any, depth int) string {
 // it. The most specific remediation wins.
 func ClassifyTool(text string) string {
 	lower := strings.ToLower(text)
+	shared := Classify(text)
 	switch {
 	case containsAny(lower, "flag provided but not defined", "unknown flag", "unsupported flag"):
 		return "unsupported_flag"
@@ -246,12 +247,12 @@ func ClassifyTool(text string) string {
 		return "init_required"
 	case containsAny(lower, "currently selected workspace", "workspace doesn't exist", "workspace does not exist"):
 		return "workspace_missing"
-	case containsAny(lower, "error acquiring the state lock", "state lock", "lock info"):
+	case shared == "state_locked":
 		return "state_locked"
 	}
-	switch code := Classify(text); code {
+	switch shared {
 	case "credentials", "network":
-		return code
+		return shared
 	}
 	return ""
 }

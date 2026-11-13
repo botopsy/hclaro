@@ -258,9 +258,12 @@ func TestApplyFailureOutcomes(t *testing.T) {
 		blockAndCancel bool
 		finishes       bool
 	}{
-		"stale":     {err: &engine.ExitError{Code: 1, Hint: "stale_plan"}, code: "stale_plan", outcome: "not_applied", status: Failed, expectReloaded: true},
-		"failed":    {err: &engine.ExitError{Code: 1}, code: "apply_failed", outcome: "uncertain", status: Failed, expectReloaded: true},
-		"cancelled": {blockAndCancel: true, code: "apply_cancelled", outcome: "uncertain", status: Cancelled, expectReloaded: true},
+		"stale":  {err: &engine.ExitError{Code: 1, Hint: "stale_plan"}, code: "stale_plan", outcome: "not_applied", status: Failed, expectReloaded: true},
+		"locked": {err: &engine.ExitError{Code: 1, Hint: "state_locked"}, code: "state_locked", outcome: "not_applied", status: Failed, expectReloaded: true},
+		// Terraform releases the lock after its writes; a release failure is not "not applied".
+		"unlock failed": {err: &engine.ExitError{Code: 1, Hint: engine.Classify("Error releasing the state lock\n\nLock Info:\n  ID: x")}, code: "state_unlock_failed", outcome: "uncertain", status: Failed, expectReloaded: true},
+		"failed":        {err: &engine.ExitError{Code: 1}, code: "apply_failed", outcome: "uncertain", status: Failed, expectReloaded: true},
+		"cancelled":     {blockAndCancel: true, code: "apply_cancelled", outcome: "uncertain", status: Cancelled, expectReloaded: true},
 		// The engine exited 0 after the interrupt: it applied, so the outcome is not uncertain.
 		"finished after cancel": {blockAndCancel: true, finishes: true, code: "applied", outcome: "applied", status: Succeeded, expectReloaded: true},
 	} {
@@ -622,9 +625,9 @@ func TestCredentialHints(t *testing.T) {
 	for text, want := range map[string]string{
 		"Error: ExpiredToken: The security token included in the request is expired": "expired credentials or an expired SSO session",
 		"the SSO session associated with this profile has expired":                   "expired credentials or an expired SSO session",
-		"Error: No valid credential sources found":                                     "found no credentials",
-		"AccessDenied: User is not authorized to perform s3:GetObject":                 "was denied access",
-		"Error: something else about credentials":                                      "",
+		"Error: No valid credential sources found":                                   "found no credentials",
+		"AccessDenied: User is not authorized to perform s3:GetObject":               "was denied access",
+		"Error: something else about credentials":                                    "",
 	} {
 		hint := credentialHint(&entry{op: Operation{Diagnostics: []EngineDiagnostic{{Summary: text}}}})
 		if want == "" && hint != "" || !strings.Contains(hint, want) {

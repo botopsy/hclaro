@@ -161,12 +161,13 @@ func containsAny(text string, parts ...string) bool {
 // order matters: the most specific remediation wins.
 func ClassifyInit(text string) string {
 	lower := strings.ToLower(text)
+	shared := Classify(text)
 	switch {
 	case containsAny(lower, "-migrate-state", "-reconfigure", "backend configuration changed", "backend type changed", "do you want to copy existing state", "do you want to migrate", "migrate all workspaces", "state migration"):
 		return "backend_migration"
 	case containsAny(lower, "input is disabled", "input was disabled", "interactive input", "no value for required variable"):
 		return "input_required"
-	case containsAny(lower, "error acquiring the state lock", "state lock", "lock info"):
+	case shared == "state_locked":
 		return "state_locked"
 	case containsAny(lower, "inconsistent dependency lock file", "locked provider", "does not match configured version constraint", "-upgrade"):
 		return "lockfile_upgrade"
@@ -175,9 +176,9 @@ func ClassifyInit(text string) string {
 	case containsAny(lower, "failed to query available provider packages", "failed to install provider", "could not retrieve the list of available versions", "registry.terraform.io", "registry.opentofu.org", "provider registry", "failed to download module", "module not found", "failed to retrieve available versions"):
 		return "registry"
 	}
-	switch code := Classify(text); code {
+	switch shared {
 	case "credentials", "network":
-		return code
+		return shared
 	}
 	if containsAny(lower, "error configuring the backend", "invalid backend configuration", "unsupported backend type", "error loading backend config", "backend initialization", "required field is not set", "error configuring s3 backend", "failed to get existing workspaces") {
 		return "backend_config"

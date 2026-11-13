@@ -87,6 +87,7 @@ func (c *CLI) WorkspaceState(ctx context.Context, name string) ([]byte, error) {
 // retaining them. The most specific match wins.
 func ClassifyWorkspace(text string) string {
 	lower := strings.ToLower(text)
+	shared := Classify(text)
 	switch {
 	case containsAny(lower, "tf_workspace", "overridden"):
 		return "workspace_overridden"
@@ -104,12 +105,12 @@ func ClassifyWorkspace(text string) string {
 		return "workspace_not_empty"
 	case containsAny(lower, "not a valid workspace name", "invalid workspace name", "valid name"):
 		return "invalid_name"
-	case containsAny(lower, "error acquiring the state lock", "state lock", "lock info"):
+	case shared == "state_locked":
 		return "state_locked"
 	}
-	switch code := Classify(text); code {
+	switch shared {
 	case "credentials", "network":
-		return code
+		return shared
 	}
 	return ""
 }
