@@ -420,7 +420,7 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 
 // readDrift reads a saved refresh-only plan back as JSON and classifies it.
 func (m *Manager) readDrift(ctx context.Context, planner engine.Planner, path string) (*drift.Result, bool, string) {
-	if os.Chmod(path, 0o600) != nil {
+	if m.chmod(path, 0o600) != nil {
 		return nil, false, "plan_read"
 	}
 	document, err := planner.ShowPlan(ctx, path)

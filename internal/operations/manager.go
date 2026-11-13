@@ -162,7 +162,9 @@ type Manager struct {
 	TempDir string
 	// Terminal receives the folder of a saved plan file Hclaro could not delete. Nil in tests.
 	Terminal io.Writer
-	Timeout  time.Duration
+	// chmod makes saved plan folders and files private; tests replace it to make it fail.
+	chmod   func(string, fs.FileMode) error
+	Timeout time.Duration
 	// ApplyTimeout bounds an apply; PlanMaxAge bounds how long a saved plan stays
 	// applicable; ApprovalTTL bounds how long a confirmation token is valid.
 	ApplyTimeout time.Duration
@@ -237,7 +239,7 @@ const (
 func NewManager(store *workspace.Store, planner engine.Planner, root string) *Manager {
 	base, stop := context.WithCancel(context.Background())
 	applier, _ := planner.(engine.Applier)
-	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, Locks: rootlock.New()}
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, Locks: rootlock.New(), chmod: os.Chmod}
 }
 
 func newID() string {
@@ -630,7 +632,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	}
 	zero := 0
 	m.stage(e, "Reading plan")
-	if err := os.Chmod(out, 0o600); err != nil {
+	if err := m.chmod(out, 0o600); err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			e.log.Append("error", "Hclaro could not restrict access to the saved plan file, so it was not read.")
 		}

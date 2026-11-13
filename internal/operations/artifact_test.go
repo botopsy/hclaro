@@ -3,9 +3,11 @@ package operations
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -162,4 +164,138 @@ func TestCloseKeepsTheArtifactAnApplyIsReading(t *testing.T) {
 	}
 	wait(t, m, op.ID)
 	assertTempEmpty(t, m)
+}
+
+// failChmod makes the manager's permission change fail for mode; before, if set, runs first
+// with the path.
+func failChmod(m *Manager, mode fs.FileMode, before func(string)) {
+	m.chmod = func(path string, got fs.FileMode) error {
+		if got != mode {
+			return os.Chmod(path, got)
+		}
+		if before != nil {
+			before(path)
+		}
+		return &fs.PathError{Op: "chmod", Path: path, Err: fs.ErrPermission}
+	}
+}
+
+func called(f *engine.Fake, name string) bool { return slices.Contains(f.Calls(), name) }
+
+func TestArtifactDirFailsClosedWhenItCannotBeMadePrivate(t *testing.T) {
+	m, _ := setup(t, &engine.Fake{}, workspace.Info{})
+	failChmod(m, 0o700, nil)
+	if dir, err := m.newArtifactDir(planDirPrefix); err == nil || dir != "" {
+		t.Fatalf("%q %v", dir, err)
+	}
+	assertTempEmpty(t, m)
+
+	for name, document := range map[string][]byte{"plan": fixtures.PlanAllActions, "drift": fixtures.DriftMixed} {
+		t.Run(name, func(t *testing.T) {
+			fake := &engine.Fake{PlanJSON: document}
+			m, _ := setup(t, fake, workspace.Info{})
+			failChmod(m, 0o700, nil)
+			var done Operation
+			if name == "plan" {
+				op, err := m.StartPlan(nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				done = wait(t, m, op.ID)
+			} else {
+				done, _ = scanAndWait(t, m, DriftStart{})
+			}
+			if done.Status != Failed || done.Diagnostic == nil || done.Diagnostic.Code != "plan_failed" {
+				t.Fatalf("%+v %+v", done, done.Diagnostic)
+			}
+			if called(fake, "plan") || m.KeepsPlan() {
+				t.Fatal("the engine wrote a plan into a folder that is not private")
+			}
+			assertTempEmpty(t, m)
+		})
+	}
+}
+
+func TestSavedPlanIsNotReadWhenItCannotBeMadePrivate(t *testing.T) {
+	for name, document := range map[string][]byte{"plan": fixtures.PlanAllActions, "drift": fixtures.DriftMixed} {
+		t.Run(name, func(t *testing.T) {
+			fake := &engine.Fake{PlanJSON: document}
+			m, _ := setup(t, fake, workspace.Info{})
+			failChmod(m, 0o600, nil)
+			var done Operation
+			if name == "plan" {
+				op, err := m.StartPlan(nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				done = wait(t, m, op.ID)
+			} else {
+				done, _ = scanAndWait(t, m, DriftStart{})
+			}
+			if done.Status != Failed || done.Diagnostic == nil || done.Diagnostic.Code != "plan_read" || done.PlanID != "" {
+				t.Fatalf("%+v %+v", done, done.Diagnostic)
+			}
+			if !called(fake, "plan") || called(fake, "show-plan") || m.KeepsPlan() {
+				t.Fatalf("a saved plan that is not private was read or kept: %v", fake.Calls())
+			}
+			assertTempEmpty(t, m)
+		})
+	}
+}
+
+func TestUnprotectedPlanLeftAfterFailedCleanupIsReported(t *testing.T) {
+	skipUnenforcedPermissions(t)
+	for name, document := range map[string][]byte{"plan": fixtures.PlanAllActions, "drift": fixtures.DriftMixed} {
+		t.Run(name, func(t *testing.T) {
+			m, _ := setup(t, &engine.Fake{PlanJSON: document}, workspace.Info{})
+			restoreTemp(t, m)
+			var terminal bytes.Buffer
+			m.Terminal = &terminal
+			// The file cannot be made private, and its folder then cannot be emptied.
+			failChmod(m, 0o600, func(path string) { _ = os.Chmod(filepath.Dir(path), 0o500) })
+			var done Operation
+			if name == "plan" {
+				op, err := m.StartPlan(nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				done = wait(t, m, op.ID)
+			} else {
+				done, _ = scanAndWait(t, m, DriftStart{})
+			}
+			text := logText(t, m, done.ID)
+			assertReportedLeft(t, &terminal, text)
+			if entries, _ := os.ReadDir(m.TempDir); len(entries) != 1 || !strings.Contains(terminal.String(), entries[0].Name()) {
+				t.Fatalf("left folder not named: %v %q", entries, terminal.String())
+			}
+			if strings.Contains(text, m.TempDir) {
+				t.Fatal("the log names the temp folder")
+			}
+		})
+	}
+}
+
+func TestSweepReportsAFolderItCannotDelete(t *testing.T) {
+	skipUnenforcedPermissions(t)
+	m, _ := setup(t, &engine.Fake{}, workspace.Info{})
+	var terminal bytes.Buffer
+	m.Terminal = &terminal
+	old := time.Now().Add(-(m.PlanMaxAge + m.ApplyTimeout + time.Hour))
+	dir := filepath.Join(m.TempDir, planDirPrefix+"stuck")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plan.tfplan"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(dir, old, old); err != nil {
+		t.Fatal(err)
+	}
+	readOnly(t, dir)
+	if n := m.SweepStale(time.Now()); n != 0 {
+		t.Fatalf("a folder that was not deleted counted as removed: %d", n)
+	}
+	if _, err := os.Stat(dir); err != nil || !strings.Contains(terminal.String(), dir) {
+		t.Fatalf("%v %q", err, terminal.String())
+	}
 }

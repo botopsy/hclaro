@@ -231,7 +231,7 @@ func (m *Manager) newArtifactDir(prefix string) (string, error) {
 		return "", err
 	}
 	// MkdirTemp creates 0700 directories; enforce it in case of an unusual umask policy.
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := m.chmod(dir, 0o700); err != nil {
 		m.removeArtifactDir(dir)
 		return "", err
 	}
@@ -686,7 +686,8 @@ func (m *Manager) SweepStale(now time.Time) int {
 		if err != nil || !info.ModTime().Before(cutoff) {
 			continue
 		}
-		if os.RemoveAll(filepath.Join(base, e.Name())) == nil {
+		// A folder that cannot be deleted is named on the terminal.
+		if m.removeArtifactDir(filepath.Join(base, e.Name())) {
 			removed++
 		}
 	}
