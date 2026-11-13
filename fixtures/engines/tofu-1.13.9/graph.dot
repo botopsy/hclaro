@@ -1,0 +1,64 @@
+digraph {
+	compound = "true"
+	newrank = "true"
+	subgraph "root" {
+		"[root] data.terraform_remote_state.pending (expand)" [label = "data.terraform_remote_state.pending", shape = "box"]
+		"[root] module.group.terraform_data.this (expand)" [label = "module.group.terraform_data.this", shape = "box"]
+		"[root] module.old[\"x\"].terraform_data.this (orphan)" [label = "module.old.terraform_data.this", shape = "box"]
+		"[root] provider[\"terraform.io/builtin/terraform\"]" [label = "provider[\"terraform.io/builtin/terraform\"]", shape = "diamond"]
+		"[root] terraform_data.counted_gone[0] (orphan)" [label = "terraform_data.counted_gone", shape = "box"]
+		"[root] terraform_data.counted_gone[1] (orphan)" [label = "terraform_data.counted_gone", shape = "box"]
+		"[root] terraform_data.created (expand)" [label = "terraform_data.created", shape = "box"]
+		"[root] terraform_data.gone (orphan)" [label = "terraform_data.gone", shape = "box"]
+		"[root] terraform_data.old_name (orphan)" [label = "terraform_data.old_name", shape = "box"]
+		"[root] terraform_data.renamed (expand)" [label = "terraform_data.renamed", shape = "box"]
+		"[root] terraform_data.replaced (expand)" [label = "terraform_data.replaced", shape = "box"]
+		"[root] terraform_data.replaced_first (expand)" [label = "terraform_data.replaced_first", shape = "box"]
+		"[root] terraform_data.secret (expand)" [label = "terraform_data.secret", shape = "box"]
+		"[root] terraform_data.unchanged (expand)" [label = "terraform_data.unchanged", shape = "box"]
+		"[root] terraform_data.updated (expand)" [label = "terraform_data.updated", shape = "box"]
+		"[root] var.token" [label = "var.token", shape = "note"]
+		"[root] data.terraform_remote_state.pending (expand)" -> "[root] terraform_data.created (expand)"
+		"[root] module.group (close)" -> "[root] module.group.terraform_data.this (expand)"
+		"[root] module.group.terraform_data.this (expand)" -> "[root] module.group.var.name (expand, reference)"
+		"[root] module.group.terraform_data.this (expand)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] module.group.var.name (expand, input)" -> "[root] module.group (expand)"
+		"[root] module.group.var.name (expand, reference)" -> "[root] module.group.var.name (expand, input)"
+		"[root] module.old[\"x\"].terraform_data.this (orphan)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] output.ids (expand)" -> "[root] terraform_data.created (expand)"
+		"[root] output.token (expand)" -> "[root] var.token (expand, reference)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] data.terraform_remote_state.pending (expand)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] module.group.terraform_data.this (expand)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] module.old[\"x\"].terraform_data.this (orphan)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.counted_gone[0] (orphan)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.counted_gone[1] (orphan)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.gone (orphan)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.old_name (orphan)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.renamed (expand)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.replaced (expand)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.replaced_first (expand)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.secret (expand)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.unchanged (expand)"
+		"[root] provider[\"terraform.io/builtin/terraform\"] (close)" -> "[root] terraform_data.updated (expand)"
+		"[root] root" -> "[root] module.group (close)"
+		"[root] root" -> "[root] module.old (close)"
+		"[root] root" -> "[root] output.ids (expand)"
+		"[root] root" -> "[root] output.label (expand)"
+		"[root] root" -> "[root] output.token (expand)"
+		"[root] root" -> "[root] provider[\"terraform.io/builtin/terraform\"] (close)"
+		"[root] terraform_data.counted_gone[0] (orphan)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.counted_gone[1] (orphan)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.created (expand)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.gone (orphan)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.old_name (orphan)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.renamed (expand)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.replaced (expand)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.replaced_first (expand)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.secret (expand)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.secret (expand)" -> "[root] var.token (expand, reference)"
+		"[root] terraform_data.unchanged (expand)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] terraform_data.updated (expand)" -> "[root] provider[\"terraform.io/builtin/terraform\"]"
+		"[root] var.token (expand, reference)" -> "[root] var.token"
+	}
+}
+

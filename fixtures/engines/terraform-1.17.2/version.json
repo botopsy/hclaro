@@ -1,0 +1,7 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.17.2",
+  "platform": "darwin_amd64",
+  "provider_selections": {},
+  "terraform_outdated": false
+}

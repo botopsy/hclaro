@@ -1,0 +1,1 @@
+{"version":4,"terraform_version":"1.5.5","serial":1,"lineage":"00000000-0000-4000-8000-000000000002","outputs":{"name":{"value":"remote","type":"string"},"password":{"value":"DO_NOT_LEAK_HCLARO_TEST_SECRET","type":"string","sensitive":true}},"resources":[]}

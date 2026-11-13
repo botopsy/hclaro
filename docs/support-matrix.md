@@ -28,6 +28,9 @@ The version check (`engine.Supported`) accepts stable **Terraform 1.5–1.17** a
 | RE-05 | Terraform | 1.6–1.17 | any | any | any | Every operation | Accepted by the version check; synthetic output only | — | NOT_TESTED | — |
 | RE-06 | OpenTofu | 1.6–1.13 | any | any | any | Every operation | Accepted by the version check; synthetic output only | — | NOT_TESTED | — |
 | RE-07 | Terraform, OpenTofu | any | linux, windows | any | any | Every operation | Fake engine only (CI) | — | NOT_TESTED | — |
+| RE-08 | Terraform | 1.5.5 | darwin/amd64 | local (default) | local-cli | Parsing recorded output only: `plan -json` stream, saved-plan and refresh-only `show -json`, state `show -json`, `graph` | Real engine run offline by `scripts/fixtures/record-engine.sh`, built-in `terraform_data` only, Hclaro not run; parsed in CI by `TestRealEnginePlans`, `TestRealEngineGraphs` | 2026-11-13 | PASS | [Recorded engine output](qualification/recorded-engine-output.md#recording) |
+| RE-09 | Terraform | 1.17.2 | darwin/amd64 | local (default) | local-cli | Parsing recorded output only: `plan -json` stream, saved-plan and refresh-only `show -json`, state `show -json`, `graph` | Real engine run offline by `scripts/fixtures/record-engine.sh`, built-in `terraform_data` only, Hclaro not run; parsed in CI by `TestRealEnginePlans`, `TestRealEngineGraphs` | 2026-11-13 | PASS | [Recorded engine output](qualification/recorded-engine-output.md#recording) |
+| RE-10 | OpenTofu | 1.13.9 | darwin/amd64 | local (default) | local-cli | Parsing recorded output only: `plan -json` stream, saved-plan and refresh-only `show -json`, state `show -json`, `graph` | Real engine run offline by `scripts/fixtures/record-engine.sh`, built-in `terraform_data` only, Hclaro not run; parsed in CI by `TestRealEnginePlans`, `TestRealEngineGraphs` | 2026-11-13 | PASS | [Recorded engine output](qualification/recorded-engine-output.md#recording) |
 | BE-01 | any | any | any | s3 | local-cli | State read, plan, state lock, apply, import | [AWS sandbox runbook](qualification/aws-sandbox.md), not yet run | — | NOT_TESTED | — |
 | BE-02 | any | any | any | azurerm, gcs, http, consul, kubernetes, oss, cos, pg, oci, swift | local-cli | Every operation | — | — | NOT_TESTED | — |
 | BE-03 | any | any | any | remote, cloud (HCP Terraform, Terraform Enterprise) | remote-exec | State read, `TF_WORKSPACE` mapping | — | — | NOT_TESTED | — |
@@ -44,8 +47,8 @@ CI step names say which tier ran. They never stand for each other.
 
 | Tier | Where | What it proves |
 | --- | --- | --- |
-| Mocked | CI on every pull request and on master (Linux, macOS, Windows) | Behavior against fake Terraform/OpenTofu/AWS/Infracost CLIs and synthetic state and plans. Says nothing about real engine output. |
-| Local real-engine | Manual, on a maintainer machine, disposable project, local backend, no providers that reach a network | Real engine output parses and the flows work end to end (rows RE-*). |
+| Mocked | CI on every pull request and on master (Linux, macOS, Windows) | Behavior against fake Terraform/OpenTofu/AWS/Infracost CLIs and synthetic state and plans, plus parser tests over output recorded once from real engines (rows RE-08 to RE-10). Says nothing about running a real engine. |
+| Local real-engine | Manual, on a maintainer machine, disposable project, local backend, no providers that reach a network | Real engine output parses and the flows work end to end (rows RE-01 to RE-07; RE-08 to RE-10 cover parsing recorded output only). |
 | Sandbox cloud | Manual, owner-approved, [AWS sandbox runbook](qualification/aws-sandbox.md) | Real backends, providers and credentials (rows BE-*, PR-*, DS-*). Never in routine CI. |
 
 ## Platforms
