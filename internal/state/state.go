@@ -157,6 +157,16 @@ var riskyKeyParts = []string{
 	"kubeconfig", "kube_config", "authorization", "auth_header", "sas_url", "sas_token",
 }
 
+// riskyKeyPattern is riskyKeyParts as regexp alternatives; an underscore may also be written
+// as a dash or left out (api-key, apiKey).
+func riskyKeyPattern() string {
+	parts := make([]string, len(riskyKeyParts))
+	for i, part := range riskyKeyParts {
+		parts[i] = strings.ReplaceAll(regexp.QuoteMeta(part), "_", "[_-]?")
+	}
+	return strings.Join(parts, "|")
+}
+
 // RiskyKey reports attribute names that are always redacted, whatever their value. Names
 // are compared as lower-case letters and digits only, so privateKey, x-api-key and names
 // with invisible separators match like private_key and api_key.
@@ -232,9 +242,9 @@ var (
 	awsAccessKeyID = regexp.MustCompile(`(^|[^A-Z0-9])(AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[A-Z0-9]{16}([^A-Z0-9]|$)`)
 	urlUserinfo    = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://[^/\s@]*:[^/\s@]*@`)
 	tokenRun       = regexp.MustCompile(`[A-Za-z0-9+/=_]{20,}`)
-	// quotedSecretKey is a secret-named key inside JSON text, also when the JSON is escaped
-	// in another string: "password": or \"db_token\":.
-	quotedSecretKey = regexp.MustCompile(`(?i)["'][a-z0-9_.-]*(passw(or)?d|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[a-z0-9_.-]*\\*["']\s*:`)
+	// quotedSecretKey is a secret-named key (any of riskyKeyParts) inside JSON text, also
+	// when the JSON is escaped in another string: "password": or \"db_token\":.
+	quotedSecretKey = regexp.MustCompile(`(?i)["'][a-z0-9_.-]*(` + riskyKeyPattern() + `)[a-z0-9_.-]*\\*["']\s*:`)
 	// basicAuth is a whole value that is an HTTP Basic credential.
 	basicAuth = regexp.MustCompile(`(?i)^\s*basic\s+[A-Za-z0-9+/]+={0,2}\s*$`)
 )

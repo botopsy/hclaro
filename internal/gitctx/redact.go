@@ -87,15 +87,36 @@ func (r *LineRedactor) line(line string, forced bool) (string, bool) {
 		}
 		return clip(line), false
 	}
+	// Strings are read as SecretLines reads them, ${…} templates with nested strings
+	// included, so a value inside "${"…"}" is judged as part of its string.
 	redacted := false
-	out := quoted.ReplaceAllStringFunc(line, func(lit string) string {
-		inner := lit[1 : len(lit)-1]
+	var b strings.Builder
+	for j := 0; j < len(line); {
+		if line[j] != '"' {
+			b.WriteByte(line[j])
+			j++
+			continue
+		}
+		inner, end, ok := imports.ReadString(line, j)
+		if !ok {
+			inner, end = line[j+1:], len(line) // unterminated: the rest of the line is its text
+		}
 		if inner != "" && state.LooksSecret(inner) {
 			redacted = true
-			return `"` + Redacted + `"`
+			b.WriteString(`"` + Redacted + `"`)
+		} else {
+			b.WriteString(line[j:end])
 		}
-		return lit
-	})
+		j = end
+	}
+	out := b.String()
+	// A literal the plain pattern finds (a string nested in a template) is still judged on
+	// its own, so nothing hidden by the older reading becomes visible.
+	for _, lit := range quoted.FindAllString(line, -1) {
+		if inner := lit[1 : len(lit)-1]; inner != "" && state.LooksSecret(inner) && strings.Contains(out, inner) {
+			return indentOf(line) + Redacted, true
+		}
+	}
 	// Credential shapes outside string literals (comments, bare words).
 	if !redacted && state.Suspicious(out) {
 		return indentOf(line) + Redacted, true

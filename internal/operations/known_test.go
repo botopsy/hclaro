@@ -78,3 +78,20 @@ func TestDiagnosticsScrubKnownInputs(t *testing.T) {
 		t.Fatalf("%q", all.String())
 	}
 }
+
+// The engine echoes decoded values, so \u and HCL \U escapes in tfvars are decoded before
+// the value is scrubbed; an escape that is not valid stays as written.
+func TestKnownDecodesUnicodeEscapes(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{"prod.tfvars": `a = "opaque\u002dinput-7731"
+b = "pair-\ud83d\ude00-end"
+c = "wide-\U0001F600-end"
+d = "bad-\uZZ-end"
+`})
+	k := collectKnown(root, []string{"prod.tfvars"}, nil)
+	for _, echoed := range []string{"opaque-input-7731", "pair-\U0001F600-end", "wide-\U0001F600-end", "bad-uZZ-end"} {
+		if got := k.scrub("x " + echoed + " y"); got != "x [redacted] y" {
+			t.Errorf("%q not scrubbed: %q", echoed, got)
+		}
+	}
+}

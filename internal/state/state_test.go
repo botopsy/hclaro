@@ -281,3 +281,23 @@ func TestNotOneJSONDocumentHidden(t *testing.T) {
 		}
 	}
 }
+
+// A secret-named key inside free text is caught for every always-redacted name, in the
+// spellings RiskyKey accepts (underscore, dash, none, camel case), also when escaped.
+func TestSuspiciousQuotedKeysFollowRiskyKeyParts(t *testing.T) {
+	for _, key := range []string{
+		"credential", "aws_credentials", "client_key", "signing-key", "connectionString", "kubeconfig",
+		"kube_config", "Authorization", "auth_header", "sas_url", "sas_token", "password", "apikey", "api-key", "privateKey",
+	} {
+		for _, text := range []string{`{"` + key + `": "opaque-input-7731"}`, `{\"` + key + `\": \"opaque-input-7731\"}`, `'` + key + `': x`} {
+			if !Suspicious(text) {
+				t.Errorf("%s not caught", text)
+			}
+		}
+	}
+	for _, text := range []string{`{"name": "web"}`, `{"description": "rotate the credential monthly"}`} {
+		if Suspicious(text) {
+			t.Errorf("%s caught", text)
+		}
+	}
+}

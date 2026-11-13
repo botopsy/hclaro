@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"hclaro/internal/state"
 )
 
 const canary = "DO_NOT_LEAK_canary_6f1e"
@@ -745,5 +747,28 @@ func TestOpenEditor(t *testing.T) {
 	}
 	if _, err := EditorURL("vscode", "relative/main.tf", 2); err == nil {
 		t.Fatal("relative path accepted")
+	}
+}
+
+// A random string inside a template sits between two quotes the plain literal regex would
+// pair up wrongly; the line redactor reads strings the way SecretLines does.
+func TestLineRedactorReadsTemplates(t *testing.T) {
+	const secret = "Xy9kQ2mL8pZ4rT7vB3nW6hJ1"
+	if !state.LooksSecret(secret) {
+		t.Fatal("fixture is not random-looking")
+	}
+	for _, in := range []string{
+		`  description = "${"` + secret + `"}"`,
+		`  description = "a-${upper("` + secret + `")}-b"`,
+		`  description = "open ${"` + secret, // unterminated: the rest is still checked
+	} {
+		got, red := (&LineRedactor{}).Line(in)
+		if strings.Contains(got, secret) || !red {
+			t.Errorf("%q: shown as %q", in, got)
+		}
+	}
+	// Each literal of a line is still judged on its own.
+	if got, _ := (&LineRedactor{}).Line(`  tags = { a = "web", b = "` + secret + `" }`); got != `  tags = { a = "web", b = "[redacted]" }` {
+		t.Errorf("got %q", got)
 	}
 }

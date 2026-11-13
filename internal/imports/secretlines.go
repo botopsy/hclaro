@@ -122,7 +122,7 @@ func SecretLines(lines []string) []bool {
 				out[i] = commentSecret(line[j:j+k]) || out[i]
 				inComment, j = false, j+k+2
 			case c == '"':
-				s, end, ok := readString(line, j)
+				s, end, ok := ReadString(line, j)
 				if !ok {
 					broken, out[i] = true, true
 					continue
@@ -266,8 +266,9 @@ func SecretLines(lines []string) []bool {
 			out[i] = true
 		}
 	}
-	// When the rest cannot be read, a secret-like name may follow any value seen so far.
-	unknown := broken || heredocEnd != ""
+	// When the rest cannot be read, or the text was cut inside a block (a size limit), a
+	// secret-like name may follow any value seen so far.
+	unknown := broken || heredocEnd != "" || len(stack) > 1
 	for id, ls := range valueLines {
 		if pairRisky[id] || unknown {
 			for _, l := range ls {
@@ -339,10 +340,10 @@ func wordByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '.' || c == '-' || c >= 0x80
 }
 
-// readString reads the double-quoted literal starting at line[start], skipping escapes and
+// ReadString reads the double-quoted literal starting at line[start], skipping escapes and
 // ${…}/%{…} templates (which may hold nested strings). ok is false when it does not end on
 // this line.
-func readString(line string, start int) (string, int, bool) {
+func ReadString(line string, start int) (string, int, bool) {
 	for k := start + 1; k < len(line); k++ {
 		switch {
 		case line[k] == '\\':
@@ -360,7 +361,7 @@ func readString(line string, start int) (string, int, bool) {
 				case '}':
 					depth--
 				case '"':
-					_, end, ok := readString(line, k)
+					_, end, ok := ReadString(line, k)
 					if !ok {
 						return "", 0, false
 					}

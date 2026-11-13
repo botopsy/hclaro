@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"hclaro/internal/state"
 )
@@ -163,6 +166,13 @@ func quoted(s string) []string {
 					b.WriteByte('\t')
 				case 'r':
 					b.WriteByte('\r')
+				case 'u', 'U':
+					if r, n := unicodeEscape(s[i:]); n > 0 {
+						b.WriteRune(r)
+						i += n - 1
+					} else {
+						b.WriteByte(s[i])
+					}
 				default:
 					b.WriteByte(s[i])
 				}
@@ -173,6 +183,34 @@ func quoted(s string) []string {
 		out = append(out, b.String())
 	}
 	return out
+}
+
+// unicodeEscape decodes the escape after a backslash: uXXXX (a UTF-16 surrogate pair as two
+// escapes) or HCL's UXXXXXXXX. n is the bytes read, 0 when it is not a valid escape.
+func unicodeEscape(s string) (rune, int) {
+	size := 5
+	if s[0] == 'U' {
+		size = 9
+	}
+	if len(s) < size {
+		return 0, 0
+	}
+	v, err := strconv.ParseUint(s[1:size], 16, 32)
+	if err != nil {
+		return 0, 0
+	}
+	r := rune(v)
+	if utf16.IsSurrogate(r) && size == 5 && len(s) >= 11 && s[5:7] == `\u` {
+		if lo, err := strconv.ParseUint(s[7:11], 16, 32); err == nil {
+			if pair := utf16.DecodeRune(r, rune(lo)); pair != utf8.RuneError {
+				return pair, 11
+			}
+		}
+	}
+	if !utf8.ValidRune(r) {
+		return 0, 0
+	}
+	return r, size
 }
 
 // heredocs returns each non-empty line of <<MARKER and <<-MARKER bodies.
