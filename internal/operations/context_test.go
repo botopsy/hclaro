@@ -137,6 +137,16 @@ func TestProfilePlanAndApplyUseTheBoundContext(t *testing.T) {
 	if finished := wait(t, m, applied.ID); finished.Status != Succeeded || finished.Context == nil || finished.Context.ProfileID != p.ID {
 		t.Fatalf("apply %+v", finished)
 	}
+	// Apply runs with the plan's options (a lock is waited for as configured), and the command
+	// the user approved says so.
+	if r := fake.ApplyRequests(); len(r) != 1 || r[0].Parallelism != 4 || r[0].LockTimeoutSeconds != 30 {
+		t.Fatalf("apply requests %+v", r)
+	}
+	for _, command := range [][]string{approval.Command, applied.Command} {
+		if c := strings.Join(command, " "); !strings.Contains(c, "apply -input=false -json -parallelism=4 -lock-timeout=30s <reviewed saved plan ") {
+			t.Fatalf("apply command %q", c)
+		}
+	}
 	applyEnv, applyWS := rec.last()
 	if applyWS != "demo" || !slices.Equal(applyEnv, env) {
 		t.Fatalf("apply env %v differs from plan env %v", applyEnv, env)

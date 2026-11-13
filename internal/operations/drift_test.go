@@ -156,6 +156,7 @@ func TestDriftScanFailures(t *testing.T) {
 		{"not a refresh-only result", &engine.Fake{PlanJSON: fixtures.DriftNotRefreshOnly}, ScanFailed, "not_refresh_only"},
 		{"undecodable result", &engine.Fake{PlanJSON: fixtures.State}, ScanFailed, "plan_format"},
 		{"show fails", &engine.Fake{PlanJSON: fixtures.DriftNone, ShowErr: errors.New("x")}, ScanFailed, "plan_read"},
+		{"plan too large", &engine.Fake{PlanJSON: fixtures.DriftNone, ShowErr: engine.ErrReadTooLarge}, ScanFailed, "plan_too_large"},
 		{"errored but exit 0", &engine.Fake{PlanJSON: fixtures.DriftInaccessible}, ScanPartial, "plan_failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

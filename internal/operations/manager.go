@@ -404,10 +404,14 @@ var messages = map[string]string{
 	"unsafe_cli_args":     "Inherited TF_CLI_ARGS or TF_CLI_ARGS_plan contains flags other than -no-color. Injected flags could change what a reviewed plan contains, so Hclaro refused to run. Values were not logged.",
 	"workspace_error":     "The active workspace could not be confirmed before planning. Check workspace selection with your CLI.",
 	"plan_read":           "The saved plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
+	"plan_too_large":      planTooLarge,
 	"plan_format":         "The plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No plan data was returned.",
 	"shutdown":            "Hclaro stopped while the plan was running. No plan was kept.",
 	"scope_changed":       scopeChangedMessage,
 }
+
+// planTooLarge is shared by plan and drift: the saved plan's JSON passed the read limit.
+var planTooLarge = engine.ReadAdvice(engine.ErrReadTooLarge, "") + " The saved plan is too large for Hclaro to review, so it was not kept. Narrow the configuration, or review the plan with your CLI."
 
 // scopeChangedMessage explains a failed scope revalidation; the log has the specific reason.
 const scopeChangedMessage = "The project, engine, execution profile, environment or backend of this workspace changed since it was opened, so nothing ran. Open the workspace again."
@@ -645,6 +649,9 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	document, err := planner.ShowPlan(ctx, out)
 	if ctx.Err() != nil {
 		return nil, nil, stopped(), &zero
+	}
+	if errors.Is(err, engine.ErrReadTooLarge) {
+		return nil, nil, "plan_too_large", &zero
 	}
 	if err != nil {
 		return nil, nil, "plan_read", &zero

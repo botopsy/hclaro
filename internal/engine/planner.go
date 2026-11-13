@@ -23,11 +23,20 @@ type Planner interface {
 	ShowPlan(ctx context.Context, path string) ([]byte, error)
 }
 
-// Applier applies a saved plan file and nothing else: there is no way to pass options,
-// targets or an unsaved configuration. It is a separate interface so read-only and
+// Applier applies a saved plan file and nothing else: there is no way to pass targets,
+// variables or an unsaved configuration. It is a separate interface so read-only and
 // plan-only adapters cannot apply.
 type Applier interface {
-	Apply(ctx context.Context, path string, line func([]byte)) error
+	Apply(ctx context.Context, request ApplyRequest, line func([]byte)) error
+}
+
+// ApplyRequest is a saved plan's absolute path and the execution profile's engine options,
+// the same ones its plan ran with; zero keeps the engine default. Neither option changes
+// what the saved plan applies.
+type ApplyRequest struct {
+	Path               string
+	Parallelism        int
+	LockTimeoutSeconds int
 }
 
 // PlanRequest holds validated inputs. Out is an absolute path in a private temp directory;
@@ -121,17 +130,9 @@ func planArgs(request PlanRequest) ([]string, error) {
 		}
 		args = append(args, "-var-file="+name)
 	}
-	if n := request.Parallelism; n != 0 {
-		if n < 1 || n > MaxParallelism {
-			return nil, errors.New("invalid parallelism")
-		}
-		args = append(args, "-parallelism="+strconv.Itoa(n))
-	}
-	if n := request.LockTimeoutSeconds; n != 0 {
-		if n < 1 || n > MaxLockTimeoutSeconds {
-			return nil, errors.New("invalid lock timeout")
-		}
-		args = append(args, "-lock-timeout="+strconv.Itoa(n)+"s")
+	args, err := optionArgs(args, request.Parallelism, request.LockTimeoutSeconds)
+	if err != nil {
+		return nil, err
 	}
 	if len(request.Replace) > MaxReplace {
 		return nil, errors.New("too many replace addresses")
@@ -169,12 +170,34 @@ func validAddress(address string) bool {
 	return true
 }
 
-func applyArgs(path string) ([]string, error) {
-	if !filepath.IsAbs(path) {
+// optionArgs appends the profile-selectable engine options shared by plan and apply.
+func optionArgs(args []string, parallelism, lockTimeout int) ([]string, error) {
+	if n := parallelism; n != 0 {
+		if n < 1 || n > MaxParallelism {
+			return nil, errors.New("invalid parallelism")
+		}
+		args = append(args, "-parallelism="+strconv.Itoa(n))
+	}
+	if n := lockTimeout; n != 0 {
+		if n < 1 || n > MaxLockTimeoutSeconds {
+			return nil, errors.New("invalid lock timeout")
+		}
+		args = append(args, "-lock-timeout="+strconv.Itoa(n)+"s")
+	}
+	return args, nil
+}
+
+func applyArgs(request ApplyRequest) ([]string, error) {
+	if !filepath.IsAbs(request.Path) {
 		return nil, errors.New("saved plan path must be absolute")
 	}
-	// A saved plan never prompts, so -auto-approve is neither needed nor passed.
-	return []string{"apply", "-input=false", "-json", path}, nil
+	// A saved plan never prompts, so -auto-approve is neither needed nor passed. Options come
+	// before the path: the engine stops reading flags at the first positional argument.
+	args, err := optionArgs([]string{"apply", "-input=false", "-json"}, request.Parallelism, request.LockTimeoutSeconds)
+	if err != nil {
+		return nil, err
+	}
+	return append(args, request.Path), nil
 }
 
 // Plan streams machine-readable UI lines to line. Lines longer than 1 MiB are truncated,
@@ -190,9 +213,9 @@ func (c *CLI) Plan(ctx context.Context, request PlanRequest, line func([]byte)) 
 	return ErrCancelled
 }
 
-// Apply applies the saved plan at path and streams machine-readable UI lines.
-func (c *CLI) Apply(ctx context.Context, path string, line func([]byte)) error {
-	args, err := applyArgs(path)
+// Apply applies the saved plan at request.Path and streams machine-readable UI lines.
+func (c *CLI) Apply(ctx context.Context, request ApplyRequest, line func([]byte)) error {
+	args, err := applyArgs(request)
 	if err != nil {
 		return err
 	}
@@ -351,7 +374,7 @@ type Fake struct {
 	BlockApply               bool
 	ApplyStopDelay           time.Duration
 	ApplyFinishesAfterCancel bool
-	Delay      time.Duration
+	Delay                    time.Duration
 	// InitLines and InitStderr are emitted by Init on stdout and stderr; InitErr is its
 	// result, BlockInit makes it wait for cancellation and InitDataDir is created on success.
 	InitLines   [][]byte
@@ -383,13 +406,14 @@ type Fake struct {
 	BlockTool        bool
 	// GraphDOT is the `graph` output; GraphErr fails it and BlockGraph makes it wait for
 	// cancellation.
-	GraphDOT   []byte
-	GraphErr   error
-	BlockGraph bool
-	calls      []string
-	requests   []PlanRequest
-	applied    [][]byte
-	inits      [][]string
+	GraphDOT      []byte
+	GraphErr      error
+	BlockGraph    bool
+	calls         []string
+	requests      []PlanRequest
+	applied       [][]byte
+	applyRequests []ApplyRequest
+	inits         [][]string
 }
 
 func (m *Fake) record(call string) {
@@ -410,6 +434,13 @@ func (m *Fake) Requests() []PlanRequest {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]PlanRequest(nil), m.requests...)
+}
+
+// ApplyRequests returns the validated apply requests received so far.
+func (m *Fake) ApplyRequests() []ApplyRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]ApplyRequest(nil), m.applyRequests...)
 }
 
 // Applied returns the saved plan contents passed to each Apply call.
@@ -491,16 +522,17 @@ func (m *Fake) ShowPlan(_ context.Context, path string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(f, 64<<20))
 }
 
-func (m *Fake) Apply(ctx context.Context, path string, line func([]byte)) error {
+func (m *Fake) Apply(ctx context.Context, request ApplyRequest, line func([]byte)) error {
 	m.record("apply")
-	if _, err := applyArgs(path); err != nil {
+	if _, err := applyArgs(request); err != nil {
 		return err
 	}
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(request.Path)
 	if err != nil {
 		return err
 	}
 	m.mu.Lock()
+	m.applyRequests = append(m.applyRequests, request)
 	m.applied = append(m.applied, b)
 	m.mu.Unlock()
 	for _, l := range m.ApplyLines {

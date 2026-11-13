@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,6 +22,17 @@ func planHelper() {
 		graphHelper(args)
 	}
 	if len(args) == 3 && args[0] == "show" && args[1] == "-json" {
+		if os.Getenv("HCLARO_PLAN_MODE") == "huge" {
+			// A diagnostic that would otherwise classify, then more JSON than the read limit.
+			fmt.Fprintln(os.Stderr, "Error: AccessDenied")
+			chunk := []byte(strings.Repeat("{}", 32<<10))
+			for range 64 {
+				if _, err := os.Stdout.Write(chunk); err != nil {
+					os.Exit(1)
+				}
+			}
+			os.Exit(0)
+		}
 		b, err := os.ReadFile(args[2])
 		if err != nil {
 			os.Exit(4)
@@ -29,19 +41,30 @@ func planHelper() {
 		os.Exit(0)
 	}
 	if len(args) > 0 && args[0] == "apply" {
-		if len(args) != 4 || strings.Join(args[:3], " ") != "apply -input=false -json" || !filepath.IsAbs(args[3]) {
+		// apply -input=false -json [-parallelism=N] [-lock-timeout=Ns] <absolute plan path>
+		path := args[len(args)-1]
+		if len(args) < 4 || strings.Join(args[:3], " ") != "apply -input=false -json" || !filepath.IsAbs(path) {
 			os.Exit(2)
 		}
-		b, err := os.ReadFile(args[3])
+		options := args[3 : len(args)-1]
+		for _, a := range options {
+			if !strings.HasPrefix(a, "-parallelism=") && !strings.HasPrefix(a, "-lock-timeout=") {
+				os.Exit(2)
+			}
+		}
+		b, err := os.ReadFile(path)
 		if err != nil {
 			os.Exit(4)
+		}
+		if len(options) > 0 {
+			fmt.Printf("{\"type\":\"options\",\"argv\":%q}\n", strings.Join(options, ","))
 		}
 		fmt.Printf("{\"type\":\"apply_start\",\"plan\":%q}\n", b)
 		switch os.Getenv("HCLARO_PLAN_MODE") {
 		case "slowstop":
-			slowStop(args[3], 1)
+			slowStop(path, 1)
 		case "finish":
-			slowStop(args[3], 0)
+			slowStop(path, 0)
 		}
 		if os.Getenv("HCLARO_PLAN_MODE") == "stale" {
 			fmt.Fprintln(os.Stderr, "Error: Saved plan is stale")
@@ -160,7 +183,7 @@ func TestApplyCancelGetsItsOwnGracePeriodAndOneInterrupt(t *testing.T) {
 	if err := os.WriteFile(path, []byte("plan"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, path, line) })
+	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, ApplyRequest{Path: path}, line) })
 	if !errors.Is(err, ErrCancelled) {
 		t.Fatal(err)
 	}
@@ -175,7 +198,7 @@ func TestApplyThatFinishesAfterCancelIsNotReportedCancelled(t *testing.T) {
 	if err := os.WriteFile(path, []byte("plan"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, path, line) })
+	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, ApplyRequest{Path: path}, line) })
 	if err != nil || interrupts != "1" {
 		t.Fatalf("%v %q", err, interrupts)
 	}
@@ -205,6 +228,43 @@ func planCLI(t *testing.T, mode string) *CLI {
 		t.Fatal(err)
 	}
 	return &CLI{Name: "terraform", Executable: exe, Root: t.TempDir()}
+}
+
+// Apply gets the profile's options before the saved plan path: the engine stops reading flags
+// at the first positional argument, so an option after the path would be ignored or fail.
+func TestApplyPassesProfileOptionsBeforeThePlan(t *testing.T) {
+	c := planCLI(t, "ok")
+	path := filepath.Join(t.TempDir(), "plan.tfplan")
+	if err := os.WriteFile(path, []byte("reviewed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := c.Apply(context.Background(), ApplyRequest{Path: path, Parallelism: 4, LockTimeoutSeconds: 90}, func(line []byte) { got = append(got, string(line)) }); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`{"type":"options","argv":"-parallelism=4,-lock-timeout=90s"}`, `{"type":"apply_start","plan":"reviewed"}`}
+	if !slices.Equal(got, want) {
+		t.Fatalf("%q", got)
+	}
+}
+
+// Saved plan JSON past the read limit is reported as too large, not as an engine failure or
+// a stderr classification, even though the engine dies on the closed pipe.
+func TestShowPlanTooLarge(t *testing.T) {
+	c := planCLI(t, "huge")
+	old := readLimit
+	readLimit = 64 << 10
+	t.Cleanup(func() { readLimit = old })
+	path := filepath.Join(t.TempDir(), "plan.tfplan")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := c.ShowPlan(context.Background(), path); !errors.Is(err, ErrReadTooLarge) || b != nil {
+		t.Fatalf("%d bytes, %v", len(b), err)
+	}
+	if advice := ReadAdvice(ErrReadTooLarge, "fallback"); !strings.Contains(advice, "larger than") {
+		t.Fatal(advice)
+	}
 }
 
 func TestPlanStreamsAndWritesArtifact(t *testing.T) {
@@ -251,22 +311,27 @@ func TestApplyPassesOnlySavedPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []string
-	if err := c.Apply(context.Background(), path, func(line []byte) { got = append(got, string(line)) }); err != nil {
+	if err := c.Apply(context.Background(), ApplyRequest{Path: path}, func(line []byte) { got = append(got, string(line)) }); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0] != `{"type":"apply_start","plan":"reviewed"}` {
 		t.Fatalf("%q", got)
 	}
-	if err := c.Apply(context.Background(), "relative.tfplan", func([]byte) {}); err == nil {
+	if err := c.Apply(context.Background(), ApplyRequest{Path: "relative.tfplan"}, func([]byte) {}); err == nil {
 		t.Fatal("relative saved plan accepted")
 	}
 	t.Setenv("TF_CLI_ARGS_apply", "-auto-approve")
-	if err := c.Apply(context.Background(), path, func([]byte) {}); !errors.Is(err, ErrUnsafeArgs) {
+	if err := c.Apply(context.Background(), ApplyRequest{Path: path}, func([]byte) {}); !errors.Is(err, ErrUnsafeArgs) {
 		t.Fatal("injected apply flag accepted")
 	}
 	t.Setenv("TF_CLI_ARGS_apply", "")
+	for _, bad := range []ApplyRequest{{Path: path, Parallelism: -1}, {Path: path, Parallelism: MaxParallelism + 1}, {Path: path, LockTimeoutSeconds: MaxLockTimeoutSeconds + 1}} {
+		if err := c.Apply(context.Background(), bad, func([]byte) {}); err == nil {
+			t.Fatalf("invalid options accepted: %+v", bad)
+		}
+	}
 	stale := planCLI(t, "stale")
-	err := stale.Apply(context.Background(), path, func([]byte) {})
+	err := stale.Apply(context.Background(), ApplyRequest{Path: path}, func([]byte) {})
 	var exit *ExitError
 	if !errors.As(err, &exit) || exit.Hint != "stale_plan" {
 		t.Fatalf("%v", err)

@@ -314,7 +314,25 @@ func expiredReason(limit time.Duration) string {
 }
 
 func applyCommand(a *artifact) []string {
-	return []string{a.engine, "apply", "-input=false", "-json", "<reviewed saved plan " + a.digest[:12] + ">"}
+	command := []string{a.engine, "apply", "-input=false", "-json"}
+	if c := a.context; c != nil {
+		if c.Parallelism > 0 {
+			command = append(command, fmt.Sprintf("-parallelism=%d", c.Parallelism))
+		}
+		if c.LockTimeoutSeconds > 0 {
+			command = append(command, fmt.Sprintf("-lock-timeout=%ds", c.LockTimeoutSeconds))
+		}
+	}
+	return append(command, "<reviewed saved plan "+a.digest[:12]+">")
+}
+
+// applyRequest gives apply the profile options its plan ran with, from the bound context.
+func applyRequest(a *artifact) engine.ApplyRequest {
+	r := engine.ApplyRequest{Path: a.path}
+	if c := a.context; c != nil {
+		r.Parallelism, r.LockTimeoutSeconds = c.Parallelism, c.LockTimeoutSeconds
+	}
+	return r
 }
 
 // Approve issues a one-time confirmation token for applying plan id. It needs the binding
@@ -362,12 +380,24 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 		return Operation{}, ErrNotFound
 	}
 	identity := notRequested()
+	var environ []string
 	m.mu.Lock()
 	if a := m.artifact; a != nil && a.planID == p.ID && a.preflight != nil {
-		identity = a.preflight.identity
+		identity, environ = a.preflight.identity, slices.Clone(a.environ)
 	}
 	m.mu.Unlock()
-	checks := preflight.Evaluate(m.facts(m.base, p, identity))
+	in := m.facts(m.base, p, identity)
+	// An account policy is checked against the account now, not the one verified at preflight
+	// (up to PreflightTTL ago): credentials may have changed since. Only an identity the user
+	// chose to verify is probed again, so apply never contacts AWS unasked.
+	if in.Policy.Rules.AWSAccounts != nil && identity.State == "verified" {
+		identity = preflight.Identity{State: "unavailable", Message: "Identity verification is not available."}
+		if m.IdentityProbe != nil {
+			identity = m.IdentityProbe(m.base, environ)
+		}
+		in.Identity = identity
+	}
+	checks := preflight.Evaluate(in)
 	blockers, ack := acknowledgements(checks)
 	current, rej := m.currentFingerprint(p)
 	m.mu.Lock()
@@ -413,7 +443,7 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	a.preflight = nil
 	a.applying = true
 	ctx, cancel := context.WithTimeout(m.base, m.ApplyTimeout)
-	summary := &PreflightSummary{CheckedAt: b.checkedAt.UTC().Format(time.RFC3339), Policy: b.policy, Acknowledged: slices.Clone(b.acknowledge), IdentityVerified: b.identity.State == "verified"}
+	summary := &PreflightSummary{CheckedAt: b.checkedAt.UTC().Format(time.RFC3339), Policy: b.policy, Acknowledged: slices.Clone(b.acknowledge), IdentityVerified: identity.State == "verified"}
 	e := &entry{
 		op:      Operation{ID: m.NewID(), Kind: "apply", Status: Running, Stage: "Starting", StartedAt: time.Now().UTC().Format(time.RFC3339), Command: applyCommand(a), VarFiles: slices.Clone(p.VarFiles), Replace: slices.Clone(p.Replace), Import: p.Import, PlanID: p.ID, Outcome: "not_applied", Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: a.context.Clone(), Preflight: summary},
 		log:     NewLog(logEvents, logBytes),
@@ -621,7 +651,7 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 		e.log.Append("warn", knownIncomplete)
 	}
 	undecoded := false
-	err = applier.Apply(ctx, a.path, func(line []byte) {
+	err = applier.Apply(ctx, applyRequest(a), func(line []byte) {
 		level, text, diag, ok := translate(line, "apply", label, inputs)
 		if !ok {
 			if !undecoded {

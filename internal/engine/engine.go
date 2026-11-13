@@ -57,7 +57,12 @@ var (
 	ErrReadCredentials  = errors.New("engine read failed: credentials were rejected or have expired")
 	ErrReadNetwork      = errors.New("engine read failed: the backend or a provider could not be reached")
 	ErrReadInitRequired = errors.New("engine read failed: initialization is required")
+	ErrReadTooLarge     = errors.New("engine read failed: the output exceeds the size limit")
 )
+
+// readLimit bounds what one engine read (state, saved plan JSON) may write. A variable only
+// so tests can shorten it.
+var readLimit = state.MaxBytes
 
 // ReadAdvice explains a classified read failure to the user, or returns fallback.
 func ReadAdvice(err error, fallback string) string {
@@ -66,6 +71,8 @@ func ReadAdvice(err error, fallback string) string {
 		return "The CLI reported rejected or expired credentials. Sign in again in a terminal (for example aws sso login), then try again. Nothing was changed."
 	case errors.Is(err, ErrReadNetwork):
 		return "The CLI could not reach the backend or a provider. Check your network, VPN or proxy, then try again. Nothing was changed."
+	case errors.Is(err, ErrReadTooLarge):
+		return fmt.Sprintf("The CLI's JSON output is larger than the %d MiB Hclaro reads, so none of it was used. Nothing was changed.", readLimit>>20)
 	case errors.Is(err, ErrReadInitRequired):
 		return "The CLI says this folder needs init (backend, modules or providers are not installed). Run init from the project's Hub page or in a terminal, then try again. Nothing was initialized automatically."
 	}
@@ -168,12 +175,14 @@ func Detect(root, preferred string) (*CLI, error) {
 // boundedBuffer fails the command once its output passes max (unlike bounded.Buffer, which
 // only flags overflow): a state larger than the limit is refused, never read in part.
 type boundedBuffer struct {
-	b   []byte
-	max int
+	b        []byte
+	max      int
+	overflow bool
 }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
 	if len(b.b)+len(p) > b.max {
+		b.overflow = true
 		return 0, errors.New("engine output limit exceeded")
 	}
 	b.b = append(b.b, p...)
@@ -235,7 +244,7 @@ func (c *CLI) runEnv(ctx context.Context, timeout time.Duration, dropWorkspace b
 	if err != nil {
 		return nil, err
 	}
-	buf := &boundedBuffer{max: state.MaxBytes}
+	buf := &boundedBuffer{max: readLimit}
 	cmd.Stdout = buf
 	// Never return raw stderr: even diagnostics from read-only commands can contain secrets.
 	// Only its classification leaves this function.
@@ -244,6 +253,10 @@ func (c *CLI) runEnv(ctx context.Context, timeout time.Duration, dropWorkspace b
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, errors.New("engine read timed out or was cancelled")
+		}
+		// Checked before stderr: once the write fails the engine usually dies on a closed pipe.
+		if buf.overflow {
+			return nil, ErrReadTooLarge
 		}
 		switch Classify(stderr.String()) {
 		case "credentials":

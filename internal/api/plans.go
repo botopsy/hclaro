@@ -264,6 +264,10 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			errorJSON(w, 404, "plan_not_found")
 			return
 		}
+		// Under an AWS account policy StartApply asks STS again (up to 20 s), so the response
+		// gets the preflight's write deadline.
+		_, cancel := withDeadline(w, r, preflightTimeout)
+		defer cancel()
 		op, err := manager.StartApply(r.PathValue("id"), body.Token, body.Confirmation)
 		if err != nil {
 			applyError(w, err)

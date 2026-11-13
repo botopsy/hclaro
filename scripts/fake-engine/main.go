@@ -156,8 +156,14 @@ func main() {
 			return
 		}
 		plan(strings.TrimPrefix(args[3], "-out="), generate)
-	case len(args) == 4 && strings.Join(args[:3], " ") == "apply -input=false -json":
-		apply(args[3])
+	case len(args) >= 4 && strings.Join(args[:3], " ") == "apply -input=false -json":
+		// Profile options, then the saved plan path.
+		for _, a := range args[3 : len(args)-1] {
+			if !strings.HasPrefix(a, "-parallelism=") && !strings.HasPrefix(a, "-lock-timeout=") {
+				refuse()
+			}
+		}
+		apply(args[len(args)-1])
 	case strings.Join(args, " ") == "validate -json":
 		validate(true)
 	case strings.Join(args, " ") == "validate -no-color":

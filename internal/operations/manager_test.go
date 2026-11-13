@@ -219,6 +219,7 @@ func TestFailureClassification(t *testing.T) {
 		"unsafe args":           {&engine.Fake{PlanErr: engine.ErrUnsafeArgs}, "unsafe_cli_args", -1},
 		"unreadable plan":       {&engine.Fake{PlanJSON: []byte(`{"format_version":"9.0"}`)}, "plan_format", 0},
 		"show fails":            {&engine.Fake{PlanJSON: fixtures.PlanNoChanges, ShowErr: errors.New("x")}, "plan_read", 0},
+		"plan too large":        {&engine.Fake{PlanJSON: fixtures.PlanNoChanges, ShowErr: engine.ErrReadTooLarge}, "plan_too_large", 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			m, _ := setup(t, tc.fake, workspace.Info{})
