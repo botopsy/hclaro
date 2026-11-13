@@ -420,7 +420,9 @@ func TestIdentityProbeIsExplicitAndNotLogged(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := wait(t, m, op.ID)
-	if done.Outcome != "applied" || done.Preflight == nil || !done.Preflight.IdentityVerified || probes.Load() != 2 {
+	// Apply under an account policy asks STS again (the third probe) instead of trusting the
+	// preflight's answer.
+	if done.Outcome != "applied" || done.Preflight == nil || !done.Preflight.IdentityVerified || probes.Load() != 3 {
 		t.Fatalf("%+v %d", done.Preflight, probes.Load())
 	}
 	_, log, _ := m.Operation(op.ID)
@@ -430,6 +432,85 @@ func TestIdentityProbeIsExplicitAndNotLogged(t *testing.T) {
 		if strings.Contains(string(blob), secret) {
 			t.Fatalf("%q leaked into logs or records", secret)
 		}
+	}
+}
+
+// identityAt is a fake STS answer that a test can change between preflight and apply.
+type identityAt struct {
+	mu     sync.Mutex
+	id     preflight.Identity
+	probes int
+}
+
+func (f *identityAt) set(id preflight.Identity) { f.mu.Lock(); f.id = id; f.mu.Unlock() }
+func (f *identityAt) count() int                { f.mu.Lock(); defer f.mu.Unlock(); return f.probes }
+func (f *identityAt) probe(context.Context, []string) preflight.Identity {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.probes++
+	return f.id
+}
+
+func verifiedAs(account string) preflight.Identity {
+	return preflight.Identity{State: "verified", Account: account, ARN: "arn:aws:sts::" + account + ":assumed-role/deployer/session"}
+}
+
+// An account policy is enforced against the credentials at apply time, not the account the
+// preflight verified up to PreflightTTL earlier.
+func TestApplyRechecksTheAccountPolicy(t *testing.T) {
+	const allowed, other = "123456789012", "210987654321"
+	for name, tc := range map[string]struct {
+		policy  string
+		verify  bool
+		atApply preflight.Identity
+		code    string
+		probes  int
+	}{
+		"account switched":         {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, verifiedAs(other), "preflight_blocked", 2},
+		"probe fails at apply":     {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, preflight.Identity{State: "failed", Message: "expired"}, "preflight_blocked", 2},
+		"warn rule, switched":      {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, true, verifiedAs(other), "preflight_changed", 2},
+		"same account":             {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, verifiedAs(allowed), "", 2},
+		"no account rule":          {`{"version":1}`, true, verifiedAs(other), "", 1},
+		"warn rule, never checked": {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, false, verifiedAs(other), "", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+			m, root := setup(t, fake, workspace.Info{})
+			m.Reload = func(context.Context) {}
+			sts := &identityAt{id: verifiedAs(allowed)}
+			m.IdentityProbe = sts.probe
+			writePolicy(t, root, tc.policy)
+			id := planned(t, m)
+			r := runPreflight(t, m, id, PreflightRequest{VerifyIdentity: tc.verify})
+			if r.Blocked {
+				t.Fatalf("%+v", r.Checks)
+			}
+			a, err := m.Approve(id, ApprovalRequest{Binding: r.Binding, Acknowledged: r.Acknowledge})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sts.set(tc.atApply)
+			op, err := m.StartApply(id, a.Token, a.Phrase)
+			if sts.count() != tc.probes {
+				t.Fatalf("%d identity probes, want %d", sts.count(), tc.probes)
+			}
+			if tc.code != "" {
+				if rejected(err) != tc.code || slices.Contains(fake.Calls(), "apply") {
+					t.Fatalf("%v, engine calls %v", err, fake.Calls())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if done := wait(t, m, op.ID); done.Outcome != "applied" {
+				t.Fatalf("%+v", done)
+			}
+			// Without a profile, apply gets no engine options: the engine defaults hold.
+			if r := fake.ApplyRequests(); len(r) != 1 || r[0].Parallelism != 0 || r[0].LockTimeoutSeconds != 0 {
+				t.Fatalf("%+v", r)
+			}
+		})
 	}
 }
 

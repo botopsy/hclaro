@@ -134,7 +134,7 @@ function ProfileEditor({ projectId, profile, workspaces, onDone, onCancel }: {
     <label className="field"><span>AWS region</span><input value={form.awsRegion} maxLength={32} placeholder="Inherited" autoComplete="off" onChange={e => change({ awsRegion: e.target.value.trim() })} /></label>
     <p className="muted"><IdentityBadge /> Hclaro does not check which account these names resolve to.</p>
    </fieldset>
-   <fieldset><legend>Plan options</legend>
+   <fieldset><legend>Plan and apply options</legend>
     <label className="field"><span>Parallelism</span><input type="number" min={0} max={256} value={form.parallelism || ''} placeholder="Engine default" onChange={e => change({ parallelism: Number(e.target.value) || 0 })} /></label>
     <label className="field"><span>State lock timeout (seconds)</span><input type="number" min={0} max={3600} value={form.lockTimeoutSeconds || ''} placeholder="Engine default" onChange={e => change({ lockTimeoutSeconds: Number(e.target.value) || 0 })} /></label>
    </fieldset>

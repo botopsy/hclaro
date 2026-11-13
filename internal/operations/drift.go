@@ -99,6 +99,7 @@ var driftMessages = map[string]string{
 	"cancelled":                "The scan was cancelled. No state was written. If the engine had to be stopped forcefully, a state lock may remain; check with your CLI before retrying.",
 	"unsafe_cli_args":          "Inherited TF_CLI_ARGS or TF_CLI_ARGS_plan contains flags other than -no-color. Injected flags could change what the scan does, so Hclaro refused to run. Values were not logged.",
 	"workspace_error":          "The active workspace could not be confirmed before scanning. Check workspace selection with your CLI.",
+	"plan_too_large":           planTooLarge,
 	"plan_read":                "The refresh-only plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
 	"plan_format":              "The refresh-only plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No scan data was returned.",
 	"not_refresh_only":         "The engine returned a plan that proposes resource changes, which a refresh-only plan never does. The result cannot be trusted as a drift scan and was discarded.",
@@ -426,6 +427,9 @@ func (m *Manager) readDrift(ctx context.Context, planner engine.Planner, path st
 	document, err := planner.ShowPlan(ctx, path)
 	if ctx.Err() != nil {
 		return nil, true, ""
+	}
+	if errors.Is(err, engine.ErrReadTooLarge) {
+		return nil, false, "plan_too_large"
 	}
 	if err != nil {
 		return nil, false, "plan_read"

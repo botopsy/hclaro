@@ -22,7 +22,7 @@ func TestPlanAndApplyRunInTheirOwnProcessGroup(t *testing.T) {
 	}
 	for name, run := range map[string]func(context.Context, func([]byte)) error{
 		"plan":  func(ctx context.Context, line func([]byte)) error { return c.Plan(ctx, PlanRequest{Out: path}, line) },
-		"apply": func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, path, line) },
+		"apply": func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, ApplyRequest{Path: path}, line) },
 	} {
 		ctx, cancel := context.WithCancel(context.Background())
 		own := false
