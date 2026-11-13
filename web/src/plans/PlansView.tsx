@@ -168,6 +168,7 @@ function ApplyResult({ operation }: { operation: Operation }) {
   const clean = ok && !operation.stateReloadFailed;
   const uncertain = operation.outcome === 'uncertain';
   const engineLine = ok ? 'reported the apply as finished' : uncertain ? 'stopped part-way; some changes may have been made' : 'did not apply anything';
+  const planFile = operation.planFileLeft ? 'Hclaro could not delete the saved plan file, which holds values in plaintext; the terminal running Hclaro names its folder. Delete it yourself. It cannot be applied again.' : 'The saved plan was deleted and cannot be applied again.';
   const stateLine = operation.stateReloaded ? `read again at ${clock(operation.completedAt ?? operation.startedAt)}` : operation.stateReloadFailed ? 'could not be read again; the explorer still shows the state read before the apply' : 'not read again';
   return <section className={clean ? 'operation-applied' : 'operation-failed'} role={clean ? 'status' : 'alert'}>
    <h2>{clean ? <CircleCheck size={17} /> : ok ? <TriangleAlert size={17} /> : <CircleX size={17} />}{ok ? clean ? 'Apply finished' : 'Apply finished, state not confirmed' : operation.status === 'cancelled' ? 'Apply interrupted' : 'Apply failed'}{uncertain && ' · outcome uncertain'}</h2>
@@ -178,14 +179,15 @@ function ApplyResult({ operation }: { operation: Operation }) {
     <div><dt>Resource health</dt><dd>not checked. Hclaro has no health probe; the engine recording a change does not mean the service works.</dd></div>
    </dl>
    {uncertain && <div className="plan-warning" role="note"><TriangleAlert size={14} /><div><strong>Check real infrastructure before doing anything else.</strong><ol>
-    <li>Do not apply again from Hclaro: this saved plan was deleted and is never retried automatically.</li>
+    <li>Do not apply again from Hclaro: this saved plan is never retried automatically.</li>
     <li>In your terminal, in this project and workspace, list state and run a new plan to see what actually changed.</li>
     <li>Check the resources involved in your provider’s console.</li>
     <li>If a state lock remains, make sure no apply is still running before releasing it with your CLI. Hclaro never force-unlocks.</li>
    </ol></div></div>}
    {operation.import && (ok ? <p>Imported <code>{operation.import.address}</code>. It appears in the resource explorer once the reloaded state records it.</p> : <ImportRecovery target={operation.import} applied />)}
    {operation.stateReloadFailed && <p className="plan-warning" role="alert"><TriangleAlert size={14} />State could not be read again after the apply, so the explorer may be out of date. Read the workspace again, or check state with your CLI.</p>}
-   <p className="muted">{operation.stateReloaded ? 'The explorer shows what the engine recorded, not live cloud inventory. ' : ''}The saved plan was deleted and cannot be applied again.</p>
+   <p className="muted">{operation.stateReloaded ? 'The explorer shows what the engine recorded, not live cloud inventory. ' : ''}{!operation.planFileLeft && planFile}</p>
+   {operation.planFileLeft && <p className="plan-warning" role="alert"><TriangleAlert size={14} />{planFile}</p>}
    <Diagnostics operation={operation} />
   </section>;
 }

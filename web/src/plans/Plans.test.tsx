@@ -472,6 +472,14 @@ describe('Plans', () => {
     expect(status).toHaveTextContent('Resource healthnot checked');
   });
 
+  it('never reports a saved plan file it could not delete as deleted', async () => {
+    const applied: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, planFileLeft: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [applied, operation] }) : undefined);
+    view();
+    expect(await screen.findByText(/could not delete the saved plan file/)).toBeInTheDocument();
+    expect(screen.queryByText(/was deleted/)).not.toBeInTheDocument();
+  });
+
   it('separates engine success, state read and health on a clean apply', async () => {
     const applied: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z' };
     serve(url => url.endsWith('/operations') ? Response.json({ operations: [applied, operation] }) : undefined);
