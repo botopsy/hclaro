@@ -50,14 +50,14 @@ type analysisOptions struct {
 	ContextFingerprint string                       `json:"contextFingerprint"`
 }
 
-// scopedOptions resolves (creating, which runs no engine command) the execution scope of an
-// options request. A workspace whose scope is unsupported gets options with its reason and a
+// scopedOptions resolves the execution scope of an options request for display; it runs no
+// engine command and never creates or evicts a scope (Hub.Preview). A workspace whose scope is unsupported gets options with its reason and a
 // nil scope; any other failure is answered here and returns ok false.
 func scopedOptions(w http.ResponseWriter, r *http.Request, hub *projects.Hub) (*projects.Scope, analysisOptions, bool) {
 	if !scopedContext(w, r, hub) {
 		return nil, analysisOptions{}, false
 	}
-	s, err := hub.Execution(r.PathValue("cid"))
+	s, err := hub.Preview(r.PathValue("cid"))
 	var unsupported *projects.ScopeError
 	if errors.As(err, &unsupported) && unsupported.Code == projects.CodeExecutionUnsupported {
 		return nil, analysisOptions{Code: unsupported.Code, Reason: unsupported.Message}, true

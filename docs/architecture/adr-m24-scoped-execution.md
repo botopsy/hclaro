@@ -119,7 +119,7 @@ Unchanged from today: `workspace.FingerprintExcept` over engine, version, worksp
 
 **Close.** User close, project removal or change, profile change, workspace deletion and failed revalidation close the context and its scope: cancel any running operation (as `Manager.Cancel` does), wait for it to reach a terminal state, delete the retained artifact, drop approvals and preflight bindings, release claims. Plans remain readable until the context ID is gone; after that their IDs answer `404 context_closed`.
 
-**Evict.** The cap stays at eight read contexts. Eviction picks the oldest context that is **idle**: its scope, if any, has no running or cancelling operation. A context whose read is still loading is idle; closing it cancels the read, which releases its shared claim, as before. A context with a retained artifact may be evicted (artifact deleted, its plans noted "The workspace tab was closed. Run a new plan."). If no context is idle, opening another answers `409 capacity_exceeded` instead of cancelling work. A separate cap of four execution scopes bounds managers; it follows the same idle-first rule.
+**Evict.** The cap stays at eight read contexts. Eviction picks the oldest context that is **idle**: its scope, if any, has no running or cancelling operation. A context whose read is still loading is idle; closing it cancels the read, which releases its shared claim, as before. A context with a retained artifact may be evicted (artifact deleted, its plans noted "The workspace tab was closed. Run a new plan."). **Changed (M26.08):** a context or scope that keeps a reviewed saved plan is no longer idle and is never evicted; it ends with apply, expiry, reload, `DELETE /api/v1/contexts/{cid}`, a project or profile change, or shutdown. Options requests no longer create scopes. If no context is idle, opening another answers `409 capacity_exceeded` instead of cancelling work. A separate cap of four execution scopes bounds managers; it follows the same idle-first rule.
 
 **Memory bounds.** Per scope, the existing manager limits apply (100 operations, 10 logs of at most 2 MiB, 10 plans, one retained artifact). Across the process: at most eight contexts and four execution scopes, so at most four retained plan artifacts and four running operations, of which at most one per root.
 
@@ -185,7 +185,7 @@ Path segments `{cid}`, `{pid}`, `{oid}` are 32 lowercase hex characters. Each mu
 | `scoped_execution_disabled` | 404 | Gate off; the scoped route is not available in this session. Nothing ran. |
 | `execution_unsupported` | 409 | Backend is `remote-exec`, unknown or unsupported, engine version unsupported, or project not initialized. Reason text says which. |
 | `scope_changed` | 409 | Identity revalidation failed. `detail` is one of `root_changed`, `engine_changed`, `profile_changed`, `workspace_missing`, `backend_changed`, `data_dir_changed`, `environment_changed`. The context is closed; reopen it. |
-| `capacity_exceeded` | 409 | Every context or execution scope is busy; nothing was evicted. |
+| `capacity_exceeded` | 409 | Every context or execution scope is busy or keeps a reviewed plan (M26.08); nothing was evicted. |
 
 A plan, operation or change ID that exists in another scope (or in the launch manager) answers exactly like a missing one (`404 plan_not_found` / `operation_not_found`), with the same body and timing class. Error messages never contain a root path other than the context's own, an executable path, environment values or engine stderr (redacted engine diagnostics keep the existing rules).
 

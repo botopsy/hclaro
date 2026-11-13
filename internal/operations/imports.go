@@ -71,7 +71,7 @@ func (m *Manager) StartImport(req ImportRequest) (Operation, error) {
 	if m.closed {
 		return Operation{}, ErrClosed
 	}
-	if m.running != nil {
+	if m.running != nil || m.starting {
 		return Operation{}, ErrBusy
 	}
 	snap := m.store.Get()
@@ -106,11 +106,22 @@ func (m *Manager) StartImport(req ImportRequest) (Operation, error) {
 	}
 	// A Hub workspace's scope is revalidated with the root claim held, before anything is
 	// written: a moved root, another engine, profile, environment, backend or a deleted
-	// workspace refuses the import without writing.
+	// workspace refuses the import without writing. The engine checks can take minutes, so
+	// mu is not held meanwhile (the Hub reads Running under its own lock); starting keeps the
+	// manager busy, and the claim keeps every other operation out of the root.
 	if m.Verify != nil {
-		if d := m.Verify(m.base, "import"); d != nil {
+		m.starting = true
+		m.mu.Unlock()
+		d := m.Verify(m.base, "import")
+		m.mu.Lock()
+		m.starting = false
+		switch {
+		case d != nil:
 			release()
 			return Operation{}, reject(d.Code, d.Message+" Nothing was written.")
+		case m.closed:
+			release()
+			return Operation{}, ErrClosed
 		}
 	}
 	switch err := imports.WriteNew(m.root, preview.File, []byte(preview.Content)); {

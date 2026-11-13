@@ -16,7 +16,9 @@ import (
 // the reviewed context fingerprint and revalidate the scope first. Requests carry no profile.
 func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	// pinOf resolves the discovery context of an open scope; check is set for requests that
-	// contact AWS. It answers refusals itself.
+	// contact AWS, and only those create the scope. A read of a context without a scope has
+	// nothing to show (discovery results go with their scope): scan_not_found. It answers
+	// refusals itself.
 	pinOf := func(w http.ResponseWriter, r *http.Request, check bool, reviewed string) (*discovery.Service, *projects.Scope, discovery.Pin, []string, bool) {
 		if hub.Discovery == nil {
 			if scopedContext(w, r, hub) {
@@ -28,8 +30,12 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			errorJSON(w, 400, "invalid_request")
 			return nil, nil, discovery.Pin{}, nil, false
 		}
-		s, ok := resolveScope(w, r, hub, true)
+		s, ok := resolveScope(w, r, hub, check)
 		if !ok {
+			return nil, nil, discovery.Pin{}, nil, false
+		}
+		if s == nil {
+			errorJSON(w, 404, "scan_not_found")
 			return nil, nil, discovery.Pin{}, nil, false
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), inspectTimeout)

@@ -168,6 +168,10 @@ func profileRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok || !checkVarFiles(w, p.RootPath, body.VarFiles) {
 			return
 		}
+		if err := hub.ProfileBusy(p.ID, id); err != nil {
+			profileError(w, hub, err)
+			return
+		}
 		updated, err := hub.Profiles.Update(p.ID, id, body.ExpectedRevision, body.input())
 		if err != nil {
 			profileError(w, hub, err)
@@ -190,6 +194,10 @@ func profileRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		}
 		id, ok := pid(w, r)
 		if !ok {
+			return
+		}
+		if err := hub.ProfileBusy(p.ID, id); err != nil {
+			profileError(w, hub, err)
 			return
 		}
 		if err := hub.Profiles.Delete(p.ID, id, body.ExpectedRevision); err != nil {

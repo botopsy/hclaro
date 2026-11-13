@@ -312,3 +312,67 @@ func rejectedWith(err error, code string) bool {
 	var r *RejectError
 	return errors.As(err, &r) && r.Code == code
 }
+
+// M26.08: an import's scope revalidation (engine version and workspace list, up to minutes)
+// runs without the manager lock, so a Hub reading Running is not stalled; the manager reports
+// busy meanwhile, and a close during it refuses the import without writing.
+func TestImportVerifiesWithoutTheManagerLock(t *testing.T) {
+	for _, closeDuring := range []bool{false, true} {
+		fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
+		m, root := importSetup(t, fake, map[string]string{"main.tf": legacyBlock})
+		req := reviewed(t, m, imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"})
+		entered, proceed := make(chan struct{}), make(chan struct{})
+		m.Verify = func(ctx context.Context, kind string) *Diagnostic {
+			if kind == "import" {
+				close(entered)
+				<-proceed
+			}
+			return nil
+		}
+		started := make(chan error, 1)
+		go func() {
+			_, err := m.StartImport(req)
+			started <- err
+		}()
+		<-entered
+		busy := make(chan bool, 1)
+		go func() { busy <- m.Running() }()
+		select {
+		case b := <-busy:
+			if !b {
+				t.Fatal("not busy while revalidating an import")
+			}
+		case <-time.After(5 * time.Second):
+			close(proceed)
+			t.Fatal("Running blocked while an import was revalidated")
+		}
+		if _, err := m.StartPlan(nil, nil); !errors.Is(err, ErrBusy) {
+			t.Fatalf("plan during import revalidation: %v", err)
+		}
+		if closeDuring {
+			go m.Close(0)
+			for !m.closedNow() {
+				time.Sleep(time.Millisecond)
+			}
+		}
+		close(proceed)
+		err := <-started
+		_, statErr := os.Stat(filepath.Join(root, "imports.tf"))
+		if closeDuring {
+			if !errors.Is(err, ErrClosed) || !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("closed during revalidation: %v %v", err, statErr)
+			}
+			continue
+		}
+		if err != nil || statErr != nil {
+			t.Fatalf("%v %v", err, statErr)
+		}
+		wait(t, m, m.Operations()[0].ID)
+	}
+}
+
+func (m *Manager) closedNow() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closed
+}

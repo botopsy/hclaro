@@ -125,6 +125,15 @@ func (h *Hub) LaunchBinder() operations.Binder {
 	}
 }
 
+// ProfileBusy returns ErrBusy while a context opened with the profile runs an operation, so
+// an edit or removal of the profile, which would close it, is refused first.
+func (h *Hub) ProfileBusy(projectID, profileID string) error {
+	if h.running(func(c *Context) bool { return c.ProjectID == projectID && c.profileID == profileID }) {
+		return ErrBusy
+	}
+	return nil
+}
+
 // ProfileChanged closes read contexts opened with a profile that was edited or removed, so
 // no tab keeps reading or running tools with an outdated context.
 func (h *Hub) ProfileChanged(projectID, profileID, reason string) {

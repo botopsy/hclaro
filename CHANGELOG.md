@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Hub execution (experimental, `--experimental-hub-execution`; stays hidden for beta.4):
+
+- Fix: reading the plan, import, drift, graph or discovery options of a fifth Hub workspace evicted another workspace's execution scope and deleted its reviewed saved plan and approval. Reads never create or evict a scope now, and a workspace that keeps a reviewed plan is never evicted; when every scope is busy or keeps a plan, starting work elsewhere answers `409 capacity_exceeded`.
+- Fix: changing a project's folder or engine, removing it, or editing or deleting an execution profile cancelled a plan or apply running in one of its Hub workspaces. These edits now answer `409 project_busy` while it runs.
+- New: `DELETE /api/v1/contexts/{id}` closes an idle workspace view and deletes its saved plan.
+- Fix: an import in a Hub workspace held a lock while it checked the engine (up to 90 seconds), stalling every other Hub request. An apply now recomputes the configuration fingerprint right before the engine runs, so an edit after approval refuses it (`context_changed`, nothing applied).
+
 Secret handling:
 
 - Fix: the Git diff view and the view of a file new to Git showed heredoc bodies under ordinary names, such as a `container_definitions = <<EOF` JSON document holding `{"name": "DB_PASSWORD", "value": "…"}` or a `content = <<EOT` YAML file holding `client_secret: …`. A heredoc body is opaque text (JSON, YAML, shell), so every body line is now hidden whatever the name, as the import preview already did. The import preview also missed a heredoc opened on the first line of a file that starts with a byte order mark. Visible change: heredoc bodies such as `user_data` scripts and inline policies are shown as `[redacted]` in diffs; the opening and closing lines stay visible.

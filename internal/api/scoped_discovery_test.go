@@ -238,15 +238,19 @@ func TestScopedDiscoveryStaysInItsContext(t *testing.T) {
 		}
 	}
 
-	// Closing the scope (here: evicted by another workspace) drops its verification and scan.
+	// Closing the scope (here: its view is reopened, which closes it; a scope that keeps the
+	// import's reviewed plan is never evicted) drops its verification and scan.
+	verified := s.discoveryOptions(a).Identity
+	if verified == nil {
+		t.Fatal("no verification")
+	}
 	calls := len(runner.Calls())
-	s.hub.MaxScopes = 1
-	s.discoveryOptions(s.openLoaded("platform", "staging", ""))
+	s.openLoaded("network", "dev", "")
 	if got := s.hub.Discovery.Scans(a); len(got) != 0 {
 		t.Fatalf("scans kept after close: %+v", got)
 	}
-	if o := s.discoveryOptions(a); o.Identity != nil {
-		t.Fatalf("verification kept after close: %+v", o.Identity)
+	if id, ok := s.hub.Discovery.Identity(verified.Pin); ok {
+		t.Fatalf("verification kept after close: %+v", id)
 	}
 	if len(runner.Calls()) != calls {
 		t.Fatal("closing or reopening a scope contacted AWS")

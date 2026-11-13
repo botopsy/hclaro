@@ -644,3 +644,28 @@ func TestCredentialHints(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 }
+
+// M26.08: the context fingerprint is recomputed with the root claim held, immediately before
+// the engine applies; a configuration edit after the start checks refuses the apply.
+func TestApplyRecomputesTheFingerprintUnderTheClaim(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	m, root := setup(t, fake, workspace.Info{})
+	id := planned(t, m)
+	// The Verify hook runs with the claim held, after StartApply checked the fingerprint.
+	m.Verify = func(ctx context.Context, kind string) *Diagnostic {
+		if kind == "apply" {
+			if err := os.WriteFile(filepath.Join(root, "main.tf"), []byte(`resource "x" "y" {}`), 0o600); err != nil {
+				t.Error(err)
+			}
+		}
+		return nil
+	}
+	done := wait(t, m, approveAndApply(t, m, id).ID)
+	if done.Status != Failed || done.Diagnostic == nil || done.Diagnostic.Code != "context_changed" || done.Outcome != "not_applied" || !strings.Contains(done.Diagnostic.Message, "Nothing was applied") {
+		t.Fatalf("%+v %+v", done, done.Diagnostic)
+	}
+	if applyCalls(fake) != 0 {
+		t.Fatal("engine apply ran")
+	}
+	assertTempEmpty(t, m)
+}

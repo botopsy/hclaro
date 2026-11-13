@@ -186,11 +186,14 @@ type Hub struct {
 	IdentityProbe preflight.IdentityProbe
 	// Discovery is the session's AWS discovery service. A scope's verifications, scans and
 	// prepared imports are dropped (running scans cancelled) when the scope closes.
-	Discovery   *discovery.Service
-	MaxScopes   int
-	TempDir     string
-	base        context.Context
-	stop        context.CancelFunc
+	Discovery *discovery.Service
+	MaxScopes int
+	TempDir   string
+	base      context.Context
+	stop      context.CancelFunc
+	// mu guards the maps below. Lock order: mu, then an operations.Manager's own lock (Busy
+	// and Close read it under mu); never take mu while holding a manager's lock, and never run
+	// an engine command under either.
 	mu          sync.Mutex
 	inspections map[string]*Inspection
 	contexts    map[string]*Context
@@ -408,8 +411,12 @@ func (h *Hub) Add(path, alias, preference string) (Summary, error) {
 }
 
 // Update edits metadata or repairs the root path. A changed root or engine preference
-// closes the project's contexts and discards its inspection.
+// closes the project's contexts and discards its inspection, so it is refused (ErrBusy)
+// while one of them runs an operation.
 func (h *Hub) Update(id string, c Change) (Summary, error) {
+	if (c.RootPath != nil || c.EnginePreference != nil) && h.running(func(x *Context) bool { return x.ProjectID == id }) {
+		return Summary{}, ErrBusy
+	}
 	if c.RootPath != nil {
 		root, err := Canonical(*c.RootPath)
 		if err != nil {
@@ -428,8 +435,12 @@ func (h *Hub) Update(id string, c Change) (Summary, error) {
 	return h.summary(record), nil
 }
 
-// Remove unregisters a project and closes its contexts, cancelling reads in progress.
+// Remove unregisters a project and closes its contexts, cancelling reads in progress. It is
+// refused (ErrBusy) while one of its contexts runs an operation.
 func (h *Hub) Remove(id string) error {
+	if h.running(func(x *Context) bool { return x.ProjectID == id }) {
+		return ErrBusy
+	}
 	if _, err := h.Registry.Remove(id); err != nil {
 		return err
 	}
@@ -444,6 +455,36 @@ func (h *Hub) Remove(id string) error {
 
 // Reorder sets the stored order.
 func (h *Hub) Reorder(ids []string) error { return h.Registry.Reorder(ids) }
+
+// running reports whether the execution scope of an open context that matches runs or is
+// cancelling an operation. Edits that would close such a context are refused instead: closing
+// it would cancel an apply that already passed its checks. An operation started between this
+// check and the edit is stopped by its own revalidation under the root claim.
+func (h *Hub) running(match func(*Context) bool) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for cid, c := range h.contexts {
+		if s := h.scopes[cid]; s != nil && match(c) && s.Busy() {
+			return true
+		}
+	}
+	return false
+}
+
+// CloseContext closes an open read context and its execution scope, deleting the scope's
+// saved plan and approval. It is refused (ErrBusy) while the scope runs an operation.
+func (h *Hub) CloseContext(cid string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.contexts[cid]; !ok {
+		return ErrContextNotFound
+	}
+	if s := h.scopes[cid]; s != nil && s.Busy() {
+		return ErrBusy
+	}
+	h.closeLocked(cid, "closed")
+	return nil
+}
 
 func (h *Hub) forget(id, reason string) {
 	h.mu.Lock()
