@@ -1,0 +1,245 @@
+{
+  "version": 4,
+  "terraform_version": "1.5.5",
+  "serial": 7,
+  "lineage": "00000000-0000-4000-8000-000000000001",
+  "outputs": {
+    "label": {
+      "value": "old",
+      "type": "string"
+    },
+    "token": {
+      "value": "DO_NOT_LEAK_HCLARO_TEST_SECRET",
+      "type": "string",
+      "sensitive": true
+    }
+  },
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "updated",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "input": {
+              "value": "v1",
+              "type": "string"
+            },
+            "output": {
+              "value": "v1",
+              "type": "string"
+            },
+            "triggers_replace": null
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "unchanged",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "input": {
+              "value": "same",
+              "type": "string"
+            },
+            "output": {
+              "value": "same",
+              "type": "string"
+            },
+            "triggers_replace": null
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "secret",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "input": {
+              "value": "old-DO_NOT_LEAK_HCLARO_TEST_SECRET",
+              "type": "string"
+            },
+            "output": {
+              "value": "old-DO_NOT_LEAK_HCLARO_TEST_SECRET",
+              "type": "string"
+            },
+            "triggers_replace": null
+          },
+          "sensitive_attributes": [
+            [
+              {
+                "type": "get_attr",
+                "value": "input"
+              }
+            ],
+            [
+              {
+                "type": "get_attr",
+                "value": "output"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "replaced",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "input": {
+              "value": "x",
+              "type": "string"
+            },
+            "output": {
+              "value": "x",
+              "type": "string"
+            },
+            "triggers_replace": {
+              "value": [
+                "a"
+              ],
+              "type": [
+                "tuple",
+                [
+                  "string"
+                ]
+              ]
+            }
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "replaced_first",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "input": {
+              "value": "y",
+              "type": "string"
+            },
+            "output": {
+              "value": "y",
+              "type": "string"
+            },
+            "triggers_replace": {
+              "value": [
+                "a"
+              ],
+              "type": [
+                "tuple",
+                [
+                  "string"
+                ]
+              ]
+            }
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "old_name",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "00000000-0000-4000-8000-000000000006",
+            "input": {
+              "value": "kept",
+              "type": "string"
+            },
+            "output": {
+              "value": "kept",
+              "type": "string"
+            },
+            "triggers_replace": null
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "gone",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "00000000-0000-4000-8000-000000000007",
+            "input": {
+              "value": "bye",
+              "type": "string"
+            },
+            "output": {
+              "value": "bye",
+              "type": "string"
+            },
+            "triggers_replace": null
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "this",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "00000000-0000-4000-8000-000000000008",
+            "input": {
+              "value": "group-a-v1",
+              "type": "string"
+            },
+            "output": {
+              "value": "group-a-v1",
+              "type": "string"
+            },
+            "triggers_replace": null
+          },
+          "sensitive_attributes": []
+        }
+      ],
+      "module": "module.group[\"a\"]"
+    }
+  ]
+}

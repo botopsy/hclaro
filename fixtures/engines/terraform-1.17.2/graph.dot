@@ -1,0 +1,20 @@
+digraph G {
+  rankdir = "RL";
+  node [shape = rect, fontname = "sans-serif"];
+  "data.terraform_remote_state.pending" [label="data.terraform_remote_state.pending"];
+  "terraform_data.created" [label="terraform_data.created"];
+  "terraform_data.gone" [label="terraform_data.gone"];
+  "terraform_data.old_name" [label="terraform_data.old_name"];
+  "terraform_data.renamed" [label="terraform_data.renamed"];
+  "terraform_data.replaced" [label="terraform_data.replaced"];
+  "terraform_data.replaced_first" [label="terraform_data.replaced_first"];
+  "terraform_data.secret" [label="terraform_data.secret"];
+  "terraform_data.unchanged" [label="terraform_data.unchanged"];
+  "terraform_data.updated" [label="terraform_data.updated"];
+  subgraph "cluster_module.group" {
+    label = "module.group"
+    fontname = "sans-serif"
+    "module.group.terraform_data.this" [label="terraform_data.this"];
+  }
+  "data.terraform_remote_state.pending" -> "terraform_data.created";
+}

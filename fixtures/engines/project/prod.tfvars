@@ -1,0 +1,1 @@
+token = "DO_NOT_LEAK_HCLARO_TEST_SECRET"

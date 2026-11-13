@@ -183,7 +183,9 @@ func normalize(id string) (name string, drop, odd bool) {
 		}
 		suffix := name[m[2]:m[3]]
 		switch {
-		case suffix == "expand" || suffix == "prepare state":
+		// orphan: a resource recorded in state but no longer configured (Terraform 1.5, OpenTofu).
+		// "expand, reference" and "expand, input": OpenTofu's two nodes for one module variable.
+		case suffix == "expand" || suffix == "prepare state" || suffix == "orphan" || suffix == "expand, reference" || suffix == "expand, input":
 			name = name[:m[0]]
 		case suffix == "close" || suffix == "EachMode fixup" || strings.HasPrefix(suffix, "destroy") || strings.HasPrefix(suffix, "deposed") || suffix == "cleanup":
 			return name[:m[0]], true, false
