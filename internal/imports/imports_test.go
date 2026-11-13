@@ -246,6 +246,11 @@ func TestCheckUsesStateIDsOfTheType(t *testing.T) {
 	if p := Check(e, req); codes(p) != "error:id_in_state" || !strings.Contains(p.Issues[0].Message, "aws_s3_bucket.artifacts") {
 		t.Fatalf("%q %+v", codes(p), p.Issues)
 	}
+	// The raw id is compared even when the catalog does not return it (another shape).
+	req.ID = "internal-1"
+	if p := Check(e, req); codes(p) != "error:id_in_state" {
+		t.Fatalf("raw id: %q", codes(p))
+	}
 }
 
 func TestCheckModuleConfiguration(t *testing.T) {
