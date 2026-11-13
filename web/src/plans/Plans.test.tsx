@@ -88,6 +88,13 @@ afterEach(() => {
 });
 
 describe('Plans', () => {
+  it('says the configuration could not be read instead of claiming it changed', async () => {
+    const reason = 'Hclaro could not read the configuration, so it cannot tell whether it changed since this plan was created: "locked/main.tf" could not be read (permission denied).';
+    serve(url => url.endsWith(`/plans/${planId}`) ? Response.json({ ...plan, contextChanged: true, apply: { available: false, artifactRetained: true, code: 'configuration_unreadable', reason } }) : undefined);
+    view();
+    expect(await screen.findByRole('note')).toHaveTextContent('locked/main.tf');
+    expect(screen.queryByText(/changed since this plan was created\. Run a new plan/)).not.toBeInTheDocument();
+  });
   it('shows every planned change, including collateral, and offers no apply when unavailable', async () => {
     view();
     expect(await screen.findByText(/10 resource changes and 4 output changes/)).toBeInTheDocument();
