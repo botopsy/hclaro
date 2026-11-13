@@ -24,6 +24,10 @@ Cost estimates:
 - Fix: the input sent to Infracost could contain secret values that a provider does not mark sensitive: the value of a name/value environment pair such as `{"name": "DB_PASSWORD", "value": …}`, and secrets inside JSON-encoded strings such as an ECS `container_definitions`. These values are now removed before Infracost runs, by the same rules that hide them in the UI. A string that starts like JSON but is not one complete JSON document, on its own or inside another JSON string, is also left out of the cost input, since it cannot be checked.
 - Fix: the Cost estimate tab of a plan in a Hub workspace requested the launch project's cost routes, which cannot know a Hub plan, and failed. It now says that cost estimates are available only for the project Hclaro was opened with from the terminal, and makes no cost requests.
 
+Operation history:
+
+- Fix: an operation kind that history did not know was recorded as a plan, with an outcome saying it did not change infrastructure, and an entry with an unrecognised kind was silently dropped when the file was read again. Such operations are now recorded as "Unknown operation", whose outcome says it may have changed infrastructure or state, and entries read back with an unrecognised kind are kept and marked unknown. Visible change: the Markdown report labels project tool runs "Project tool" (was "Tool"), as the UI does.
+
 Apply preflight:
 
 - Fix: the Git check before an apply passed inherited `GIT_*` variables to Git. With `GIT_DIR` or `GIT_INDEX_FILE` pointing at another repository, a project with uncommitted changes could be reported as clean. The check now runs through the same restricted Git runner as the Git context view, which removes every inherited `GIT_*` variable.
