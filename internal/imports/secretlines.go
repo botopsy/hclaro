@@ -35,7 +35,14 @@ var (
 // block comments are hidden. The lines must start at the top of the file; text that closes a
 // block it never opened, or a string left open, cannot be placed, so everything from there on
 // is marked. Line-level checks still apply on top.
-func SecretLines(lines []string) []bool {
+func SecretLines(lines []string) []bool { return secretLines(lines, false) }
+
+// SecretLinesTruncated is SecretLines for text cut at a size limit. The cut may have
+// dropped the secret-like name of any name/value pair, at any depth, so every pair value
+// seen is marked, and so is the last non-blank line, which may be cut in the middle.
+func SecretLinesTruncated(lines []string) []bool { return secretLines(lines, true) }
+
+func secretLines(lines []string, truncated bool) []bool {
 	type frame struct {
 		risky bool
 		key   string
@@ -266,9 +273,15 @@ func SecretLines(lines []string) []bool {
 			out[i] = true
 		}
 	}
-	// When the rest cannot be read, or the text was cut inside a block (a size limit), a
-	// secret-like name may follow any value seen so far.
-	unknown := broken || heredocEnd != "" || len(stack) > 1
+	// When the rest cannot be read, or the text was cut (a size limit; a block still open
+	// means it was cut too), a secret-like name may follow any value seen so far.
+	unknown := truncated || broken || heredocEnd != "" || len(stack) > 1
+	for i := len(out) - 1; truncated && i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			out[i] = true
+			break
+		}
+	}
 	for id, ls := range valueLines {
 		if pairRisky[id] || unknown {
 			for _, l := range ls {

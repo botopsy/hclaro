@@ -279,3 +279,13 @@ func TestUnsafeArgs(t *testing.T) {
 		}
 	}
 }
+
+// Secret-like names are ordinary Terraform/OpenTofu workspace names: only their values are
+// hidden elsewhere, the names are not rejected.
+func TestRiskyNamesAreValidWorkspaces(t *testing.T) {
+	for _, name := range []string{"user_data", "authorizationType", "credential", "kubeconfig", "sas_token"} {
+		if !ValidWorkspace(name) {
+			t.Errorf("%q rejected", name)
+		}
+	}
+}

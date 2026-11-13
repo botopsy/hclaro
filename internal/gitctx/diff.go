@@ -126,6 +126,9 @@ func newFileHunk(text string, d *GitDiff) GitDiffHunk {
 	h := GitDiffHunk{OldStart: 0, NewStart: 1, Lines: []DiffLine{}}
 	r := &LineRedactor{}
 	forced := imports.SecretLines(lines)
+	if d.Truncated {
+		forced = imports.SecretLinesTruncated(lines)
+	}
 	for i, l := range lines {
 		if len(h.Lines) == maxDiffLines {
 			d.Truncated = true
@@ -295,6 +298,10 @@ func display(d *GitDiff) {
 		var texts []string
 		flush := func(known bool) {
 			marks := imports.SecretLines(texts)
+			if d.Truncated {
+				// Output cut at maxDiffOutput: a pair name may be past the cut.
+				marks = imports.SecretLinesTruncated(texts)
+			}
 			for i, p := range seg {
 				forced[p] = forced[p] || marks[i] || !known
 			}

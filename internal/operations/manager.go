@@ -686,7 +686,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 			if err != nil {
 				review.Warnings = append(review.Warnings, fmt.Sprintf("The engine did not write %s, or it could not be read. Check the plan diagnostics.", generated))
 			}
-			generatedConfig, generatedTruncated = inputs.scrub(imports.RedactGenerated(text)), truncated
+			generatedConfig, generatedTruncated = inputs.scrub(imports.RedactGenerated(text, truncated)), truncated
 		}
 	}
 	result = &Plan{

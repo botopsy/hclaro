@@ -301,3 +301,27 @@ func TestSuspiciousQuotedKeysFollowRiskyKeyParts(t *testing.T) {
 		}
 	}
 }
+
+// The quoted-key rule only fires on a quoted name followed by ":" (JSON text). Bare names,
+// which is how validators see workspace, output, variable and environment names, are never
+// rejected for being secret-like; their values are hidden by RiskyKey instead. Hiding JSON
+// text with "authorizationType": or "user_data": is intended over-redaction.
+func TestRiskyNamesAreValidNamesButHiddenInJSON(t *testing.T) {
+	for _, name := range []string{"user_data", "authorizationType", "credential", "kubeconfig", "sas_token", "TF_VAR_sas_token", "client-key"} {
+		if Suspicious(name) {
+			t.Errorf("bare name %q rejected", name)
+		}
+		if !RiskyKey(name) {
+			t.Errorf("%q value not always hidden", name)
+		}
+		if !Suspicious(`{"` + name + `": "NONE"}`) {
+			t.Errorf("JSON text with %q key not hidden", name)
+		}
+	}
+	// Without a quoted key and ":" the rule does not fire.
+	for _, text := range []string{`{"region": "eu-west-1", "user": "data"}`, `credential: none`, `"kubeconfig"`, `rotate the sas_token monthly`} {
+		if Suspicious(text) {
+			t.Errorf("%q hidden", text)
+		}
+	}
+}

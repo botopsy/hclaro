@@ -77,7 +77,7 @@ func TestRedactGeneratedMultiline(t *testing.T) {
 		`  engine = "postgres"`,
 		`}`,
 	}, "\n")
-	got := RedactGenerated(text)
+	got := RedactGenerated(text, false)
 	for _, leak := range []string{"hunter2", "hunter3", "hunter4"} {
 		if strings.Contains(got, leak) {
 			t.Errorf("%s shown:\n%s", leak, got)
