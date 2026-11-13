@@ -31,6 +31,7 @@ Operation history:
 Apply preflight:
 
 - Fix: the Git check before an apply passed inherited `GIT_*` variables to Git. With `GIT_DIR` or `GIT_INDEX_FILE` pointing at another repository, a project with uncommitted changes could be reported as clean. The check now runs through the same restricted Git runner as the Git context view, which removes every inherited `GIT_*` variable.
+- Fix: one unreadable subdirectory or file in the configuration, or a configuration past Hclaro's fingerprint limits (10,000 files or 256 MiB), refused every apply with "Configuration … changed" and showed drift scans as having "no recorded context". These now give their own reason, `configuration_unreadable`, naming the file (relative to the project) or the limit hit: approval, apply and the preflight's configuration check say Hclaro could not read the configuration; a plan made while it could not be read is still shown for review, with a log warning, but cannot be applied; drift scans and graphs refuse to start before the engine runs, and a kept scan or graph says it can no longer be checked.
 
 Engine environment:
 
