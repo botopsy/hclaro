@@ -582,7 +582,9 @@ func TestScopedPlanRefusalsAreTyped(t *testing.T) {
 	// existing scope, as a scope change.
 	before := s.openLoaded("platform", "staging", "")
 	withScope := s.openLoaded("platform", "default", "")
-	s.options(withScope)
+	if _, err := s.hub.Execution(withScope); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("TF_DATA_DIR", filepath.Join(t.TempDir(), "shared"))
 	wantError(t, s.do("POST", "/api/v1/contexts", fmt.Sprintf(`{"projectId":%q,"workspace":"staging"}`, s.ids["platform"])), 409, "shared_data_dir")
 	wantError(t, plan(before), 409, projects.CodeExecutionUnsupported)
@@ -623,5 +625,38 @@ func TestScopedOperationShape(t *testing.T) {
 	}
 	if joined := strings.Join(command, " "); strings.Contains(joined, "tfplan") || strings.Contains(joined, s.hub.TempDir) || !strings.Contains(joined, "-out=<private temporary file>") {
 		t.Fatalf("command shows the saved plan path: %s", raw["command"])
+	}
+}
+
+// M26.08: options and other reads of a Hub workspace never create or evict an execution
+// scope, so reading another workspace cannot delete a reviewed plan.
+func TestScopedReadsNeverEvictAReviewedPlan(t *testing.T) {
+	s, _ := newScopedDiscovery(t)
+	s.hub.MaxScopes = 1
+	a := s.openLoaded("network", "dev", "")
+	planned := s.waitScoped(a, s.plan(a).ID)
+	if planned.PlanID == "" {
+		t.Fatalf("%+v", planned)
+	}
+	b := s.openLoaded("platform", "default", "")
+	for _, path := range []string{"plans/options", "imports/options", "drift-scans/options", "graphs/options", "discovery/options"} {
+		if w := s.do("GET", "/api/v1/contexts/"+b+"/"+path, ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"contextId":"`+b+`"`) {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body)
+		}
+	}
+	wantError(t, s.do("GET", "/api/v1/contexts/"+b+"/discovery/scans/"+strings.Repeat("0", 32), ""), 404, "scan_not_found")
+	if scope, _ := s.hub.ExistingScope(b); scope != nil {
+		t.Fatal("a read created a scope")
+	}
+	detail := decode[scopedPlanDetail](t, s.do("GET", "/api/v1/contexts/"+a+"/plans/"+planned.PlanID, ""))
+	if !detail.Apply.Available || !detail.Apply.ArtifactRetained {
+		t.Fatalf("reviewed plan lost: %+v", detail.Apply)
+	}
+	// Starting work in the other workspace is refused rather than deleting the plan.
+	o := s.options(b)
+	w := s.do("POST", "/api/v1/contexts/"+b+"/plans", fmt.Sprintf(`{"acknowledgeBackendAccess":true,"contextFingerprint":%q}`, o.ContextFingerprint))
+	wantError(t, w, 409, projects.CodeCapacityExceeded)
+	if detail := decode[scopedPlanDetail](t, s.do("GET", "/api/v1/contexts/"+a+"/plans/"+planned.PlanID, "")); !detail.Apply.Available {
+		t.Fatalf("reviewed plan lost: %+v", detail.Apply)
 	}
 }

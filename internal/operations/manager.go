@@ -435,6 +435,13 @@ func (m *Manager) Applying() bool {
 	return m.applyingLocked()
 }
 
+// KeepsPlan reports whether a reviewed saved plan file is kept for apply.
+func (m *Manager) KeepsPlan() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.artifact != nil
+}
+
 func (m *Manager) applyingLocked() bool { return m.running != nil && m.running.op.Kind == "apply" }
 
 func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {

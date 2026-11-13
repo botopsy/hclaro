@@ -187,14 +187,14 @@ func TestScopesIsolateRootsWithTheSameWorkspaceName(t *testing.T) {
 	if v := a.View(); v.RootPath != network || v.Workspace != "default" || v.Engine != "terraform" || v.ExecutionMode != "local-cli" || v.Profile != nil {
 		t.Fatalf("%+v", v)
 	}
-	opA, err := a.StartPlan(nil, nil)
+	opA, err := a.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if done := waitDone(t, a, opA.ID); done.Status != operations.Succeeded {
 		t.Fatalf("%+v", done)
 	}
-	opB, err := b.StartPlan(nil, nil)
+	opB, err := b.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,12 +242,12 @@ func TestScopeRefusesClientTargets(t *testing.T) {
 	_, s := openScope(t, hub, ids["network"], "dev", "")
 	before := len(spyLines(t, spy))
 	for _, files := range [][]string{{"../outside.tfvars"}, {"/etc/passwd"}, {"-target=aws_s3_bucket.logs"}, {"a.tfvars; rm -rf /"}} {
-		if _, err := s.StartPlan(files, nil); !errors.Is(err, operations.ErrVarFiles) {
+		if _, err := s.startPlan(files, nil); !errors.Is(err, operations.ErrVarFiles) {
 			t.Fatalf("%q: %v", files, err)
 		}
 	}
 	for _, replace := range [][]string{{"aws_s3_bucket.logs"}, {"$(id)"}, {"-destroy"}} {
-		if _, err := s.StartPlan(nil, replace); !errors.Is(err, operations.ErrReplace) {
+		if _, err := s.startPlan(nil, replace); !errors.Is(err, operations.ErrReplace) {
 			t.Fatalf("%q: %v", replace, err)
 		}
 	}
@@ -271,12 +271,12 @@ func TestSameRootSerializesAcrossWorkspacesAndLaunch(t *testing.T) {
 	if !ok {
 		t.Fatal("root unexpectedly claimed")
 	}
-	if _, err := dev.StartPlan(nil, nil); !errors.Is(err, operations.ErrBusy) {
+	if _, err := dev.startPlan(nil, nil); !errors.Is(err, operations.ErrBusy) {
 		t.Fatalf("%v", err)
 	}
 	release()
 	t.Setenv("HCLARO_FAKE_PLAN", "slow")
-	op, err := dev.StartPlan(nil, nil)
+	op, err := dev.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestSameRootSerializesAcrossWorkspacesAndLaunch(t *testing.T) {
 	if holder, _ := hub.Locks.Holder(root); holder != "plan" {
 		t.Fatalf("holder %q", holder)
 	}
-	if _, err := prod.StartPlan(nil, nil); !errors.Is(err, operations.ErrBusy) {
+	if _, err := prod.startPlan(nil, nil); !errors.Is(err, operations.ErrBusy) {
 		t.Fatalf("second workspace of the same root: %v", err)
 	}
 	if _, _, err := hub.Open(ids["network"], "default", false); !errors.Is(err, ErrBusy) {
@@ -310,7 +310,7 @@ func TestSameRootSerializesAcrossWorkspacesAndLaunch(t *testing.T) {
 		t.Fatal("claim not released after cancel")
 	}
 	t.Setenv("HCLARO_FAKE_PLAN", "")
-	op, err = prod.StartPlan(nil, nil)
+	op, err = prod.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +419,7 @@ func TestScopeIdentityChangesFailClosed(t *testing.T) {
 			tc.change(t, hub, root, c.Executable)
 			scopeErr(t, s.Revalidate(context.Background()), CodeScopeChanged, tc.detail)
 			before := len(spyCalls(t, spy, "plan"))
-			op, err := s.StartPlan(nil, nil)
+			op, err := s.startPlan(nil, nil)
 			if err == nil {
 				done := waitDone(t, s, op.ID)
 				if done.Status != operations.Failed || done.Diagnostic == nil || done.Diagnostic.Code != CodeScopeChanged {
@@ -450,7 +450,7 @@ func TestScopeProfileIsPinned(t *testing.T) {
 	if v := s.View(); v.Profile == nil || v.Profile.Name != "dev" || v.Profile.Revision != 1 {
 		t.Fatalf("%+v", v.Profile)
 	}
-	op, err := s.StartPlan(nil, nil)
+	op, err := s.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestDeletedWorkspaceStopsBeforePlanning(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".fake-workspaces"), []byte("  default\n* prod\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	op, err := s.StartPlan(nil, nil)
+	op, err := s.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +502,7 @@ func TestClosingAScopeCancelsReleasesAndDeletes(t *testing.T) {
 	root := rootOf(t, hub, ids["network"])
 	// A retained saved plan is deleted when its context is reloaded.
 	_, s := openScope(t, hub, ids["platform"], "default", "")
-	op, err := s.StartPlan(nil, nil)
+	op, err := s.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +517,7 @@ func TestClosingAScopeCancelsReleasesAndDeletes(t *testing.T) {
 	// Removing a project cancels its running operation and releases the root.
 	t.Setenv("HCLARO_FAKE_PLAN", "slow")
 	_, s = openScope(t, hub, ids["network"], "dev", "")
-	op, err = s.StartPlan(nil, nil)
+	op, err = s.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ func TestClosingAScopeCancelsReleasesAndDeletes(t *testing.T) {
 		t.Fatalf("%+v", done)
 	}
 	eventually(t, "claim not released", func() bool { _, busy := hub.Locks.Holder(root); return !busy })
-	if _, err := s.StartPlan(nil, nil); !errors.Is(err, operations.ErrClosed) {
+	if _, err := s.startPlan(nil, nil); !errors.Is(err, operations.ErrClosed) {
 		t.Fatalf("closed scope still plans: %v", err)
 	}
 	if len(planDirs(t, hub.TempDir)) != 0 {
@@ -540,7 +540,7 @@ func TestClosingAScopeCancelsReleasesAndDeletes(t *testing.T) {
 func TestShutdownClosesScopes(t *testing.T) {
 	hub, ids, _ := scopedHub(t)
 	c, s := openScope(t, hub, ids["platform"], "default", "")
-	op, err := s.StartPlan(nil, nil)
+	op, err := s.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +549,7 @@ func TestShutdownClosesScopes(t *testing.T) {
 	if _, err := hub.Execution(c.ID); !errors.Is(err, operations.ErrClosed) {
 		t.Fatalf("%v", err)
 	}
-	if _, err := s.StartPlan(nil, nil); !errors.Is(err, operations.ErrClosed) {
+	if _, err := s.startPlan(nil, nil); !errors.Is(err, operations.ErrClosed) {
 		t.Fatalf("%v", err)
 	}
 	if dirs := planDirs(t, hub.TempDir); len(dirs) != 0 {
@@ -562,7 +562,7 @@ func TestBusyContextsAndScopesAreNotEvicted(t *testing.T) {
 	hub.MaxContexts, hub.MaxScopes = 2, 1
 	t.Setenv("HCLARO_FAKE_PLAN", "slow")
 	busy, s := openScope(t, hub, ids["network"], "dev", "")
-	op, err := s.StartPlan(nil, nil)
+	op, err := s.startPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +638,7 @@ func TestApplyRevalidatesTheScopeLast(t *testing.T) {
 	hub, ids, spy := scopedHub(t)
 	approveAndApply := func(s *Scope) operations.Operation {
 		t.Helper()
-		op, err := s.StartPlan(nil, nil)
+		op, err := s.startPlan(nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -743,5 +743,60 @@ func TestStatIdentityDetectsAFolderReplacedAtTheSamePath(t *testing.T) {
 	old, _ := os.Stat(dir + ".old")
 	if !os.SameFile(before, old) {
 		t.Fatal("identity does not follow the original folder")
+	}
+}
+
+// M26.08: a read never creates or evicts a scope, and a scope or context that keeps a
+// reviewed saved plan is not evicted to make room for another.
+func TestPreviewAndEvictionKeepReviewedPlans(t *testing.T) {
+	hub, ids, _ := scopedHub(t)
+	hub.MaxContexts, hub.MaxScopes = 2, 1
+	kept, s := openScope(t, hub, ids["network"], "default", "")
+	op, err := s.startPlan(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planID := waitDone(t, s, op.ID).PlanID
+	if planID == "" {
+		t.Fatal("no plan")
+	}
+	other, _, err := hub.Open(ids["platform"], "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitLoaded(t, other)
+	// Options of another workspace are shown without creating its scope.
+	preview, err := hub.Preview(other.ID)
+	if err != nil || preview.View().ContextID != other.ID || preview.ProfileFingerprint() != "" {
+		t.Fatalf("%v %+v", err, preview)
+	}
+	if existing, _ := hub.ExistingScope(other.ID); existing != nil {
+		t.Fatal("a preview created a scope")
+	}
+	if again, _ := hub.Preview(kept.ID); again != s {
+		t.Fatal("preview of an open scope is not that scope")
+	}
+	// Creating a scope does not evict the one that keeps a reviewed plan.
+	_, err = hub.Execution(other.ID)
+	scopeErr(t, err, CodeCapacityExceeded, "")
+	// Opening a third context evicts the context without a plan, not the one with it.
+	third, _, err := hub.Open(ids["platform"], "staging", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitLoaded(t, third)
+	if _, reason, err := hub.Context(other.ID); err == nil || reason != "evicted" {
+		t.Fatalf("context without a plan: %v %q", err, reason)
+	}
+	if _, _, err := hub.Context(kept.ID); err != nil {
+		t.Fatal("context with a reviewed plan evicted")
+	}
+	if _, ok := s.Plan(planID); !ok || !s.manager.KeepsPlan() || len(planDirs(t, hub.TempDir)) != 1 {
+		t.Fatalf("reviewed plan lost: %v", planDirs(t, hub.TempDir))
+	}
+	// Once the plan is no longer kept, the scope makes room again.
+	s.manager.Close(0)
+	if _, err := hub.Execution(third.ID); err != nil {
+		t.Fatal(err)
 	}
 }

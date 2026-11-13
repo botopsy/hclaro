@@ -64,7 +64,7 @@ func (e *ScopeError) Error() string { return e.Message }
 var (
 	// ErrScopedDisabled answers every scoped request while the gate is off.
 	ErrScopedDisabled = &ScopeError{Code: CodeScopedDisabled, Message: "Plans and applies in Hub workspaces are not enabled in this session. Nothing ran."}
-	errCapacity       = &ScopeError{Code: CodeCapacityExceeded, Message: "Every open Hub workspace is running an operation. Wait for one to finish, then try again. Nothing was closed."}
+	errCapacity       = &ScopeError{Code: CodeCapacityExceeded, Message: "Every open Hub workspace is running an operation or keeps a reviewed plan. Wait for an operation to finish, or close a workspace view you no longer need, then try again. Nothing was closed."}
 )
 
 func unsupportedScope(message string) *ScopeError {
@@ -169,9 +169,10 @@ func (s *Scope) View() ScopeView {
 // Busy reports whether the scope is running or cancelling an operation.
 func (s *Scope) Busy() bool { return s.manager.Running() }
 
-// StartPlan starts a plan in this scope. The execution profile and its fingerprint are the
-// scope's own; a request cannot choose another target.
-func (s *Scope) StartPlan(varFiles, replaceIDs []string) (operations.Operation, error) {
+// startPlan starts a plan in this scope. The execution profile and its fingerprint are the
+// scope's own; a request cannot choose another target. It skips the reviewed-fingerprint
+// and revalidation checks, so only StartReviewedPlan and tests call it.
+func (s *Scope) startPlan(varFiles, replaceIDs []string) (operations.Operation, error) {
 	req := operations.PlanStart{VarFiles: varFiles, Replace: replaceIDs}
 	if s.id.profileID != "" {
 		req.ProfileID, req.ContextFingerprint = s.id.profileID, s.id.profileFingerprint
@@ -191,7 +192,7 @@ func (s *Scope) StartReviewedPlan(ctx context.Context, varFiles, replaceIDs []st
 	if err := s.checked(ctx); err != nil {
 		return operations.Operation{}, err
 	}
-	return s.StartPlan(varFiles, replaceIDs)
+	return s.startPlan(varFiles, replaceIDs)
 }
 
 // checked revalidates the scope's files, registry, profile, environment and backend before
@@ -415,7 +416,17 @@ func (s *Scope) Cancel(id string) (operations.Operation, error) { return s.manag
 // Execution returns the execution scope of an open read context, creating it on first use.
 // It fails closed: the gate must be on, the context open and loaded, and its backend a
 // known local-execution backend; the scope's identity must match the read context.
-func (h *Hub) Execution(cid string) (*Scope, error) {
+// Creating a scope may close the least recently used scope that is idle and keeps no saved
+// plan, so only requests that start or prepare work call it; reads use Preview.
+func (h *Hub) Execution(cid string) (*Scope, error) { return h.scope(cid, true) }
+
+// Preview returns the execution scope of an open read context, or, when it has none, a
+// scope built for display only: its identity is checked as for Execution, but it is not
+// kept, closes nothing and cannot run anything. Options requests use it, so a GET never
+// creates or evicts a scope.
+func (h *Hub) Preview(cid string) (*Scope, error) { return h.scope(cid, false) }
+
+func (h *Hub) scope(cid string, keep bool) (*Scope, error) {
 	if !h.ScopedExecution {
 		return nil, ErrScopedDisabled
 	}
@@ -428,7 +439,9 @@ func (h *Hub) Execution(cid string) (*Scope, error) {
 	}
 	h.mu.Lock()
 	if s := h.scopes[cid]; s != nil {
-		h.touchScopeLocked(cid)
+		if keep {
+			h.touchScopeLocked(cid)
+		}
 		h.mu.Unlock()
 		return s, nil
 	}
@@ -444,9 +457,13 @@ func (h *Hub) Execution(cid string) (*Scope, error) {
 		}
 		return nil, unsupportedScope(reason)
 	}
-	s, err := h.newScope(c, snap)
+	s, err := h.newScope(c, snap, keep)
 	if err != nil {
 		return nil, err
+	}
+	if !keep {
+		s.manager.Close(0)
+		return s, nil
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -488,8 +505,9 @@ func (h *Hub) ExistingScope(cid string) (*Scope, error) {
 }
 
 // newScope resolves and pins the identity of c and builds its manager. Nothing runs except
-// hashing the engine executable.
-func (h *Hub) newScope(c *Context, snap workspace.Snapshot) (*Scope, error) {
+// hashing the engine executable, which a display-only scope (hash false) skips: it never
+// applies.
+func (h *Hub) newScope(c *Context, snap workspace.Snapshot, hash bool) (*Scope, error) {
 	p, err := h.Registry.Get(c.ProjectID)
 	if err != nil || p.RootPath != c.RootPath {
 		return nil, changed(DetailRootChanged)
@@ -543,7 +561,7 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot) (*Scope, error) {
 	if err != nil || read == nil || readName != name || readExecutable != executable {
 		return nil, changed(DetailEngineChanged)
 	}
-	resolved, exeInfo, digest, err := executableIdentity(executable, true)
+	resolved, exeInfo, digest, err := executableIdentity(executable, hash)
 	if err != nil {
 		return nil, changed(DetailEngineChanged)
 	}
@@ -793,21 +811,26 @@ func (h *Hub) touchScopeLocked(cid string) {
 	h.scopeOrder = append(slices.DeleteFunc(h.scopeOrder, func(id string) bool { return id == cid }), cid)
 }
 
-// idleScopeLocked returns the least recently used scope without a running operation, or "".
+// held reports whether closing the scope would lose work: an operation is running, or a
+// reviewed saved plan (and with it any preflight or approval) is kept. Only an explicit
+// close, a change of the project or profile, or expiry ends a held scope.
+func (s *Scope) held() bool { return s.Busy() || s.manager.KeepsPlan() }
+
+// idleScopeLocked returns the least recently used scope that is not held, or "".
 func (h *Hub) idleScopeLocked() string {
 	for _, cid := range h.scopeOrder {
-		if !h.scopes[cid].Busy() {
+		if !h.scopes[cid].held() {
 			return cid
 		}
 	}
 	return ""
 }
 
-// idleContextLocked returns the oldest read context whose scope, if any, has no running
-// operation, or "". A context still loading is idle: closing it cancels the read, as before.
+// idleContextLocked returns the oldest read context whose scope, if any, is not held, or "".
+// A context still loading is idle: closing it cancels the read, as before.
 func (h *Hub) idleContextLocked() string {
 	for _, cid := range h.order {
-		if s := h.scopes[cid]; s == nil || !s.Busy() {
+		if s := h.scopes[cid]; s == nil || !s.held() {
 			return cid
 		}
 	}

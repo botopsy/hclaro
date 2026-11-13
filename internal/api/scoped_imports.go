@@ -38,7 +38,7 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			ExecutionContext   *operations.ExecutionContext `json:"executionContext"`
 			ContextFingerprint string                       `json:"contextFingerprint"`
 		}
-		s, err := hub.Execution(r.PathValue("cid"))
+		s, err := hub.Preview(r.PathValue("cid"))
 		var unsupported *projects.ScopeError
 		if errors.As(err, &unsupported) && unsupported.Code == projects.CodeExecutionUnsupported {
 			writeJSON(w, 200, options{Code: unsupported.Code, Reason: unsupported.Message, VarFiles: []string{}})

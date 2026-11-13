@@ -183,7 +183,10 @@ func TestScopedDriftAndGraphRetentionFollowsTheScope(t *testing.T) {
 	scan := s.scan(a)
 	g := s.graph(a)
 	b := s.openLoaded("platform", "staging", "")
-	s.analysisOptions(b, "graphs") // creates B's scope and evicts A's idle one
+	// Starting work in B creates its scope and evicts A's idle one (options never do).
+	if _, err := s.hub.Execution(b); err != nil {
+		t.Fatal(err)
+	}
 	wantError(t, s.do("GET", "/api/v1/contexts/"+a+"/drift-scans/"+scan.ID, ""), 404, "scan_not_found")
 	wantError(t, s.do("GET", "/api/v1/contexts/"+a+"/graphs/"+g.ID, ""), 404, "graph_not_found")
 	if list := decode[map[string][]any](t, s.do("GET", "/api/v1/contexts/"+a+"/drift-scans", "")); len(list["scans"]) != 0 {

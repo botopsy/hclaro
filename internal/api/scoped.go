@@ -73,8 +73,8 @@ func scopeError(w http.ResponseWriter, r *http.Request, hub *projects.Hub, err e
 }
 
 func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
-	// Options describe what a plan in this workspace would run against. Resolving them
-	// creates the execution scope, which runs no engine command.
+	// Options describe what a plan in this workspace would run against. Resolving them runs
+	// no engine command and never creates or evicts an execution scope.
 	mux.HandleFunc("GET /api/v1/contexts/{cid}/plans/options", func(w http.ResponseWriter, r *http.Request) {
 		if !scopedContext(w, r, hub) {
 			return
@@ -93,7 +93,7 @@ func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			// ContextFingerprint must be sent back unchanged when starting a plan.
 			ContextFingerprint string `json:"contextFingerprint"`
 		}
-		s, err := hub.Execution(r.PathValue("cid"))
+		s, err := hub.Preview(r.PathValue("cid"))
 		var unsupported *projects.ScopeError
 		if errors.As(err, &unsupported) && unsupported.Code == projects.CodeExecutionUnsupported {
 			writeJSON(w, 200, options{Code: unsupported.Code, Reason: unsupported.Message, BackendAccess: true, VarFiles: []string{}})
