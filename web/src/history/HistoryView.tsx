@@ -20,7 +20,8 @@ const kinds: Record<HistoryKind, string> = {
   graph: 'Dependency graph',
   init: 'Initialize',
   workspace: 'Workspace',
-  tool: 'Project tool'
+  tool: 'Project tool',
+  unknown: 'Unknown operation'
 };
 const statusLabels: Record<HistoryStatus, string> = {
   running: 'Running',
@@ -32,6 +33,7 @@ const statusLabels: Record<HistoryStatus, string> = {
 // Results are worded so an engine exit never reads as verified success.
 const results: Record<string, { label: string; tone: string }> = {
   running: { label: 'In progress', tone: 'neutral' },
+  unknown: { label: 'Unknown · may be changed', tone: 'warn' },
   planned: { label: 'Planned · not applied', tone: 'muted' },
   not_planned: { label: 'No plan kept', tone: 'muted' },
   applied: { label: 'Engine reported applied', tone: 'create' },
@@ -53,7 +55,7 @@ const chipActions = ['create', 'update', 'replace', 'delete', 'import', 'forget'
 const isPlan = (e: HistoryEntry) => !!e.plan && e.kind !== 'apply';
 
 export function label(e: HistoryEntry) {
-  return kinds[e.kind] + (e.action ? ` · ${e.action.replaceAll('-', ' ')}` : '');
+  return (kinds[e.kind] ?? kinds.unknown) + (e.action ? ` · ${e.action.replaceAll('-', ' ')}` : '');
 }
 function when(time?: string) {
   if (!time) return '—';

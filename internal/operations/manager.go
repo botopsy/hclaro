@@ -51,6 +51,10 @@ type Diagnostic struct {
 	Message string `json:"message"`
 }
 
+// Kinds lists every Operation.Kind the manager starts. History maps each one; a kind
+// missing here is recorded there as unknown and possibly mutating.
+var Kinds = []string{"plan", "apply", "drift", "graph", "init", "workspace", "tool"}
+
 type Operation struct {
 	ID          string   `json:"id"`
 	Kind        string   `json:"kind"`

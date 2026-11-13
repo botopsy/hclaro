@@ -122,8 +122,7 @@ func dash(s string) string {
 }
 
 func label(e HistoryEntry) string {
-	names := map[string]string{"plan": "Plan", "replace": "Replace plan", "import": "Import plan", "apply": "Apply", "drift": "Drift scan", "graph": "Dependency graph", "init": "Initialize", "workspace": "Workspace", "tool": "Tool"}
-	l := names[e.Kind]
+	l := kindOf(e.Kind).Label
 	if e.Action != "" {
 		l += " " + e.Action
 	}

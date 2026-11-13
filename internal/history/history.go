@@ -50,8 +50,46 @@ const (
 	StatusUnknown   = "unknown"
 )
 
+// KindUnknown is recorded for an operation kind this version does not know. It is treated
+// as one that may have changed infrastructure, never as a plan.
+const KindUnknown = "unknown"
+
+type kindInfo struct {
+	Kind, Label string
+	Mutates     bool // may change infrastructure or state
+}
+
+// kindTable is the one list of recorded kinds; the last row is the fallback. The UI label
+// map in web/src/history/HistoryView.tsx is compared with it by a test.
+var kindTable = []kindInfo{
+	{"plan", "Plan", false},
+	{"replace", "Replace plan", false},
+	{"import", "Import plan", false},
+	{"apply", "Apply", true},
+	{"drift", "Drift scan", false},
+	{"graph", "Dependency graph", false},
+	{"init", "Initialize", false},
+	{"workspace", "Workspace", true},
+	{"tool", "Project tool", false},
+	{KindUnknown, "Unknown operation", true},
+}
+
 // Kinds of recorded operations.
-var Kinds = []string{"plan", "replace", "import", "apply", "drift", "graph", "init", "workspace", "tool"}
+var Kinds = func() []string {
+	k := make([]string, len(kindTable))
+	for i, t := range kindTable {
+		k[i] = t.Kind
+	}
+	return k
+}()
+
+// kindOf returns the row for k, or the unknown row when this version does not know k.
+func kindOf(k string) kindInfo {
+	if i := slices.Index(Kinds, k); i >= 0 {
+		return kindTable[i]
+	}
+	return kindTable[len(kindTable)-1]
+}
 
 var statuses = []string{StatusRunning, StatusSucceeded, StatusFailed, StatusCancelled, StatusUnknown}
 
@@ -348,12 +386,13 @@ func interrupt(e *HistoryEntry) {
 
 func interruptedRisk(kind string) string {
 	switch kind {
-	case "apply":
-		return " Infrastructure and state may be partly changed. Check state with your CLI and run a new plan."
 	case "init":
 		return " Downloads under the data directory may be incomplete."
 	case "workspace":
 		return " Check the workspace list with your CLI."
+	}
+	if kindOf(kind).Mutates {
+		return " Infrastructure and state may be partly changed. Check state with your CLI and run a new plan."
 	}
 	return " It did not change infrastructure."
 }
@@ -454,7 +493,7 @@ func (s *Store) read() (doc document, loaded loadedFile, err error) {
 
 func valid(e HistoryEntry) bool {
 	_, err := time.Parse(time.RFC3339, e.StartedAt)
-	return ValidID(e.ID) && slices.Contains(Kinds, e.Kind) && slices.Contains(statuses, e.Status) && err == nil && len(e.Command) <= maxCommand && len(e.Excerpt) <= maxExcerpt && (e.ProjectID == "" || ValidID(e.ProjectID))
+	return ValidID(e.ID) && slices.Contains(statuses, e.Status) && err == nil && len(e.Command) <= maxCommand && len(e.Excerpt) <= maxExcerpt && (e.ProjectID == "" || ValidID(e.ProjectID))
 }
 
 // write replaces the file atomically: a private temporary file in the same directory is
