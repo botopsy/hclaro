@@ -156,6 +156,9 @@ func (f *fetcher) check(u *url.URL) (string, string) {
 	if u.Scheme != "https" || u.User != nil {
 		return "", "scheme"
 	}
+	if strings.Contains(u.Path, "..") || strings.Contains(u.RawPath, "%2") {
+		return "", "path" // prefix matching runs on the raw path, so refuse traversal and encoded separators
+	}
 	p := strings.ToLower(u.Path)
 	for _, ext := range refusedExt {
 		if strings.HasSuffix(p, ext) {
@@ -190,6 +193,13 @@ func releaseAssetRedirect(orig, to *url.URL) bool {
 		}
 	}
 	return false
+}
+
+// octetCandidate reports, from the URL alone, whether an octet-stream body could pass E1 or E3,
+// so other octet-stream responses are refused before any of the body is read.
+func octetCandidate(orig *url.URL) bool {
+	name := path.Base(orig.Path)
+	return sigFile.MatchString(name) || sumsFile.MatchString(name) || strings.EqualFold(orig.Host, tofuRegHost)
 }
 
 // octetAllowed reports exceptions E1 and E3 for an application/octet-stream body.
@@ -268,7 +278,7 @@ func (f *fetcher) fetch(raw string) entry {
 		return e
 	}
 	octet := isOctet(e.ContentType)
-	if !textType(e.ContentType) && !octet {
+	if !textType(e.ContentType) && (!octet || !octetCandidate(u)) {
 		e.Result = "refused:content-type"
 		return e
 	}

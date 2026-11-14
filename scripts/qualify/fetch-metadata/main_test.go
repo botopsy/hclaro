@@ -52,6 +52,7 @@ func TestSeparationRule(t *testing.T) {
 		srv.URL + "/ok/pkg_1.0_linux.zip":     "refused:archive",
 		srv.URL + "/ok/pkg.ZIP":               "refused:archive",
 		srv.URL + "/ok/binary":                "refused:content-type",
+		srv.URL + "/ok/../other/SHA256SUMS":   "refused:path",
 		srv.URL + "/ok/big":                   "refused:size",
 		srv.URL + "/ok/away":                  "refused:redirect host elsewhere.invalid",
 		srv.URL + "/other/SHA256SUMS":         "refused:host",
@@ -181,6 +182,10 @@ func TestExceptionsAreNarrow(t *testing.T) {
 func TestOctetSignatureFetch(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
+		if r.URL.Path == "/archive-like" {
+			w.Write(bytes.Repeat([]byte("x"), 1<<20))
+			return
+		}
 		w.Write([]byte("sig"))
 	}))
 	defer srv.Close()
@@ -193,5 +198,9 @@ func TestOctetSignatureFetch(t *testing.T) {
 	}
 	if got := f.fetch(srv.URL + "/x_1.0_SHA256SUMS").Result; got != "refused:content-type" {
 		t.Errorf("octet SHA256SUMS that is not checksum lines: %s", got)
+	}
+	// Not a signature, checksum or registry URL: refused on the headers, body never stored.
+	if got := f.fetch(srv.URL + "/archive-like"); got.Result != "refused:content-type" || got.Body != "" {
+		t.Errorf("octet non-candidate: %+v", got)
 	}
 }
