@@ -41,7 +41,7 @@ Before each release, confirm these with read-only `gh api` calls (as a repositor
 | Private vulnerability reporting | Enabled; `/security/policy` reachable logged out. |
 | Secret scanning | Secret scanning and push protection enabled; no open alerts. |
 | Actions token | Default `GITHUB_TOKEN` read-only and unable to approve pull requests; workflows declare `contents: read`, and only the `publish` job gets write, OIDC and attestation permissions. |
-| Release secrets | No repository Actions secrets, environments, deploy keys or webhooks. |
+| Release secrets | One repository Actions secret, `SNYK_TOKEN`, read only by `.github/workflows/snyk.yml` (never by `ci.yml` or `release.yml`, never by fork pull requests); no environments or deploy keys; one webhook, Snyk's (`api.snyk.io`). |
 | Collaborators | Only the owner's accounts, with MFA (owner confirms; the API does not show it). |
 | Public assets | Logged out: the repository, Releases page and the previous release's assets return 200. |
 
@@ -55,7 +55,9 @@ gh api repos/$R/private-vulnerability-reporting
 gh api repos/$R/actions/permissions/workflow
 gh api repos/$R/actions/permissions/fork-pr-contributor-approval
 gh api repos/$R/collaborators --jq '.[]|{login,role_name}'
-gh api repos/$R/actions/secrets; gh api repos/$R/environments; gh api repos/$R/keys; gh api repos/$R/hooks
+gh api repos/$R/actions/secrets --jq '[.secrets[].name]'   # ["SNYK_TOKEN"]
+gh api repos/$R/environments; gh api repos/$R/keys; gh api repos/$R/hooks --jq '[.[].config.url]'
+git grep -n 'secrets\.' -- .github   # only snyk.yml
 gh api repos/$R/secret-scanning/alerts --jq '[.[]|select(.state=="open")]|length'
 curl -s -o /dev/null -w '%{http_code}' -L <url>   # logged out
 ```

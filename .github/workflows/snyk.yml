@@ -1,0 +1,114 @@
+name: Snyk
+# Snyk scans, kept out of ci.yml so that workflow stays secret-free. This is the only
+# workflow that reads a secret (SNYK_TOKEN). Fork pull requests never get it and are skipped.
+#
+# - Open Source: Go modules (go.mod) and the bundled npm packages (web/package-lock.json).
+# - Code: static analysis of the Go and TypeScript source (Snyk Code must be on for the org).
+# - IaC: the Terraform fixtures. They are synthetic and partly adversarial on purpose, so
+#   findings there are expected and do not describe real infrastructure.
+# - master and the weekly run also send a dependency snapshot to Snyk (snyk monitor), so
+#   newly published vulnerabilities in released dependencies are reported.
+# Results go to GitHub code scanning as SARIF. The job fails when a scan finds issues or
+# errors; it is not a required check, so a Snyk outage never blocks a merge.
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: snyk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  snyk:
+    # Fork pull requests have no access to the token.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      SNYK_VERSION: v1.1308.4
+      # sha256 of snyk-linux for SNYK_VERSION, from the GitHub release; bump both together.
+      SNYK_SHA256: 979172ee128903f50e43fff221f22a0689579f22c086dabaa0d1a5416485b9ba
+    steps:
+      - name: Require the Snyk token
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "::error::SNYK_TOKEN is not set for this repository (Dependabot pull requests need it as a Dependabot secret)."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Snyk resolves Go dependencies with the Go toolchain; pinned as in .github/actions/verify.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Install the Snyk CLI (pinned, checksum verified)
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/snyk"; mkdir -p "$dir"
+          curl -fsSL --retry 2 -o "$dir/snyk" "https://github.com/snyk/cli/releases/download/$SNYK_VERSION/snyk-linux"
+          echo "$SNYK_SHA256  $dir/snyk" | sha256sum -c -
+          chmod +x "$dir/snyk"
+          echo "$dir" >> "$GITHUB_PATH"
+      # Each scan runs even if an earlier one failed; the last step reports the outcome.
+      # Exit codes: 0 no issues, 1 issues found, 2 or 3 error / nothing to scan.
+      - name: Open Source (Go and npm dependencies)
+        id: oss
+        continue-on-error: true
+        run: snyk test --all-projects --exclude=fixtures --sarif-file-output=snyk-oss.sarif
+      - name: Code (static analysis)
+        id: code
+        continue-on-error: true
+        run: snyk code test --sarif-file-output=snyk-code.sarif
+      - name: IaC (Terraform fixtures)
+        id: iac
+        continue-on-error: true
+        run: snyk iac test fixtures --sarif-file-output=snyk-iac.sarif
+      - name: Monitor dependencies
+        id: monitor
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        run: snyk monitor --all-projects --exclude=fixtures --target-reference="$GITHUB_REF_NAME"
+      - name: Upload Open Source results
+        if: always() && hashFiles('snyk-oss.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: snyk-oss.sarif
+          category: snyk-open-source
+      - name: Upload Code results
+        if: always() && hashFiles('snyk-code.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: snyk-code.sarif
+          category: snyk-code
+      - name: Upload IaC results
+        if: always() && hashFiles('snyk-iac.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: snyk-iac.sarif
+          category: snyk-iac
+      - name: Outcome
+        if: always()
+        env:
+          OSS: ${{ steps.oss.outcome }}
+          CODE: ${{ steps.code.outcome }}
+          IAC: ${{ steps.iac.outcome }}
+          MONITOR: ${{ steps.monitor.outcome }}
+        run: |
+          echo "open source=$OSS code=$CODE iac=$IAC monitor=$MONITOR" | tee -a "$GITHUB_STEP_SUMMARY"
+          for o in "$OSS" "$CODE" "$IAC" "$MONITOR"; do
+            case "$o" in success|skipped|'') ;; *) exit 1 ;; esac
+          done
