@@ -1,6 +1,31 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-beta.4 — 2026-11-14
+
+Pre-release fixes from a review of the whole codebase (M26). Features are still tested with synthetic fixtures and fake engines; see `docs/BETA.md` and `docs/support-matrix.md` for what has run against real engines.
+
+Secret handling (M26):
+
+- Fix: plan and drift attribute rows redacted each value by its own path only, so a row such as `environment[0].value` showed a `DB_PASSWORD` value that the redacted tree hid. Rows now show values from the redacted trees. (M26.01)
+- Fix: operation logs scrubbed known values before checking a line, so a variable value such as `password` could turn `admin_password = "x"` into a line the checks no longer recognised. Lines are now checked first, then scrubbed. Credential-shaped environment values (`AWS_SECRET_ACCESS_KEY`, `ARM_CLIENT_SECRET`, `TF_TOKEN_*`, …) are scrubbed from every operation's log, random-looking secrets hidden in the plan are also hidden in diagnostics, and configuration snippets in human-format engine output are dropped. A variable file Hclaro could not read in full now logs that scrubbing may be incomplete. (M26.03)
+- Fix: configuration cut at a size limit (generated import configuration, a file new to Git, a long diff) could show the value of a name/value pair whose name was past the cut; every pair value and the last line before the cut are now hidden. Template strings with nested quotes, more secret-like quoted keys (`client_key`, `connection_string`, `kubeconfig`, `authorization`, …) and `\u`/`\U` escapes in values to scrub are now handled. Visible change: JSON text with a secret-like quoted key is hidden whole. (M26.17)
+
+Engine runs (M26):
+
+- Fix: Ctrl+C in the terminal reached the engine directly as well as through Hclaro, and a second Ctrl+C exited Hclaro while an apply was still writing to it. Plan and apply now run in their own process group and get exactly one interrupt; an apply gets 10 minutes to stop before it is killed (plan 15 seconds), an apply that finishes after the interrupt is reported as applied, and Hclaro waits for a running apply on shutdown and says so in the terminal. (M26.04)
+- Fix: "Error releasing the state lock", printed after an apply's writes, was reported as "not applied"; it now keeps the outcome uncertain (`state_unlock_failed`). Progress lines such as "Acquiring state lock..." are no longer read as lock errors, and errors that merely contain `sso` (route table associations, `aws_ssoadmin` resources) are no longer reported as credential failures. (M26.05)
+- Fix: launching Hclaro from a folder spelled differently from a Hub project's folder (`~/Infra` and `~/infra` on a case-insensitive disk) let a plan and a Hub init run in the same folder at once. Folders are now matched by file identity, and the startup state read and rereads hold a shared claim on the folder. (M26.07)
+- Fix: the graph showed `(orphan)` resource nodes and OpenTofu's `(expand, reference)` and `(expand, input)` variable nodes as unknown, and never mapped resources inside a keyed module instance (`module.old["x"]…`) to state. Found by parsing recorded output of Terraform 1.5.5, Terraform 1.17.2 and OpenTofu 1.13.9 (support matrix rows RE-08 to RE-10). (M26.16)
+
+Imports (M26):
+
+- Fix: the import collision check missed an RDS instance already managed under AWS provider v5 (state `id` = `db-…`) and ignored `import` and `moved` blocks in `.tf.json` files. It now compares the raw ID plus the identifiers known for the resource type, reads JSON configuration, and refuses the import (`config_unreadable`) when a configuration file cannot be read. (M26.10)
+
+Local server and UI (M26):
+
+- Fix: requests that ran an engine or a cloud identity check (preflight, inspect, verify, Git context) could outlast the server's 20-second write deadline, so the browser got a dropped connection instead of the answer. Each now has its own bound (preflight 30 seconds) with the write deadline moved past it. (M26.09)
+- Fix: refusals from the request guard (bad Origin, CSRF token, body size, …) were plain text, so the UI said "Unable to reach the local Hclaro server". They are now JSON with a reason (`csrf_invalid`, `forbidden_origin`, …; status codes unchanged), and the UI fetches a fresh CSRF token and retries once on `csrf_invalid`. (M26.14)
+- Fix: an open dialog, such as the apply dialog, moved focus back to its first control every time the page behind it refreshed (every 2 seconds while operations were polled). (M26.06)
 
 Hub execution (experimental, `--experimental-hub-execution`; stays hidden for beta.4):
 
@@ -67,7 +92,7 @@ Secret handling (M24.12):
 
 Support qualification (M24.11):
 
-- New [support matrix](docs/support-matrix.md): every engine version, platform, backend, provider and operation with PASS/FAIL/NOT_TESTED/BLOCKED. Only the Terraform 1.5.5 local-backend plan run is PASS; a test refuses PASS rows without dated, real, recorded evidence.
+- New [support matrix](docs/support-matrix.md): every engine version, platform, backend, provider and operation with PASS/FAIL/NOT_TESTED/BLOCKED. Real-engine PASS rows are the Terraform 1.5.5 local-backend run (RE-01) and parsing of recorded Terraform 1.5.5, Terraform 1.17.2 and OpenTofu 1.13.9 output (RE-08 to RE-10, added in M26.16); a test refuses PASS rows without dated, real, recorded evidence.
 - Fix: an initialized project whose `.terraform/terraform.tfstate` exists but is not a readable regular file was treated as the default local backend and could be planned. It now stays `unknown` and read-only.
 - Opt-in [AWS sandbox runbook](docs/qualification/aws-sandbox.md) for owner-approved S3 backend and AWS provider qualification (not yet run). CI step names now say they are the mocked tier.
 
