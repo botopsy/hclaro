@@ -1,0 +1,9 @@
+# Engine binaries, provider archives, mirrors and evidence never live in the repository (M27.01).
+*.zip
+*.tar.gz
+*.exe
+terraform
+tofu
+terraform-provider-*
+mirror/
+evidence/

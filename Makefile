@@ -26,7 +26,7 @@ lint:
 	npm --prefix web run typecheck
 	npm --prefix web run lint
 fmt:
-	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fake-infracost scripts/fixture-http scripts/hub-demo
+	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fake-infracost scripts/fixture-http scripts/hub-demo scripts/qualify
 
 bin/mock/terraform$(EXE): scripts/fake-engine/main.go fixtures/state.json
 	go build -trimpath -buildvcs=false -o bin/mock/terraform$(EXE) ./scripts/fake-engine
