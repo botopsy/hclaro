@@ -41,7 +41,8 @@ Before each release, confirm these with read-only `gh api` calls (as a repositor
 | Private vulnerability reporting | Enabled; `/security/policy` reachable logged out. |
 | Secret scanning | Secret scanning and push protection enabled; no open alerts. |
 | Actions token | Default `GITHUB_TOKEN` read-only and unable to approve pull requests; workflows declare `contents: read`, and only the `publish` job gets write, OIDC and attestation permissions. |
-| Release secrets | One repository Actions secret, `SNYK_TOKEN`, read only by `.github/workflows/snyk.yml` (never by `ci.yml` or `release.yml`, never by fork pull requests); no environments or deploy keys; one webhook, Snyk's (`api.snyk.io`). |
+| Release secrets | No repository Actions secrets, environments, deploy keys or webhooks. |
+| Third-party apps | Snyk scans through the Snyk GitHub App (Open Source, Code and IaC PR checks and recurring tests, configured in Snyk), not through Actions or a token; its installation has read access to code and write access to commit statuses and checks only. No other installed app can write to this repository's contents, workflows or secrets (owner confirms in the organization's installed apps). |
 | Collaborators | Only the owner's accounts, with MFA (owner confirms; the API does not show it). |
 | Public assets | Logged out: the repository, Releases page and the previous release's assets return 200. |
 
@@ -55,9 +56,8 @@ gh api repos/$R/private-vulnerability-reporting
 gh api repos/$R/actions/permissions/workflow
 gh api repos/$R/actions/permissions/fork-pr-contributor-approval
 gh api repos/$R/collaborators --jq '.[]|{login,role_name}'
-gh api repos/$R/actions/secrets --jq '[.secrets[].name]'   # ["SNYK_TOKEN"]
-gh api repos/$R/environments; gh api repos/$R/keys; gh api repos/$R/hooks --jq '[.[].config.url]'
-git grep -n 'secrets\.' -- .github   # only snyk.yml
+gh api repos/$R/actions/secrets; gh api repos/$R/environments; gh api repos/$R/keys; gh api repos/$R/hooks
+gh api orgs/botopsy/installations --jq '.installations[]|{app_slug,repository_selection,permissions}'
 gh api repos/$R/secret-scanning/alerts --jq '[.[]|select(.state=="open")]|length'
 curl -s -o /dev/null -w '%{http_code}' -L <url>   # logged out
 ```
