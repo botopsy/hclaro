@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+Distribution:
+
+- The Homebrew formula (`brew install botopsy/tap/hclaro`) installs the release archive for macOS and Linux, Apple silicon/arm64 and Intel/amd64, pinned to the release checksums, instead of building from source with Homebrew's Go. It applies from 0.1.0-beta.4.
+
 ## 0.1.0-beta.4 — 2026-11-14
 
 Pre-release fixes from a review of the whole codebase (M26). Features are still tested with synthetic fixtures and fake engines; see `docs/BETA.md` and `docs/support-matrix.md` for what has run against real engines.

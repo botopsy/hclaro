@@ -37,14 +37,14 @@ This guide takes you from a clean machine to hclaro showing one of your Terrafor
    - On macOS you can avoid the warning by installing from source instead (Option B, or `brew install botopsy/tap/hclaro`): a binary you build yourself is not flagged as downloaded.
 5. Check it: `hclaro --version`.
 
-### Option A2: Homebrew (macOS; Linux untested)
+### Option A2: Homebrew (macOS; Linux not yet tried)
 
 ```sh
 brew install botopsy/tap/hclaro
 hclaro --version
 ```
 
-Homebrew downloads the tagged source archive, checks its pinned SHA-256 and builds it with its own Go. The result is unsigned like the release binaries but is not flagged as downloaded, so Gatekeeper does not block it. Upgrade with `brew upgrade hclaro`; the formula is updated after each release, so it can lag a new GitHub release briefly.
+Homebrew downloads the release archive for your platform (macOS or Linux, Apple silicon/arm64 or Intel/amd64) and checks its pinned SHA-256, which comes from the release's checksums file. The binary is unsigned like any release binary but Homebrew does not flag it as downloaded, so Gatekeeper does not block it. Upgrade with `brew upgrade hclaro`; the formula is updated after each release, so it can lag a new GitHub release briefly.
 
 ### Option B: build from source
 

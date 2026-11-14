@@ -1,6 +1,6 @@
 # Releasing hclaro (draft)
 
-hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub repository. They are built by GitHub Actions (`.github/workflows/release.yml`) when a version tag is pushed, uploaded to a **draft** release, and published by the maintainer after review. Distribution is **GitHub Releases**, plus a source-build Homebrew formula in the `botopsy/homebrew-tap` tap; see [Distribution roadmap](#distribution-roadmap) for what comes later and under which conditions.
+hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub repository. They are built by GitHub Actions (`.github/workflows/release.yml`) when a version tag is pushed, uploaded to a **draft** release, and published by the maintainer after review. Distribution is **GitHub Releases**, plus a Homebrew formula in the `botopsy/homebrew-tap` tap that installs the release archives; see [Distribution roadmap](#distribution-roadmap) for what comes later and under which conditions.
 
 ## Version scheme
 
@@ -121,22 +121,25 @@ The SBOM lists what is compiled or bundled into the binary; it does not list bui
 
 ## Homebrew formula
 
-The formula `Formula/hclaro.rb` in the public tap [`botopsy/homebrew-tap`](https://github.com/botopsy/homebrew-tap) is a source-build formula: it downloads the tag's GitHub source archive (pinned by SHA-256), builds `cmd/hclaro` with the Homebrew Go, and its test checks `hclaro --version`. The web UI is already committed in `internal/ui/dist`, so Node is not needed. A binary built by Homebrew is not marked as downloaded, so Gatekeeper does not block it; it is still unsigned.
+The formula `Formula/hclaro.rb` in the public tap [`botopsy/homebrew-tap`](https://github.com/botopsy/homebrew-tap) installs the release's prebuilt archive (since 0.1.0-beta.4; earlier versions built from source): one `url` and `sha256` per platform in `on_macos`/`on_linux` × `on_arm`/`on_intel` blocks (darwin arm64/amd64, linux arm64/amd64; Windows has no Homebrew), installing `bin/hclaro` and `THIRD-PARTY-NOTICES.txt`; its test checks `hclaro --version`. The SHA-256 values come from the release's checksums file, so the formula installs exactly the attested files. Homebrew does not mark the binary as downloaded, so Gatekeeper does not block it; it is still unsigned.
 
 The tap is the only copy of the formula (this repository no longer carries one); users install with `brew install botopsy/tap/hclaro`. The tap's default branch has the same ruleset as `master` here except required checks (no deletion, no force-push, pull request required, no bypass), a read-only Actions token, and secret scanning with push protection.
 
-For each release, after the tag is published:
+For each release, after the release is published (draft assets are not downloadable):
 
 ```sh
 v=0.1.0-beta.4   # the new version
-curl -fsSL https://github.com/botopsy/hclaro/archive/refs/tags/v$v.tar.gz | shasum -a 256
-# in a clone of botopsy/homebrew-tap, put the URL and that SHA-256 into Formula/hclaro.rb, then test from a throwaway local tap:
+curl -fsSL https://github.com/botopsy/hclaro/releases/download/v$v/hclaro_${v}_checksums.txt | grep -E '_(darwin|linux)_(amd64|arm64)\.tar\.gz$'
+# in a clone of botopsy/homebrew-tap, put the version into the four urls of Formula/hclaro.rb and each archive's SHA-256 next to it, then:
+grep -o 'url "[^"]*"' Formula/hclaro.rb | cut -d'"' -f2 | while read u; do curl -fsSL "$u" | shasum -a 256; done   # must match the four sha256 lines
 brew tap-new --no-git hclaro-test/local && brew trust hclaro-test/local
 cp <tap clone>/Formula/hclaro.rb "$(brew --repository)/Library/Taps/hclaro-test/homebrew-local/Formula/"
 brew style hclaro-test/local/hclaro && brew audit --strict --online hclaro-test/local/hclaro
-brew install --build-from-source hclaro-test/local/hclaro && brew test hclaro-test/local/hclaro
+brew install hclaro-test/local/hclaro && brew test hclaro-test/local/hclaro
 brew uninstall hclaro && brew untap hclaro-test/local
 ```
+
+Only the local platform is installed by this test; the other three are covered by the checksum comparison. Do not add a `version` line: `brew audit` rejects it because the version is read from the URL.
 
 Then open a pull request in `botopsy/homebrew-tap` with the tested change, merge it, and check `brew install botopsy/tap/hclaro` prints the new version. Rollback: revert that commit in the tap and say so in the release notes.
 
@@ -157,7 +160,7 @@ Not implemented: no signing job, secret or placeholder exists. Adding signing ne
 Each stage starts only when the conditions listed for it are met and written down here. None is scheduled.
 
 1. **GitHub Releases (now).** Archives, checksums, SBOM and provenance attestations; users install and upgrade by hand ([GETTING_STARTED.md](GETTING_STARTED.md#2-install)). Hclaro never checks for or downloads updates.
-2. **Homebrew tap (now, since 0.1.0-beta.3).** `brew install botopsy/tap/hclaro` builds from source ([Homebrew formula](#homebrew-formula)); the owner moved this ahead of the first release without a pre-release suffix on 2026-11-11. Conditions that still apply: a named maintainer who updates the formula for every release; the formula pins the tag's source archive URL and its SHA-256 and is tested as above before it is pushed; a written rollback (revert the formula commit and say so in the release notes); the tap repository has the same protected-branch and token rules as this one.
+2. **Homebrew tap (now, since 0.1.0-beta.3).** `brew install botopsy/tap/hclaro` installs the release archive ([Homebrew formula](#homebrew-formula)); the owner moved this ahead of the first release without a pre-release suffix on 2026-11-11. Conditions that still apply: a named maintainer who updates the formula for every release; the formula pins each platform's release archive URL and its SHA-256 and is tested as above before it is pushed; a written rollback (revert the formula commit and say so in the release notes); the tap repository has the same protected-branch and token rules as this one.
 3. **Scoop bucket, apt/rpm repositories, installers (`.pkg`, `.msi`).** Conditions: everything in stage 2, plus code signing for the platform concerned (installers in particular must not ask users to bypass Gatekeeper or SmartScreen), a key-management and rotation plan for any repository signing key, and someone able to answer platform-specific bugs.
 4. **Auto-update: not planned.** It would need a trusted channel design first: signed update metadata verified against a key shipped in the binary, a user-visible opt-in, no network contact without it (Hclaro's local-first promise), and a downgrade/rollback rule consistent with [config-compatibility.md](config-compatibility.md). Until such a design is reviewed, no update check, notification or download is added.
 
