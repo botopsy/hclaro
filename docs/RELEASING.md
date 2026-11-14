@@ -41,7 +41,8 @@ Before each release, confirm these with read-only `gh api` calls (as a repositor
 | Private vulnerability reporting | Enabled; `/security/policy` reachable logged out. |
 | Secret scanning | Secret scanning and push protection enabled; no open alerts. |
 | Actions token | Default `GITHUB_TOKEN` read-only and unable to approve pull requests; workflows declare `contents: read`, and only the `publish` job gets write, OIDC and attestation permissions. |
-| Release secrets | No repository Actions secrets, environments, deploy keys or webhooks. |
+| Release secrets | No repository Actions secrets, environments or deploy keys. The only webhook is Snyk's (`api.snyk.io`), created by the Snyk app. |
+| Third-party apps | Snyk scans through the Snyk GitHub App (`snyk-io`; Open Source, Code and IaC PR checks and recurring tests, configured in Snyk), not through Actions or a token. It may write contents and pull requests (Snyk fix PRs, which still need review and the `master` ruleset), commit statuses, checks and repository webhooks. Besides it, only `claude` and `cloudflare-workers-and-pages` are installed, each on selected repositories; the owner confirms which apps can reach this repository. |
 | Collaborators | Only the owner's accounts, with MFA (owner confirms; the API does not show it). |
 | Public assets | Logged out: the repository, Releases page and the previous release's assets return 200. |
 
@@ -56,6 +57,7 @@ gh api repos/$R/actions/permissions/workflow
 gh api repos/$R/actions/permissions/fork-pr-contributor-approval
 gh api repos/$R/collaborators --jq '.[]|{login,role_name}'
 gh api repos/$R/actions/secrets; gh api repos/$R/environments; gh api repos/$R/keys; gh api repos/$R/hooks
+gh api orgs/botopsy/installations --jq '.installations[]|{app_slug,repository_selection,permissions}'
 gh api repos/$R/secret-scanning/alerts --jq '[.[]|select(.state=="open")]|length'
 curl -s -o /dev/null -w '%{http_code}' -L <url>   # logged out
 ```
