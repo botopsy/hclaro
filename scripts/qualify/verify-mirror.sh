@@ -88,10 +88,13 @@ for e in $engine_list; do
   want=$(jq -r --arg f "$family" --arg pl "$host_platform" \
     '.entries[] | select(.family==$f and .platform==$pl) | "\(.host)/\(.provider) \(.version)"' "$manifest" | sort)
   [ "$locked" = "$want" ] || die "$e: lock file providers [$locked] are not the pinned [$want]"
-  for h in $(awk -F'"' '/^    "/{print $2}' "$proj/.terraform.lock.hcl"); do
-    jq -e --arg f "$family" --arg h "$h" '[.entries[] | select(.family==$f) | .hashes[]] | index($h) != null' "$manifest" >/dev/null ||
-      die "$e: lock hash $h is not in the manifest"
-  done
+  lock_hashes=$(awk -F'"' '/^    "/{print $2}' "$proj/.terraform.lock.hcl" | sort)
+  want_hashes=$(jq -r --arg f "$family" --arg pl "$host_platform" \
+    '.entries[] | select(.family==$f and .platform==$pl) | .hashes[]' "$manifest" | sort)
+  # A mirror install locks only h1: hashes; OpenTofu's mirror metadata also lists zh: hashes.
+  [ -n "$lock_hashes" ] && [ -z "$(comm -23 <(echo "$lock_hashes") <(echo "$want_hashes"))" ] &&
+    [ -z "$(comm -13 <(echo "$lock_hashes") <(echo "$want_hashes" | grep '^h1:'))" ] ||
+    die "$e: lock file hashes [$lock_hashes] do not match the manifest hashes [$want_hashes]"
   # Providers installed under the host directory the mirror uses (direct install is excluded by the CLI config).
   while read -r hp ver; do
     [ -d "$proj/.terraform/providers/$hp/$ver/$host_platform" ] || die "$e: $hp $ver not installed from the mirror"
