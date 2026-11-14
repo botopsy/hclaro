@@ -4,6 +4,10 @@
 
 Pre-release fixes from a review of the whole codebase (M26). Features are still tested with synthetic fixtures and fake engines; see `docs/BETA.md` and `docs/support-matrix.md` for what has run against real engines.
 
+Build:
+
+- Release binaries and CI use Go 1.27.4, which fixes GO-2026-6859 (CVE-2026-97054): a race in `net/http`'s `MaxBytesReader` could crash an HTTP/1 server. Hclaro's local server limits request bodies with it, so a request to the local server could stop Hclaro. 0.1.0-beta.3 and earlier were built with an affected Go version.
+
 Secret handling (M26):
 
 - Fix: plan and drift attribute rows redacted each value by its own path only, so a row such as `environment[0].value` showed a `DB_PASSWORD` value that the redacted tree hid. Rows now show values from the redacted trees. (M26.01)
