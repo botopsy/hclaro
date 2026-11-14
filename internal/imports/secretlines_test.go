@@ -77,7 +77,7 @@ func TestRedactGeneratedMultiline(t *testing.T) {
 		`  engine = "postgres"`,
 		`}`,
 	}, "\n")
-	got := RedactGenerated(text)
+	got := RedactGenerated(text, false)
 	for _, leak := range []string{"hunter2", "hunter3", "hunter4"} {
 		if strings.Contains(got, leak) {
 			t.Errorf("%s shown:\n%s", leak, got)
@@ -99,5 +99,23 @@ func TestHCLEscapes(t *testing.T) {
 		if got := hclEscapes(in); got != want {
 			t.Errorf("hclEscapes(%s) = %s, want %s", in, got, want)
 		}
+	}
+}
+
+// A text cut inside a block (size limit, diff overflow) may have lost the name that makes a
+// value secret: every value seen so far is hidden, as when the rest cannot be read.
+func TestSecretLinesTruncatedInsideBlock(t *testing.T) {
+	for _, lines := range [][]string{
+		{`resource "x" "y" {`, `  env {`, `    value = "opaque-input-7731"`},
+		{`{`, `  "env": [{`, `    "value": "opaque-input-7731",`},
+	} {
+		got := SecretLines(lines)
+		if !got[2] {
+			t.Errorf("%q: value of a cut block shown: %v", lines, got)
+		}
+	}
+	// A complete file keeps an ordinary value visible.
+	if got := SecretLines([]string{`env {`, `  name = "LOG"`, `  value = "info"`, `}`}); got[2] {
+		t.Errorf("complete pair hidden: %v", got)
 	}
 }

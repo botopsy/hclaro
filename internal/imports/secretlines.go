@@ -35,7 +35,14 @@ var (
 // block comments are hidden. The lines must start at the top of the file; text that closes a
 // block it never opened, or a string left open, cannot be placed, so everything from there on
 // is marked. Line-level checks still apply on top.
-func SecretLines(lines []string) []bool {
+func SecretLines(lines []string) []bool { return secretLines(lines, false) }
+
+// SecretLinesTruncated is SecretLines for text cut at a size limit. The cut may have
+// dropped the secret-like name of any name/value pair, at any depth, so every pair value
+// seen is marked, and so is the last non-blank line, which may be cut in the middle.
+func SecretLinesTruncated(lines []string) []bool { return secretLines(lines, true) }
+
+func secretLines(lines []string, truncated bool) []bool {
 	type frame struct {
 		risky bool
 		key   string
@@ -122,7 +129,7 @@ func SecretLines(lines []string) []bool {
 				out[i] = commentSecret(line[j:j+k]) || out[i]
 				inComment, j = false, j+k+2
 			case c == '"':
-				s, end, ok := readString(line, j)
+				s, end, ok := ReadString(line, j)
 				if !ok {
 					broken, out[i] = true, true
 					continue
@@ -266,8 +273,15 @@ func SecretLines(lines []string) []bool {
 			out[i] = true
 		}
 	}
-	// When the rest cannot be read, a secret-like name may follow any value seen so far.
-	unknown := broken || heredocEnd != ""
+	// When the rest cannot be read, or the text was cut (a size limit; a block still open
+	// means it was cut too), a secret-like name may follow any value seen so far.
+	unknown := truncated || broken || heredocEnd != "" || len(stack) > 1
+	for i := len(out) - 1; truncated && i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			out[i] = true
+			break
+		}
+	}
 	for id, ls := range valueLines {
 		if pairRisky[id] || unknown {
 			for _, l := range ls {
@@ -339,10 +353,10 @@ func wordByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '.' || c == '-' || c >= 0x80
 }
 
-// readString reads the double-quoted literal starting at line[start], skipping escapes and
+// ReadString reads the double-quoted literal starting at line[start], skipping escapes and
 // ${…}/%{…} templates (which may hold nested strings). ok is false when it does not end on
 // this line.
-func readString(line string, start int) (string, int, bool) {
+func ReadString(line string, start int) (string, int, bool) {
 	for k := start + 1; k < len(line); k++ {
 		switch {
 		case line[k] == '\\':
@@ -360,7 +374,7 @@ func readString(line string, start int) (string, int, bool) {
 				case '}':
 					depth--
 				case '"':
-					_, end, ok := readString(line, k)
+					_, end, ok := ReadString(line, k)
 					if !ok {
 						return "", 0, false
 					}

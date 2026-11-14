@@ -281,3 +281,47 @@ func TestNotOneJSONDocumentHidden(t *testing.T) {
 		}
 	}
 }
+
+// A secret-named key inside free text is caught for every always-redacted name, in the
+// spellings RiskyKey accepts (underscore, dash, none, camel case), also when escaped.
+func TestSuspiciousQuotedKeysFollowRiskyKeyParts(t *testing.T) {
+	for _, key := range []string{
+		"credential", "aws_credentials", "client_key", "signing-key", "connectionString", "kubeconfig",
+		"kube_config", "Authorization", "auth_header", "sas_url", "sas_token", "password", "apikey", "api-key", "privateKey",
+	} {
+		for _, text := range []string{`{"` + key + `": "opaque-input-7731"}`, `{\"` + key + `\": \"opaque-input-7731\"}`, `'` + key + `': x`} {
+			if !Suspicious(text) {
+				t.Errorf("%s not caught", text)
+			}
+		}
+	}
+	for _, text := range []string{`{"name": "web"}`, `{"description": "rotate the credential monthly"}`} {
+		if Suspicious(text) {
+			t.Errorf("%s caught", text)
+		}
+	}
+}
+
+// The quoted-key rule only fires on a quoted name followed by ":" (JSON text). Bare names,
+// which is how validators see workspace, output, variable and environment names, are never
+// rejected for being secret-like; their values are hidden by RiskyKey instead. Hiding JSON
+// text with "authorizationType": or "user_data": is intended over-redaction.
+func TestRiskyNamesAreValidNamesButHiddenInJSON(t *testing.T) {
+	for _, name := range []string{"user_data", "authorizationType", "credential", "kubeconfig", "sas_token", "TF_VAR_sas_token", "client-key"} {
+		if Suspicious(name) {
+			t.Errorf("bare name %q rejected", name)
+		}
+		if !RiskyKey(name) {
+			t.Errorf("%q value not always hidden", name)
+		}
+		if !Suspicious(`{"` + name + `": "NONE"}`) {
+			t.Errorf("JSON text with %q key not hidden", name)
+		}
+	}
+	// Without a quoted key and ":" the rule does not fire.
+	for _, text := range []string{`{"region": "eu-west-1", "user": "data"}`, `credential: none`, `"kubeconfig"`, `rotate the sas_token monthly`} {
+		if Suspicious(text) {
+			t.Errorf("%q hidden", text)
+		}
+	}
+}

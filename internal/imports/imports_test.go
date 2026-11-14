@@ -333,7 +333,7 @@ func TestWriteNewRefusesSymlinks(t *testing.T) {
 }
 
 func TestRedactGenerated(t *testing.T) {
-	got := RedactGenerated(string(fixtures.ImportGenerated))
+	got := RedactGenerated(string(fixtures.ImportGenerated), false)
 	if strings.Contains(got, canary) {
 		t.Fatalf("canary shown:\n%s", got)
 	}
@@ -342,10 +342,10 @@ func TestRedactGenerated(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", want, got)
 		}
 	}
-	if got := RedactGenerated(`  password = null`); got != `  password = null` {
+	if got := RedactGenerated(`  password = null`, false); got != `  password = null` {
 		t.Fatal(got)
 	}
-	if got := RedactGenerated(`  description = "AKIAIOSFODNN7EXAMPLE"`); strings.Contains(got, "AKIA") {
+	if got := RedactGenerated(`  description = "AKIAIOSFODNN7EXAMPLE"`, false); strings.Contains(got, "AKIA") {
 		t.Fatal(got)
 	}
 }

@@ -42,7 +42,7 @@ func views(t *testing.T, text string) map[string]string {
 	for _, l := range newFileHunk(text, &nd).Lines {
 		added.WriteString(l.Text + "\n")
 	}
-	return map[string]string{"diff": diff.String(), "new file": added.String(), "import preview": imports.RedactGenerated(text)}
+	return map[string]string{"diff": diff.String(), "new file": added.String(), "import preview": imports.RedactGenerated(text, false)}
 }
 
 // Adversarial configuration: every literal marked leakNN must be hidden in every view and
@@ -308,5 +308,71 @@ func TestCommentedItemsAndEscapes(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// cutViews renders the kept part of a file whose rest fell past a size limit, the three
+// ways that happens: diff output cut at maxDiffOutput (Git's last, partial line is dropped
+// by ParseDiff, so one extra line is sent), a new file read up to maxNewFile, and generated
+// configuration read up to 1 MiB.
+func cutViews(t *testing.T, kept string) map[string]string {
+	t.Helper()
+	lines := strings.Split(strings.TrimSuffix(kept, "\n"), "\n")
+	var raw strings.Builder
+	fmt.Fprintf(&raw, "@@ -0,0 +1,%d @@\n", len(lines)+50)
+	for _, l := range lines {
+		raw.WriteString("+" + l + "\n")
+	}
+	raw.WriteString("+  na") // cut in the middle of the next line
+	var d GitDiff
+	if err := ParseDiff([]byte(raw.String()), true, &d); err != nil {
+		t.Fatal(err)
+	}
+	var diff, added strings.Builder
+	for _, h := range d.Hunks {
+		for _, l := range h.Lines {
+			diff.WriteString(l.Kind + " " + l.Text + "\n")
+		}
+	}
+	nd := GitDiff{Truncated: true}
+	for _, l := range newFileHunk(kept, &nd).Lines {
+		added.WriteString(l.Text + "\n")
+	}
+	return map[string]string{"diff overflow": diff.String(), "new file": added.String(), "import preview": imports.RedactGenerated(kept, true)}
+}
+
+// A size limit can cut between the value of a name/value pair and its secret-like name, at
+// the top level as well as inside a block: every pair value before the cut is hidden. Other
+// values stay visible, and the same text read whole still shows the value (the cut, not
+// the text, hides it).
+func TestTopLevelCutHidesPairValues(t *testing.T) {
+	for name, kept := range map[string]string{
+		// The rest would be: name = "DB_PASSWORD"
+		"hcl attribute":       "region = \"keep01\"\nvalue = \"leak01\"\n",
+		"hcl attribute, case": "region = \"keep01\"\nValue = \"leak01\"\n",
+		// The rest would be: key = "API_TOKEN" (variable files, environment-style pairs)
+		"tfvars key/value":   "region = \"keep01\"\nvalue = \"leak01\"\nenabled = true\n",
+		"env-style heredoc":  "region = \"keep01\"\nvalue = <<EOT\nleak01\nEOT\n",
+		"json top level":     "\"region\": \"keep01\",\n\"value\": \"leak01\",\n",
+		"json object":        "{\n  \"region\": \"keep01\",\n  \"value\": \"leak01\",\n",
+		"json env list":      "{\n  \"region\": \"keep01\",\n  \"env\": [{\"value\": \"leak01\",\n",
+		"hcl block, closed":  "region = \"keep01\"\nenv {\n  value = \"leak01\"\n}\nvalue = \"leak02\"\n",
+		"last line partial":  "region = \"keep01\"\ndescription = leak01\n",
+	} {
+		for variant, input := range variants(kept) {
+			for view, got := range cutViews(t, input) {
+				for _, leak := range leakMark.FindAllString(kept, -1) {
+					if strings.Contains(got, leak) {
+						t.Errorf("%s %s %s: %s shown:\n%s", name, variant, view, leak, got)
+					}
+				}
+				if !strings.Contains(got, "keep01") {
+					t.Errorf("%s %s %s: keep01 hidden:\n%s", name, variant, view, got)
+				}
+			}
+		}
+	}
+	if got := imports.RedactGenerated("value = \"leak01\"\n", false); !strings.Contains(got, "leak01") {
+		t.Errorf("whole text: an ordinary top-level value is shown, got %q", got)
 	}
 }

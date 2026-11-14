@@ -66,10 +66,11 @@ var (
 // not changed. Generated HCL carries attribute values read from the provider, so values
 // under secret-like names, credential-shaped or random-looking values and heredoc bodies
 // are replaced. Lines inside a block under a secret-like name, and the value of a secret
-// name/value pair, are replaced too (see SecretLines).
-func RedactGenerated(text string) string {
+// name/value pair, are replaced too (see SecretLines). truncated marks text cut at a size
+// limit (see SecretLinesTruncated).
+func RedactGenerated(text string, truncated bool) string {
 	lines := strings.Split(text, "\n")
-	forced := SecretLines(lines)
+	forced := secretLines(lines, truncated)
 	out := make([]string, 0, len(lines))
 	end := ""
 	for i, line := range lines {
