@@ -7,7 +7,7 @@ export CGO_ENABLED := 0
 GO_PACKAGES := ./cmd/... ./internal/... ./scripts/...
 GOFLAGS_BUILD := -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build binary frontend install test test-go test-web lint fmt demo demo-hub dev cross browser-test brand-assets
+.PHONY: build binary frontend install test test-go test-web lint fmt demo demo-hub dev cross browser-test brand-assets qualify
 install:
 	npm ci --prefix web
 frontend:
@@ -27,6 +27,11 @@ lint:
 	npm --prefix web run lint
 fmt:
 	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fake-infracost scripts/fixture-http scripts/hub-demo scripts/qualify
+
+# M27 real-engine harness (internal/qualify, docs/qualification/README.md). Maintainer-run, never
+# in PR or push CI: make qualify TF=/abs/terraform TOFU=/abs/tofu MIRROR=<mirror dir> OUT=<dir>
+qualify: binary
+	TF="$(TF)" TOFU="$(TOFU)" MIRROR="$(MIRROR)" OUT="$(OUT)" scripts/qualify/qualify.sh
 
 bin/mock/terraform$(EXE): scripts/fake-engine/main.go fixtures/state.json
 	go build -trimpath -buildvcs=false -o bin/mock/terraform$(EXE) ./scripts/fake-engine

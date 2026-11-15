@@ -48,3 +48,7 @@ scripts/qualify/verify-mirror.sh ~/hclaro-qualify/mirror ~/hclaro-qualify/engine
   - the provider plugins start (`providers schema -json`).
 - `sandbox.sb` is the F-0 profile plus one scoped allow, for Unix-socket connects under the run's `TMPDIR` only. go-plugin providers talk to the engine over such a socket, and without it they fail to start. System sockets such as `/var/run/mDNSResponder` stay denied.
 - `internal/qualify` `TestNoQualifyBinaries` fails if an archive, an engine or provider binary, or executable content is committed under `scripts/qualify/`, `fixtures/qualify/` or `internal/qualify/`.
+
+## `qualify.sh` / `qualify.ps1` — real-engine harness runner (M27.02)
+
+`make qualify TF=… TOFU=… MIRROR=… OUT=…` (Windows: `qualify.ps1`) compiles the `realengine` test binary outside the isolation, copies it with `hclaro`, `netprobe`, the engines and the mirror into a run directory outside the home directory, and runs it with `env -i` under `sandbox.sb` (`RUN_TMP` = the run directory). Details: `docs/qualification/README.md`.
