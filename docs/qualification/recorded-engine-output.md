@@ -1,6 +1,6 @@
 # Recorded real engine output
 
-Evidence for support matrix rows RE-08 to RE-10, recorded on 2026-11-13 (M26.16). The parsers are tested in CI against output from real engines, not only against generated fixtures. Hclaro itself was not run, and nothing was applied.
+Evidence for support matrix rows RE-08 to RE-10, recorded on 2026-11-13 (M26.16); Terraform 1.5.7 and OpenTofu 1.6.3 added on 2026-11-15 (M27.06). The parsers are tested in CI against output from real engines, not only against generated fixtures. Hclaro itself was not run, and nothing was applied.
 
 ## Recording
 
@@ -13,15 +13,23 @@ The configuration covers update, no-op, `count` creates, a sensitive input updat
 | Terraform | 1.5.5 | darwin/amd64 | Installed on the maintainer machine |
 | Terraform | 1.17.2 | darwin/amd64 | releases.hashicorp.com zip, SHA-256 checked against `SHA256SUMS` (signature not checked) |
 | OpenTofu | 1.13.9 | darwin/amd64 | GitHub release zip, SHA-256 checked against `SHA256SUMS` (signature not checked) |
+| Terraform | 1.5.7 | darwin/amd64 | M27.01 OD-1 archive, `SHA256SUMS` and signature verified; recorded with the offline mirror config, `env -i` under `scripts/qualify/sandbox.sb` (probe before and after: outbound denied) |
+| OpenTofu | 1.6.3 | darwin/amd64 | M27.01 OD-1 archive, `SHA256SUMS` and signature verified; recorded like Terraform 1.5.7 |
 
 ## Tests
 
-`TestRealEnginePlans`, `TestRealEngineRefreshOnlyPlans` (`internal/plan`), `TestRealEngineScans` (`internal/drift`), `TestRealEngineGraphs` (`internal/graph`), `TestRealEngineStates` (`internal/state`) and `TestRealEngineStreams` (`internal/operations`) parse every recording and pin the same result for all three engines: 15 changes (3 create, 3 update, 2 replace in both orders, 4 delete, 1 read with `read_because_dependency_pending`, 2 no-op including the move), outputs, refusal of a normal plan as a drift scan, the resource nodes, the declared dependency and the state mapping of state-only resources in both graph formats, the state index, and every stream line recognized. The canary never appears in parsed output.
+`TestRealEnginePlans`, `TestRealEngineRefreshOnlyPlans` (`internal/plan`), `TestRealEngineScans` (`internal/drift`), `TestRealEngineGraphs` (`internal/graph`), `TestRealEngineStates` (`internal/state`) and `TestRealEngineStreams` (`internal/operations`) parse every recording and pin the same result for all five engines: 15 changes (3 create, 3 update, 2 replace in both orders, 4 delete, 1 read with `read_because_dependency_pending`, 2 no-op including the move), outputs, refusal of a normal plan as a drift scan, the resource nodes, the declared dependency and the state mapping of state-only resources in both graph formats, the state index, and every stream line recognized. The canary never appears in parsed output.
 
 Found by these recordings and fixed: Terraform 1.5 and OpenTofu name resources that exist only in state `(orphan)`, and OpenTofu splits module variables into `(expand, reference)` and `(expand, input)` nodes. The graph showed all of them as unknown nodes; they are now merged into their node like `(expand)`. Orphans are named per instance, so a resource in a removed module instance (`module.old["x"].terraform_data.this (orphan)`) has a module key but none of its own; it was treated as a configuration address and never mapped to state. A key on any segment now makes a node an instance, mapped to its exact address.
+
+Differences between versions (M27.06), all parsed to the same result:
+
+- Terraform 1.5.5 and 1.5.7: identical output apart from timestamps, version strings and line order.
+- OpenTofu 1.6.3 against 1.13.9: 1.6.3 prints one `(expand)` node per variable where 1.13.9 prints `(expand, input)` and `(expand, reference)` (pinned by `TestRealEngineGraphVariableNodes`); its `show -json` configuration omits the variables' `required` and `type` fields; and in `local-missing-file.jsonl` it plans `local_file.same` as an update before the `file()` error, while 1.13.9 does not. `TestRealEngineFailureStreams` pins the same sanitized diagnostic for both (no shared class; the manager reports `plan_failed`).
+- Terraform 1.5.5, Terraform 1.5.7 and OpenTofu 1.6.3 reject `lifecycle { destroy = false }` at init ("An argument named \"destroy\" is not expected here"), so the M27.04 F4 scenario is `NOT_TESTED` on them.
 
 ## Not covered
 
 - Built-in resources never drift, so no real `resource_drift` record with changed attributes is recorded; drift classification of such records is tested with synthetic documents only.
 - Apply, import, init and workspace output, error diagnostics and lock messages are not recorded here.
-- One platform (darwin/amd64) and one version per engine line; other versions in the accepted ranges are not recorded.
+- One platform (darwin/amd64) and only the versions in the table; other versions in the accepted ranges are not recorded and are not inferred from these.

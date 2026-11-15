@@ -254,6 +254,18 @@ Notes on how the scenarios observe things:
 - **H10** (OD-8 extended to M27.05 H10 on 2026-11-15, same restrictions) holds applies at the gate in two Hub scopes, one per engine, in one process, then interrupts Hclaro once. M27.03 A7's phases are checked per scope: one notice in all, one interrupt per engine, each engine gone before Hclaro exits, each plan's own history entry, state and lock file, and no saved plan left. It needs both engines in the run.
 - **H12** runs only under `enforced` isolation. `hub-remote` is the only fixture with a non-local backend, an `s3` block that is never initialized. `GuardRemote` accepts it only when it is byte-identical. The project is registered without the inspection. The view's read must end `uninitialized`; Hclaro reports the backend as `unknown` before init, so this is the uninitialized refusal, not a remote-backend-specific one. Every execution start (plan, drift scan, graph, import preview and import) must be refused, no operation or history entry may exist, and no `.terraform` directory may appear. Init is never started; its status is only read.
 
+## M27.06 engine version edges
+
+No new scenarios. M27.06 runs every `TestReal*` test (M27.02 to M27.05) once per pairing of the `EDGE` set. Each run has one Terraform and one OpenTofu, both as launch engines and as the Hub pair; the `TF_ALT`/`TOFU_ALT` binaries are only the H6 swap targets:
+
+| Run | `TF` + `TOFU` | `TF_ALT` / `TOFU_ALT` |
+| --- | --- | --- |
+| `edge-tf157-tofu163` | Terraform 1.5.7 + OpenTofu 1.6.3 | 1.5.5 / 1.13.9 |
+| `edge-tf155-tofu1139` | Terraform 1.5.5 + OpenTofu 1.13.9 | 1.17.2 / 1.6.3 |
+| `edge-tf1172-tofu163` | Terraform 1.17.2 + OpenTofu 1.6.3 | 1.5.7 / 1.13.9 |
+
+OpenTofu 1.6.3 runs twice, with different Terraform partners. A per-version result keeps that version's own launch scenarios, plus the Hub scenarios of every run it took part in, with the run named. Terraform 1.5.7 and OpenTofu 1.6.3 output is also recorded for the parser goldens (`recorded-engine-output.md`). A version that is not in the table is not tested, and is never inferred from an edge.
+
 ## Limitations
 
 - Enforced isolation exists for darwin/amd64 only (SB-1). Linux F-0 and Windows F-0/F-5 are `NOT_TESTED`, so runs there are `weak-proxy`.

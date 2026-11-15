@@ -12,7 +12,7 @@ import (
 // Real engine recordings (scripts/fixtures/record-engine.sh). Built-in resources never drift,
 // so these pin the document shape, the output-change count and refusal of a normal plan.
 func TestRealEngineScans(t *testing.T) {
-	for _, engine := range []string{"terraform-1.5.5", "terraform-1.17.2", "tofu-1.13.9"} {
+	for _, engine := range []string{"terraform-1.5.5", "terraform-1.5.7", "terraform-1.17.2", "tofu-1.6.3", "tofu-1.13.9"} {
 		t.Run(engine, func(t *testing.T) {
 			dir := filepath.Join("..", "..", "fixtures", "engines", engine)
 			scan, err := os.ReadFile(filepath.Join(dir, "drift.json"))
@@ -46,7 +46,7 @@ func TestRealEngineScans(t *testing.T) {
 // provider drops an object whose file checksum no longer matches), so no approved provider
 // yields attribute-level drift; out/same.txt is not listed.
 func TestRealEngineLocalFileDrift(t *testing.T) {
-	for _, engine := range []string{"terraform-1.5.5", "terraform-1.17.2", "tofu-1.13.9"} {
+	for _, engine := range []string{"terraform-1.5.5", "terraform-1.5.7", "terraform-1.17.2", "tofu-1.6.3", "tofu-1.13.9"} {
 		t.Run(engine, func(t *testing.T) {
 			scan, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "engines", engine, "local-drift.json"))
 			if err != nil {
