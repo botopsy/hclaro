@@ -3,6 +3,7 @@
 package qualify
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,3 +45,6 @@ func listProcesses() ([]process, error) {
 	}
 	return procs, nil
 }
+
+// mkfifo: the F-2 plan holder is Unix only (FEASIBILITY-CHECKLIST F-2 candidate 2).
+func mkfifo(path string) error { return errors.New("named pipes are not supported on Windows") }

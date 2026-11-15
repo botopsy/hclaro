@@ -60,6 +60,7 @@ func TestMain(m *testing.M) {
 	}
 	code := m.Run()
 	run.isolationAfter()
+	downgradeOffline()
 	if err := run.Finish(code); err != nil {
 		fmt.Fprintln(os.Stderr, "finish:", err)
 		code = 1
@@ -223,4 +224,26 @@ func (r *Run) isolatedProbe() []byte {
 		return nil
 	}
 	return bytes.TrimSpace(out)
+}
+
+// needsEnforced lists scenarios whose assertion is offline behaviour (N1). They run when the
+// isolated probe before the run passed; if the run as a whole is not enforced (the probe after
+// the run failed), a PASS becomes NOT_TESTED.
+var needsEnforced = map[string]bool{}
+
+func beforeEnforced() bool {
+	i := run.Result.Isolation
+	return i.Level == "enforced" || i.Mechanism == "sandbox-exec" && i.Reason == "no isolated probe after the run"
+}
+
+func downgradeOffline() {
+	if run.Result.Isolation.Level == "enforced" {
+		return
+	}
+	for i, sc := range run.Result.Scenarios {
+		if needsEnforced[sc.ID] && sc.Status == Pass {
+			run.Result.Scenarios[i].Status = NotTested
+			run.Result.Scenarios[i].Reason = "offline not verified (isolation " + run.Result.Isolation.Level + ": " + run.Result.Isolation.Reason + ")"
+		}
+	}
 }

@@ -150,6 +150,9 @@ func TestDirectCallsAllowlisted(t *testing.T) {
 			t.Errorf("%q is not a documented direct call", sub)
 		}
 	}
+	if len(holderAllowed) != 2 || !holderAllowed["console -no-color"] || !holderAllowed["plan -input=false -no-color"] {
+		t.Errorf("lock holders %v are not the F-2 candidates", holderAllowed)
+	}
 	// Every engine exec in the package goes through direct.go.
 	files, _ := filepath.Glob("*.go")
 	for _, f := range files {

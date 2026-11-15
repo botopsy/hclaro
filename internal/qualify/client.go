@@ -5,12 +5,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -24,13 +28,39 @@ type Client struct {
 	http       *http.Client
 	csrf       string
 	transcript string
+	// echo lists exact substrings masked in the transcript before the canary scan: the
+	// user's own input that a response must repeat (I3's import ID in the import block).
+	echo   []string
+	echoed int
+	// dialRetries counts loopback connects refused with EPERM and retried (F0-LB).
+	mu          sync.Mutex
+	dialRetries int
 }
 
 func newClient(h *Hclaro, s *Scenario) *Client {
 	// No proxy: Hclaro listens on loopback only.
-	tr := &http.Transport{Proxy: nil, DisableCompression: true}
-	return &Client{h: h, s: s, http: &http.Client{Transport: tr, Timeout: 0},
-		transcript: filepath.Join(s.Dir, "responses.raw")}
+	c := &Client{h: h, s: s}
+	tr := &http.Transport{Proxy: nil, DisableCompression: true, DialContext: c.dial}
+	c.http, c.transcript = &http.Client{Transport: tr, Timeout: 0}, filepath.Join(s.Dir, "responses.raw")
+	return c
+}
+
+// dial retries a loopback connect refused with EPERM for up to 5 s (F0-LB: inside
+// sandbox-exec, a new or idle process's loopback connect can fail for ~1 s). A refused
+// connect sends nothing, so the retry is safe for any request. Retries are counted.
+func (c *Client) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	var d net.Dialer
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		conn, err := d.DialContext(ctx, network, addr)
+		if err == nil || !errors.Is(err, syscall.EPERM) || time.Now().After(deadline) {
+			return conn, err
+		}
+		c.mu.Lock()
+		c.dialRetries++
+		c.mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // Response is one API reply.
@@ -141,16 +171,33 @@ func (c *Client) record(what string, b []byte) {
 		return
 	}
 	defer f.Close()
+	for _, e := range c.echo {
+		c.echoed += bytes.Count(b, []byte(e))
+		b = bytes.ReplaceAll(b, []byte(e), []byte("<USER-INPUT-ECHO>"))
+	}
 	fmt.Fprintf(f, "### %s\n%s\n", what, b)
 }
 
 // Operation is the part of Hclaro's operation record the harness reads.
 type Operation struct {
-	ID         string `json:"id"`
-	Kind       string `json:"kind"`
-	Status     string `json:"status"`
-	PlanID     string `json:"planId"`
-	ExitCode   *int   `json:"exitCode"`
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Status   string `json:"status"`
+	PlanID   string `json:"planId"`
+	ExitCode *int   `json:"exitCode"`
+	// Outcome is set for applies: applied, not_applied or uncertain. Command is the engine argv.
+	Outcome      string   `json:"outcome"`
+	Command      []string `json:"command"`
+	PlanFileLeft bool     `json:"planFileLeft"`
+	CompletedAt  string   `json:"completedAt"`
+	// Workspace is set for Hub workspace commands.
+	Workspace *struct {
+		CLIDefaultBefore string   `json:"cliDefaultBefore"`
+		CLIDefaultAfter  string   `json:"cliDefaultAfter"`
+		Workspaces       []string `json:"workspaces"`
+		Ran              bool     `json:"ran"`
+		Verified         bool     `json:"verified"`
+	} `json:"workspace"`
 	Diagnostic *struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
@@ -244,4 +291,38 @@ func (c *Client) NegativeChecks() error {
 		}
 	}
 	return nil
+}
+
+// WaitLog reads the operation's SSE stream until a log event contains text (true) or the
+// stream ends or timeout passes (false). It synchronises on observable engine output.
+func (c *Client) WaitLog(path, text string, timeout time.Duration) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", c.h.baseURL().String()+"/api/v1/"+path+"/events?after=0", nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.h.Token)
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return false, fmt.Errorf("events: status %d", resp.StatusCode)
+	}
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 64<<10), 16<<20)
+	for sc.Scan() {
+		line := sc.Text()
+		c.record("SSE "+path, []byte(line))
+		if strings.HasPrefix(line, "data: ") && strings.Contains(line, text) {
+			return true, nil
+		}
+		if line == "event: end" {
+			return false, nil
+		}
+	}
+	return false, nil
 }
