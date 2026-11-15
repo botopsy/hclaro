@@ -311,9 +311,18 @@ func TestRealEngineTagNotInCI(t *testing.T) {
 			t.Errorf("%s mentions the realengine harness", f)
 			continue
 		}
-		if !strings.Contains(w, "\non:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:") &&
-			!strings.Contains(w, "\non:\n  workflow_dispatch:\npermissions:\n  contents: read\ndefaults:") {
+		// The on: block is workflow_dispatch alone (its inputs indented below it), followed by
+		// permissions: contents: read.
+		_, after, _ := strings.Cut(w, "\non:\n")
+		trigger, rest, _ := strings.Cut(after, "\npermissions:\n  contents: read\n")
+		lines := strings.Split(trigger, "\n")
+		if lines[0] != "  workflow_dispatch:" || !strings.HasPrefix(rest, "jobs:") && !strings.HasPrefix(rest, "defaults:") {
 			t.Errorf("%s: triggers must be workflow_dispatch only, with permissions contents: read", f)
+		}
+		for _, l := range lines[1:] {
+			if !strings.HasPrefix(l, "    ") {
+				t.Errorf("%s: unexpected line in the on: block: %q", f, l)
+			}
 		}
 		for _, bad := range []string{"secrets.", "pull_request", "\n  push:", "schedule:", "workflow_run", "permissions:\n    ", "HCLARO_QUAL_KEEP", "-Keep"} {
 			if strings.Contains(w, bad) {

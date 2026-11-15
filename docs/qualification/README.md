@@ -288,7 +288,7 @@ OpenTofu 1.6.3 runs twice, with different Terraform partners. A per-version resu
 
 `.github/workflows/real-engine.yml` (OD-7) runs the `PLATFORM` engine set, Terraform 1.17.2 and OpenTofu 1.13.9, on `ubuntu-24.04` (linux/amd64, `unshare`), `ubuntu-24.04-arm` (linux/arm64, `unshare`), `macos-15` (darwin/arm64, `sandbox-exec`) and `windows-2025` (windows/amd64, `firewall`).
 
-- It runs only on `workflow_dispatch`, and is never a required check. It needs no secrets: the token has `contents: read`, and checkout does not persist credentials. Actions are pinned to commit SHAs. No dependency-update tool covers the file. `TestRealEngineTagNotInCI` enforces these rules.
+- It runs only on `workflow_dispatch`, and is never a required check. Its `platform` input is `all` (default) or `windows_amd64`; the latter runs only the Windows job, so a Windows recheck leaves the other platforms' earlier results as they are. It needs no secrets: the token has `contents: read`, and checkout does not persist credentials. Actions are pinned to commit SHAs. No dependency-update tool covers the file. `TestRealEngineTagNotInCI` enforces these rules.
 - Each job does the following, in order:
   1. Checks that `gpg`, `jq`, `curl` and `unzip` are on the image (nothing is installed), and records the image (`ImageOS`, `ImageVersion`), OS build, architecture and tool versions in the job summary.
   2. Downloads the engines with `fetch-engines.sh --platform`, then builds the platform's provider mirror with `PLATFORM=… mirror-providers.sh`. Both hard-fail on a pin, checksum or signature mismatch.
@@ -305,6 +305,16 @@ Platform scenarios (`TestRealPlatform`, and H5d in `TestRealHubPaths`):
 | WIN2 (H5d) | windows | Drive-letter case, the 8.3 short name (when the volume has one) and a `mklink /J` junction are each refused as the same project and claim the same root. The claim half uses the named-pipe hold, which is Unix-only, so it is `NOT_TESTED` until there is a Windows hold. |
 | WIN3 | windows | Saved-plan folder and file ACLs, parsed from `icacls`: only the owner, SYSTEM, Administrators and CREATOR OWNER may hold allow entries. Saved plans are removed after the apply and after shutdown, with the read-only attribute set. Expiry is a separate `NOT_TESTED` record (`win3-plan-expiry`): the one-hour plan age has no setting to shorten it. |
 | WIN4 | every platform | `.tf` and `.tfvars` files, the canary var file included, are rewritten with CRLF line endings before init. Then the I1 import (preview, plan, apply) and the I3 generated-configuration import (redaction) run. The engine writes the generated file itself; whether it uses CRLF is recorded, not asserted. |
+
+### Lock-file evidence
+
+Before asserting a lock file (H1, and the launch init check), the harness saves the following as artifacts, exactly as read:
+- `.terraform.lock.hcl` (`lockfile-<engine>.hcl`);
+- `mirror-manifest.json`;
+- each provider's mirror `<version>.json`;
+- `installed-<host>_<namespace>_<name>.txt`, which lists `sha256  path` for every file of the installed package.
+
+It also records the engine version, platform, setup command, and the CLI config file name and SHA-256. For each provider it records the hashes observed in the lock file next to the manifest's. An `h1:` hash is the SHA-256 of these lines sorted by path, so it can be recomputed offline. On darwin/amd64 the recomputation matched all four lock-file hashes.
 
 ### Dispatch manifest
 

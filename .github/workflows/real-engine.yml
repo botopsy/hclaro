@@ -9,6 +9,12 @@ name: Real-engine qualification
 # change only by hand, so the qualification environment never changes silently.
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platforms to run (all four, or Windows only for a Windows recheck)
+        type: choice
+        default: all
+        options: [all, windows_amd64]
 permissions:
   contents: read
 defaults:
@@ -18,12 +24,9 @@ jobs:
   qualify:
     strategy:
       fail-fast: false
+      # The platform input selects one of two fixed lists: all four entries, or the Windows one.
       matrix:
-        include:
-          - { runner: ubuntu-24.04, platform: linux_amd64, isolation: unshare }
-          - { runner: ubuntu-24.04-arm, platform: linux_arm64, isolation: unshare }
-          - { runner: macos-15, platform: darwin_arm64, isolation: sandbox-exec }
-          - { runner: windows-2025, platform: windows_amd64, isolation: firewall }
+        include: ${{ fromJSON(inputs.platform == 'windows_amd64' && '[{"runner":"windows-2025","platform":"windows_amd64","isolation":"firewall"}]' || '[{"runner":"ubuntu-24.04","platform":"linux_amd64","isolation":"unshare"},{"runner":"ubuntu-24.04-arm","platform":"linux_arm64","isolation":"unshare"},{"runner":"macos-15","platform":"darwin_arm64","isolation":"sandbox-exec"},{"runner":"windows-2025","platform":"windows_amd64","isolation":"firewall"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     env:
