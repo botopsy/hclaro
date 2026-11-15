@@ -17,7 +17,8 @@ func TestDiscoveryAndLoad(t *testing.T) {
 	if _, err := Root(root); err == nil {
 		t.Fatal("non-project accepted")
 	}
-	_ = os.WriteFile(filepath.Join(root, "main.tf"), []byte("terraform {}"), 0600)
+	// A provider means init must install something before the engine can plan.
+	_ = os.WriteFile(filepath.Join(root, "main.tf"), []byte("provider \"aws\" {}"), 0600)
 	if _, err := Root(root); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +70,43 @@ func TestDiscoveryAndLoad(t *testing.T) {
 	}
 }
 
+// TestNoInitNeeded: a root module with no backend or cloud block, no module call and only the
+// built-in terraform provider has nothing for init to write, so a successful init leaves no
+// .terraform directory (all five M27 engines take the "default local state only" path). It
+// counts as initialized with the local backend (M27.03 D-1). Anything that needs init, or that
+// the textual scan cannot classify, stays uninitialized.
+func TestNoInitNeeded(t *testing.T) {
+	t.Setenv("TF_DATA_DIR", "")
+	builtin := "variable \"token\" {\n  sensitive = true\n}\n\nresource \"terraform_data\" \"a\" {\n  input = var.token\n}\n\ndata \"terraform_remote_state\" \"up\" {\n  backend = \"local\"\n}\n\noutput \"x\" {\n  value = 1\n}\n"
+	for name, c := range map[string]struct {
+		file, text string
+		want       bool
+	}{
+		"built-in only":      {"main.tf", builtin, true},
+		"empty terraform":    {"main.tofu", "terraform {\n  required_version = \">= 1.5\"\n}\n", true},
+		"provider block":     {"main.tf", builtin + "provider \"random\" {}\n", false},
+		"required_providers": {"main.tf", "terraform {\n  required_providers {\n    random = { source = \"hashicorp/random\" }\n  }\n}\n", false},
+		"provider resource":  {"main.tf", builtin + "resource \"random_id\" \"b\" {\n  byte_length = 4\n}\n", false},
+		"provider data":      {"main.tf", "data \"local_file\" \"f\" {\n  filename = \"x\"\n}\n", false},
+		"module call":        {"main.tf", builtin + "module \"svc\" {\n  source = \"./svc\"\n}\n", false},
+		"backend block":      {"main.tf", builtin + "terraform {\n  backend \"local\" {}\n}\n", false},
+		"cloud block":        {"main.tf", "terraform {\n  cloud {}\n}\n", false},
+		"json config":        {"main.tf.json", `{"resource":{"terraform_data":{"a":{}}}}`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			_ = os.WriteFile(filepath.Join(root, c.file), []byte(c.text), 0o600)
+			info := Inspect(root)
+			if info.Initialized != c.want || NeedsInit(root) == c.want {
+				t.Fatalf("initialized %v, want %v", info.Initialized, c.want)
+			}
+			if c.want && (info.Backend != "local" || info.ExecutionMode != "local-cli") {
+				t.Fatalf("backend %s %s, want local local-cli", info.Backend, info.ExecutionMode)
+			}
+		})
+	}
+}
+
 type brokenState struct{ engine.Mock }
 
 func (m *brokenState) State(context.Context) ([]byte, error) {
@@ -104,9 +142,10 @@ func TestImplicitLocalBackend(t *testing.T) {
 			t.Errorf("%s: %s/%s", name, info.Backend, info.ExecutionMode)
 		}
 	}
-	// Not initialized: no backend is assumed.
+	// Not initialized (a provider needs init): no backend is assumed. A root that needs no
+	// init at all is covered by TestNoInitNeeded.
 	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, "main.tf"), []byte(`terraform {}`), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "main.tf"), []byte(`provider "aws" {}`), 0o600)
 	if info := Inspect(root); info.Backend != "unknown" {
 		t.Fatal(info.Backend)
 	}

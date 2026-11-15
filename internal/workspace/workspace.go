@@ -150,7 +150,7 @@ func Inspect(root string) Info {
 	}
 	fi, err := os.Stat(data)
 	info.Initialized = err == nil && fi.IsDir()
-	if fileExists(filepath.Join(root, "terraform.tfstate")) {
+	if fileExists(filepath.Join(root, "terraform.tfstate")) || !NeedsInit(root) {
 		info.Initialized = true
 	}
 	// Only consume the initialized backend type; never return backend config or credentials.
@@ -355,6 +355,47 @@ var (
 	backendBlock = regexp.MustCompile(`(^|[\s{])(backend\s+"[^"]*"|cloud)\s*\{`)
 	backendJSON  = regexp.MustCompile(`"(backend|cloud)"\s*:`)
 )
+
+var (
+	// initBlock: module calls and provider requirements or configurations need init.
+	initBlock = regexp.MustCompile(`(?m)^\s*(module|provider|required_providers)\b`)
+	// typedBlock captures resource, data and ephemeral types; only built-ins need no provider.
+	typedBlock = regexp.MustCompile(`(?m)^\s*(resource|data|ephemeral)\s+"([^"]*)"`)
+)
+
+// NeedsInit reports whether the root module needs init before the engine can plan: a backend
+// or cloud block, a module call, or any provider other than the built-in terraform provider.
+// Without those, a successful init writes nothing (no .terraform directory), so the absence of
+// one is not evidence that init is missing. The scan is textual and errs towards true: JSON
+// configuration, unreadable or oversized files and anything unclassified need init.
+func NeedsInit(root string) bool {
+	if declaresBackend(root) {
+		return true
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return true
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".tf.json") || strings.HasSuffix(name, ".tofu.json") {
+			return true
+		}
+		if !strings.HasSuffix(name, ".tf") && !strings.HasSuffix(name, ".tofu") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil || len(b) > 16<<20 || initBlock.Match(b) {
+			return true
+		}
+		for _, m := range typedBlock.FindAllSubmatch(b, -1) {
+			if t := string(m[2]); t != "terraform_data" && t != "terraform_remote_state" {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // DeclaresBackend reports whether a root module file may declare a backend or cloud block,
 // erring towards true.
