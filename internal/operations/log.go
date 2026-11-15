@@ -203,7 +203,8 @@ func translate(line []byte, kind, engineLabel string, k *known) (level, text str
 			label = "Error"
 		}
 		return level, label + ": " + d.Summary, d, true
-	case "log", "init_output":
+	case "log", "init_output", "state_lock_acquire", "state_lock_release":
+		// With -json the engines report a lock wait as state_lock_acquire, not "log".
 		level := "info"
 		if m.Level == "warn" || m.Level == "error" {
 			level = m.Level
