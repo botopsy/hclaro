@@ -62,6 +62,37 @@ type Run struct {
 	user    string
 	// negativeDone: the token/Origin/CSRF refusals are checked once per run.
 	negativeDone bool
+	// hubConfigSha is the SHA-256 of the combined Hub CLI config template (M27.05).
+	hubConfigSha string
+	// alt holds a second approved binary per engine, used only by the H6 binary swap.
+	alt map[string]Alternate
+}
+
+// Alternate is a second OD-1 binary of a configured engine (another version).
+type Alternate struct {
+	Path   string
+	Record EngineRecord
+}
+
+// SetAlternate checks a second binary of engine name against the OD-1 list; it must report a
+// version other than the configured binary's.
+func (r *Run) SetAlternate(name, bin string) error {
+	main, ok := r.engines[name]
+	if !ok {
+		return fmt.Errorf("alternate %s: engine not configured", name)
+	}
+	rec, err := r.checkEngine(name, bin)
+	if err != nil {
+		return fmt.Errorf("alternate %v", err)
+	}
+	if rec.Version == main.Version || rec.BinarySha256 == main.BinarySha256 {
+		return fmt.Errorf("alternate %s: same version %s as the configured binary", name, rec.Version)
+	}
+	if r.alt == nil {
+		r.alt = map[string]Alternate{}
+	}
+	r.alt[name] = Alternate{Path: bin, Record: rec}
+	return nil
 }
 
 // NewRun checks the engines, prepares the result and writes the first partial file.
@@ -374,9 +405,12 @@ func (s *Scenario) Process(engines ...string) (ProcessDirs, []string, error) {
 			return dirs, nil, err
 		}
 		if cli != "" && s.run.Cfg.CLIConfig[e] != cli {
-			// shortcut: one family per process; a Hub run with both engines needs the combined
-			// mirror config (M27.05), which verify-mirror.sh has not checked yet.
-			return dirs, nil, fmt.Errorf("engines %v need a combined CLI config (M27.05)", engines)
+			// Both families in one process: the combined mirror config (scripts/qualify/hub.tfrc,
+			// checked by verify-mirror.sh COMBINED=1).
+			if cli = s.run.Cfg.CLIConfig["hub"]; cli == "" {
+				return dirs, nil, fmt.Errorf("engines %v need the combined CLI config (hub.tfrc)", engines)
+			}
+			break
 		}
 		cli = s.run.Cfg.CLIConfig[e]
 	}
@@ -390,11 +424,21 @@ const m2616Project = "engines/project"
 // run canary, and applies the fixture guard. allowed lists project-relative paths the
 // scenario expects Hclaro or the engine to write (the lock-info file is always checked).
 func (s *Scenario) Project(template string, allowed ...string) string {
-	dst := filepath.Join(s.Dir, "projects", template)
+	return s.ProjectAs(template, template, allowed...)
+}
+
+// ProjectAs is Project into projects/<name>, for scenarios with several copies of a template.
+func (s *Scenario) ProjectAs(template, name string, allowed ...string) string {
+	dst := filepath.Join(s.Dir, "projects", name)
 	if err := copyTemplate(template, dst, s.run.Canary); err != nil {
 		s.Fatalf("project %s: %v", template, err)
 	}
-	if err := GuardFixture(dst); err != nil {
+	guard := GuardFixture
+	if template == "hub-remote" {
+		guard = GuardRemote
+		s.Observe("fixture guard exception (H12 only): hub-remote main.tf declares backend \"s3\" with no settings and is never initialized")
+	}
+	if err := guard(dst); err != nil {
 		s.Fatalf("%v", err)
 	}
 	s.projects[dst] = snapshotFiles(dst)

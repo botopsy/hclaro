@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # qualify.sh: M27.02 real-engine harness runner (`make qualify`). Environment inputs:
 #   TF, TOFU   absolute paths to OD-1 approved engine binaries (at least one; else NOT_TESTED)
+#   TF_ALT, TOFU_ALT  optional second OD-1 binary of the same engine (M27.05 H6 binary swap)
 #   MIRROR     the M27.01 mirror root (mirror-manifest.json, terraform/, tofu/, *.tfrc)
 #   OUT        result directory (run.json, artifacts/, probes)
 #   HCLARO_BIN default bin/hclaro; ISOLATION default sandbox-exec on macOS, else proxy;
@@ -50,13 +51,19 @@ mkdir -p "$run/engines" "$run/mirror" "$run/out"
 tf= tofu=
 if [ -n "${TF:-}" ]; then cp "$TF" "$run/engines/terraform"; tf=$run/engines/terraform; fi
 if [ -n "${TOFU:-}" ]; then cp "$TOFU" "$run/engines/tofu"; tofu=$run/engines/tofu; fi
+tf_alt= tofu_alt=
+if [ -n "${TF_ALT:-}" ]; then cp "$TF_ALT" "$run/engines/terraform-alt"; tf_alt=$run/engines/terraform-alt; fi
+if [ -n "${TOFU_ALT:-}" ]; then cp "$TOFU_ALT" "$run/engines/tofu-alt"; tofu_alt=$run/engines/tofu-alt; fi
 for f in mirror-manifest.json terraform.tfrc tofu.tfrc; do cp "$MIRROR/$f" "$run/mirror/"; done
+# Hub processes with both engines use the combined config (checked by verify-mirror.sh COMBINED=1).
+cp "$QUALIFY_DIR/hub.tfrc" "$run/mirror/hub.tfrc"
 for family in terraform tofu; do cp -R "$MIRROR/$family" "$run/mirror/$family"; done
 
 # Positive control, outside the isolation; the harness runs the isolated probes inside.
 "$run/netprobe" control >"$run/f0-control.json" || true
 
 vars=(PATH=/usr/bin:/bin HCLARO_QUAL_TERRAFORM="$tf" HCLARO_QUAL_TOFU="$tofu" HCLARO_BIN="$run/hclaro"
+  HCLARO_QUAL_TERRAFORM_ALT="$tf_alt" HCLARO_QUAL_TOFU_ALT="$tofu_alt"
   HCLARO_QUAL_MIRROR="$run/mirror" HCLARO_QUAL_OUT="$run/out" HCLARO_QUAL_ISOLATION="$isolation")
 [ "${HCLARO_QUAL_KEEP:-}" != 1 ] || vars+=(HCLARO_QUAL_KEEP=1)
 # Only real-engine tests (TestReal*) run inside the isolation; the untagged unit tests need the

@@ -31,7 +31,27 @@ type Hclaro struct {
 	// shutdown is set when the scenario stopped Hclaro itself (A7, A7b); its exit code is
 	// recorded by the scenario, not judged by the cleanup.
 	shutdown bool
+	// view is set on a Hub workspace view (In); nil for the process itself.
+	view *HubView
 }
+
+// HubView is one open Hub workspace (read context) of a registered project (M27.05).
+type HubView struct {
+	ContextID, ProjectID, Project, Engine, Workspace string
+}
+
+// In returns a handle on the same process whose launch routes go to the view's scoped
+// routes. Stopping and cleanup stay with the process handle.
+func (h *Hclaro) In(v HubView) *Hclaro {
+	c := h.client
+	view := *h
+	view.view = &v
+	view.client = &Client{h: &view, s: c.s, http: c.http, csrf: c.csrf, transcript: c.transcript, prefix: "contexts/" + v.ContextID + "/"}
+	return &view
+}
+
+// View is the Hub workspace of a view handle, nil for the process.
+func (h *Hclaro) View() *HubView { return h.view }
 
 // StartHclaro starts the binary with args and the allowlisted env, waits for the session URL
 // and reads the CSRF token.

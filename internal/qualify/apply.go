@@ -98,7 +98,38 @@ func (s *Scenario) FollowOp(h *Hclaro, id string, timeout time.Duration) Operati
 	if r, err := h.client.Do("GET", "operations/"+id, nil, &op); err != nil || r.Status != 200 {
 		s.Fatalf("GET operation: %v %d", err, r.Status)
 	}
+	s.assertScope(h, op.Scope)
 	return op
+}
+
+// assertScope checks a scoped response's scope against the view: same context and workspace,
+// and the engine and version the project must use (M27.05: on every operation response).
+func (s *Scenario) assertScope(h *Hclaro, sc *OpScope) {
+	v := h.view
+	if v == nil {
+		return
+	}
+	if sc == nil || sc.ContextID != v.ContextID || sc.Workspace != v.Workspace {
+		s.Fatalf("scoped response names scope %+v, the view is %s/%s", sc, v.Workspace, v.ContextID)
+	}
+	s.AssertEngine(v.Project, v.Engine, sc.Engine, sc.Version)
+}
+
+// fingerprint returns the contextFingerprint a Hub view's options route returned ("" for the
+// launch process, which sends none): the dialog sends it back unchanged with the start.
+func (s *Scenario) fingerprint(h *Hclaro, options string) string {
+	if h.view == nil {
+		return ""
+	}
+	var o struct {
+		ContextFingerprint string   `json:"contextFingerprint"`
+		Scope              *OpScope `json:"scope"`
+	}
+	if r, err := h.client.Do("GET", options, nil, &o); err != nil || r.Status != 200 {
+		s.Fatalf("%s: %v %d %s", options, err, r.Status, r.Code)
+	}
+	s.assertScope(h, o.Scope)
+	return o.ContextFingerprint
 }
 
 // HistoryEntry is the part of a history list item the harness reads.
@@ -285,6 +316,9 @@ func (s *Scenario) PreviewImport(h *Hclaro, req map[string]any) ImportPreview {
 // StartImport sends the reviewed import (both acknowledgements) and returns the reply.
 func (s *Scenario) StartImport(h *Hclaro, req map[string]any, p ImportPreview, varFiles []string) (Operation, Response) {
 	body := map[string]any{"varFiles": varFiles, "previewSha256": p.SHA256, "acknowledgeWrite": true, "acknowledgeBackendAccess": true}
+	if h.view != nil {
+		body["contextFingerprint"] = s.fingerprint(h, "imports/options")
+	}
 	for k, v := range req {
 		body[k] = v
 	}
@@ -398,11 +432,18 @@ func (s *Scenario) HubInit(h *Hclaro, projectID string) (InitStatus, Operation) 
 // OpenContext opens a Hub read context on a workspace, waits for its read and returns the
 // managed addresses it shows.
 func (s *Scenario) OpenContext(h *Hclaro, projectID, workspace string) []string {
+	_, addrs := s.OpenView(h, projectID, workspace, "")
+	return addrs
+}
+
+// OpenView is OpenContext with an execution profile ("" for none); it also returns the
+// context ID.
+func (s *Scenario) OpenView(h *Hclaro, projectID, workspace, profileID string) (string, []string) {
 	var c struct {
 		ID        string `json:"id"`
 		Workspace string `json:"workspace"`
 	}
-	if r, err := h.client.Do("POST", "contexts", map[string]any{"projectId": projectID, "workspace": workspace, "reload": true, "profileId": ""}, &c); err != nil || r.Status != 200 {
+	if r, err := h.client.Do("POST", "contexts", map[string]any{"projectId": projectID, "workspace": workspace, "reload": true, "profileId": profileID}, &c); err != nil || r.Status != 200 {
 		s.Fatalf("open context %s: %v %d %s", workspace, err, r.Status, r.Code)
 	}
 	if c.Workspace != workspace {
@@ -440,5 +481,5 @@ func (s *Scenario) OpenContext(h *Hclaro, projectID, workspace string) []string 
 			addrs = append(addrs, x.Address)
 		}
 	}
-	return addrs
+	return c.ID, addrs
 }

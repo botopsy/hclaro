@@ -5,7 +5,8 @@
 # fixtures/qualify/providers and asserts the lock file and provider directory come from the mirror.
 # `providers schema -json` then starts each provider plugin (read-only) to show it runs with that engine.
 # F-0 is checked with netprobe before the first init and after the last; the run fails unless both
-# brackets are `enforced`. Nothing is applied, planned or refreshed; there is no state.
+# brackets are `enforced`. COMBINED=1 runs every engine with the combined Hub config
+# (scripts/qualify/hub.tfrc, both mirrors) instead of its family's config (M27.05). Nothing is applied, planned or refreshed; there is no state.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -59,6 +60,8 @@ for family in terraform tofu; do
   cp -R "$mirror/$family" "$run/mirror-$family"
   sed "s|@MIRROR@/$family|$run/mirror-$family|" "$mirror/$family.tfrc" >"$run/$family.tfrc"
 done
+sed "s|@MIRROR@/terraform|$run/mirror-terraform|;s|@MIRROR@/tofu|$run/mirror-tofu|" "$QUALIFY_DIR/hub.tfrc" >"$run/hub.tfrc"
+[ "${COMBINED:-}" != 1 ] || echo "combined config: hub.tfrc sha256 $(sha256 "$QUALIFY_DIR/hub.tfrc")"
 jq -r '.entries[] | "\(.family) \(.archive) \(.sha256)"' "$manifest" | while read -r family archive want; do
   got=$(sha256 "$run/mirror-$family/$archive")
   [ "$got" = "$want" ] || die "$family/$archive: SHA-256 $got, manifest $want"
@@ -74,12 +77,14 @@ results=$ev/verify-results.jsonl
 for e in $engine_list; do
   name=${e%-*} v=${e##*-}
   case $name in terraform) family=terraform bin=terraform ;; opentofu) family=tofu bin=tofu ;; esac
+  cli=$run/$family.tfrc
+  [ "${COMBINED:-}" != 1 ] || cli=$run/hub.tfrc
   src=$engines/$e-$host_platform/$bin
   [ -x "$src" ] || die "engine missing: $src"
   cp "$src" "$run/$e"
   proj=$run/proj-$e
   mkdir -p "$proj" && cp "$repo/fixtures/qualify/providers/versions.tf" "$proj/"
-  CLI=$run/$family.tfrc sandboxed "$proj" "$run/$e" init -input=false -no-color >"$ev/init-$e.log" 2>&1 ||
+  CLI=$cli sandboxed "$proj" "$run/$e" init -input=false -no-color >"$ev/init-$e.log" 2>&1 ||
     die "$e: init failed under isolation (see $ev/init-$e.log)"
   cp "$proj/.terraform.lock.hcl" "$ev/lock-$e.hcl"
 
@@ -101,12 +106,12 @@ for e in $engine_list; do
   done <<<"$want"
 
   # Start each provider plugin (schema only; no plan, no state).
-  CLI=$run/$family.tfrc sandboxed "$proj" "$run/$e" providers schema -json >"$run/schema-$e.json" 2>"$ev/schema-$e.err" ||
+  CLI=$cli sandboxed "$proj" "$run/$e" providers schema -json >"$run/schema-$e.json" 2>"$ev/schema-$e.err" ||
     die "$e: providers failed to start under isolation (see $ev/schema-$e.err)"
   resources=$(jq -c '[.provider_schemas[] | .resource_schemas | keys[]] | sort' "$run/schema-$e.json")
-  jq -nc --arg engine "$e" --arg platform "$host_platform" --arg binary "$(sha256 "$run/$e")" \
+  jq -nc --arg engine "$e" --arg cli "$(basename "$cli")" --arg platform "$host_platform" --arg binary "$(sha256 "$run/$e")" \
     --arg providers "$want" --argjson resources "$resources" \
-    '{engine:$engine, platform:$platform, binarySha256:$binary, isolation:"enforced", init:"PASS",
+    '{engine:$engine, cliConfig:$cli, platform:$platform, binarySha256:$binary, isolation:"enforced", init:"PASS",
       lockedProviders:($providers|split("\n")), providerSchema:"PASS", resources:$resources}' >>"$results"
   echo "$e: init PASS (lock = manifest), providers start PASS"
 done

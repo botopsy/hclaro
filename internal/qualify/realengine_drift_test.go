@@ -70,7 +70,11 @@ func (s *Scenario) driftScan(h *Hclaro, project string, varFiles []string) (Oper
 		Operation Operation `json:"operation"`
 		Scan      Scan      `json:"scan"`
 	}
-	r, err := h.client.Do("POST", "drift-scans", map[string]any{"acknowledgeProviderAccess": true, "varFiles": varFiles}, &started)
+	body := map[string]any{"acknowledgeProviderAccess": true, "varFiles": varFiles}
+	if h.view != nil {
+		body["contextFingerprint"] = s.fingerprint(h, "drift-scans/options")
+	}
+	r, err := h.client.Do("POST", "drift-scans", body, &started)
 	if err != nil || r.Status != 202 {
 		s.Fatalf("POST drift-scans: %v %d %s", err, r.Status, r.Code)
 	}
@@ -131,7 +135,12 @@ func diagnostics(op Operation) string {
 
 // launchApplied launches template, plans varFiles and applies the plan through Hclaro.
 func launchApplied(s *Scenario, engine, template string, varFiles []string, allowed ...string) (string, *Hclaro) {
-	project, _, _, h := launch(s, engine, template, allowed...)
+	return appliedWith(s, launchStart, engine, template, varFiles, allowed...)
+}
+
+// appliedWith is launchApplied with the Hclaro handle start returns (launch or Hub view).
+func appliedWith(s *Scenario, start starter, engine, template string, varFiles []string, allowed ...string) (string, *Hclaro) {
+	project, _, _, h := openWith(s, start, engine, template, allowed...)
 	detail := s.LaunchPlan(h, project, engine, varFiles)
 	if _, op := s.ApplyReviewed(h, detail.ID); op.Status != "succeeded" || op.Outcome != "applied" {
 		s.Fatalf("setup apply ended %s, outcome %q", op.Status, op.Outcome)
@@ -149,25 +158,10 @@ func TestRealDrift(t *testing.T) {
 	if run == nil {
 		t.Skip(runSkip)
 	}
-	vars := []string{"launch.tfvars"}
-	files := []string{"out/gone.txt", "out/edited.txt"}
+	vars, files := driftVars, driftFiles
 	for _, name := range engines() {
 		run.Scenario(t, "d1-drift-deleted-"+name, name, "launch", false, func(s *Scenario) {
-			project, h := launchApplied(s, name, "drift", vars, files...)
-			if err := os.Remove(filepath.Join(project, "out", "gone.txt")); err != nil {
-				s.Fatalf("%v", err)
-			}
-			_, sc := s.driftScan(h, project, vars)
-			got := sc.drifted()
-			s.Observe("D1 scan %s %s: %v", sc.Status, sc.Outcome, got)
-			if sc.Status != "completed" || sc.Outcome != "drift_detected" || len(got) != 1 || got["local_file.gone"] != "missing delete" || sc.Summary.Missing != 1 {
-				s.Fatalf("D1: scan %s %s %v summary %+v, want local_file.gone missing", sc.Status, sc.Outcome, got, sc.Summary)
-			}
-			for _, rc := range sc.Resources {
-				if r, err := h.client.Do("GET", "drift-scans/"+sc.ID+"/resources/"+rc.ID, nil, nil); err != nil || r.Status != 200 {
-					s.Fatalf("D1 detail %s: %v %d", rc.Address, err, r.Status)
-				}
-			}
+			d1DriftDeleted(s, name, launchStart)
 		})
 		run.Scenario(t, "d2-drift-edited-"+name, name, "launch", false, func(s *Scenario) {
 			project, h := launchApplied(s, name, "drift", vars, files...)
@@ -254,19 +248,26 @@ type graphView struct {
 // change of the plan on exactly one node or, for orphans only, in the unmapped list.
 func checkGraph(s *Scenario, h *Hclaro, plan PlanDetail, orphans []string) {
 	var opts struct {
-		CanGenerate bool   `json:"canGenerate"`
-		Reason      string `json:"reason"`
+		CanGenerate        bool     `json:"canGenerate"`
+		Reason             string   `json:"reason"`
+		ContextFingerprint string   `json:"contextFingerprint"`
+		Scope              *OpScope `json:"scope"`
 	}
 	if r, err := h.client.Do("GET", "graphs/options", nil, &opts); err != nil || r.Status != 200 || !opts.CanGenerate {
 		s.Fatalf("graphs/options: %v %d can %v %s", err, r.Status, opts.CanGenerate, opts.Reason)
 	}
+	s.assertScope(h, opts.Scope)
 	var started struct {
 		Operation Operation `json:"operation"`
 		Graph     struct {
 			ID string `json:"id"`
 		} `json:"graph"`
 	}
-	if r, err := h.client.Do("POST", "graphs", map[string]any{"acknowledgeEngineRun": true}, &started); err != nil || r.Status != 202 {
+	gbody := map[string]any{"acknowledgeEngineRun": true}
+	if h.view != nil {
+		gbody["contextFingerprint"] = opts.ContextFingerprint
+	}
+	if r, err := h.client.Do("POST", "graphs", gbody, &started); err != nil || r.Status != 202 {
 		s.Fatalf("POST graphs: %v %d %s", err, r.Status, r.Code)
 	}
 	if op := s.FollowOp(h, started.Operation.ID, 15*time.Minute); op.Status != "succeeded" {
@@ -344,42 +345,10 @@ func TestRealGraph(t *testing.T) {
 	}
 	for _, name := range engines() {
 		run.Scenario(t, "g1-graph-m2616-"+name, name, "launch", false, func(s *Scenario) {
-			project := s.Project(m2616Project, "terraform.tfstate")
-			if err := os.Rename(filepath.Join(project, "state.json"), filepath.Join(project, "terraform.tfstate")); err != nil {
-				s.Fatalf("%v", err)
-			}
-			// The project's test secret becomes the run canary, so the standard scan covers it.
-			for _, f := range []string{"prod.tfvars", "terraform.tfstate", "remote.json"} {
-				p := filepath.Join(project, f)
-				b, err := os.ReadFile(p)
-				if err == nil {
-					err = os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "DO_NOT_LEAK_HCLARO_TEST_SECRET", s.run.Canary)), 0o600)
-				}
-				if err != nil {
-					s.Fatalf("%v", err)
-				}
-			}
-			if b, _ := os.ReadFile(filepath.Join(project, "prod.tfvars")); !strings.Contains(string(b), s.run.Canary) {
-				s.Fatalf("the canary is not in prod.tfvars")
-			}
-			s.RefreshBaseline(project)
-			dirs, env, err := s.Process(name)
-			if err != nil {
-				s.Fatalf("%v", err)
-			}
-			s.SetupInit(dirs, env, name, project)
-			h := s.StartLaunch(dirs, env, name, project)
-			plan := s.LaunchPlan(h, project, name, []string{"prod.tfvars"})
-			checkGraph(s, h, plan, []string{"terraform_data.gone", "terraform_data.counted_gone[0]", "terraform_data.counted_gone[1]", `module.old["x"].terraform_data.this`})
+			g1GraphM2616(s, name, launchStart)
 		})
 		run.Scenario(t, "g1-graph-modules-"+name, name, "launch", false, func(s *Scenario) {
-			project, h := launchApplied(s, name, "graph", []string{"launch.tfvars"})
-			if err := os.Remove(filepath.Join(project, "retired.tf")); err != nil {
-				s.Fatalf("%v", err)
-			}
-			plan := s.LaunchPlan(h, project, name, []string{"grow.tfvars"})
-			s.Observe("G1 plan: %s", plan)
-			checkGraph(s, h, plan, []string{"module.old.terraform_data.leaf", "terraform_data.orphan[0]", "terraform_data.orphan[1]"})
+			g1GraphModules(s, name, launchStart)
 		})
 	}
 }
@@ -676,3 +645,60 @@ func TestRealFailures(t *testing.T) {
 
 // f3RSSBoundMiB is the F3 peak RSS bound, set in docs/qualification/README.md before the run.
 const f3RSSBoundMiB = 512
+
+// driftVars and driftFiles are the drift fixture's var files and the files it manages.
+var driftVars, driftFiles = []string{"launch.tfvars"}, []string{"out/gone.txt", "out/edited.txt"}
+
+func d1DriftDeleted(s *Scenario, name string, start starter) {
+	vars, files := driftVars, driftFiles
+	project, h := appliedWith(s, start, name, "drift", vars, files...)
+	if err := os.Remove(filepath.Join(project, "out", "gone.txt")); err != nil {
+		s.Fatalf("%v", err)
+	}
+	_, sc := s.driftScan(h, project, vars)
+	got := sc.drifted()
+	s.Observe("D1 scan %s %s: %v", sc.Status, sc.Outcome, got)
+	if sc.Status != "completed" || sc.Outcome != "drift_detected" || len(got) != 1 || got["local_file.gone"] != "missing delete" || sc.Summary.Missing != 1 {
+		s.Fatalf("D1: scan %s %s %v summary %+v, want local_file.gone missing", sc.Status, sc.Outcome, got, sc.Summary)
+	}
+	for _, rc := range sc.Resources {
+		if r, err := h.client.Do("GET", "drift-scans/"+sc.ID+"/resources/"+rc.ID, nil, nil); err != nil || r.Status != 200 {
+			s.Fatalf("D1 detail %s: %v %d", rc.Address, err, r.Status)
+		}
+	}
+}
+
+func g1GraphM2616(s *Scenario, name string, start starter) {
+	project := s.Project(m2616Project, "terraform.tfstate")
+	if err := os.Rename(filepath.Join(project, "state.json"), filepath.Join(project, "terraform.tfstate")); err != nil {
+		s.Fatalf("%v", err)
+	}
+	// The project's test secret becomes the run canary, so the standard scan covers it.
+	for _, f := range []string{"prod.tfvars", "terraform.tfstate", "remote.json"} {
+		p := filepath.Join(project, f)
+		b, err := os.ReadFile(p)
+		if err == nil {
+			err = os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "DO_NOT_LEAK_HCLARO_TEST_SECRET", s.run.Canary)), 0o600)
+		}
+		if err != nil {
+			s.Fatalf("%v", err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(project, "prod.tfvars")); !strings.Contains(string(b), s.run.Canary) {
+		s.Fatalf("the canary is not in prod.tfvars")
+	}
+	s.RefreshBaseline(project)
+	_, _, h := start(s, name, project)
+	plan := s.LaunchPlan(h, project, name, []string{"prod.tfvars"})
+	checkGraph(s, h, plan, []string{"terraform_data.gone", "terraform_data.counted_gone[0]", "terraform_data.counted_gone[1]", `module.old["x"].terraform_data.this`})
+}
+
+func g1GraphModules(s *Scenario, name string, start starter) {
+	project, h := appliedWith(s, start, name, "graph", []string{"launch.tfvars"})
+	if err := os.Remove(filepath.Join(project, "retired.tf")); err != nil {
+		s.Fatalf("%v", err)
+	}
+	plan := s.LaunchPlan(h, project, name, []string{"grow.tfvars"})
+	s.Observe("G1 plan: %s", plan)
+	checkGraph(s, h, plan, []string{"module.old.terraform_data.leaf", "terraform_data.orphan[0]", "terraform_data.orphan[1]"})
+}

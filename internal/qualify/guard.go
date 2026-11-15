@@ -153,6 +153,19 @@ func guardHCL(rel, text string, bad func(string, string, ...any)) {
 	}
 }
 
+// GuardRemote is the guard for the M27.05 H12 project, the only one allowed a non-local
+// backend: it passes only when main.tf is the committed hub-remote file byte for byte and the
+// guard's only finding is that file's s3 backend (never initialized, never reached).
+func GuardRemote(root string) error {
+	err := GuardFixture(root)
+	want, _ := fs.ReadFile(fixtures.Qualify, "qualify/hub-remote/main.tf")
+	got, _ := os.ReadFile(filepath.Join(root, "main.tf"))
+	if err == nil || !bytes.Equal(want, got) || err.Error() != `fixture_scope: main.tf: backend "s3"` {
+		return fmt.Errorf("fixture_scope: the H12 backend exception does not apply: %v", err)
+	}
+	return nil
+}
+
 // isGateFixture reports whether root holds the approved gated fixture's main.tf and gate.sh
 // unchanged.
 func isGateFixture(root string) bool {

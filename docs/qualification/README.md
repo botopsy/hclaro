@@ -17,6 +17,7 @@ make qualify TF=/abs/terraform TOFU=/abs/tofu MIRROR=<mirror dir> OUT=<result di
   - `ISOLATION`: `sandbox-exec` (the macOS default), `proxy` or `none`.
   - `HCLARO_QUAL_KEEP=1`: keep the raw run directory when a run fails.
   - `RUN_FILTER`: passed to `-test.run` (default `^TestReal`).
+  - `TF_ALT`, `TOFU_ALT`: a second OD-1 binary of the same engine, another version. Only M27.05 H6 uses it, to replace the engine at the same path; without it H6's binary case is `NOT_TESTED`.
 - On Windows, run `scripts/qualify/qualify.ps1 -Terraform … -Tofu … -Mirror … -Out …`. It uses `ProcessStartInfo` with a cleared environment in place of `env -i`.
 
 `qualify.sh` runs these steps in order:
@@ -29,7 +30,7 @@ make qualify TF=/abs/terraform TOFU=/abs/tofu MIRROR=<mirror dir> OUT=<result di
 
 The test binary receives only `PATH=/usr/bin:/bin` (on Windows `%SystemRoot%\System32` and `SystemRoot`) plus its own inputs. None of these is passed to Hclaro:
 
-- `HCLARO_QUAL_TERRAFORM`, `HCLARO_QUAL_TOFU`
+- `HCLARO_QUAL_TERRAFORM`, `HCLARO_QUAL_TOFU`, `HCLARO_QUAL_TERRAFORM_ALT`, `HCLARO_QUAL_TOFU_ALT`
 - `HCLARO_BIN`, `HCLARO_QUAL_MIRROR`, `HCLARO_QUAL_OUT`, `HCLARO_QUAL_ISOLATION`
 - `HCLARO_QUAL_KEEP`
 
@@ -43,7 +44,7 @@ The harness's working root is a directory next to the test binary inside the run
 - Launch mode always passes `--engine`. In Hub mode, each project is registered with an explicit `engine` preference.
 - After every plan and inspection, the harness asserts that the engine name and version Hclaro reported equal the expected ones.
 - One Hclaro process can hold only one version per engine name, so mixed-version Hub runs need a product change (FU-2).
-- A Hub process with both engines needs one combined mirror config. It is not built yet (M27.05), and the harness refuses such a process.
+- A Hub process with both engines uses one combined mirror config, `scripts/qualify/hub.tfrc`: two `filesystem_mirror` blocks, each limited by `include` to its family's registry host (`registry.terraform.io` for Terraform, `registry.opentofu.org` for OpenTofu), and `direct { exclude = ["*/*"] }`. `verify-mirror.sh` with `COMBINED=1` runs every engine's `init` and provider start with that file. Hub scenarios record its SHA-256.
 
 ## Environment allowlist
 
@@ -227,6 +228,30 @@ Notes on how the scenarios observe things:
   - `getrusage` after exit is not used, because the `wait4` usage includes the reaped engine children: one dev run read 800 MiB that way, while Hclaro alone was about 230 MiB.
 - **F4** needs an engine that plans `["forget","create"]`. The trigger found is a forced replacement under `lifecycle { destroy = false }`, which Terraform 1.17.2 and OpenTofu 1.13.9 accept. Hclaro marks the plan `unknown_actions` in its apply status, and the approval is refused at the preflight (`preflight_blocked:plan.eligible,…`), not with the literal code. An engine that rejects the fixture records `NOT_TESTED`, with the engine's diagnostic in the reason.
 - **Recordings.** `scripts/fixtures/record-engine.sh <engine> <out> <mirror.tfrc>` also records `fixtures/engines/local-project` (provider from the offline mirror, synthetic state, never applied): `local-drift.json[l]`, `local-missing-file.jsonl`, `local-noinit.jsonl` and `local-lockfile.jsonl`. M27.04 ran it with `env -i` under `sandbox.sb`, with `TMPDIR` inside `RUN_TMP` so that provider sockets are allowed.
+
+## M27.05 Hub execution scenarios
+
+`realengine_hub_test.go` holds the M27.05 scenarios (task file `tasks/M27/tasks/M27-05-HUB-EXECUTION.md`). Every Hclaro process starts with `--hub --no-browser --experimental-hub-execution`, passed explicitly; each result records `hubExecutionFlag: true`. Each process gets both configured engines and the combined mirror config. The spec's two runs are Terraform 1.17.2 + OpenTofu 1.13.9, then Terraform 1.5.5 + OpenTofu 1.13.9.
+
+| Test | Scenarios | Fixture |
+| --- | --- | --- |
+| `TestRealHubEngines` | H1 two projects (`terraform`, `tofu` preference) in one Hub: engine, version, plan and apply capability per scope, lock files from the combined config; H4 both projects plan at once | `hub-hold` |
+| `TestRealHubFlows` | H2: A1, A2, A3, R1, I1, D1, G1 (both projects) in a Hub workspace view, per engine; H3 `default` and `qa` of one project | `launch`, `launch-import`, `drift`, `graph`, `engines/project` |
+| `TestRealHubPaths` | H5a trailing separator, `./`, `..`; H5b symlink; H5c case-only (case-insensitive volume); H5c′ and H5d recorded `SKIPPED` where they do not apply | `hub-hold` |
+| `TestRealHubChanges` | H6 change after approval (configuration, profile, engine preference, engine binary), H7 busy edits, H8 capacity, H9 closing a view, H10 (`NOT_TESTED`, see below), H11 import without stall, H12 non-local backend | `launch`, `hub-hold`, `hub-remote` |
+
+- **Views.** `Hclaro.In` returns a handle whose launch routes (`plans`, `operations`, `imports`, `drift-scans`, `graphs`, `resources`) go to `contexts/{cid}/…`. The M27.03 and M27.04 scenario bodies run unchanged through it (H2). Starts send back the `contextFingerprint` the options returned. Every scoped options and operation response has its `scope` checked: same context and workspace, and the expected engine and version.
+- **Holding an operation.** `hub-hold` reads `data.local_file.gate` from the named pipe `.qual/gate.fifo` when `hold.tfvars` sets `hold = true`. A plan or import plan then stays `running` until the harness writes the pipe. H4, H5, H7, H9 and H11 use this hold, not timing. It is a plan-time read with no `local-exec`, so it is outside OD-8. Windows has no named pipe, so these scenarios are `NOT_TESTED` there.
+- **H4.** Both plans are seen `running` on their SSE streams while both are held, so they overlap. Hclaro's log events are its own summaries of the engine's `-json` output. The check is therefore that every status event belongs to that project's operation and carries that engine's argv, and that no event carries the other engine's.
+- **H5.** Hclaro starts in launch mode on each path form, with the Hub flag. The canonical folder is registered in its Hub, and every form is refused with `duplicate_project` naming the same project. A launch plan is held, and the Hub plan on the folder is refused with `project_busy`. Once the hold is released, the Hub plan runs. The filesystem's case behaviour is recorded from F-4 and from the run's own probe.
+- **H6 codes** follow `docs/architecture.md` (scoped execution):
+  - configuration edited: `409 context_changed`;
+  - plan applied through a view opened with another profile: `404 plan_not_found`;
+  - the view's profile edited, or the project's engine preference changed: the view is closed, `404 context_closed`;
+  - engine binary replaced at the same path: `409 scope_changed`, detail `engine_changed`.
+  The state's bytes are unchanged after each refusal.
+- **H10** is `NOT_TESTED`: OD-8 approves the gated `local-exec` fixture for M27.03 only, and H10 needs its own approval.
+- **H12** runs only under `enforced` isolation. `hub-remote` is the only fixture with a non-local backend, an `s3` block that is never initialized. `GuardRemote` accepts it only when it is byte-identical. The project is registered without the inspection. Every execution start (plan, drift scan, graph, import preview and import) must be refused, no operation or history entry may exist, and no `.terraform` directory may appear. Init is never started; its status is only read.
 
 ## Limitations
 
