@@ -1,6 +1,6 @@
 # Real-engine qualification tools (M27)
 
-Tools for `tasks/M27` (local, ignored task files). Nothing here runs an engine, applies, imports or touches cloud accounts. Engine binaries, provider archives, mirrors and evidence stay **outside** the repository (owner decision OD-1d: `~/hclaro-qualify/`).
+Tools for `tasks/M27` (local, ignored task files). Nothing here applies, plans, refreshes, imports or touches cloud accounts; engines run only `init`, `providers mirror` and `providers schema`, with no state. Engine binaries, provider archives, mirrors and evidence stay **outside** the repository (owner decision OD-1d: `~/hclaro-qualify/`).
 
 ## `internal/qualify/netprobe` — network-isolation probe (F-0)
 
@@ -29,3 +29,22 @@ go run ./scripts/qualify/fetch-metadata -out ~/hclaro-qualify/evidence/<run> <ur
   - E3: `application/octet-stream` from `registry.opentofu.org` provider metadata accepted when it is valid JSON.
   - E4: `github.com/opentofu/terraform-provider-{random,local}` release downloads, checksum and signature files only (registry.opentofu.org serves these OpenTofu rebuilds).
 - Every attempt is logged to `<out>/fetch-log.jsonl` (URL, source, time, result, final URL, headers, SHA-256); bodies go to `<out>/bodies/<sha256>`. No credentials, cookies or identifying headers are sent.
+
+## Engines and provider mirrors (M27.01 phase 2)
+
+Requires `gpg`, `jq`, `curl` and `unzip`. Downloads are owner-approved per version and platform (OD-1b, OD-2); today only `darwin_amd64`.
+
+```sh
+scripts/qualify/fetch-engines.sh ~/hclaro-qualify/engines              # Terraform 1.5.5, 1.5.7, 1.17.2; OpenTofu 1.6.3, 1.13.9
+scripts/qualify/mirror-providers.sh ~/hclaro-qualify/mirror ~/hclaro-qualify/engines
+scripts/qualify/verify-mirror.sh ~/hclaro-qualify/mirror ~/hclaro-qualify/engines ~/hclaro-qualify/evidence/<run>
+```
+
+- `fetch-engines.sh` refuses any version or platform not pinned in the script, before any request. Each archive must match its pinned SHA-256 **and** the `SHA256SUMS` signed by the approved primary key (`keys/`, OD-6a/b; expiry and revocation checked in a throwaway keyring). It prints the archive and binary SHA-256.
+- `mirror-providers.sh` runs `providers mirror` (Terraform 1.17.2 and OpenTofu 1.13.9, with `env -i`, a throwaway HOME and `CHECKPOINT_DISABLE=1`) for `hashicorp/random` 3.9.1 and `hashicorp/local` 2.9.1 (pinned in `fixtures/qualify/providers/versions.tf`). It builds one packed mirror per engine family: Terraform reads `registry.terraform.io` (HashiCorp builds) and OpenTofu reads `registry.opentofu.org` (OpenTofu rebuilds, different hashes). Every archive must match the provider's signed `SHA256SUMS` (OD-6e). It writes `mirror-manifest.json` (no timestamps or absolute paths, so two runs are byte-identical) and `<family>.tfrc` with `direct { exclude = ["*/*"] }`. The mirror path in `<family>.tfrc` is an `@MIRROR@` placeholder, which `verify-mirror.sh` replaces with the run dir's copy.
+- `verify-mirror.sh` (macOS only for now) copies everything into a run dir under `/tmp`, re-hashes the mirror against the manifest, and runs netprobe control and isolated before the first engine and after the last. It fails unless both are `enforced`. Under `sandbox-exec` with `sandbox.sb` it runs `init` for every engine and checks the following:
+  - the lock file holds exactly the pinned versions, and every lock-file hash is in the manifest, and every manifest `h1:` hash for the host platform is in the lock file;
+  - the providers are installed under the mirror's host directory;
+  - the provider plugins start (`providers schema -json`).
+- `sandbox.sb` is the F-0 profile plus one scoped allow, for Unix-socket connects under the run's `TMPDIR` only. go-plugin providers talk to the engine over such a socket, and without it they fail to start. System sockets such as `/var/run/mDNSResponder` stay denied.
+- `internal/qualify` `TestNoQualifyBinaries` fails if an archive, an engine or provider binary, or executable content is committed under `scripts/qualify/`, `fixtures/qualify/` or `internal/qualify/`.
