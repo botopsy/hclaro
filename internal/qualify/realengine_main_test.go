@@ -134,7 +134,9 @@ func newRealRun(out string) (*Run, error) {
 			return nil, err
 		}
 		p := filepath.Join(root, family+".tfrc")
-		if err := os.WriteFile(p, bytes.ReplaceAll(tfrc, []byte("@MIRROR@"), []byte(mirror)), 0o600); err != nil {
+		// Forward slashes: a Windows path's backslashes are escapes in an HCL string (run
+		// 43755588532: "illegal char escape"); both engines accept / on Windows.
+		if err := os.WriteFile(p, bytes.ReplaceAll(tfrc, []byte("@MIRROR@"), []byte(filepath.ToSlash(mirror))), 0o600); err != nil {
 			return nil, err
 		}
 		cli[name] = p
@@ -142,7 +144,7 @@ func newRealRun(out string) (*Run, error) {
 	// The combined config for Hub processes with both engines (M27.05).
 	if b, err := os.ReadFile(filepath.Join(mirror, "hub.tfrc")); err == nil {
 		p := filepath.Join(root, "hub.tfrc")
-		if err := os.WriteFile(p, bytes.ReplaceAll(b, []byte("@MIRROR@"), []byte(mirror)), 0o600); err != nil {
+		if err := os.WriteFile(p, bytes.ReplaceAll(b, []byte("@MIRROR@"), []byte(filepath.ToSlash(mirror))), 0o600); err != nil {
 			return nil, err
 		}
 		cli["hub"] = p
