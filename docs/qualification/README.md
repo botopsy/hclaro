@@ -14,11 +14,12 @@ make qualify TF=/abs/terraform TOFU=/abs/tofu MIRROR=<mirror dir> OUT=<result di
 - Pass at least one of `TF` and `TOFU`. With neither, the run is `NOT_TESTED` ("no engine configured").
 - Optional variables:
   - `HCLARO_BIN`: the binary under test (default `bin/hclaro`).
-  - `ISOLATION`: `sandbox-exec` (the macOS default), `proxy` or `none`.
+  - `ISOLATION`: `sandbox-exec` (the macOS default), `unshare` (Linux, see below), `proxy` or `none`.
   - `HCLARO_QUAL_KEEP=1`: keep the raw run directory when a run fails.
   - `RUN_FILTER`: passed to `-test.run` (default `^TestReal`).
   - `TF_ALT`, `TOFU_ALT`: a second OD-1 binary of the same engine, another version. Only M27.05 H6 uses it, to replace the engine at the same path; without it H6's binary case is `NOT_TESTED`.
-- On Windows, run `scripts/qualify/qualify.ps1 -Terraform … -Tofu … -Mirror … -Out …`. It uses `ProcessStartInfo` with a cleared environment in place of `env -i`.
+- On Windows, run `scripts/qualify/qualify.ps1 -Terraform … -Tofu … -Mirror … -Out … [-Isolation firewall|proxy|none]`. It uses `ProcessStartInfo` with a cleared environment in place of `env -i`.
+- Both runners create `~/hclaro-qualify/home-read-canary` if it is missing and fail if it is not readable outside the isolation, so a failed home read inside proves the denial (OD-14).
 
 `qualify.sh` runs these steps in order:
 
@@ -39,6 +40,7 @@ The harness's working root is a directory next to the test binary inside the run
 ## Engines
 
 - Each engine binary must match the OD-1 SHA-256 list compiled into `realengine_main_test.go`. Today that list has darwin_amd64 only: Terraform 1.5.5, 1.5.7 and 1.17.2, and OpenTofu 1.6.3 and 1.13.9. Any other binary is refused before anything runs.
+- The other platforms' archives are pinned (OD-3-M27.07), but signed `SHA256SUMS` list archive hashes, not binary hashes. Their binary hashes are added to the list from the first real-engine workflow run (`fetch-engines.sh` prints `binary=` in the job summary); until then that run's `preflight` record is `FAIL` with "not on the OD-1 list". The check is not relaxed.
 - The run records the binary and archive SHA-256 and `provenance: verified`.
 - Every Hclaro process gets its own `bin/` directory with at most one `terraform` and one `tofu`, both copies of the configured binaries. That directory is the only engine-bearing entry on its `PATH`.
 - Launch mode always passes `--engine`. In Hub mode, each project is registered with an explicit `engine` preference.
@@ -93,9 +95,17 @@ The level is derived from probe results, never from the mechanism name. `Isolati
 
 | Level | When |
 | --- | --- |
-| `enforced` | `sandbox-exec` and all of the above held. darwin/amd64 only (SB-1). |
+| `enforced` | A mechanism other than `proxy`/`none`, and all of the above held. Ratified for `sandbox-exec` on darwin/amd64 (SB-1); every other platform is judged from its own probes, never inferred. |
 | `weak-proxy` | `ISOLATION=proxy`, or any probe missing or failing. Functional results only, "offline not verified". |
 | `none` | `ISOLATION=none`. |
+
+Mechanisms (OD-4, OD-4-M27.07):
+
+| `ISOLATION` | Platform | What it does |
+| --- | --- | --- |
+| `sandbox-exec` | macOS | `scripts/qualify/sandbox.sb`: outbound denied except loopback and Unix sockets under the run directory; network daemons' mach-lookup denied; reads under the real home denied. |
+| `unshare` | Linux | `sudo -n unshare --net --mount`: a network namespace with only `lo` up, the real home covered by an empty mode-000 tmpfs, then `setpriv` back to the invoking uid and gid before `env -i` starts the test binary. Needs passwordless sudo (GitHub-hosted runners). |
+| `firewall` | Windows (`qualify.ps1`) | Per-program outbound block rules, in one rule group, for every executable in the run directory; the group is deleted afterwards and its absence checked. The rules cannot name the per-process engine copies or the provider plugins created during the run, and the home stays readable, so the probes are expected to give `weak-proxy`. |
 
 `credentialFilesReachable` comes from the home-read check (OD-14). It is `null` when no isolated probe ran.
 
@@ -273,3 +283,25 @@ OpenTofu 1.6.3 runs twice, with different Terraform partners. A per-version resu
 - **Timeout.** When the test binary hits `-test.timeout` (90 minutes in `qualify.sh`), Go panics and exits with status 2. `TestMain` does not finish, so there is no `run.json`. Only `run.partial.json` is left (`partial: true`, `goTestExit: -1`), holding just the scenarios that had already finished. The scenario that was running is not recorded, and its directory is not cleaned up. Nothing guarantees that its Hclaro or engine processes are stopped. `qualify.sh` then reports "no run.json written" and exits 1. M27.08 must treat such a run as invalid. Per-scenario operation timeouts (for example 15 minutes for a plan) are separate: they give that scenario `FAIL`, and the run continues.
 - Leftover processes are sampled once after each scenario (`pgrep` on Unix, because macOS `ps` is setuid and the sandbox refuses it; `Win32_Process` on Windows). A process that starts and exits between samples is not seen.
 - The fixture guard is a textual scan, not an HCL parser. It fails closed: JSON and override files, unknown sources, resource types and backends are refused.
+
+## Platforms (M27.07)
+
+`.github/workflows/real-engine.yml` (OD-7) runs the `PLATFORM` engine set, Terraform 1.17.2 and OpenTofu 1.13.9, on `ubuntu-24.04` (linux/amd64, `unshare`), `ubuntu-24.04-arm` (linux/arm64, `unshare`), `macos-15` (darwin/arm64, `sandbox-exec`) and `windows-2025` (windows/amd64, `firewall`).
+
+- It runs only on `workflow_dispatch`, and is never a required check. It needs no secrets: the token has `contents: read`, and checkout does not persist credentials. Actions are pinned to commit SHAs. No dependency-update tool covers the file. `TestRealEngineTagNotInCI` enforces these rules.
+- Each job does the following, in order:
+  1. Checks that `gpg`, `jq`, `curl` and `unzip` are on the image (nothing is installed), and records the image (`ImageOS`, `ImageVersion`), OS build, architecture and tool versions in the job summary.
+  2. Downloads the engines with `fetch-engines.sh --platform`, then builds the platform's provider mirror with `PLATFORM=… mirror-providers.sh`. Both hard-fail on a pin, checksum or signature mismatch.
+  3. Runs `make qualify` (Windows: `qualify.ps1`). The runner label and image are compiled into `run.json` as `runnerImage`/`runnerImageVersion`.
+- Only `OUT` (`run.json`, `run.partial.json`, the sanitised artifacts and, on Windows, `f5/run.json` and `qualify/firewall-rules.txt`) is uploaded. The raw run directory never is, and `HCLARO_QUAL_KEEP` is never set.
+- `verify-mirror.sh` stays macOS-only. On the runners, the harness re-hashes the providers against `mirror-manifest.json`, and the isolated probes judge the isolation level.
+- The Windows job also runs F-5 (`TestF5WindowsInterrupt`, fake engine only, `continue-on-error`). It sends `CTRL_BREAK` to Hclaro's process group, both while idle in Hub mode and during a slow fake apply in launch mode. It then records whether Hclaro shut down on its own, printed the shutdown notice, and interrupted the engine once instead of killing it.
+
+Platform scenarios (`TestRealPlatform`, and H5d in `TestRealHubPaths`):
+
+| ID | Where | What |
+| --- | --- | --- |
+| WIN1 | windows | `NOT_TESTED`: needs a PowerShell gate fixture (OD-8 covers only `gate.sh`) and a passing F-5. `SKIPPED` elsewhere, where A6, A7 and A7b run. |
+| WIN2 (H5d) | windows | Drive-letter case, the 8.3 short name (when the volume has one) and a `mklink /J` junction are each refused as the same project and claim the same root. The claim half uses the named-pipe hold, which is Unix-only, so it is `NOT_TESTED` until there is a Windows hold. |
+| WIN3 | windows | Saved-plan folder and file ACLs, parsed from `icacls`: only the owner, SYSTEM, Administrators and CREATOR OWNER may hold allow entries. Saved plans are removed after the apply and after shutdown, with the read-only attribute set. Expiry (one hour) is not waited for. |
+| WIN4 | every platform | `.tf` and `.tfvars` files, the canary var file included, are rewritten with CRLF line endings before init. Then the I1 import (preview, plan, apply) and the I3 generated-configuration import (redaction) run. |

@@ -7,7 +7,7 @@ OPENTOFU_FPR=E3E6E43D84CB852EADB0051D0C0AF313E5FD9F80  # OD-6b
 
 die() { echo "error: $*" >&2; exit 1; }
 
-sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+sha256() { { sha256sum "$1" 2>/dev/null || shasum -a 256 "$1"; } | cut -d' ' -f1; }
 
 # fetch <url> <out>: HTTPS only, no redirects off https, size-capped.
 fetch() {
@@ -41,6 +41,7 @@ verify_sig() {
 # clean_env <cmd...>: run an engine outside the sandbox with no inherited environment or credentials.
 # Needs CLEAN_HOME and TF_CLI_CONFIG_FILE set by the caller.
 clean_env() {
-  env -i PATH=/usr/bin:/bin HOME="$CLEAN_HOME" TMPDIR="$CLEAN_HOME" CHECKPOINT_DISABLE=1 \
+  # Windows (Git Bash) engines need SystemRoot for networking; empty elsewhere.
+  env -i PATH=/usr/bin:/bin ${SYSTEMROOT:+SYSTEMROOT="$SYSTEMROOT"} HOME="$CLEAN_HOME" TMPDIR="$CLEAN_HOME" TMP="$CLEAN_HOME" TEMP="$CLEAN_HOME" CHECKPOINT_DISABLE=1 \
     TF_CLI_CONFIG_FILE="$TF_CLI_CONFIG_FILE" TF_IN_AUTOMATION=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 "$@"
 }

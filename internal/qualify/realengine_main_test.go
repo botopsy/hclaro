@@ -21,7 +21,8 @@ import (
 func init() { realEngineBuild = true }
 
 // od1 is the OD-1 approved engine binary list (darwin_amd64, fetch-engines.sh output of
-// 2026-11-14, evidence p2-2026-11-14/engines-run1.txt). Other platforms need their own approval.
+// 2026-11-14, evidence p2-2026-11-14/engines-run1.txt). The M27.07 platforms' archives are
+// pinned (OD-3-M27.07); their binary hashes are added from the first real-engine workflow run.
 var od1 = map[string]Approval{
 	"a4ac9d8302cf1b929d468ad44f40fad9e61eb4ea7a5e6c8ad234d7f02d71115f": {"terraform", "1.5.5", "6d61639e2141b7c23a9219c63994f729aa41f91110a1aa08b8a37969fb45e229"},
 	"1ed224ce22941b1a7bc4f291cdafff44c039aaa9aaaac836d1f215fac6d21dc5": {"terraform", "1.5.7", "b310ec0e626e9799000cfc8e30247cd827cf7f8030c8e0400257c7f111e93537"},

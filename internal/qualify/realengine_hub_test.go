@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -429,8 +430,34 @@ func TestRealHubPaths(t *testing.T) {
 		}
 		s.NotTested("case-sensitive volume variant not implemented on this platform")
 	})
+	// H5d is WIN2 (M27.07): drive-letter case, the 8.3 short name and a junction alias.
 	hubScenario(t, "h5d-windows-forms-"+name, name, func(s *Scenario) {
-		s.Skip("drive-letter case and 8.3 short names apply to windows/amd64 only (M27.07)")
+		if runtime.GOOS != "windows" {
+			s.Skip("drive-letter case, 8.3 short names and junctions apply to windows/amd64 only (WIN2)")
+		}
+		project := s.ProjectAs("hub-hold", "Proj", stateWrites...)
+		vol := filepath.VolumeName(project)
+		swapped := strings.ToLower(vol)
+		if swapped == vol {
+			swapped = strings.ToUpper(vol)
+		}
+		forms := []string{swapped + project[len(vol):]}
+		if short := shortPath(project); short != "" && !strings.EqualFold(short, project) {
+			forms = append(forms, short)
+		} else {
+			s.Observe("WIN2: no 8.3 short name differs from the path (%q); that form is not exercised", s.run.San.String(short))
+		}
+		junction := filepath.Join(s.Dir, "junction")
+		if out, err := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe"), "/c", "mklink", "/J", junction, project).CombinedOutput(); err != nil {
+			s.Fatalf("WIN2 junction: %v %s", err, out)
+		}
+		forms = append(forms, junction)
+		s.Observe("WIN2 forms: %s", s.run.San.String(strings.Join(forms, " | ")))
+		dirs, env := hubProcess(s)
+		s.SetupInit(dirs, env, name, project)
+		for _, form := range forms {
+			h5Claim(s, dirs, env, name, project, form, forms)
+		}
 	})
 }
 
@@ -1006,7 +1033,7 @@ func TestRealHubShutdown(t *testing.T) {
 		// P4 and P5 per scope.
 		for _, name := range engines() {
 			g := gates[name]
-			e := historyFile(s, g)
+			e := historyFile(s, g.dirs.Config, g.planID)
 			stage2 := gateState(s, g, name)
 			_, lockErr := os.Stat(filepath.Join(g.project, ".terraform.tfstate.lock.info"))
 			diag := ""

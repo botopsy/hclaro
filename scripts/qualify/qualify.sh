@@ -4,7 +4,9 @@
 #   TF_ALT, TOFU_ALT  optional second OD-1 binary of the same engine (M27.05 H6 binary swap)
 #   MIRROR     the M27.01 mirror root (mirror-manifest.json, terraform/, tofu/, *.tfrc)
 #   OUT        result directory (run.json, artifacts/, probes)
-#   HCLARO_BIN default bin/hclaro; ISOLATION default sandbox-exec on macOS, else proxy;
+#   HCLARO_BIN default bin/hclaro; ISOLATION default sandbox-exec on macOS, else proxy
+#   (unshare: Linux network + mount namespaces, needs passwordless sudo);
+#   RUNNER_LABEL with the GitHub runner's ImageOS/ImageVersion, recorded as the runner image;
 #   HCLARO_QUAL_KEEP=1 keeps the raw run directory on failure; RUN_FILTER is passed to -test.run.
 # Everything is compiled here, outside the isolation, while the network is available. The
 # test binary, hclaro, netprobe, the engines and the mirror are then copied into a run
@@ -20,8 +22,14 @@ hclaro=${HCLARO_BIN:-$repo/bin/hclaro}
 [ -x "$hclaro" ] || die "hclaro binary missing: $hclaro (run make binary)"
 real_home=$(cd "$HOME" && pwd -P)
 case $(uname -s) in Darwin) isolation=${ISOLATION:-sandbox-exec} ;; *) isolation=${ISOLATION:-proxy} ;; esac
-case $isolation in sandbox-exec|proxy|none) ;; *) die "ISOLATION must be sandbox-exec, proxy or none" ;; esac
+case $isolation in sandbox-exec|unshare|proxy|none) ;; *) die "ISOLATION must be sandbox-exec, unshare, proxy or none" ;; esac
 [ "$isolation" != sandbox-exec ] || [ "$(uname -s)" = Darwin ] || die "sandbox-exec is macOS only"
+[ "$isolation" != unshare ] || [ "$(uname -s)" = Linux ] || die "unshare is Linux only"
+# F-0 check 8 (OD-14): the isolated probe must fail to read this file, so it has to exist and be
+# readable outside; a missing file would fail the read without any isolation.
+canary=$real_home/hclaro-qualify/home-read-canary
+[ -f "$canary" ] || { mkdir -p "$(dirname "$canary")" && echo "hclaro home-read canary" >"$canary"; }
+[ -r "$canary" ] || die "home-read canary not readable outside the isolation: $canary"
 
 run=$(cd "$(mktemp -d /tmp/hclaro-qualify.XXXXXX)" && pwd -P)
 case $run/ in "$real_home"/*) die "run dir $run is under the real home" ;; esac
@@ -40,6 +48,7 @@ dirty=false
 [ -z "$(git -C "$repo" status --porcelain)" ] || dirty=true
 pkg=hclaro/internal/qualify
 ldflags="-X $pkg.buildCommit=$commit -X $pkg.buildDirty=$dirty -X $pkg.buildHome=$real_home -X $pkg.buildRepo=$repo -X $pkg.buildUser=$(id -un)"
+[ -z "${ImageOS:-}" ] || ldflags="$ldflags -X $pkg.buildRunnerImage=${RUNNER_LABEL:-unknown}/$ImageOS -X $pkg.buildRunnerImageVersion=${ImageVersion:-unknown}"
 # cgo on macOS only: F3 reads Hclaro's own peak memory with proc_pid_rusage (rss_darwin.go).
 cgo=0
 [ "$(uname -s)" != Darwin ] || cgo=1
@@ -74,6 +83,14 @@ case $isolation in
   sandbox-exec)
     (cd "$run" && env -i "${vars[@]}" sandbox-exec -D REAL_HOME="$real_home" -D RUN_TMP="$run" -f "$run/sandbox.sb" \
       "$run/qualify.test" "${args[@]}") 2>&1 | tee "$run/go-test.log"
+    code=${PIPESTATUS[0]} ;;
+  unshare)
+    # OD-4-M27.07: new network and mount namespaces as root, loopback up, the real home hidden
+    # behind an empty mode-000 tmpfs, then back to the invoking user's uid and gid.
+    (cd "$run" && sudo -n unshare --net --mount -- /bin/sh -c \
+      'ip link set lo up && mount -t tmpfs -o mode=000,size=4k none "$1" && u=$2 g=$3 && shift 3 &&
+       exec setpriv --reuid="$u" --regid="$g" --init-groups env -i "$@"' \
+      sh "$real_home" "$(id -u)" "$(id -g)" "${vars[@]}" "$run/qualify.test" "${args[@]}") 2>&1 | tee "$run/go-test.log"
     code=${PIPESTATUS[0]} ;;
   *)
     (cd "$run" && env -i "${vars[@]}" "$run/qualify.test" "${args[@]}") 2>&1 | tee "$run/go-test.log"

@@ -1,8 +1,11 @@
 package qualify
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -482,4 +485,77 @@ func (s *Scenario) OpenView(h *Hclaro, projectID, workspace, profileID string) (
 		}
 	}
 	return c.ID, addrs
+}
+
+// waitRunning polls the operation (60 s) until it is running.
+func waitRunning(s *Scenario, h *Hclaro, id string) Operation {
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		var op Operation
+		if r, err := h.client.Do("GET", "operations/"+id, nil, &op); err != nil || r.Status != 200 {
+			s.Fatalf("operation: %v %d", err, r.Status)
+		}
+		if op.Status == "running" {
+			return op
+		}
+		if op.Status != "queued" && op.Status != "starting" || time.Now().After(deadline) {
+			s.Fatalf("apply %s, not running (60 s)", op.Status)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// shutdownNotice is the notice Hclaro prints when stopped during an apply.
+const shutdownNotice = "An apply is running. Hclaro interrupts it once"
+
+// engineAck is the engine's interrupt acknowledgement in its log (-json "log" message).
+const engineAck = "Interrupt received"
+
+// historyFile reads the final apply entry for planID from history.json in the config dir
+// (read-only, after Hclaro exited).
+func historyFile(s *Scenario, config, planID string) HistoryEntry {
+	var found *HistoryEntry
+	_ = filepath.WalkDir(config, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != "history.json" {
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		var doc struct {
+			Entries []HistoryEntry `json:"entries"`
+		}
+		if err != nil || json.Unmarshal(b, &doc) != nil {
+			return nil
+		}
+		for i := range doc.Entries {
+			if e := doc.Entries[i]; e.Kind == "apply" && e.Outcome.PlanID == planID {
+				found = &e
+			}
+		}
+		return nil
+	})
+	if found == nil {
+		s.Fatalf("history.json has no apply entry for the plan")
+	}
+	return *found
+}
+
+func exitCode(c *int) string {
+	if c == nil {
+		return "absent"
+	}
+	return fmt.Sprint(*c)
+}
+
+func stdoutHas(h *Hclaro, text string) bool {
+	b, _ := os.ReadFile(h.Stdout)
+	return bytes.Contains(b, []byte(text))
+}
+
+// excerptAcks counts the acknowledgement in a history entry's log excerpt.
+func excerptAcks(e HistoryEntry) int {
+	n := 0
+	for _, l := range e.Excerpt {
+		n += strings.Count(l.Text, engineAck)
+	}
+	return n
 }

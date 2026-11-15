@@ -12,9 +12,13 @@ mkdir -p "$1"
 dir=$(cd "$1" && pwd) engines=$(cd "$2" && pwd)
 fixture=$QUALIFY_DIR/../../fixtures/qualify/providers/versions.tf
 providers="random:3.9.1 local:2.9.1" # OD-2; must match the fixture
-platforms="darwin_amd64"            # OD-3 until OD-7; each new platform needs a download approval
+# One platform per mirror, the host's (OD-3; OD-3-M27.07 adds the four M27.07 platforms).
+platforms=${PLATFORM:-darwin_amd64}
+case $platforms in darwin_amd64|darwin_arm64|linux_amd64|linux_arm64|windows_amd64) ;; *) die "platform not approved: $platforms" ;; esac
+exe=
+case $platforms in windows_*) exe=.exe ;; esac
 # The newest approved engine of each family builds that family's mirror.
-families="terraform:terraform-1.17.2-darwin_amd64/terraform tofu:opentofu-1.13.9-darwin_amd64/tofu"
+families="terraform:terraform-1.17.2-$platforms/terraform$exe tofu:opentofu-1.13.9-$platforms/tofu$exe"
 
 for p in $providers; do grep -q "\"= ${p#*:}\"" "$fixture" || die "fixture does not pin ${p%%:*} ${p#*:}"; done
 
@@ -49,6 +53,15 @@ for f in $families; do
     esac
     sums=terraform-provider-${name}_${v}_SHA256SUMS
     fetch "$base/$sums" "$work/$family-$sums"
+    # The signed files as seen in F-6 (2026-11-14): any upstream change fails here.
+    case $host/$name/$v in
+      registry.terraform.io/random/3.9.1) pinned=fa551977fc2b4466daca08701e2d0d028ed5fe43d53dab3b0c30602a5313d6f8 ;;
+      registry.terraform.io/local/2.9.1) pinned=af22736041df36a229a9476535e0063609a8daf657917495807ba9859ccd12b2 ;;
+      registry.opentofu.org/random/3.9.1) pinned=3fe7fda25990d42edb7d69141fc761ccf513a6d9c7c287b77ff2024c8c4962a4 ;;
+      registry.opentofu.org/local/2.9.1) pinned=58816e9e6e049fe8cf710e10cdf58cf2ccdf22172fe257b73ab2d99235fe2a7e ;;
+      *) die "$family: no pinned SHA256SUMS for $host $name $v" ;;
+    esac
+    [ "$(sha256 "$work/$family-$sums")" = "$pinned" ] || die "$family: $sums differs from the F-6 pin $pinned"
     fetch "$base/$sig" "$work/$family-$sig"
     sigline=$(verify_sig "$work/$family-$sig" "$work/$family-$sums" "$QUALIFY_DIR/keys/$key" "$fpr")
     for pl in $platforms; do

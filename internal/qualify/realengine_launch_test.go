@@ -306,38 +306,7 @@ func TestRealLaunchImport(t *testing.T) {
 			assertStateUnchanged(s, project, sum, serial, "after the refused import")
 		})
 		run.Scenario(t, "i3-generated-config-"+name, name, "launch", false, func(s *Scenario) {
-			project, _, _, h := launch(s, name, "launch-import", "imports.tf")
-			// random_password's import ID is the password, so the canary is the ID. The preview's
-			// import block must repeat the user's input; only that exact echo is masked, and the
-			// generated configuration, plan, history and logs stay under the canary check.
-			req := ImportRequest("random_password.generated", s.run.Canary, true)
-			// The block (id = "…") and the manual recipe (terraform import '…' '…').
-			h.client.echo = []string{`id = \"` + s.run.Canary + `\"`, `'` + s.run.Canary + `'`}
-			p := s.PreviewImport(h, req)
-			h.client.echo = nil
-			s.Observe("I3 preview repeated the typed import ID in its import block %d time(s) (masked as user input)", h.client.echoed)
-			if p.Blocked || p.GeneratedFile == "" {
-				s.Fatalf("I3 preview: blocked %v generated file %q issues %+v", p.Blocked, p.GeneratedFile, p.Issues)
-			}
-			s.AllowWrite(project, p.GeneratedFile)
-			detail := s.ImportPlan(h, project, name, req, p, []string{"launch.tfvars"})
-			s.Observe("I3 import plan: %s", detail)
-			if detail.Imports != 1 {
-				s.Fatalf("I3 plan: %s, %d imports, want 1", detail, detail.Imports)
-			}
-			if detail.GeneratedConfig == "" {
-				s.Fatalf("I3 plan shows no generated configuration")
-			}
-			if strings.Contains(detail.GeneratedConfig, s.run.Canary) {
-				s.Fatalf("I3 generated configuration shows the canary")
-			}
-			s.Artifact("generated-config.txt", []byte(detail.GeneratedConfig))
-			b, err := os.ReadFile(filepath.Join(project, p.GeneratedFile))
-			if err != nil {
-				s.Fatalf("I3 generated file: %v", err)
-			}
-			// The engine's file is not Hclaro output; whether it holds the canary is recorded.
-			s.Observe("I3 engine-written %s contains the canary: %v", p.GeneratedFile, strings.Contains(string(b), s.run.Canary))
+			i3Generated(s, name, launchStart)
 		})
 	}
 }
@@ -713,24 +682,6 @@ func hold(s *Scenario, dirs ProcessDirs, engine, project string) *Holder {
 	}
 }
 
-// waitRunning polls the operation (60 s) until it is running.
-func waitRunning(s *Scenario, h *Hclaro, id string) Operation {
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		var op Operation
-		if r, err := h.client.Do("GET", "operations/"+id, nil, &op); err != nil || r.Status != 200 {
-			s.Fatalf("operation: %v %d", err, r.Status)
-		}
-		if op.Status == "running" {
-			return op
-		}
-		if op.Status != "queued" && op.Status != "starting" || time.Now().After(deadline) {
-			s.Fatalf("apply %s, not running (60 s)", op.Status)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
 const lockWait = "Acquiring state lock. This may take a few moments..."
 
 // TestRealLaunchOptions covers A5 (apply options and lock timeout).
@@ -998,6 +949,42 @@ func r1Replace(s *Scenario, name string, start starter) {
 		s.Fatalf("51 selections started an operation")
 	}
 	s.Observe("51 selections refused: %d %s", r.Status, r.Code)
+}
+
+// i3Generated imports random_password with generated configuration (I3).
+func i3Generated(s *Scenario, name string, start starter) {
+	project, _, _, h := openWith(s, start, name, "launch-import", "imports.tf")
+	// random_password's import ID is the password, so the canary is the ID. The preview's
+	// import block must repeat the user's input; only that exact echo is masked, and the
+	// generated configuration, plan, history and logs stay under the canary check.
+	req := ImportRequest("random_password.generated", s.run.Canary, true)
+	// The block (id = "…") and the manual recipe (terraform import '…' '…').
+	h.client.echo = []string{`id = \"` + s.run.Canary + `\"`, `'` + s.run.Canary + `'`}
+	p := s.PreviewImport(h, req)
+	h.client.echo = nil
+	s.Observe("I3 preview repeated the typed import ID in its import block %d time(s) (masked as user input)", h.client.echoed)
+	if p.Blocked || p.GeneratedFile == "" {
+		s.Fatalf("I3 preview: blocked %v generated file %q issues %+v", p.Blocked, p.GeneratedFile, p.Issues)
+	}
+	s.AllowWrite(project, p.GeneratedFile)
+	detail := s.ImportPlan(h, project, name, req, p, []string{"launch.tfvars"})
+	s.Observe("I3 import plan: %s", detail)
+	if detail.Imports != 1 {
+		s.Fatalf("I3 plan: %s, %d imports, want 1", detail, detail.Imports)
+	}
+	if detail.GeneratedConfig == "" {
+		s.Fatalf("I3 plan shows no generated configuration")
+	}
+	if strings.Contains(detail.GeneratedConfig, s.run.Canary) {
+		s.Fatalf("I3 generated configuration shows the canary")
+	}
+	s.Artifact("generated-config.txt", []byte(detail.GeneratedConfig))
+	b, err := os.ReadFile(filepath.Join(project, p.GeneratedFile))
+	if err != nil {
+		s.Fatalf("I3 generated file: %v", err)
+	}
+	// The engine's file is not Hclaro output; whether it holds the canary is recorded.
+	s.Observe("I3 engine-written %s contains the canary: %v", p.GeneratedFile, strings.Contains(string(b), s.run.Canary))
 }
 
 func i1ImportScenario(s *Scenario, name string, start starter) {

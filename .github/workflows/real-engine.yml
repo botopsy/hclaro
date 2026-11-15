@@ -1,0 +1,91 @@
+name: Real-engine qualification
+# M27.07 (OD-7): real Terraform 1.17.2 and OpenTofu 1.13.9 against hclaro on the platforms the
+# maintainer machine cannot cover. Manual only (workflow_dispatch, no other event)
+# and never a required check. No secrets; the token reads contents only. Engines and
+# providers are downloaded here and must match the SHA-256s pinned in scripts/qualify and their
+# signed SHA256SUMS (OD-6), or the job fails. The qualification itself runs offline inside the
+# platform's isolation; only OUT (run.json and sanitised artifacts) is uploaded.
+# Not covered by dependency updates (there is no Dependabot or Renovate config); action pins
+# change only by hand, so the qualification environment never changes silently.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  qualify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, platform: linux_amd64, isolation: unshare }
+          - { runner: ubuntu-24.04-arm, platform: linux_arm64, isolation: unshare }
+          - { runner: macos-15, platform: darwin_arm64, isolation: sandbox-exec }
+          - { runner: windows-2025, platform: windows_amd64, isolation: firewall }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    env:
+      RUNNER_LABEL: ${{ matrix.runner }}
+      PLATFORM: ${{ matrix.platform }}
+      ISOLATION: ${{ matrix.isolation }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - name: Record the environment
+        run: |
+          set -euo pipefail
+          for t in gpg gpgconf jq curl unzip; do command -v "$t" >/dev/null || { echo "missing tool: $t (not installed by this workflow)"; exit 1; }; done
+          case $PLATFORM in
+            linux_*) cs=$(cat /etc/os-release | grep ^PRETTY_NAME=) ;;
+            darwin_*) cs="$(sw_vers -productVersion) $(sw_vers -buildVersion)" ;;
+            windows_*) cs=$(cmd //c ver | tr -d '\r') ;;
+          esac
+          {
+            echo "### $RUNNER_LABEL ($PLATFORM)"
+            echo '```'
+            echo "image $ImageOS $ImageVersion; os $cs; arch $(uname -m)"
+            echo "isolation $ISOLATION; commit $(git rev-parse HEAD)"
+            go version; gpg --version | head -1; jq --version
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Fetch engines (pinned, signature-checked)
+        run: scripts/qualify/fetch-engines.sh "$RUNNER_TEMP/q/engines" --platform "$PLATFORM" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Build the provider mirror (pinned, signature-checked)
+        run: scripts/qualify/mirror-providers.sh "$RUNNER_TEMP/q/mirror" "$RUNNER_TEMP/q/engines" | tee -a "$GITHUB_STEP_SUMMARY"
+      # Unix: make qualify builds bin/hclaro itself. The Windows image has no make.
+      - name: Build hclaro (Windows)
+        if: runner.os == 'Windows'
+        run: CGO_ENABLED=0 go build -trimpath -buildvcs=false -o bin/hclaro.exe ./cmd/hclaro
+      - name: F-5 Windows interrupt delivery (fake engine)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: HCLARO_QUAL_F5_OUT="$RUNNER_TEMP/q/out/f5" go test -count=1 -v -run '^TestF5WindowsInterrupt$' ./internal/qualify
+      - name: Qualify (Unix)
+        if: runner.os != 'Windows'
+        run: >-
+          make qualify
+          TF="$RUNNER_TEMP/q/engines/terraform-1.17.2-$PLATFORM/terraform"
+          TOFU="$RUNNER_TEMP/q/engines/opentofu-1.13.9-$PLATFORM/tofu"
+          MIRROR="$RUNNER_TEMP/q/mirror" OUT="$RUNNER_TEMP/q/out/qualify"
+      - name: Qualify (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          scripts/qualify/qualify.ps1
+          -Terraform "$env:RUNNER_TEMP\q\engines\terraform-1.17.2-$env:PLATFORM\terraform.exe"
+          -Tofu "$env:RUNNER_TEMP\q\engines\opentofu-1.13.9-$env:PLATFORM\tofu.exe"
+          -Mirror "$env:RUNNER_TEMP\q\mirror" -Out "$env:RUNNER_TEMP\q\out\qualify" -Isolation $env:ISOLATION
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: real-engine-${{ matrix.platform }}
+          path: ${{ runner.temp }}/q/out/
+          retention-days: 30
+          if-no-files-found: error
