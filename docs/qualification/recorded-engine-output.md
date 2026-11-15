@@ -25,8 +25,8 @@ Found by these recordings and fixed: Terraform 1.5 and OpenTofu name resources t
 Differences between versions (M27.06), all parsed to the same result:
 
 - Terraform 1.5.5 and 1.5.7: identical output apart from timestamps, version strings and line order.
-- OpenTofu 1.6.3 against 1.13.9: 1.6.3 prints one `(expand)` node per variable where 1.13.9 prints `(expand, input)` and `(expand, reference)` (pinned by `TestRealEngineGraphVariableNodes`); its `show -json` configuration omits the variables' `required` and `type` fields; and in `local-missing-file.jsonl` it plans `local_file.same` as an update before the `file()` error, while 1.13.9 does not. Each recording still classifies as `plan_failed`.
-- Terraform 1.5.x and OpenTofu 1.6.3 reject `lifecycle { destroy = false }` at init ("An argument named \"destroy\" is not expected here"), so the M27.04 F4 scenario is `NOT_TESTED` on them.
+- OpenTofu 1.6.3 against 1.13.9: 1.6.3 prints one `(expand)` node per variable where 1.13.9 prints `(expand, input)` and `(expand, reference)` (pinned by `TestRealEngineGraphVariableNodes`); its `show -json` configuration omits the variables' `required` and `type` fields; and in `local-missing-file.jsonl` it plans `local_file.same` as an update before the `file()` error, while 1.13.9 does not. `TestRealEngineFailureStreams` pins the same sanitized diagnostic for both (no shared class; the manager reports `plan_failed`).
+- Terraform 1.5.5, Terraform 1.5.7 and OpenTofu 1.6.3 reject `lifecycle { destroy = false }` at init ("An argument named \"destroy\" is not expected here"), so the M27.04 F4 scenario is `NOT_TESTED` on them.
 
 ## Not covered
 
