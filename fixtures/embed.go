@@ -117,8 +117,9 @@ var AWS embed.FS
 //go:embed cost/infracost-breakdown.json
 var CostInfracost []byte
 
-// Qualify holds the M27 real-engine harness project templates (internal/qualify). "@CANARY@"
-// is replaced with the run's canary when a template is copied.
+// Qualify holds the M27 real-engine harness project templates (internal/qualify), plus the
+// M26.16 recording project (engines/project, M27.04 G1). "@CANARY@" is replaced with the
+// run's canary when a template is copied.
 //
-//go:embed all:qualify
+//go:embed all:qualify engines/project
 var Qualify embed.FS

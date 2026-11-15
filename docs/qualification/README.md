@@ -81,7 +81,7 @@ Everything else goes through Hclaro. `internal/qualify/direct.go` holds the only
 | `init -input=false -no-color` (mirror config) | Setup when the scenario does not test init; recorded as `setupInit: direct` |
 | `show -json`, `show -json <statefile>`, `state list`, `workspace show`, `workspace list` | Read-only verification |
 | F-2 lock holders (OD-9): `console -no-color` with stdin held open (Terraform 1.5.x, OpenTofu); `plan -input=false -no-color` with `TF_VAR_hold=true`, blocked on a named pipe read by a gated `data "local_file"` (Terraform 1.17.2, Unix only) | M27.03 A5; long-running, started by `startHolder`, released by closing stdin or writing the pipe. Recorded as `lock holder: <command>` in `directEngineCall` |
-| `plan -lock-timeout=0s` | Added with M27.04 L1; not present yet |
+| `plan -lock-timeout=0s` | Not used: M27.04 L1 shows the holder's lock through the lock-info file and Hclaro's own `state_locked` |
 
 ## Isolation levels
 
@@ -202,6 +202,31 @@ Notes on how the scenarios observe things:
 - **History outcome names.** History stores an apply whose operation outcome is `uncertain` (or a cancelled apply) as result `partial` (`internal/history/convert.go`). A7 and A7b accept `partial` as the task's "uncertain".
 - **NOT_TESTED still checks cleanup.** A scenario stopped as `NOT_TESTED` still gets the canary and cleanup checks, so a leftover process or file makes it `FAIL`.
 - **N1 isolation.** N1 runs once the isolated probe before the run has passed. If the probe after the run fails, a `PASS` becomes `NOT_TESTED` (offline not verified).
+
+## M27.04 drift, graph, lock and failure scenarios
+
+`realengine_drift_test.go` holds the M27.04 scenarios (task file `tasks/M27/tasks/M27-04-DRIFT-GRAPH-FAILURES.md`), once per configured engine, in the same two `CORE` runs as M27.03.
+
+| Test | Scenarios | Fixture |
+| --- | --- | --- |
+| `TestRealDrift` | D1 `local_file` deleted, D2 edited, D3 no drift, D4 kept scan after a `main.tf` edit | `drift` (applied through Hclaro first) |
+| `TestRealGraph` | G1 graph and plan overlay of the M26.16 recording project (`fixtures/engines/project`, synthetic state with orphans) and of a module-heavy project (`for_each` modules, nested modules, keyed instances; `retired.tf` is applied, then deleted, so its objects become orphans) | `engines/project`, `graph` |
+| `TestRealLocks` | L1 `state_locked` for apply, plan and drift while the F-2 holder (OD-9) holds the lock; L2 `NOT_TESTED` (F-3) | `launch-lock` |
+| `TestRealFailures` | F1 `plan_failed` (`file()` on a missing path from a var file), F2 `init_required` (providers removed after init; lock file changed; a never-initialized project), F3 `plan_too_large`, F4 `unknown_actions`, F5 F1 and F2 again under `LANG`/`LC_ALL=de_DE.UTF-8` | `failures`, `forget` |
+
+- **Every drift scan** asserts a refresh-only `plan` in the engine argv, and that the state file's serial and bytes are unchanged afterwards, including the scan that fails on the lock.
+- **D2** compares Hclaro with the engine's own refresh-only plan for the same edit, recorded as `fixtures/engines/<engine>/local-drift.json` and pinned by `TestRealEngineLocalFileDrift`. hashicorp/local 2.9.1 reports an edited file as deleted on every `CORE` engine, so no approved provider yields attribute-level drift.
+- **G1** copies the M26.16 project with its test secret replaced by the run canary, so the standard canary scan covers it. It passes when no node is `unknown`, every resource and data node is `exact` (mapped to state) or `configuration`, and every confirmed change of the reviewed plan sits on exactly one node, the node of its own address with instance keys removed and with the plan's action, or in the overlay's unmapped list. Only orphans may be unmapped. Terraform 1.5.x lists orphans as graph nodes mapped to state; a graph without them leaves them unmapped.
+- **L1** approves the apply's plan before the holder takes the lock. While the holder runs, the lock-info file must keep its SHA-256 and the engine diagnostics must carry "Lock Info". After the release the holder, never Hclaro, removes the lock.
+- **F2, never initialized:** Hclaro does not run the engine for a project that needs init. The scenario asserts the project read's `uninitialized` diagnostic, which tells the user to run init, and records `NOT_TESTED`, because no engine output was classified. The engine's own missing-init text is pinned by the `local-noinit.jsonl` recordings (`init_required`). F2 `PASS` rests on the providers-removed and lock-file variants.
+- **F1** asserts the diagnostic reaches Hclaro's output with the var-file path replaced (`no file exists at "[redacted]"`). The recording's path contains "SECRET", so `TestRealEngineFailureStreams` pins the other sanitizer outcome: the line is withheld.
+- **F3 peak memory.** The bound is **512 MiB**, set before the first evidence run. The method is Hclaro's own peak, read while it still runs, after the oversized plan:
+  - macOS: `proc_pid_rusage` `RUSAGE_INFO_V4` `ri_lifetime_max_phys_footprint`, the peak physical footprint, which is close to but not the same as peak RSS. This needs cgo, so `qualify.sh` builds the test binary with `CGO_ENABLED=1` on macOS only.
+  - Linux: `VmHWM` from `/proc/<pid>/status`.
+  - Windows: not measured, so F3 is `NOT_TESTED` there.
+  - `getrusage` after exit is not used, because the `wait4` usage includes the reaped engine children: one dev run read 800 MiB that way, while Hclaro alone was about 230 MiB.
+- **F4** needs an engine that plans `["forget","create"]`. The trigger found is a forced replacement under `lifecycle { destroy = false }`, which Terraform 1.17.2 and OpenTofu 1.13.9 accept. Hclaro marks the plan `unknown_actions` in its apply status, and the approval is refused at the preflight (`preflight_blocked:plan.eligible,…`), not with the literal code. An engine that rejects the fixture records `NOT_TESTED`, with the engine's diagnostic in the reason.
+- **Recordings.** `scripts/fixtures/record-engine.sh <engine> <out> <mirror.tfrc>` also records `fixtures/engines/local-project` (provider from the offline mirror, synthetic state, never applied): `local-drift.json[l]`, `local-missing-file.jsonl`, `local-noinit.jsonl` and `local-lockfile.jsonl`. M27.04 ran it with `env -i` under `sandbox.sb`, with `TMPDIR` inside `RUN_TMP` so that provider sockets are allowed.
 
 ## Limitations
 

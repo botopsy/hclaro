@@ -202,6 +202,10 @@ type Operation struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"diagnostic"`
+	// Diagnostics are the sanitized engine diagnostics.
+	Diagnostics []struct {
+		Severity, Summary, Detail string
+	} `json:"engineDiagnostics"`
 }
 
 // Follow reads the operation's SSE stream (path is "operations/<id>" or a scoped
