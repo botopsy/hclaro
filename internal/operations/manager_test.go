@@ -364,6 +364,23 @@ func TestLogIsBounded(t *testing.T) {
 	}
 }
 
+// TestTranslateStateLock: with -json, every supported engine reports a lock wait as type
+// state_lock_acquire (and the release as state_lock_release), not "log" (M27.03 D-3). The lines
+// are the engines' formats (Terraform views/state_locker.go; OpenTofu log.Info with "type").
+func TestTranslateStateLock(t *testing.T) {
+	for input, want := range map[string]string{
+		`{"@level":"info","@message":"Acquiring state lock. This may take a few moments...","@module":"terraform.ui","@timestamp":"2026-11-15T10:46:39Z","type":"state_lock_acquire"}`: "Acquiring state lock. This may take a few moments...",
+		`{"@level":"info","@message":"Releasing state lock. This may take a few moments...","@module":"terraform.ui","@timestamp":"2026-11-15T10:46:39Z","type":"state_lock_release"}`: "Releasing state lock. This may take a few moments...",
+		`{"@level":"info","@message":"Acquiring state lock. This may take a few moments...","@module":"tofu.ui","@timestamp":"2026-11-15T10:46:39.1+00:00","type":"state_lock_acquire"}`:   "Acquiring state lock. This may take a few moments...",
+	} {
+		for _, kind := range []string{"plan", "apply"} {
+			if level, text, _, ok := translate([]byte(input), kind, "Terraform", nil); !ok || text != want || level != "info" {
+				t.Errorf("%s %s: got %v %q %q", kind, input, ok, level, text)
+			}
+		}
+	}
+}
+
 func TestTranslateSanitizes(t *testing.T) {
 	for input, want := range map[string]string{
 		`{"type":"log","@message":"\u001b[31mtoken=abc\u001b[0m"}`:  "[line withheld: looks like a secret]",
