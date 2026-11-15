@@ -372,7 +372,13 @@ func TestRealLocks(t *testing.T) {
 			sum, serial := stateFile(s, project)
 			dirs := s.procs[0].Dirs
 			holder := hold(s, dirs, name, project)
-			defer holder.Kill()
+			// Every exit path releases gracefully, so the engine removes its own lock-info file;
+			// a kill (dispatch 3, run 43760321517) left it behind.
+			defer func() {
+				if err := holder.Close(); err != nil {
+					s.Errorf("L1 holder cleanup: %v", err)
+				}
+			}()
 			lock := filepath.Join(project, ".terraform.tfstate.lock.info")
 			info, err := fileSHA256(lock)
 			if err != nil {
@@ -391,7 +397,12 @@ func TestRealLocks(t *testing.T) {
 				if !strings.Contains(diagnostics(op), "Lock Info") {
 					s.Errorf("L1 %s: no lock info in the engine diagnostics: %q", what, diagnostics(op))
 				}
-				assertStateUnchanged(s, project, sum, serial, "during "+what)
+				// On Windows the holder's lock blocks every read of terraform.tfstate (run
+				// 43760321517: "another process has locked a portion of the file"), so the state is
+				// compared once the holder has released it, below.
+				if runtime.GOOS != "windows" {
+					assertStateUnchanged(s, project, sum, serial, "during "+what)
+				}
 			}
 			started, r := s.StartApply(h, detail.ID, ap.Token, ap.Phrase)
 			if r.Status != 202 {
@@ -427,6 +438,10 @@ func TestRealLocks(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 			}
 			s.Observe("L1 holder %q released; lock-info file removed by the holder", od9(name))
+			if runtime.GOOS == "windows" {
+				assertStateUnchanged(s, project, sum, serial, "by the refused apply, plan and drift scan (read after the release)")
+				s.Observe("L1 state unchanged by the refused apply, plan and drift scan (Windows: read after the release)")
+			}
 		})
 		run.Scenario(t, "l2-unlock-failed-"+name, name, "launch", false, func(s *Scenario) {
 			e, _ := run.Engine(name)

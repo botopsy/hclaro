@@ -445,3 +445,52 @@ func TestScopedRoutes(t *testing.T) {
 		}
 	}
 }
+
+// TestHolderClose: the deferred L1 cleanup releases a holder gracefully (it exits by itself on
+// stdin EOF, as `console` does), kills one that ignores the release only after the bounded
+// wait, and is a no-op once the holder exited.
+func TestHolderClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts child processes")
+	}
+	start := func(mode string) *Holder {
+		h := &Holder{cmd: exec.Command(os.Args[0], "-test.run=^TestHolderChild$"), done: make(chan struct{})}
+		h.cmd.Env = append(os.Environ(), "QUAL_HOLDER_CHILD="+mode)
+		var err error
+		if h.stdin, err = h.cmd.StdinPipe(); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		go func() { _ = h.cmd.Wait(); close(h.done) }()
+		return h
+	}
+	defer func(w time.Duration) { holderReleaseWait = w }(holderReleaseWait)
+	holderReleaseWait = 3 * time.Second
+
+	h := start("stdin")
+	if err := h.Close(); err != nil || h.Alive() || h.cmd.ProcessState.ExitCode() != 0 {
+		t.Fatalf("graceful close: err %v alive %v exit %d", err, h.Alive(), h.cmd.ProcessState.ExitCode())
+	}
+	if err := h.Close(); err != nil {
+		t.Fatalf("close after exit: %v", err)
+	}
+	h = start("ignore")
+	t0 := time.Now()
+	if err := h.Close(); err == nil || h.Alive() || time.Since(t0) < holderReleaseWait {
+		t.Fatalf("stuck holder: err %v alive %v after %s", err, h.Alive(), time.Since(t0))
+	}
+}
+
+// TestHolderChild is the child of TestHolderClose.
+func TestHolderChild(t *testing.T) {
+	switch os.Getenv("QUAL_HOLDER_CHILD") {
+	case "stdin":
+		_, _ = io.Copy(io.Discard, os.Stdin)
+	case "ignore":
+		time.Sleep(time.Minute)
+	default:
+		t.Skip("child of TestHolderClose")
+	}
+}

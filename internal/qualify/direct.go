@@ -102,7 +102,20 @@ func startHolder(engine, dir string, env []string, extra map[string]string, sub,
 	return h, nil
 }
 
-// Release lets the holder finish (closes stdin; writes the pipe once) and waits up to 60 s.
+// holderReleaseWait bounds Release; tests shorten it.
+var holderReleaseWait = 60 * time.Second
+
+// Close is the deferred cleanup for every exit path: a graceful Release (so the engine removes
+// its own lock-info file), with Release's kill only as the last resort. A no-op once exited.
+func (h *Holder) Close() error {
+	if !h.Alive() {
+		return nil
+	}
+	return h.Release()
+}
+
+// Release lets the holder finish (closes stdin; writes the pipe once) and waits up to
+// holderReleaseWait, then kills it.
 func (h *Holder) Release() error {
 	_ = h.stdin.Close()
 	if h.fifo != "" {
@@ -116,10 +129,10 @@ func (h *Holder) Release() error {
 	select {
 	case <-h.done:
 		return nil
-	case <-time.After(60 * time.Second):
+	case <-time.After(holderReleaseWait):
 		_ = h.cmd.Process.Kill()
 		<-h.done
-		return fmt.Errorf("lock holder did not exit within 60 s of its release; killed")
+		return fmt.Errorf("lock holder did not exit within %s of its release; killed", holderReleaseWait)
 	}
 }
 
