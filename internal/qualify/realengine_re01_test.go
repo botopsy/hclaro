@@ -21,7 +21,7 @@ func TestRealRE01Plan(t *testing.T) {
 	run.Result.Differences = append(run.Result.Differences,
 		"RE-01 fixture is a reconstruction from the RE-01 description, not the original files (which were not kept).",
 		"RE-01 canary locations kept (sensitive variable, var file, recorded state, remote-state file); no random_password keeper, because RE-01 used built-in resources only and a provider resource would change the 13-change summary.",
-		"Fixture change after the first real run (2026-11-15): Hclaro showed the deleted resource's recorded value in its change detail because the state did not mark it sensitive. The fixture now marks it sensitive, reading RE-01's 'sensitive, deleted and output values' as a sensitive deleted value. Whether values the engine does not mark sensitive must also be redacted is an owner decision (CLAUDE.md: missing sensitivity flags are no proof of safety).")
+		"Fixture change after the first real run (2026-11-15): Hclaro showed the deleted resource's recorded value in its change detail because the state did not mark it sensitive. The fixture now marks it sensitive, reading RE-01's 'sensitive, deleted and output values' as a sensitive deleted value; RE-01 tests redaction of engine-marked sensitive values. Owner decision 2026-11-15: explicit reveal, not automatic visibility; unmarked attributes are not hidden by default. Original failing run: m27-02-dev/run2.")
 	for _, name := range []string{"terraform", "tofu"} {
 		if _, ok := run.Engine(name); !ok {
 			continue

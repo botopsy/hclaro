@@ -173,9 +173,16 @@ The scenario asserts:
 
 The recorded differences from RE-01 are the reconstruction itself and the missing `random_password` keeper canary. RE-01 used built-in resources only, and a provider resource would change the 13-change summary.
 
+**What RE-01 tests here.** It tests that values the engine marks sensitive stay redacted: the sensitive variable and its var file, sensitive state attributes, sensitive outputs and the remote-state file. Hclaro's own independent secret detection stays active. A value the engine does not mark sensitive, and that Hclaro's detection does not recognise, is displayed. That is intended: the owner decision of 2026-11-15 is explicit reveal, not automatic visibility, and unmarked attributes are not hidden by default. A missing sensitivity flag is still never taken as proof that a value is safe, and the future classification work (provider schema sensitivity, explicit reveal) is out of M27.02.
+
+**Fixture correction, kept distinguishable.**
+- The first real run (2026-11-15, Terraform 1.5.5, `enforced`) was `FAIL`, "canary found in responses". Its evidence is preserved unchanged at `~/hclaro-qualify/evidence/m27-02-dev/run2/`, with `run.json` sha256 `71f63bb8…b13c`. The cause was the fixture: the deleted resource `terraform_data.retired` held the canary in a state value that was not marked sensitive, so Hclaro showed it in that change's detail. The raw response transcript of that run was not kept; only the sanitised results are.
+- The fixture now marks that value sensitive (`sensitive_attributes`), which reads RE-01's "sensitive, deleted and output values" as a sensitive deleted value. Later runs with the corrected fixture pass, for example `~/hclaro-qualify/evidence/m27-02-2026-11-15/ref-tf155/` from a clean commit. Each run records the correction in `differences`.
+
 ## Limitations
 
 - Enforced isolation exists for darwin/amd64 only (SB-1). Linux F-0 and Windows F-0/F-5 are `NOT_TESTED`, so runs there are `weak-proxy`.
-- The Windows stop uses `CTRL_BREAK` to the Hclaro process group, which F-5 has not verified yet.
+- The Windows stop uses `CTRL_BREAK` to the Hclaro process group, which F-5 has not verified yet. `qualify.ps1` has not been run yet, and the fake-engine smoke test has not yet run in Linux or Windows CI. There are no cross-platform results; only darwin/amd64 has been exercised.
+- **Timeout.** When the test binary hits `-test.timeout` (90 minutes in `qualify.sh`), Go panics and exits with status 2. `TestMain` does not finish, so there is no `run.json`. Only `run.partial.json` is left (`partial: true`, `goTestExit: -1`), holding just the scenarios that had already finished. The scenario that was running is not recorded, and its directory is not cleaned up. Nothing guarantees that its Hclaro or engine processes are stopped. `qualify.sh` then reports "no run.json written" and exits 1. M27.08 must treat such a run as invalid. Per-scenario operation timeouts (for example 15 minutes for a plan) are separate: they give that scenario `FAIL`, and the run continues.
 - Leftover processes are sampled once after each scenario (`pgrep` on Unix, because macOS `ps` is setuid and the sandbox refuses it; `Win32_Process` on Windows). A process that starts and exits between samples is not seen.
 - The fixture guard is a textual scan, not an HCL parser. It fails closed: JSON and override files, unknown sources, resource types and backends are refused.
