@@ -27,6 +27,9 @@ func TestF5WindowsInterrupt(t *testing.T) {
 	}
 	home, _ := os.UserHomeDir()
 	repo, _ := filepath.Abs("../..")
+	if img := os.Getenv("ImageOS"); img != "" {
+		buildRunnerImage, buildRunnerImageVersion = os.Getenv("RUNNER_LABEL")+"/"+img, os.Getenv("ImageVersion")
+	}
 	r, err := NewRun(Config{Hclaro: hclaro, Engines: map[string]string{"terraform": terraform, "tofu": tofu},
 		CLIConfig: map[string]string{"terraform": cli, "tofu": cli}, Out: out, Root: filepath.Join(root, "run"), Repo: repo, Home: home})
 	if err != nil {
@@ -35,9 +38,11 @@ func TestF5WindowsInterrupt(t *testing.T) {
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
 	// F-5 asks for a second arrangement when the first gives no interrupt path: a step without
 	// a console runs again after the test process allocates one.
-	arrangements := []string{"inherited"}
+	// GetConsoleWindow is 0 for a windowless (pseudo) console too; AllocConsole then fails with
+	// access denied and the first arrangement is the only one (run 43753465542).
+	arrangements := []string{"console window"}
 	if c, _, _ := kernel32.NewProc("GetConsoleWindow").Call(); c == 0 {
-		arrangements = []string{"none", "AllocConsole"}
+		arrangements = []string{"no console window", "AllocConsole"}
 	}
 	for _, arrangement := range arrangements {
 		suffix := ""
