@@ -2,8 +2,10 @@
 # binary and netprobe first (network available), copies them with hclaro, the engines and the
 # mirror into a run directory, then starts the test binary with a cleared environment holding
 # only the harness inputs, a minimal PATH and SystemRoot. No Go toolchain runs inside.
-# There is no enforced isolation on Windows yet (F-0 Windows NOT_TESTED, OD-4: the per-program
-# firewall is decided before M27.07), so the default is "proxy" and runs are weak-proxy.
+# Isolation "firewall" (OD-4-M27.07, Administrator) adds per-program outbound block rules for
+# every executable in the run directory, in one rule group deleted afterwards. Rules cannot name
+# the per-process engine copies or provider plugins created during the run, and the home stays
+# readable, so the probes decide the level (expected weak-proxy). Default "proxy".
 #
 #   scripts\qualify\qualify.ps1 -Terraform C:\abs\terraform.exe -Tofu C:\abs\tofu.exe -Mirror <dir> -Out <dir>
 param(
@@ -12,7 +14,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Mirror,
   [Parameter(Mandatory = $true)][string]$Out,
   [string]$Hclaro = "",
-  [ValidateSet("proxy", "none")][string]$Isolation = "proxy",
+  [ValidateSet("firewall", "proxy", "none")][string]$Isolation = "proxy",
   [string]$RunFilter = "^TestReal",
   [switch]$Keep
 )
@@ -24,11 +26,17 @@ if (-not (Test-Path $Hclaro)) { throw "hclaro binary missing: $Hclaro (run make 
 $run = Join-Path ([IO.Path]::GetTempPath()) ("hclaro-qualify." + [Guid]::NewGuid().ToString("N").Substring(0, 8))
 New-Item -ItemType Directory -Path $run, "$run\engines", "$run\mirror", "$run\out" | Out-Null
 $status = 1
+$group = "hclaro-qualify-" + (Split-Path $run -Leaf)
 try {
+  # F-0 check 8 (OD-14): the canary must exist and be readable outside, or a failed read proves nothing.
+  $canary = Join-Path $HOME "hclaro-qualify\home-read-canary"
+  if (-not (Test-Path $canary)) { New-Item -ItemType Directory -Force (Split-Path $canary) | Out-Null; Set-Content $canary "hclaro home-read canary" }
+  Get-Content $canary | Out-Null
   $commit = (git -C $repo rev-parse HEAD).Trim()
   $dirty = if (git -C $repo status --porcelain) { "true" } else { "false" }
   $pkg = "hclaro/internal/qualify"
   $ldflags = "-X $pkg.buildCommit=$commit -X $pkg.buildDirty=$dirty -X $pkg.buildHome=$HOME -X $pkg.buildRepo=$repo -X $pkg.buildUser=$env:USERNAME"
+  if ($env:ImageOS) { $ldflags += " -X $pkg.buildRunnerImage=$($env:RUNNER_LABEL)/$($env:ImageOS) -X $pkg.buildRunnerImageVersion=$($env:ImageVersion)" }
   Push-Location $repo
   try {
     go test -c -tags realengine -ldflags $ldflags -o "$run\qualify.test.exe" ./internal/qualify
@@ -46,6 +54,12 @@ try {
   # Hub processes with both engines use the combined config (M27.05).
   Copy-Item (Join-Path $PSScriptRoot "hub.tfrc") "$run\mirror\hub.tfrc"
   & "$run\netprobe.exe" control | Out-File -Encoding ascii "$run\f0-control.json"
+  if ($Isolation -eq "firewall") {
+    foreach ($exe in Get-ChildItem -Recurse -File -Filter *.exe $run) {
+      New-NetFirewallRule -Group $group -DisplayName "$group $($exe.Name)" -Direction Outbound -Action Block -Protocol Any -Program $exe.FullName | Out-Null
+    }
+    Get-NetFirewallRule -Group $group | ForEach-Object { "$($_.DisplayName) $($_.Action)" } | Out-File -Encoding ascii "$run\out\firewall-rules.txt"
+  }
 
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = "$run\qualify.test.exe"
@@ -69,6 +83,10 @@ try {
   if (-not (Test-Path (Join-Path $Out "run.json"))) { Write-Error "qualify: no run.json written"; $status = 1 }
   Write-Host "qualify: test binary exit $code; results in $Out"
 } finally {
+  if ($Isolation -eq "firewall") {
+    Remove-NetFirewallRule -Group $group -ErrorAction SilentlyContinue
+    if (Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue) { Write-Error "firewall group $group not removed"; $status = 1 }
+  }
   if ($status -ne 0 -and $Keep) {
     Write-Host "raw run directory kept (unsanitised, never copy it into the repository): $run"
   } else {

@@ -40,3 +40,6 @@ func listProcesses() ([]process, error) {
 
 // mkfifo creates the named pipe the F-2 plan lock holder blocks on.
 func mkfifo(path string) error { return syscall.Mkfifo(path, 0o600) }
+
+// shortPath: 8.3 names exist on Windows only.
+func shortPath(string) string { return "" }

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unsafe"
 )
 
 var generateConsoleCtrlEvent = syscall.NewLazyDLL("kernel32.dll").NewProc("GenerateConsoleCtrlEvent")
@@ -48,3 +49,19 @@ func listProcesses() ([]process, error) {
 
 // mkfifo: the F-2 plan holder is Unix only (FEASIBILITY-CHECKLIST F-2 candidate 2).
 func mkfifo(path string) error { return errors.New("named pipes are not supported on Windows") }
+
+var getShortPathName = syscall.NewLazyDLL("kernel32.dll").NewProc("GetShortPathNameW")
+
+// shortPath returns the 8.3 form of path, or "" when the volume has none (WIN2).
+func shortPath(path string) string {
+	p, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return ""
+	}
+	buf := make([]uint16, 1024)
+	n, _, _ := getShortPathName.Call(uintptr(unsafe.Pointer(p)), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 || int(n) > len(buf) {
+		return ""
+	}
+	return syscall.UTF16ToString(buf[:n])
+}

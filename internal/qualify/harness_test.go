@@ -280,7 +280,8 @@ func TestSleeperChild(t *testing.T) {
 	time.Sleep(60 * time.Second)
 }
 
-// TestRealEngineTagNotInCI: the realengine tag is never set in PR or push CI.
+// TestRealEngineTagNotInCI: the realengine tag is never set in PR or push CI. Only the manual
+// real-engine workflow (M27.07, OD-7) may run the harness, under the task's hard constraints.
 func TestRealEngineTagNotInCI(t *testing.T) {
 	var files []string
 	_ = filepath.WalkDir("../../.github", func(p string, d os.DirEntry, err error) error {
@@ -297,8 +298,31 @@ func TestRealEngineTagNotInCI(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(b), "realengine") || strings.Contains(string(b), "make qualify") {
+		w := strings.ReplaceAll(string(b), "\r\n", "\n")
+		if !strings.Contains(w, "realengine") && !strings.Contains(w, "make qualify") && !strings.Contains(w, "qualify.ps1") {
+			continue
+		}
+		if filepath.Base(f) != "real-engine.yml" {
 			t.Errorf("%s mentions the realengine harness", f)
+			continue
+		}
+		if !strings.Contains(w, "\non:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:") &&
+			!strings.Contains(w, "\non:\n  workflow_dispatch:\npermissions:\n  contents: read\ndefaults:") {
+			t.Errorf("%s: triggers must be workflow_dispatch only, with permissions contents: read", f)
+		}
+		for _, bad := range []string{"secrets.", "pull_request", "\n  push:", "schedule:", "workflow_run", "permissions:\n    ", "HCLARO_QUAL_KEEP", "-Keep"} {
+			if strings.Contains(w, bad) {
+				t.Errorf("%s: %q is not allowed in the real-engine workflow", f, bad)
+			}
+		}
+		if strings.Count(w, "uses: actions/checkout@") != strings.Count(w, "persist-credentials: false") {
+			t.Errorf("%s: every checkout needs persist-credentials: false", f)
+		}
+		for _, line := range strings.Split(w, "\n") {
+			if _, ref, ok := strings.Cut(line, "uses: "); ok && !strings.HasPrefix(ref, "./") &&
+				!regexp.MustCompile(`@[0-9a-f]{40} # v`).MatchString(ref) {
+				t.Errorf("%s: action not pinned to a commit SHA with its version: %s", f, strings.TrimSpace(line))
+			}
 		}
 	}
 }

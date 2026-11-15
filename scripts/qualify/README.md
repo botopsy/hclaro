@@ -32,7 +32,7 @@ go run ./scripts/qualify/fetch-metadata -out ~/hclaro-qualify/evidence/<run> <ur
 
 ## Engines and provider mirrors (M27.01 phase 2)
 
-Requires `gpg`, `jq`, `curl` and `unzip`. Downloads are owner-approved per version and platform (OD-1b, OD-2); today only `darwin_amd64`.
+Requires `gpg`, `jq`, `curl` and `unzip`. Downloads are owner-approved per version and platform (OD-1b, OD-2): every OD-1b version on `darwin_amd64`, and the `PLATFORM` set (Terraform 1.17.2, OpenTofu 1.13.9, `random` 3.9.1, `local` 2.9.1) on `darwin_arm64`, `linux_amd64`, `linux_arm64` and `windows_amd64` (OD-3-M27.07, run only by the real-engine workflow).
 
 ```sh
 scripts/qualify/fetch-engines.sh ~/hclaro-qualify/engines              # Terraform 1.5.5, 1.5.7, 1.17.2; OpenTofu 1.6.3, 1.13.9
@@ -40,8 +40,8 @@ scripts/qualify/mirror-providers.sh ~/hclaro-qualify/mirror ~/hclaro-qualify/eng
 scripts/qualify/verify-mirror.sh ~/hclaro-qualify/mirror ~/hclaro-qualify/engines ~/hclaro-qualify/evidence/<run>
 ```
 
-- `fetch-engines.sh` refuses any version or platform not pinned in the script, before any request. Each archive must match its pinned SHA-256 **and** the `SHA256SUMS` signed by the approved primary key (`keys/`, OD-6a/b; expiry and revocation checked in a throwaway keyring). It prints the archive and binary SHA-256.
-- `mirror-providers.sh` runs `providers mirror` (Terraform 1.17.2 and OpenTofu 1.13.9, with `env -i`, a throwaway HOME and `CHECKPOINT_DISABLE=1`) for `hashicorp/random` 3.9.1 and `hashicorp/local` 2.9.1 (pinned in `fixtures/qualify/providers/versions.tf`). It builds one packed mirror per engine family: Terraform reads `registry.terraform.io` (HashiCorp builds) and OpenTofu reads `registry.opentofu.org` (OpenTofu rebuilds, different hashes). Every archive must match the provider's signed `SHA256SUMS` (OD-6e). It writes `mirror-manifest.json` (no timestamps or absolute paths, so two runs are byte-identical) and `<family>.tfrc` with `direct { exclude = ["*/*"] }`. The mirror path in `<family>.tfrc` is an `@MIRROR@` placeholder, which `verify-mirror.sh` replaces with the run dir's copy.
+- `fetch-engines.sh [--platform <os_arch>]` refuses any version or platform not pinned in the script, before any request. Without engine arguments it fetches every approved engine for that platform. Each archive must match its pinned SHA-256 **and** the `SHA256SUMS` signed by the approved primary key (`keys/`, OD-6a/b; expiry and revocation checked in a throwaway keyring). It prints the archive and binary SHA-256.
+- `mirror-providers.sh` (`PLATFORM=<os_arch>`, default `darwin_amd64`; the engines must be that platform's) runs `providers mirror` (Terraform 1.17.2 and OpenTofu 1.13.9, with `env -i`, a throwaway HOME and `CHECKPOINT_DISABLE=1`) for `hashicorp/random` 3.9.1 and `hashicorp/local` 2.9.1 (pinned in `fixtures/qualify/providers/versions.tf`). It builds one packed mirror per engine family: Terraform reads `registry.terraform.io` (HashiCorp builds) and OpenTofu reads `registry.opentofu.org` (OpenTofu rebuilds, different hashes). Every archive must match the provider's signed `SHA256SUMS` (OD-6e), and each `SHA256SUMS` file must match the SHA-256 seen in F-6, pinned in the script. It writes `mirror-manifest.json` (no timestamps or absolute paths, so two runs are byte-identical) and `<family>.tfrc` with `direct { exclude = ["*/*"] }`. The mirror path in `<family>.tfrc` is an `@MIRROR@` placeholder, which `verify-mirror.sh` replaces with the run dir's copy.
 - `COMBINED=1 verify-mirror.sh …` checks the combined Hub config `hub.tfrc` (both mirrors, each limited by `include` to its registry host) with every engine in place of the family config (M27.05).
 - `verify-mirror.sh` (macOS only for now) copies everything into a run dir under `/tmp`, re-hashes the mirror against the manifest, and runs netprobe control and isolated before the first engine and after the last. It fails unless both are `enforced`. Under `sandbox-exec` with `sandbox.sb` it runs `init` for every engine and checks the following:
   - the lock file holds exactly the pinned versions, and every lock-file hash is in the manifest, and every manifest `h1:` hash for the host platform is in the lock file;
@@ -52,4 +52,8 @@ scripts/qualify/verify-mirror.sh ~/hclaro-qualify/mirror ~/hclaro-qualify/engine
 
 ## `qualify.sh` / `qualify.ps1` — real-engine harness runner (M27.02)
 
-`make qualify TF=… TOFU=… MIRROR=… OUT=…` (Windows: `qualify.ps1`) compiles the `realengine` test binary outside the isolation, copies it with `hclaro`, `netprobe`, the engines and the mirror into a run directory outside the home directory, and runs it with `env -i` under `sandbox.sb` (`RUN_TMP` = the run directory). Details: `docs/qualification/README.md`.
+`make qualify TF=… TOFU=… MIRROR=… OUT=… [ISOLATION=sandbox-exec|unshare|proxy|none]` (Windows: `qualify.ps1 … -Isolation firewall|proxy|none`) compiles the `realengine` test binary outside the isolation, copies it with `hclaro`, `netprobe`, the engines and the mirror into a run directory outside the home directory, and runs it with `env -i` under `sandbox.sb` (`RUN_TMP` = the run directory). Details: `docs/qualification/README.md`.
+
+## Real-engine workflow (M27.07)
+
+`.github/workflows/real-engine.yml` runs the steps above on GitHub-hosted runners, one job per platform. It runs only when started by hand (`gh workflow run real-engine.yml`; the file must be on `master`). Details and the platform scenarios: `docs/qualification/README.md` §Platforms.

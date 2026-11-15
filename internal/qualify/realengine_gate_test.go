@@ -4,9 +4,7 @@ package qualify
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -154,60 +152,6 @@ func gateState(s *Scenario, g *gateRun, engineName string) []string {
 	return stage2
 }
 
-// historyFile reads the final apply entry for planID from history.json in the config dir
-// (read-only, after Hclaro exited).
-func historyFile(s *Scenario, g *gateRun) HistoryEntry {
-	var found *HistoryEntry
-	_ = filepath.WalkDir(g.dirs.Config, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() != "history.json" {
-			return nil
-		}
-		b, err := os.ReadFile(p)
-		var doc struct {
-			Entries []HistoryEntry `json:"entries"`
-		}
-		if err != nil || json.Unmarshal(b, &doc) != nil {
-			return nil
-		}
-		for i := range doc.Entries {
-			if e := doc.Entries[i]; e.Kind == "apply" && e.Outcome.PlanID == g.planID {
-				found = &e
-			}
-		}
-		return nil
-	})
-	if found == nil {
-		s.Fatalf("history.json has no apply entry for the plan")
-	}
-	return *found
-}
-
-func exitCode(c *int) string {
-	if c == nil {
-		return "absent"
-	}
-	return fmt.Sprint(*c)
-}
-
-func stdoutHas(h *Hclaro, text string) bool {
-	b, _ := os.ReadFile(h.Stdout)
-	return bytes.Contains(b, []byte(text))
-}
-
-const shutdownNotice = "An apply is running. Hclaro interrupts it once"
-
-// engineAck is the engine's interrupt acknowledgement in its log (-json "log" message).
-const engineAck = "Interrupt received"
-
-// excerptAcks counts the acknowledgement in a history entry's log excerpt.
-func excerptAcks(e HistoryEntry) int {
-	n := 0
-	for _, l := range e.Excerpt {
-		n += strings.Count(l.Text, engineAck)
-	}
-	return n
-}
-
 // sseAcks counts the acknowledgement in the operation's recorded SSE log lines.
 func sseAcks(s *Scenario, id string) int {
 	b, _ := os.ReadFile(filepath.Join(s.Dir, "responses.raw"))
@@ -307,7 +251,7 @@ func TestRealLaunchGate(t *testing.T) {
 			}
 			pExit := time.Since(t0)
 			// P4: final history entry.
-			e := historyFile(s, g)
+			e := historyFile(s, g.dirs.Config, g.planID)
 			// P5: state and artifacts.
 			stage2 := gateState(s, g, name)
 			_, lockErr := os.Stat(filepath.Join(g.project, ".terraform.tfstate.lock.info"))
@@ -385,7 +329,7 @@ func TestRealLaunchGate(t *testing.T) {
 				s.Fatalf("Hclaro still running after the engine was killed")
 			}
 			release(s, g)
-			e := historyFile(s, g)
+			e := historyFile(s, g.dirs.Config, g.planID)
 			stage2 := gateState(s, g, name)
 			_, lockErr := os.Stat(filepath.Join(g.project, ".terraform.tfstate.lock.info"))
 			plans := savedPlanDirs(g.h)

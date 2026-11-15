@@ -1,2 +1,5 @@
 # Fixtures are compared byte for byte (golden files); keep LF on every platform.
 fixtures/** text eol=lf
+# Shell scripts and workflows run under bash/YAML parsers on Windows too (M27.07); keep LF.
+*.sh text eol=lf
+.github/** text eol=lf
