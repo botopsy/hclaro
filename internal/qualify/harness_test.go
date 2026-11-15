@@ -298,7 +298,7 @@ func TestRealEngineTagNotInCI(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w := string(b)
+		w := strings.ReplaceAll(string(b), "\r\n", "\n")
 		if !strings.Contains(w, "realengine") && !strings.Contains(w, "make qualify") && !strings.Contains(w, "qualify.ps1") {
 			continue
 		}

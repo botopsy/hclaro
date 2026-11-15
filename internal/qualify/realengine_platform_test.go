@@ -33,6 +33,12 @@ func TestRealPlatform(t *testing.T) {
 			}
 			win3(s, name)
 		})
+		run.Scenario(t, "win3-plan-expiry-"+name, name, "launch", false, func(s *Scenario) {
+			if runtime.GOOS != "windows" {
+				s.Skip("Windows-only part of WIN3")
+			}
+			s.NotTested("saved-plan expiry is one hour (PlanMaxAge) and has no setting to shorten it; not waited for")
+		})
 		run.Scenario(t, "win4-crlf-import-"+name, name, "launch", false, func(s *Scenario) {
 			i1ImportScenario(s, name, crlfStart)
 		})
@@ -66,8 +72,7 @@ func crlfStart(s *Scenario, engine, project string) (ProcessDirs, []string, *Hcl
 }
 
 // win3 checks the saved-plan folder and file ACLs, then that the files are removed after the
-// apply and after shutdown even with the read-only attribute set. Plan expiry (one hour) is
-// not waited for.
+// apply and after shutdown even with the read-only attribute set. Expiry is win3-plan-expiry.
 func win3(s *Scenario, name string) {
 	project, _, _, h := launch(s, name, "launch")
 	detail := s.LaunchPlan(h, project, name, []string{"launch.tfvars"})

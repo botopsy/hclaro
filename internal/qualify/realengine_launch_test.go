@@ -3,6 +3,7 @@
 package qualify
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -984,7 +985,7 @@ func i3Generated(s *Scenario, name string, start starter) {
 		s.Fatalf("I3 generated file: %v", err)
 	}
 	// The engine's file is not Hclaro output; whether it holds the canary is recorded.
-	s.Observe("I3 engine-written %s contains the canary: %v", p.GeneratedFile, strings.Contains(string(b), s.run.Canary))
+	s.Observe("I3 engine-written %s contains the canary: %v; CRLF line endings: %v", p.GeneratedFile, strings.Contains(string(b), s.run.Canary), bytes.Contains(b, []byte("\r\n")))
 }
 
 func i1ImportScenario(s *Scenario, name string, start starter) {

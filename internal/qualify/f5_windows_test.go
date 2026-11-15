@@ -32,65 +32,81 @@ func TestF5WindowsInterrupt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	console, _, _ := syscall.NewLazyDLL("kernel32.dll").NewProc("GetConsoleWindow").Call()
-	r.Scenario(t, "f5-hub-stop", "terraform", "hub", false, func(s *Scenario) {
-		s.Observe("mechanism: CREATE_NEW_PROCESS_GROUP + GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT); test process console window %v (Hclaro inherits it)", console != 0)
-		dirs, env, err := s.Process("terraform")
-		if err != nil {
-			s.Fatalf("%v", err)
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	// F-5 asks for a second arrangement when the first gives no interrupt path: a step without
+	// a console runs again after the test process allocates one.
+	arrangements := []string{"inherited"}
+	if c, _, _ := kernel32.NewProc("GetConsoleWindow").Call(); c == 0 {
+		arrangements = []string{"none", "AllocConsole"}
+	}
+	for _, arrangement := range arrangements {
+		suffix := ""
+		if arrangement == "AllocConsole" {
+			if ok, _, err := kernel32.NewProc("AllocConsole").Call(); ok == 0 {
+				t.Logf("AllocConsole: %v", err)
+				break
+			}
+			suffix = "-allocconsole"
 		}
-		h := s.StartHub(dirs, env, false)
-		code, err := h.Stop(30 * time.Second)
-		if err != nil {
-			s.Fatalf("no shutdown path: %v", err)
-		}
-		s.Observe("Hclaro exited on its own with code %d", code)
-	})
-	r.Scenario(t, "f5-launch-apply-shutdown", "terraform", "launch", false, func(s *Scenario) {
-		project := s.Project("smoke")
-		dirs, env, err := s.Process("terraform")
-		if err != nil {
-			s.Fatalf("%v", err)
-		}
-		s.SetupInit(dirs, env, "terraform", project)
-		// Declared in the scenario's allowlist: the fake engine's apply then waits 3 s per line.
-		extra := map[string]string{"HCLARO_FAKE_APPLY": "slow"}
-		h, err := s.StartHclaro(dirs, Environment(dirs, s.run.Cfg.CLIConfig["terraform"], extra), extra, "--path", project, "--no-browser", "--engine", "terraform")
-		if err != nil {
-			s.Fatalf("start hclaro: %v", err)
-		}
-		s.waitReady(h)
-		detail := s.LaunchPlan(h, project, "terraform", []string{"smoke.tfvars"})
-		a, resp := s.Approve(h, detail.ID)
-		if resp.Status != 200 {
-			s.Fatalf("approval: %d %s", resp.Status, resp.Code)
-		}
-		op, resp := s.StartApply(h, detail.ID, a.Token, a.Phrase)
-		if resp.Status != 202 {
-			s.Fatalf("apply: %d %s", resp.Status, resp.Code)
-		}
-		// The engine itself must be running: the operation is "running" from its preflight on.
-		if ok, err := h.client.WaitLog("operations/"+op.ID, "Apply started", 60*time.Second); err != nil || !ok {
-			s.Fatalf("fake engine never logged its start: %v", err)
-		}
-		if err := h.Interrupt(); err != nil {
-			s.Fatalf("CTRL_BREAK to Hclaro failed: %v", err)
-		}
-		code, exited := h.Wait(2 * time.Minute)
-		notice := stdoutHas(h, shutdownNotice)
-		b, _ := os.ReadFile(h.Stdout)
-		s.Artifact("hclaro.stdout", b)
-		e := historyFile(s, dirs.Config, detail.ID)
-		acks := excerptAcks(e)
-		s.Observe("Hclaro exited %v code %d; shutdown notice %v; apply %s outcome %q exit %s; fake engine interrupt acknowledgements %d",
-			exited, code, notice, e.Status, e.Outcome.Result, exitCode(e.ExitCode), acks)
-		if !exited || !notice {
-			s.Fatalf("no shutdown path (exited %v, notice %v)", exited, notice)
-		}
-		if acks != 1 {
-			s.Fatalf("fake engine acknowledged %d interrupts, want 1 (0 means it was killed)", acks)
-		}
-	})
+		r.Scenario(t, "f5-hub-stop"+suffix, "terraform", "hub", false, func(s *Scenario) {
+			s.Observe("mechanism: CREATE_NEW_PROCESS_GROUP + GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT); console arrangement %q (Hclaro inherits the test process console)", arrangement)
+			dirs, env, err := s.Process("terraform")
+			if err != nil {
+				s.Fatalf("%v", err)
+			}
+			h := s.StartHub(dirs, env, false)
+			code, err := h.Stop(30 * time.Second)
+			if err != nil {
+				s.Fatalf("no shutdown path: %v", err)
+			}
+			s.Observe("Hclaro exited on its own with code %d", code)
+		})
+		r.Scenario(t, "f5-launch-apply-shutdown"+suffix, "terraform", "launch", false, func(s *Scenario) {
+			project := s.Project("smoke")
+			dirs, env, err := s.Process("terraform")
+			if err != nil {
+				s.Fatalf("%v", err)
+			}
+			s.SetupInit(dirs, env, "terraform", project)
+			// Declared in the scenario's allowlist: the fake engine's apply then waits 3 s per line.
+			extra := map[string]string{"HCLARO_FAKE_APPLY": "slow"}
+			h, err := s.StartHclaro(dirs, Environment(dirs, s.run.Cfg.CLIConfig["terraform"], extra), extra, "--path", project, "--no-browser", "--engine", "terraform")
+			if err != nil {
+				s.Fatalf("start hclaro: %v", err)
+			}
+			s.waitReady(h)
+			detail := s.LaunchPlan(h, project, "terraform", []string{"smoke.tfvars"})
+			a, resp := s.Approve(h, detail.ID)
+			if resp.Status != 200 {
+				s.Fatalf("approval: %d %s", resp.Status, resp.Code)
+			}
+			op, resp := s.StartApply(h, detail.ID, a.Token, a.Phrase)
+			if resp.Status != 202 {
+				s.Fatalf("apply: %d %s", resp.Status, resp.Code)
+			}
+			// The engine itself must be running: the operation is "running" from its preflight on.
+			if ok, err := h.client.WaitLog("operations/"+op.ID, "Apply started", 60*time.Second); err != nil || !ok {
+				s.Fatalf("fake engine never logged its start: %v", err)
+			}
+			if err := h.Interrupt(); err != nil {
+				s.Fatalf("CTRL_BREAK to Hclaro failed: %v", err)
+			}
+			code, exited := h.Wait(2 * time.Minute)
+			notice := stdoutHas(h, shutdownNotice)
+			b, _ := os.ReadFile(h.Stdout)
+			s.Artifact("hclaro.stdout", b)
+			e := historyFile(s, dirs.Config, detail.ID)
+			acks := excerptAcks(e)
+			s.Observe("Hclaro exited %v code %d; shutdown notice %v; apply %s outcome %q exit %s; fake engine interrupt acknowledgements %d",
+				exited, code, notice, e.Status, e.Outcome.Result, exitCode(e.ExitCode), acks)
+			if !exited || !notice {
+				s.Fatalf("no shutdown path (exited %v, notice %v)", exited, notice)
+			}
+			if acks != 1 {
+				s.Fatalf("fake engine acknowledged %d interrupts, want 1 (0 means it was killed)", acks)
+			}
+		})
+	}
 	exit := 0
 	if t.Failed() {
 		exit = 1

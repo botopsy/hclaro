@@ -253,7 +253,7 @@ var needsEnforced = map[string]bool{}
 
 func beforeEnforced() bool {
 	i := run.Result.Isolation
-	return i.Level == "enforced" || i.Mechanism == "sandbox-exec" && i.Reason == "no isolated probe after the run"
+	return i.Level == "enforced" || i.Mechanism != "" && i.Mechanism != "proxy" && i.Mechanism != "none" && i.Reason == "no isolated probe after the run"
 }
 
 func downgradeOffline() {
