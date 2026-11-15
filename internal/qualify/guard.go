@@ -28,9 +28,12 @@ var (
 	guardProvisioner  = regexp.MustCompile(`\bprovisioner\b`)
 )
 
-// gateFiles are the only project files that may hold a provisioner: the OD-8 gated fixture
-// (M27.03 A6, A7, A7b), byte-identical to fixtures/qualify/launch-gate.
-var gateFiles = []string{"main.tf", "gate.sh"}
+// gateFixtures are the only projects that may hold a provisioner, byte-identical to the
+// fixture: the OD-8 gated fixture (M27.03 A6, A7, A7b) and its Windows variant (M27.07 WIN1).
+var gateFixtures = map[string][]string{
+	"launch-gate":         {"main.tf", "gate.sh"},
+	"launch-gate-windows": {"main.tf", "gate.ps1"},
+}
 
 var allowedProviderSources = map[string]bool{
 	"hashicorp/random": true, "hashicorp/local": true,
@@ -114,7 +117,7 @@ func GuardFixture(root string) error {
 		return fmt.Errorf("fixture_scope: %v", err)
 	}
 	if provisioner && !isGateFixture(root) {
-		bad(".", "provisioners are allowed only in the approved OD-8 gated fixture (byte-identical main.tf and gate.sh)")
+		bad(".", "provisioners are allowed only in the approved OD-8 gated fixture (byte-identical main.tf and gate.sh or gate.ps1)")
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("fixture_scope: %s", strings.Join(problems, "; "))
@@ -166,15 +169,18 @@ func GuardRemote(root string) error {
 	return nil
 }
 
-// isGateFixture reports whether root holds the approved gated fixture's main.tf and gate.sh
-// unchanged.
+// isGateFixture reports whether root holds one approved gated fixture's files unchanged.
 func isGateFixture(root string) bool {
-	for _, name := range gateFiles {
-		want, err := fs.ReadFile(fixtures.Qualify, "qualify/launch-gate/"+name)
-		got, err2 := os.ReadFile(filepath.Join(root, name))
-		if err != nil || err2 != nil || !bytes.Equal(want, got) {
-			return false
+	for dir, files := range gateFixtures {
+		same := true
+		for _, name := range files {
+			want, err := fs.ReadFile(fixtures.Qualify, "qualify/"+dir+"/"+name)
+			got, err2 := os.ReadFile(filepath.Join(root, name))
+			same = same && err == nil && err2 == nil && bytes.Equal(want, got)
+		}
+		if same {
+			return true
 		}
 	}
-	return true
+	return false
 }

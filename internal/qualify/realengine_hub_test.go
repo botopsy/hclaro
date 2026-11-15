@@ -936,7 +936,7 @@ func TestRealHubShutdown(t *testing.T) {
 	both := strings.Join(engines(), "+")
 	hubScenario(t, "h10-shutdown-applies", both, func(s *Scenario) {
 		if runtime.GOOS == "windows" {
-			s.NotTested("the Windows gate variant is not implemented (M27.07, F-5)")
+			s.NotTested("the PowerShell gate is approved for WIN1 (A6, A7, A7b) only; H10 on Windows needs its own approval")
 		}
 		if len(engines()) < 2 {
 			s.NotTested("H10 tells the two scopes' engines apart by name; this run configures " + both)

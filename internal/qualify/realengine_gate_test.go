@@ -18,7 +18,8 @@ import (
 
 // M27.03 A6, A7 and A7b with the OD-8 gated fixture (approved with restrictions 2026-11-15,
 // for these scenarios only). The gate is the fixed script fixtures/qualify/launch-gate/gate.sh,
-// run by the engine's local-exec as "/bin/sh ./gate.sh <normal|trap>". It touches only
+// run by the engine's local-exec as "/bin/sh ./gate.sh <normal|trap>"; on Windows (WIN1) the
+// fixed PowerShell script fixtures/qualify/launch-gate-windows/gate.ps1. It touches only
 // <project>/.qual/. Synchronisation is on observable state only: the operation status (SSE /
 // GET), the gate's marker files and the engine PID, each with a hard timeout.
 
@@ -40,12 +41,14 @@ func (g *gateRun) qual(name string) string { return filepath.Join(g.project, ".q
 // gateStart plans the gated fixture, approves and starts the apply, and waits for the
 // operation to run and the gate to report it was reached.
 func gateStart(s *Scenario, name string, varFiles []string, mode string) *gateRun {
-	if runtime.GOOS == "windows" {
-		s.NotTested("the Windows gate variant is not implemented (M27.07, F-5)")
-	}
 	g := &gateRun{mode: mode}
-	g.project, g.dirs, g.env, g.h = launch(s, name, "launch-gate", ".qual/reached", ".qual/interrupted", ".qual/release")
-	s.Observe("gate command (OD-8): /bin/sh ./gate.sh %s, working directory the project, files under .qual/ only", mode)
+	template, gate := "launch-gate", "/bin/sh ./gate.sh "+mode
+	if runtime.GOOS == "windows" {
+		// WIN1 (M27.07): the PowerShell gate, same markers and timeouts.
+		template, gate = "launch-gate-windows", "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ./gate.ps1, GATE_MODE="+mode
+	}
+	g.project, g.dirs, g.env, g.h = launch(s, name, template, ".qual/reached", ".qual/interrupted", ".qual/release")
+	s.Observe("gate command (OD-8): %s, working directory the project, files under .qual/ only", gate)
 	detail := s.LaunchPlan(g.h, g.project, name, varFiles)
 	if detail.Summary["create"] != 6 {
 		s.Fatalf("gated plan: %s, want 6 creates", detail)

@@ -4,6 +4,7 @@ package qualify
 
 import (
 	"bytes"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -15,7 +16,8 @@ import (
 )
 
 // TestRealPlatform covers the M27.07 platform scenarios WIN1, WIN3 and WIN4 (WIN2 is H5d in
-// TestRealHubPaths). WIN4 runs on every platform: CRLF files reach Unix checkouts too.
+// TestRealHubPaths). WIN4 runs on every platform: CRLF files reach Unix checkouts too. It runs
+// after TestRealLaunchGate (file order), whose A6, A7 and A7b WIN1 summarises.
 func TestRealPlatform(t *testing.T) {
 	if run == nil {
 		t.Skip(runSkip)
@@ -25,7 +27,7 @@ func TestRealPlatform(t *testing.T) {
 			if runtime.GOOS != "windows" {
 				s.Skip("Windows interrupt variant of A6/A7/A7b; the Unix gate runs as A6, A7 and A7b")
 			}
-			s.NotTested("needs a PowerShell gate fixture, which OD-8 does not cover (its own approval), and a passing F-5")
+			win1(s, name)
 		})
 		run.Scenario(t, "win3-saved-plan-files-"+name, name, "launch", false, func(s *Scenario) {
 			if runtime.GOOS != "windows" {
@@ -149,4 +151,31 @@ func broadGrants(s *Scenario, path string) []string {
 		}
 	}
 	return broad
+}
+
+// win1 summarises A6, A7 and A7b, which on Windows run on the PowerShell gate: PASS only when
+// all three passed for this engine; otherwise their statuses decide (any FAIL fails WIN1).
+func win1(s *Scenario, name string) {
+	want := []string{"a6-interrupt-apply-" + name, "a7-shutdown-apply-" + name, "a7b-shutdown-grace-" + name}
+	got := map[string]ScenarioResult{}
+	for _, r := range s.run.Result.Scenarios {
+		got[r.ID] = r
+	}
+	var notTested []string
+	for _, id := range want {
+		r, ok := got[id]
+		switch {
+		case !ok:
+			notTested = append(notTested, id+" did not run")
+		case r.Status == Fail:
+			s.Fatalf("WIN1: %s FAIL: %s", id, r.Reason)
+		case r.Status != Pass:
+			notTested = append(notTested, fmt.Sprintf("%s %s: %s", id, r.Status, r.Reason))
+		default:
+			s.Observe("WIN1: %s PASS on the PowerShell gate", id)
+		}
+	}
+	if len(notTested) > 0 {
+		s.NotTested("WIN1 needs A6, A7 and A7b PASS on the PowerShell gate: " + strings.Join(notTested, "; "))
+	}
 }
