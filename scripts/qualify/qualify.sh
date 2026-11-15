@@ -36,7 +36,7 @@ trap cleanup EXIT
 
 commit=$(git -C "$repo" rev-parse HEAD)
 dirty=false
-[ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] || dirty=true
+[ -z "$(git -C "$repo" status --porcelain)" ] || dirty=true
 pkg=hclaro/internal/qualify
 ldflags="-X $pkg.buildCommit=$commit -X $pkg.buildDirty=$dirty -X $pkg.buildHome=$real_home -X $pkg.buildRepo=$repo -X $pkg.buildUser=$(id -un)"
 (cd "$repo" && go test -c -tags realengine -ldflags "$ldflags" -o "$run/qualify.test" ./internal/qualify)
@@ -70,7 +70,6 @@ case $isolation in
     code=${PIPESTATUS[0]} ;;
 esac
 set -e
-cp "$run/f0-control.json" "$run/out/f0-control.json"
 mkdir -p "$OUT"
 cp -R "$run/out/." "$OUT/"
 status=$code

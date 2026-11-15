@@ -26,7 +26,7 @@ New-Item -ItemType Directory -Path $run, "$run\engines", "$run\mirror", "$run\ou
 $status = 1
 try {
   $commit = (git -C $repo rev-parse HEAD).Trim()
-  $dirty = if (git -C $repo status --porcelain --untracked-files=no) { "true" } else { "false" }
+  $dirty = if (git -C $repo status --porcelain) { "true" } else { "false" }
   $pkg = "hclaro/internal/qualify"
   $ldflags = "-X $pkg.buildCommit=$commit -X $pkg.buildDirty=$dirty -X $pkg.buildHome=$HOME -X $pkg.buildRepo=$repo -X $pkg.buildUser=$env:USERNAME"
   Push-Location $repo
@@ -61,7 +61,6 @@ try {
   $p = [System.Diagnostics.Process]::Start($psi)
   $p.WaitForExit()
   $code = $p.ExitCode
-  Copy-Item "$run\f0-control.json" "$run\out\f0-control.json"
   New-Item -ItemType Directory -Force -Path $Out | Out-Null
   Copy-Item -Recurse -Force "$run\out\*" $Out
   $status = $code

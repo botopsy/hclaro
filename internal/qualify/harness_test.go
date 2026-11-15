@@ -1,13 +1,15 @@
 package qualify
 
 import (
+	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGuardFixture(t *testing.T) {
@@ -115,11 +117,11 @@ func TestSanitizer(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(`{"runnerImage":"runner"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := ScanOut(dir, "runner"); err == nil {
-		t.Error("username as a whole word not found")
+	if hits, err := ScanOut(dir, "runner"); err != nil || len(hits) != 1 {
+		t.Errorf("username as a whole word not found: %v %v", hits, err)
 	}
-	if err := ScanOut(dir, "alice", "/Users/alice"); err != nil {
-		t.Errorf("clean dir: %v", err)
+	if hits, err := ScanOut(dir, "alice", "/Users/alice"); err != nil || len(hits) != 0 {
+		t.Errorf("clean dir: %v %v", hits, err)
 	}
 }
 
@@ -201,27 +203,37 @@ func TestIsolationLevel(t *testing.T) {
 }
 
 // TestLeftoverProcesses checks the sampler sees a process started from under a directory, as
-// an engine left running by Hclaro would be.
+// an engine left running by Hclaro would be. The sleeper is a copy of this test binary, so the
+// check runs on every platform (Windows uses the Win32_Process sampler).
 func TestLeftoverProcesses(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix sleep binary; the Windows sampler runs in the smoke test")
+	if os.Getenv("QUAL_SLEEPER") == "1" {
+		return
 	}
 	dir := t.TempDir()
-	// A script, not a copied system binary: macOS kills copies of platform binaries.
-	bin := filepath.Join(dir, "bin", "engine-sleep")
+	bin := filepath.Join(dir, "bin", exeName("engine-sleeper"))
 	if err := os.MkdirAll(filepath.Dir(bin), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n/bin/sleep 30\n"), 0o700); err != nil {
+	if err := copyExecutable(os.Args[0], bin); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(bin)
+	cmd := exec.Command(bin, "-test.run=^TestSleeperChild$")
+	cmd.Env = append(os.Environ(), "QUAL_SLEEPER=1")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	// Wait for the child to report it is running (observable state, not a timer).
+	line := make([]byte, 8)
+	if _, err := io.ReadFull(stdout, line); err != nil || string(line) != "sleeping" {
+		t.Fatalf("sleeper did not start: %q %v", line, err)
+	}
 	left, err := leftoverProcesses(dir, nil)
-	if err != nil || len(left) != 1 || !strings.Contains(left[0], "engine-sleep") {
+	if err != nil || len(left) != 1 || !strings.Contains(left[0], "engine-sleeper") {
 		t.Fatalf("got %v %v", left, err)
 	}
 	_ = cmd.Process.Kill()
@@ -229,6 +241,15 @@ func TestLeftoverProcesses(t *testing.T) {
 	if left, _ := leftoverProcesses(dir, nil); len(left) != 0 {
 		t.Fatalf("after kill: %v", left)
 	}
+}
+
+// TestSleeperChild is the child of TestLeftoverProcesses.
+func TestSleeperChild(t *testing.T) {
+	if os.Getenv("QUAL_SLEEPER") != "1" {
+		t.Skip("child of TestLeftoverProcesses")
+	}
+	os.Stdout.WriteString("sleeping")
+	time.Sleep(60 * time.Second)
 }
 
 // TestRealEngineTagNotInCI: the realengine tag is never set in PR or push CI.
@@ -251,5 +272,57 @@ func TestRealEngineTagNotInCI(t *testing.T) {
 		if strings.Contains(string(b), "realengine") || strings.Contains(string(b), "make qualify") {
 			t.Errorf("%s mentions the realengine harness", f)
 		}
+	}
+}
+
+// TestFinishFailsClosed: a forbidden value in the result directory, or a non-zero exit with no
+// FAIL scenario, must leave a run.json that records FAIL and goTestExit 1.
+func TestFinishFailsClosed(t *testing.T) {
+	newRun := func() *Run {
+		out, home := t.TempDir(), t.TempDir()
+		res := &RunResult{SchemaVersion: 1, Partial: true}
+		r := &Run{Cfg: Config{Out: out, Home: home}, Canary: "HCLARO-QUAL-CANARY-0123456789abcdef", Result: res, user: "qualify-test-user"}
+		r.San = NewSanitizer(r.Canary, "", "", "", "", "")
+		r.W = NewWriter(out, res, r.San)
+		return r
+	}
+	read := func(r *Run) RunResult {
+		var got RunResult
+		b, err := os.ReadFile(filepath.Join(r.Cfg.Out, "run.json"))
+		if err != nil || json.Unmarshal(b, &got) != nil {
+			t.Fatalf("run.json: %v", err)
+		}
+		return got
+	}
+	r := newRun()
+	if err := r.W.Add(ScenarioResult{ID: "a", Status: Pass}); err != nil {
+		t.Fatal(err)
+	}
+	leak := filepath.Join(r.Cfg.Out, "artifacts", "a", "log.txt")
+	if err := os.MkdirAll(filepath.Dir(leak), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(leak, []byte("read "+r.Cfg.Home+"/.terraformrc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Finish(0); err == nil {
+		t.Fatal("Finish accepted a home path in the results")
+	}
+	got := read(r)
+	if got.GoTestExit != 1 || got.Scenarios[len(got.Scenarios)-1].ID != "result-scan" || !strings.Contains(got.Scenarios[len(got.Scenarios)-1].Reason, "artifacts/a/log.txt") {
+		t.Errorf("run.json after a scan hit: %+v", got)
+	}
+	if _, err := os.Stat(leak); err == nil {
+		t.Error("leaking file kept")
+	}
+	r = newRun()
+	if err := r.W.Add(ScenarioResult{ID: "a", Status: Pass}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Finish(2); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(r); got.GoTestExit != 2 || got.Scenarios[len(got.Scenarios)-1].Status != Fail {
+		t.Errorf("non-zero exit without FAIL: %+v", got)
 	}
 }

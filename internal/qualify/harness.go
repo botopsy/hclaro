@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -164,11 +165,40 @@ func (r *Run) Engine(name string) (EngineRecord, bool) {
 }
 
 // Finish writes run.json and scans the result directory. exit is the test binary's result.
+// A file holding a forbidden value is deleted and run.json is rewritten with a FAIL record
+// that names the file (never the value).
 func (r *Run) Finish(exit int) error {
 	if err := r.W.Finish(exit, now()); err != nil {
 		return err
 	}
-	return ScanOut(r.Cfg.Out, r.user, r.Canary, r.Cfg.Home)
+	hits, err := ScanOut(r.Cfg.Out, r.user, r.Canary, r.Cfg.Home)
+	if err != nil {
+		return err
+	}
+	if len(hits) == 0 {
+		return nil
+	}
+	var names []string
+	for _, h := range hits {
+		rel, _ := filepath.Rel(r.Cfg.Out, h)
+		names = append(names, filepath.ToSlash(rel))
+		_ = os.Remove(h)
+	}
+	reason := "result directory scan: forbidden value (canary, home path or username) in " + strings.Join(names, ", ") + "; file removed"
+	if err := r.W.Add(stubScenario("result-scan", Fail, reason)); err != nil {
+		return err
+	}
+	if err := r.W.Finish(1, now()); err != nil {
+		return err
+	}
+	if again, _ := ScanOut(r.Cfg.Out, r.user, r.Canary, r.Cfg.Home); len(again) > 0 {
+		// run.json itself leaks: keep only a stub.
+		for _, h := range again {
+			_ = os.Remove(h)
+		}
+		_ = WriteAborted(r.Cfg.Out, reason, "")
+	}
+	return errors.New(reason)
 }
 
 // Scenario is one scenario's state; its result starts NOT_TESTED.

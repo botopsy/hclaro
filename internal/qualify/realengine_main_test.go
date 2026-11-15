@@ -72,7 +72,10 @@ func TestMain(m *testing.M) {
 
 func abort(out, reason string, err error) {
 	fmt.Fprintf(os.Stderr, "qualify: %s: %v\n", reason, err)
-	_ = WriteAborted(out, reason, err.Error())
+	host, _ := os.Hostname()
+	exe, _ := os.Executable()
+	san := NewSanitizer("", filepath.Dir(exe), buildHome, buildRepo, currentUser(), host)
+	_ = WriteAborted(out, reason, san.String(err.Error()))
 	os.Exit(1)
 }
 

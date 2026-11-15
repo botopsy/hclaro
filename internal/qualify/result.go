@@ -147,10 +147,16 @@ func (w *Writer) Add(s ScenarioResult) error {
 // Finish records the exit and writes run.json atomically, then removes the partial file.
 func (w *Writer) Finish(goTestExit int, finishedAt string) error {
 	w.mu.Lock()
+	failed := false
 	for _, s := range w.result.Scenarios {
-		if s.Status == Fail {
-			goTestExit = 1
-		}
+		failed = failed || s.Status == Fail
+	}
+	// A non-zero exit with no FAIL record would be an invalid run (M27.08 refuses it).
+	if goTestExit != 0 && !failed {
+		w.result.Scenarios = append(w.result.Scenarios, stubScenario("test-binary", Fail, "the test binary failed outside any scenario"))
+	}
+	if failed {
+		goTestExit = 1
 	}
 	w.result.GoTestExit, w.result.FinishedAt, w.result.Partial = goTestExit, finishedAt, false
 	w.mu.Unlock()
@@ -219,7 +225,7 @@ func writeStub(out, status, reason, detail string, exit int) error {
 		OS: runtime.GOOS, Arch: runtime.GOARCH, HclaroCommit: buildCommit, HclaroDirty: buildDirty == "true",
 		EnvironmentAllowlist: AllowedNames(), Isolation: Isolation{Mechanism: "none", Level: "none"},
 		Engines: []EngineRecord{}, Providers: []ProviderRecord{},
-		Scenarios: []ScenarioResult{{ID: "preflight", Status: status, Reason: reason, Steps: []Step{}, DirectEngineCall: []string{}, Artifacts: []string{}, Canary: "not_checked"}}}
+		Scenarios: []ScenarioResult{stubScenario("preflight", status, reason)}}
 	if detail != "" {
 		r.Scenarios[0].Observations = []string{detail}
 	}
@@ -228,6 +234,10 @@ func writeStub(out, status, reason, detail string, exit int) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(out, "run.json"), b, 0o600)
+}
+
+func stubScenario(id, status, reason string) ScenarioResult {
+	return ScenarioResult{ID: id, Status: status, Reason: reason, Steps: []Step{}, DirectEngineCall: []string{}, Artifacts: []string{}, Canary: "not_checked"}
 }
 
 // Sanitizer replaces absolute paths, the username, the hostname and the canary before
@@ -304,9 +314,9 @@ func wordPattern(v string) *regexp.Regexp {
 
 func (s *Sanitizer) String(v string) string { return string(s.Bytes([]byte(v))) }
 
-// ScanOut fails on any file in dir that holds one of the forbidden substrings (the canary,
+// ScanOut lists the files in dir that hold one of the forbidden substrings (the canary,
 // the real home path) or the username as a whole word. It is the last step of a run.
-func ScanOut(dir, user string, forbidden ...string) error {
+func ScanOut(dir, user string, forbidden ...string) ([]string, error) {
 	var hits []string
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -316,21 +326,14 @@ func ScanOut(dir, user string, forbidden ...string) error {
 		if err != nil {
 			return err
 		}
+		hit := len(user) >= 2 && wordPattern(user).Match(b)
 		for _, f := range forbidden {
-			if len(f) >= 3 && bytes.Contains(b, []byte(f)) {
-				hits = append(hits, fmt.Sprintf("%s holds a forbidden value", filepath.Base(path)))
-			}
+			hit = hit || len(f) >= 3 && bytes.Contains(b, []byte(f))
 		}
-		if len(user) >= 2 && wordPattern(user).Match(b) {
-			hits = append(hits, fmt.Sprintf("%s holds the username", filepath.Base(path)))
+		if hit {
+			hits = append(hits, path)
 		}
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	if len(hits) > 0 {
-		return fmt.Errorf("result directory scan: %s", strings.Join(hits, "; "))
-	}
-	return nil
+	return hits, err
 }

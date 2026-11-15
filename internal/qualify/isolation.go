@@ -24,17 +24,20 @@ type probeReport struct {
 // read. The mechanism name alone never gives `enforced`. It also reports whether the home
 // canary was readable (OD-14), from the first isolated bracket.
 func IsolationLevel(mechanism string, control, before, after []byte) (level, reason string, credentialFilesReachable *bool) {
+	var c, b, a probeReport
+	var reachable *bool
+	if json.Unmarshal(before, &b) == nil {
+		reachable = homeReadable(b)
+	}
 	switch mechanism {
 	case "", "none":
-		return "none", "no isolation mechanism", nil
+		return "none", "no isolation mechanism", reachable
 	case "proxy":
-		return "weak-proxy", "proxy variables only", nil
+		return "weak-proxy", "proxy variables only", reachable
 	}
-	var c, b, a probeReport
-	if json.Unmarshal(control, &c) != nil || json.Unmarshal(before, &b) != nil {
-		return "weak-proxy", "probe results missing or unreadable", nil
+	if json.Unmarshal(control, &c) != nil || reachable == nil {
+		return "weak-proxy", "probe results missing or unreadable", reachable
 	}
-	reachable := homeReadable(b)
 	if !controlReached(c) {
 		return "weak-proxy", "control did not reach the OD-5 endpoints, so denial proves nothing", reachable
 	}
