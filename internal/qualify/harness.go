@@ -321,6 +321,12 @@ func (s *Scenario) NotTested(reason string) {
 	s.T.Skip(reason)
 }
 
+// Skip stops the scenario as SKIPPED (does not apply on this platform) with a mandatory reason.
+func (s *Scenario) Skip(reason string) {
+	s.result.Status, s.result.Reason = Skipped, reason
+	s.T.Skip(reason)
+}
+
 // Observe adds a sanitised note to the scenario result.
 func (s *Scenario) Observe(format string, args ...any) {
 	s.result.Observations = append(s.result.Observations, s.run.San.String(fmt.Sprintf(format, args...)))
@@ -377,7 +383,10 @@ func (s *Scenario) Process(engines ...string) (ProcessDirs, []string, error) {
 	return dirs, Environment(dirs, cli, nil), nil
 }
 
-// Project copies fixtures/qualify/<template> into the scenario, replacing @CANARY@ with the
+// m2616Project is the M26.16 recording project (fixtures/engines/project), also a template.
+const m2616Project = "engines/project"
+
+// Project copies fixtures/qualify/<template> (or m2616Project) into the scenario, replacing @CANARY@ with the
 // run canary, and applies the fixture guard. allowed lists project-relative paths the
 // scenario expects Hclaro or the engine to write (the lock-info file is always checked).
 func (s *Scenario) Project(template string, allowed ...string) string {
@@ -589,6 +598,9 @@ func snapshotFiles(root string) map[string]string {
 
 func copyTemplate(name, dst, canary string) error {
 	root := path.Join("qualify", name)
+	if name == m2616Project {
+		root = name
+	}
 	if _, err := fs.Stat(fixtures.Qualify, root); err != nil {
 		return err
 	}

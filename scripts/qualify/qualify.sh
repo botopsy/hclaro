@@ -39,7 +39,10 @@ dirty=false
 [ -z "$(git -C "$repo" status --porcelain)" ] || dirty=true
 pkg=hclaro/internal/qualify
 ldflags="-X $pkg.buildCommit=$commit -X $pkg.buildDirty=$dirty -X $pkg.buildHome=$real_home -X $pkg.buildRepo=$repo -X $pkg.buildUser=$(id -un)"
-(cd "$repo" && go test -c -tags realengine -ldflags "$ldflags" -o "$run/qualify.test" ./internal/qualify)
+# cgo on macOS only: F3 reads Hclaro's own peak memory with proc_pid_rusage (rss_darwin.go).
+cgo=0
+[ "$(uname -s)" != Darwin ] || cgo=1
+(cd "$repo" && CGO_ENABLED=$cgo go test -c -tags realengine -ldflags "$ldflags" -o "$run/qualify.test" ./internal/qualify)
 (cd "$repo" && CGO_ENABLED=0 go build -o "$run/netprobe" ./internal/qualify/netprobe)
 cp "$hclaro" "$run/hclaro"
 cp "$QUALIFY_DIR/sandbox.sb" "$run/sandbox.sb"

@@ -1,0 +1,616 @@
+//go:build realengine
+
+package qualify
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+)
+
+// M27.04 scenarios (tasks/M27/tasks/M27-04-DRIFT-GRAPH-FAILURES.md), once per configured
+// engine: real drift (D1-D4), graphs (G1), locks (L1, L2) and failure classification (F1-F5).
+
+// Scan is the part of GET /api/v1/drift-scans/{id} the harness reads.
+type Scan struct {
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	Outcome    string `json:"outcome"`
+	Exhaustive bool   `json:"exhaustive"`
+	Summary    struct {
+		Changed, Missing, CannotVerify, Total int
+	} `json:"summary"`
+	Resources []struct {
+		ID             string   `json:"id"`
+		Address        string   `json:"address"`
+		Classification string   `json:"classification"`
+		Actions        []string `json:"actions"`
+	} `json:"resources"`
+	Current     bool   `json:"current"`
+	StaleReason string `json:"staleReason"`
+	Withheld    bool   `json:"withheld"`
+	Diagnostic  *struct {
+		Code string `json:"code"`
+	} `json:"diagnostic"`
+}
+
+// drifted maps each scan record to "<classification> <actions>".
+func (sc Scan) drifted() map[string]string {
+	out := map[string]string{}
+	for _, r := range sc.Resources {
+		out[r.Address] = r.Classification + " " + strings.Join(r.Actions, ",")
+	}
+	return out
+}
+
+func (s *Scenario) getScan(h *Hclaro, id string) Scan {
+	var sc Scan
+	if r, err := h.client.Do("GET", "drift-scans/"+id, nil, &sc); err != nil || r.Status != 200 {
+		s.Fatalf("drift scan: %v %d", err, r.Status)
+	}
+	return sc
+}
+
+// driftScan asks Hclaro for a drift scan as the drift dialog does and follows it to its end.
+// Every scan asserts the engine argv is a refresh-only plan and that the state file's serial
+// and bytes did not change (M27.04: any change is FAIL).
+func (s *Scenario) driftScan(h *Hclaro, project string, varFiles []string) (Operation, Scan) {
+	sum, serial := stateFile(s, project)
+	s.Guard(project)
+	var started struct {
+		Operation Operation `json:"operation"`
+		Scan      Scan      `json:"scan"`
+	}
+	r, err := h.client.Do("POST", "drift-scans", map[string]any{"acknowledgeProviderAccess": true, "varFiles": varFiles}, &started)
+	if err != nil || r.Status != 202 {
+		s.Fatalf("POST drift-scans: %v %d %s", err, r.Status, r.Code)
+	}
+	op := s.FollowOp(h, started.Operation.ID, 15*time.Minute)
+	if !slices.Contains(op.Command, "-refresh-only") || !slices.Contains(op.Command, "plan") {
+		s.Fatalf("drift scan argv %v is not a refresh-only plan", op.Command)
+	}
+	assertStateUnchanged(s, project, sum, serial, "by the drift scan")
+	return op, s.getScan(h, started.Scan.ID)
+}
+
+// failedPlan starts a plan expected to fail and returns its final record (with the engine
+// diagnostics). A plan refused before any operation started returns a zero operation.
+func (s *Scenario) failedPlan(h *Hclaro, project string, varFiles []string) (Operation, Response) {
+	s.Guard(project)
+	body := map[string]any{"acknowledgeBackendAccess": true, "varFiles": varFiles, "replace": []string{}}
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		var op Operation
+		r, err := h.client.Do("POST", "plans", body, &op)
+		if err != nil {
+			s.Fatalf("POST plans: %v", err)
+		}
+		// A harness file edit makes Hclaro read the project again; wait for that read.
+		if r.Status == 409 && r.Code == "workspace_loading" && time.Now().Before(deadline) {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		if r.Status != 202 {
+			return Operation{}, r
+		}
+		return s.FollowOp(h, op.ID, 15*time.Minute), r
+	}
+}
+
+func code(op Operation) string {
+	if op.Diagnostic == nil {
+		return ""
+	}
+	return op.Diagnostic.Code
+}
+
+// engineRan fails unless op carries the engine's argv and exit code: the classification
+// under test came from real engine output, not from a refusal before the engine.
+func engineRan(s *Scenario, what string, op Operation) {
+	if len(op.Command) == 0 || op.ExitCode == nil {
+		s.Fatalf("%s: no engine run recorded (argv %v, exit %v)", what, op.Command, op.ExitCode)
+	}
+}
+
+func diagnostics(op Operation) string {
+	var b strings.Builder
+	for _, d := range op.Diagnostics {
+		fmt.Fprintf(&b, "%s: %s\n%s\n", d.Severity, d.Summary, d.Detail)
+	}
+	return b.String()
+}
+
+// launchApplied launches template, plans varFiles and applies the plan through Hclaro.
+func launchApplied(s *Scenario, engine, template string, varFiles []string, allowed ...string) (string, *Hclaro) {
+	project, _, _, h := launch(s, engine, template, allowed...)
+	detail := s.LaunchPlan(h, project, engine, varFiles)
+	if _, op := s.ApplyReviewed(h, detail.ID); op.Status != "succeeded" || op.Outcome != "applied" {
+		s.Fatalf("setup apply ended %s, outcome %q", op.Status, op.Outcome)
+	}
+	return project, h
+}
+
+// d2Want is what every CORE engine's refresh-only plan reports for an edited local_file:
+// pinned from fixtures/engines/<engine>/local-drift.json (TestRealEngineLocalFileDrift).
+// hashicorp/local 2.9.1 drops an object whose file checksum no longer matches.
+var d2Want = map[string]string{"local_file.edited": "missing delete"}
+
+// TestRealDrift covers D1 to D4.
+func TestRealDrift(t *testing.T) {
+	if run == nil {
+		t.Skip(runSkip)
+	}
+	vars := []string{"launch.tfvars"}
+	files := []string{"out/gone.txt", "out/edited.txt"}
+	for _, name := range engines() {
+		run.Scenario(t, "d1-drift-deleted-"+name, name, "launch", false, func(s *Scenario) {
+			project, h := launchApplied(s, name, "drift", vars, files...)
+			if err := os.Remove(filepath.Join(project, "out", "gone.txt")); err != nil {
+				s.Fatalf("%v", err)
+			}
+			_, sc := s.driftScan(h, project, vars)
+			got := sc.drifted()
+			s.Observe("D1 scan %s %s: %v", sc.Status, sc.Outcome, got)
+			if sc.Status != "completed" || sc.Outcome != "drift_detected" || len(got) != 1 || got["local_file.gone"] != "missing delete" || sc.Summary.Missing != 1 {
+				s.Fatalf("D1: scan %s %s %v summary %+v, want local_file.gone missing", sc.Status, sc.Outcome, got, sc.Summary)
+			}
+			for _, rc := range sc.Resources {
+				if r, err := h.client.Do("GET", "drift-scans/"+sc.ID+"/resources/"+rc.ID, nil, nil); err != nil || r.Status != 200 {
+					s.Fatalf("D1 detail %s: %v %d", rc.Address, err, r.Status)
+				}
+			}
+		})
+		run.Scenario(t, "d2-drift-edited-"+name, name, "launch", false, func(s *Scenario) {
+			project, h := launchApplied(s, name, "drift", vars, files...)
+			if err := os.WriteFile(filepath.Join(project, "out", "edited.txt"), []byte("edited outside\n"), 0o600); err != nil {
+				s.Fatalf("%v", err)
+			}
+			_, sc := s.driftScan(h, project, vars)
+			got := sc.drifted()
+			s.Observe("D2 scan %s %s: %v (pinned recording: %v)", sc.Status, sc.Outcome, got, d2Want)
+			if sc.Status != "completed" || sc.Outcome != "drift_detected" || len(got) != len(d2Want) || got["local_file.edited"] != d2Want["local_file.edited"] {
+				s.Fatalf("D2: Hclaro reports %v, the engine's recorded refresh-only plan reports %v", got, d2Want)
+			}
+		})
+		run.Scenario(t, "d3-no-drift-"+name, name, "launch", false, func(s *Scenario) {
+			project, h := launchApplied(s, name, "drift", vars, files...)
+			_, sc := s.driftScan(h, project, vars)
+			s.Observe("D3 scan %s %s exhaustive %v total %d", sc.Status, sc.Outcome, sc.Exhaustive, sc.Summary.Total)
+			if sc.Status != "completed" || sc.Outcome != "no_drift" || !sc.Exhaustive || sc.Summary.Total != 0 || len(sc.Resources) != 0 {
+				s.Fatalf("D3: scan %s %s exhaustive %v %v", sc.Status, sc.Outcome, sc.Exhaustive, sc.drifted())
+			}
+		})
+		run.Scenario(t, "d4-drift-stale-"+name, name, "launch", false, func(s *Scenario) {
+			project, h := launchApplied(s, name, "drift", vars, append(slices.Clone(files), "main.tf")...)
+			if err := os.Remove(filepath.Join(project, "out", "gone.txt")); err != nil {
+				s.Fatalf("%v", err)
+			}
+			_, sc := s.driftScan(h, project, vars)
+			if !sc.Current || len(sc.Resources) != 1 {
+				s.Fatalf("D4 setup scan: current %v %v", sc.Current, sc.drifted())
+			}
+			rid := sc.Resources[0].ID
+			main := filepath.Join(project, "main.tf")
+			b, _ := os.ReadFile(main)
+			edited := strings.Replace(string(b), `input = "kept"`, `input = "kept, edited"`, 1)
+			if edited == string(b) || os.WriteFile(main, []byte(edited), 0o600) != nil {
+				s.Fatalf("could not edit main.tf")
+			}
+			deadline := time.Now().Add(60 * time.Second)
+			for sc = s.getScan(h, sc.ID); sc.Current; sc = s.getScan(h, sc.ID) {
+				if time.Now().After(deadline) {
+					s.Fatalf("D4: the kept scan is still current 60 s after main.tf changed")
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+			s.Observe("D4 kept scan: current %v withheld %v reason %q", sc.Current, sc.Withheld, sc.StaleReason)
+			if sc.StaleReason == "" || !sc.Withheld || len(sc.Resources) != 0 {
+				s.Fatalf("D4: stale scan reason %q withheld %v resources %v", sc.StaleReason, sc.Withheld, sc.drifted())
+			}
+			if r, err := h.client.Do("GET", "drift-scans/"+sc.ID+"/resources/"+rid, nil, nil); err != nil || r.Status != 409 || r.Code != "scan_stale" {
+				s.Fatalf("D4: stale detail %v %d %s, want 409 scan_stale", err, r.Status, r.Code)
+			}
+		})
+	}
+}
+
+// graphView is the part of GET /api/v1/graphs/{id}?planId= the harness reads.
+type graphView struct {
+	Status  string `json:"status"`
+	Format  string `json:"format"`
+	Current bool   `json:"current"`
+	Nodes   []struct {
+		ID              string `json:"id"`
+		ResourceAddress string `json:"resourceAddress"`
+		Kind            string `json:"nodeKind"`
+		Confidence      string `json:"confidence"`
+		InstanceCount   int    `json:"instanceCount"`
+		Planned         []struct {
+			ChangeID string `json:"changeId"`
+			Address  string `json:"address"`
+		} `json:"planned"`
+	} `json:"nodes"`
+	Plan *struct {
+		Changes  int `json:"changes"`
+		Unmapped []struct {
+			ChangeID string `json:"changeId"`
+			Address  string `json:"address"`
+		} `json:"unmapped"`
+	} `json:"plan"`
+}
+
+// checkGraph generates a graph through Hclaro, overlays the reviewed plan and asserts G1:
+// no node unknown, every resource node mapped to configuration or state, and every confirmed
+// change of the plan on exactly one node or, for orphans only, in the unmapped list.
+func checkGraph(s *Scenario, h *Hclaro, plan PlanDetail, orphans []string) {
+	var opts struct {
+		CanGenerate bool   `json:"canGenerate"`
+		Reason      string `json:"reason"`
+	}
+	if r, err := h.client.Do("GET", "graphs/options", nil, &opts); err != nil || r.Status != 200 || !opts.CanGenerate {
+		s.Fatalf("graphs/options: %v %d can %v %s", err, r.Status, opts.CanGenerate, opts.Reason)
+	}
+	var started struct {
+		Operation Operation `json:"operation"`
+		Graph     struct {
+			ID string `json:"id"`
+		} `json:"graph"`
+	}
+	if r, err := h.client.Do("POST", "graphs", map[string]any{"acknowledgeEngineRun": true}, &started); err != nil || r.Status != 202 {
+		s.Fatalf("POST graphs: %v %d %s", err, r.Status, r.Code)
+	}
+	if op := s.FollowOp(h, started.Operation.ID, 15*time.Minute); op.Status != "succeeded" {
+		s.Fatalf("graph operation %s (%s)", op.Status, code(op))
+	}
+	var v graphView
+	r, err := h.client.Do("GET", "graphs/"+started.Graph.ID+"?planId="+plan.ID, nil, &v)
+	if err != nil || r.Status != 200 || v.Plan == nil {
+		s.Fatalf("graph with plan overlay: %v %d %s", err, r.Status, r.Code)
+	}
+	s.Artifact("graph-view.json", r.Body)
+	confidence := map[string]int{}
+	seen := map[string]int{}
+	for _, n := range v.Nodes {
+		confidence[n.Confidence]++
+		if n.Confidence == "unknown" {
+			s.Errorf("node %s (%s) is unknown", n.ID, n.ResourceAddress)
+		}
+		if (n.Kind == "resource" || n.Kind == "data") && n.Confidence != "exact" && n.Confidence != "configuration" {
+			s.Errorf("resource node %s has confidence %q", n.ResourceAddress, n.Confidence)
+		}
+		for _, c := range n.Planned {
+			seen[c.ChangeID]++
+		}
+	}
+	var unmapped []string
+	for _, c := range v.Plan.Unmapped {
+		seen[c.ChangeID]++
+		unmapped = append(unmapped, c.Address)
+	}
+	confirmed := 0
+	for _, c := range plan.Changes {
+		if c.Action == "no-op" {
+			continue
+		}
+		confirmed++
+		if seen[c.ID] != 1 {
+			s.Errorf("change %s %s is on %d nodes or lists", c.Address, c.Action, seen[c.ID])
+		}
+	}
+	sort.Strings(unmapped)
+	// An orphan is a graph node mapped to state where the engine's graph lists it (Terraform
+	// 1.5.x plan graphs) and unmapped where it does not; nothing else may be unmapped.
+	for _, a := range unmapped {
+		if !slices.Contains(orphans, a) {
+			s.Errorf("change %s matches no graph node and is not an orphan", a)
+		}
+	}
+	s.Observe("G1 graph %s format %s: %d nodes %v; overlay %d changes, unmapped %v (orphans %v)", v.Status, v.Format, len(v.Nodes), confidence, v.Plan.Changes, unmapped, orphans)
+	if v.Plan.Changes != confirmed {
+		s.Fatalf("overlay: %d changes, the reviewed plan has %d confirmed", v.Plan.Changes, confirmed)
+	}
+}
+
+// TestRealGraph covers G1 on the M26.16 recording project and the module-heavy project.
+func TestRealGraph(t *testing.T) {
+	if run == nil {
+		t.Skip(runSkip)
+	}
+	for _, name := range engines() {
+		run.Scenario(t, "g1-graph-m2616-"+name, name, "launch", false, func(s *Scenario) {
+			project := s.Project(m2616Project, "terraform.tfstate")
+			if err := os.Rename(filepath.Join(project, "state.json"), filepath.Join(project, "terraform.tfstate")); err != nil {
+				s.Fatalf("%v", err)
+			}
+			dirs, env, err := s.Process(name)
+			if err != nil {
+				s.Fatalf("%v", err)
+			}
+			s.SetupInit(dirs, env, name, project)
+			h := s.StartLaunch(dirs, env, name, project)
+			plan := s.LaunchPlan(h, project, name, []string{"prod.tfvars"})
+			checkGraph(s, h, plan, []string{"terraform_data.gone", "terraform_data.counted_gone[0]", "terraform_data.counted_gone[1]", `module.old["x"].terraform_data.this`})
+			// The project's own test secret (not the run canary) must not be shown either.
+			if b, _ := os.ReadFile(filepath.Join(s.Dir, "responses.raw")); strings.Contains(string(b), "DO_NOT_LEAK_HCLARO_TEST_SECRET") {
+				s.Fatalf("the M26.16 project's secret is visible in a response")
+			}
+		})
+		run.Scenario(t, "g1-graph-modules-"+name, name, "launch", false, func(s *Scenario) {
+			project, h := launchApplied(s, name, "graph", []string{"launch.tfvars"})
+			if err := os.Remove(filepath.Join(project, "retired.tf")); err != nil {
+				s.Fatalf("%v", err)
+			}
+			plan := s.LaunchPlan(h, project, name, []string{"grow.tfvars"})
+			s.Observe("G1 plan: %s", plan)
+			checkGraph(s, h, plan, []string{"module.old.terraform_data.leaf", "terraform_data.orphan[0]", "terraform_data.orphan[1]"})
+		})
+	}
+}
+
+// TestRealLocks covers L1 (F-2 holder) and L2 (F-3).
+func TestRealLocks(t *testing.T) {
+	if run == nil {
+		t.Skip(runSkip)
+	}
+	for _, name := range engines() {
+		run.Scenario(t, "l1-state-locked-"+name, name, "launch", false, func(s *Scenario) {
+			project, h := launchApplied(s, name, "launch-lock", []string{"launch.tfvars"})
+			// The apply's plan is reviewed and approved before the lock is taken (as in A5).
+			detail := s.LaunchPlan(h, project, name, []string{"gen2.tfvars"})
+			ap, r := s.Approve(h, detail.ID)
+			if r.Status != 200 {
+				s.Fatalf("approval: %d %s", r.Status, r.Code)
+			}
+			fifo := filepath.Join(project, ".qual", "gate.fifo")
+			defer os.Remove(fifo) // snapshotting a FIFO would block
+			sum, serial := stateFile(s, project)
+			dirs := s.procs[0].Dirs
+			holder := hold(s, dirs, name, project)
+			defer holder.Kill()
+			lock := filepath.Join(project, ".terraform.tfstate.lock.info")
+			info, err := fileSHA256(lock)
+			if err != nil {
+				s.Fatalf("lock info: %v", err)
+			}
+			check := func(what string, op Operation) {
+				engineRan(s, what, op)
+				now, err := fileSHA256(lock)
+				s.Observe("L1 %s: %s (%s), holder alive %v, lock info unchanged %v", what, op.Status, code(op), holder.Alive(), err == nil && now == info)
+				if code(op) != "state_locked" {
+					s.Errorf("L1 %s ended %s with %q, want state_locked", what, op.Status, code(op))
+				}
+				if err != nil || now != info || !holder.Alive() {
+					s.Fatalf("L1 %s: the lock-info file changed or went away while the holder held it", what)
+				}
+				if !strings.Contains(diagnostics(op), "Lock Info") {
+					s.Errorf("L1 %s: no lock info in the engine diagnostics: %q", what, diagnostics(op))
+				}
+				assertStateUnchanged(s, project, sum, serial, "during "+what)
+			}
+			started, r := s.StartApply(h, detail.ID, ap.Token, ap.Phrase)
+			if r.Status != 202 {
+				s.Fatalf("apply: %d %s", r.Status, r.Code)
+			}
+			op := s.FollowOp(h, started.ID, 5*time.Minute)
+			check("apply", op)
+			if op.Outcome != "not_applied" {
+				s.Errorf("L1 apply outcome %q, want not_applied", op.Outcome)
+			}
+			op, r = s.failedPlan(h, project, []string{"gen3.tfvars"})
+			if op.ID == "" {
+				s.Fatalf("plan refused before the engine: %d %s", r.Status, r.Code)
+			}
+			check("plan", op)
+			op, sc := s.driftScan(h, project, []string{"launch.tfvars"})
+			check("drift", op)
+			if sc.Status != "failed" || sc.Diagnostic == nil || sc.Diagnostic.Code != "state_locked" {
+				s.Errorf("L1 drift scan %s %v, want failed state_locked", sc.Status, sc.Diagnostic)
+			}
+			if err := holder.Release(); err != nil {
+				s.Fatalf("release: %v", err)
+			}
+			// Hclaro never unlocks: the lock goes away only because its holder exited.
+			deadline := time.Now().Add(30 * time.Second)
+			for {
+				if _, err := os.Stat(lock); os.IsNotExist(err) {
+					break
+				}
+				if time.Now().After(deadline) {
+					s.Fatalf("lock-info file still present 30 s after the holder exited")
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			s.Observe("L1 holder %q released; lock-info file removed by the holder", od9(name))
+		})
+		run.Scenario(t, "l2-unlock-failed-"+name, name, "launch", false, func(s *Scenario) {
+			e, _ := run.Engine(name)
+			s.NotTested(fmt.Sprintf("unlock failure not reproducible on %s %s (F-3 source analysis 2026-11-14, NOT_REPRODUCIBLE for the local backend); synthetic state_unlock_failed coverage stays in internal/engine/planner_test.go and internal/operations/apply_test.go", e.Name, e.Version))
+		})
+	}
+}
+
+// failurePlans runs F1 (plan_failed) and F2's providers-removed case (init_required) on an
+// initialized failures project; F5 repeats them under another locale.
+func failurePlans(s *Scenario, h *Hclaro, project, label string) {
+	op, r := s.failedPlan(h, project, []string{"missing.tfvars"})
+	if op.ID == "" {
+		s.Fatalf("%s F1 plan refused before the engine: %d %s", label, r.Status, r.Code)
+	}
+	engineRan(s, label+" F1", op)
+	s.Observe("%s F1: %s (%s): %s", label, op.Status, code(op), diagnostics(op))
+	// The var-file value (a path holding the canary) is checked by the canary scan.
+	if op.Status != "failed" || code(op) != "plan_failed" || !strings.Contains(diagnostics(op), "Invalid function argument") {
+		s.Fatalf("%s F1: plan %s (%s), want plan_failed with the file() diagnostic", label, op.Status, code(op))
+	}
+	if err := os.RemoveAll(filepath.Join(project, ".terraform", "providers")); err != nil {
+		s.Fatalf("%v", err)
+	}
+	op, r = s.failedPlan(h, project, []string{"launch.tfvars"})
+	if op.ID == "" {
+		s.Fatalf("%s F2 plan refused before the engine: %d %s", label, r.Status, r.Code)
+	}
+	engineRan(s, label+" F2", op)
+	s.Observe("%s F2 (providers removed): %s (%s): %s", label, op.Status, code(op), diagnostics(op))
+	if code(op) != "init_required" {
+		s.Fatalf("%s F2 (providers removed): plan %s (%s), want init_required", label, op.Status, code(op))
+	}
+}
+
+// TestRealFailures covers F1 to F5.
+func TestRealFailures(t *testing.T) {
+	if run == nil {
+		t.Skip(runSkip)
+	}
+	for _, name := range engines() {
+		run.Scenario(t, "f1-f2-plan-failed-init-required-"+name, name, "launch", false, func(s *Scenario) {
+			project, _, _, h := launch(s, name, "failures")
+			failurePlans(s, h, project, "C.UTF-8")
+		})
+		run.Scenario(t, "f2-lockfile-changed-"+name, name, "launch", false, func(s *Scenario) {
+			project, _, _, h := launch(s, name, "failures", ".terraform.lock.hcl")
+			lock := filepath.Join(project, ".terraform.lock.hcl")
+			b, _ := os.ReadFile(lock)
+			edited := strings.Replace(string(b), `"2.9.1"`, `"2.9.0"`, 1)
+			if edited == string(b) || os.WriteFile(lock, []byte(edited), 0o600) != nil {
+				s.Fatalf("could not edit the lock file")
+			}
+			op, r := s.failedPlan(h, project, []string{"launch.tfvars"})
+			if op.ID == "" {
+				s.Fatalf("plan refused before the engine: %d %s", r.Status, r.Code)
+			}
+			engineRan(s, "F2 lock file", op)
+			s.Observe("F2 (lock file changed): %s (%s): %s", op.Status, code(op), diagnostics(op))
+			if code(op) != "init_required" {
+				s.Fatalf("F2 (lock file changed): plan %s (%s), want init_required", op.Status, code(op))
+			}
+		})
+		run.Scenario(t, "f2-never-initialized-"+name, name, "launch", false, func(s *Scenario) {
+			project := s.Project("failures")
+			dirs, env, err := s.Process(name)
+			if err != nil {
+				s.Fatalf("%v", err)
+			}
+			s.startCodes = map[string]bool{"uninitialized": true}
+			h := s.StartLaunch(dirs, env, name, project)
+			var opts struct {
+				CanPlan bool   `json:"canPlan"`
+				Reason  string `json:"reason"`
+			}
+			if r, err := h.client.Do("GET", "plans/options", nil, &opts); err != nil || r.Status != 200 {
+				s.Fatalf("plans/options: %v %d", err, r.Status)
+			}
+			if !opts.CanPlan {
+				// Refused before any engine run: the project read must say it needs init.
+				var ws struct {
+					Diagnostic *struct {
+						Code    string `json:"code"`
+						Message string `json:"message"`
+					} `json:"diagnostic"`
+				}
+				if r, err := h.client.Do("GET", "workspace", nil, &ws); err != nil || r.Status != 200 || ws.Diagnostic == nil {
+					s.Fatalf("workspace: %v %d", err, r.Status)
+				}
+				s.Observe("F2 (never initialized): planning unavailable before the engine (%q); project read %s: %q", opts.Reason, ws.Diagnostic.Code, ws.Diagnostic.Message)
+				if ws.Diagnostic.Code != "uninitialized" || !strings.Contains(strings.ToLower(ws.Diagnostic.Message), "init") {
+					s.Fatalf("F2 (never initialized): project read %s %q, want uninitialized pointing at init", ws.Diagnostic.Code, ws.Diagnostic.Message)
+				}
+				return
+			}
+			op, r := s.failedPlan(h, project, []string{"launch.tfvars"})
+			s.Observe("F2 (never initialized): POST %d %s, plan %s (%s): %s", r.Status, r.Code, op.Status, code(op), diagnostics(op))
+			if code(op) != "init_required" {
+				s.Fatalf("F2 (never initialized): plan %s (%s), want init_required", op.Status, code(op))
+			}
+		})
+		run.Scenario(t, "f3-plan-too-large-"+name, name, "launch", false, func(s *Scenario) {
+			project, _, _, h := launch(s, name, "failures")
+			op, r := s.failedPlan(h, project, []string{"big.tfvars"})
+			if op.ID == "" {
+				s.Fatalf("plan refused before the engine: %d %s", r.Status, r.Code)
+			}
+			engineRan(s, "F3", op)
+			s.Observe("F3: plan %s (%s), exit %d", op.Status, code(op), *op.ExitCode)
+			if code(op) != "plan_too_large" {
+				s.Fatalf("F3: plan %s (%s), want plan_too_large", op.Status, code(op))
+			}
+			if r, err := h.client.Do("GET", "workspace", nil, nil); err != nil || r.Status != 200 {
+				s.Fatalf("F3: Hclaro not answering after the large plan: %v %d", err, r.Status)
+			}
+			rss, method := peakRSS(h.Pid())
+			s.Observe("F3: Hclaro peak memory %d bytes (%.1f MiB; %s; bound %d MiB)", rss, float64(rss)/(1<<20), method, f3RSSBoundMiB)
+			switch {
+			case rss < 0:
+				s.NotTested("F3: peak RSS is not measured on " + runtime.GOOS)
+			case rss > f3RSSBoundMiB<<20:
+				s.Fatalf("F3: peak RSS %d bytes exceeds the %d MiB bound", rss, f3RSSBoundMiB)
+			}
+		})
+		run.Scenario(t, "f4-unknown-actions-"+name, name, "launch", false, func(s *Scenario) {
+			if e, _ := run.Engine(name); e.Name == "terraform" && strings.HasPrefix(e.Version, "1.5.") {
+				s.NotTested("no engine emits an unsupported combination: Terraform " + e.Version + " has no lifecycle destroy argument, the only trigger found (2026-11-15 probe)")
+			}
+			project, h := launchApplied(s, name, "forget", []string{"launch.tfvars"})
+			sum, serial := stateFile(s, project)
+			detail := s.LaunchPlan(h, project, name, []string{"gen2.tfvars"})
+			var actions []string
+			for _, c := range detail.Changes {
+				if c.Address == "terraform_data.kept" {
+					actions = c.Actions
+				}
+			}
+			s.Observe("F4: terraform_data.kept actions %v; plan %s", actions, detail)
+			if slices.Equal(actions, []string{"delete", "create"}) || slices.Equal(actions, []string{"create", "delete"}) || slices.Equal(actions, []string{"forget"}) {
+				s.NotTested(fmt.Sprintf("no engine emits an unsupported combination: %s planned %v", name, actions))
+			}
+			var raw struct {
+				Apply struct {
+					Available bool   `json:"available"`
+					Code      string `json:"code"`
+				} `json:"apply"`
+			}
+			if err := json.Unmarshal(detail.Raw, &raw); err != nil || raw.Apply.Available || raw.Apply.Code != "unknown_actions" {
+				s.Fatalf("F4: plan apply status %+v (%v), want unavailable unknown_actions", raw.Apply, err)
+			}
+			ops := len(s.operations(h))
+			// The preflight blocks it (plan.eligible), so no approval token exists to apply with.
+			if _, r := s.Approve(h, detail.ID); r.Status == 200 {
+				s.Fatalf("F4: a plan with unsupported actions was approved")
+			} else {
+				s.Observe("F4: approval refused: %d %s", r.Status, r.Code)
+			}
+			if len(s.operations(h)) != ops {
+				s.Fatalf("F4: an operation started for a plan with unsupported actions")
+			}
+			assertStateUnchanged(s, project, sum, serial, "after the refused approval")
+		})
+		run.Scenario(t, "f5-locale-de-"+name, name, "launch", false, func(s *Scenario) {
+			if runtime.GOOS == "windows" {
+				s.Skip("LANG is not the locale mechanism on Windows; a display-language test is out of scope")
+			}
+			// Declared in the scenario's allowlist (extraEnvironment) for Hclaro and its engines.
+			extra := map[string]string{"LANG": "de_DE.UTF-8", "LC_ALL": "de_DE.UTF-8"}
+			project := s.Project("failures", stateWrites...)
+			dirs, env, err := s.Process(name)
+			if err != nil {
+				s.Fatalf("%v", err)
+			}
+			s.SetupInit(dirs, env, name, project)
+			h, err := s.StartHclaro(dirs, Environment(dirs, s.run.Cfg.CLIConfig[name], extra), extra, "--path", project, "--no-browser", "--engine", name)
+			if err != nil {
+				s.Fatalf("start hclaro: %v", err)
+			}
+			s.waitReady(h)
+			failurePlans(s, h, project, "de_DE.UTF-8")
+		})
+	}
+}
+
+// f3RSSBoundMiB is the F3 peak RSS bound, set in docs/qualification/README.md before the run.
+const f3RSSBoundMiB = 512
