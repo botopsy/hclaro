@@ -46,8 +46,10 @@ module "m" { source = "./mod" }
 		"locked aws":       {".terraform.lock.hcl": "provider \"registry.terraform.io/hashicorp/aws\" {\n}\n"},
 		"module s3 nested": {"main.tf": "", "mod/main.tf": "terraform {\n  backend \"s3\" {}\n}\n"},
 		// OD-8: local-exec only in the approved gate fixture, byte-identical.
-		"local-exec":  {"main.tf": "resource \"terraform_data\" \"x\" {\n  provisioner \"local-exec\" {\n    command = \"true\"\n  }\n}\n"},
-		"edited gate": gateFixture(t, "exit 0"),
+		"local-exec":          {"main.tf": "resource \"terraform_data\" \"x\" {\n  provisioner \"local-exec\" {\n    command = \"true\"\n  }\n}\n"},
+		"edited gate":         gateFixture(t, "exit 0"),
+		"edited windows gate": windowsGate(t, "exit 0", false),
+		"mixed gate":          windowsGate(t, "", true),
 	}
 	write := func(files map[string]string) string {
 		dir := t.TempDir()
@@ -64,6 +66,9 @@ module "m" { source = "./mod" }
 	}
 	if err := GuardFixture(write(gateFixture(t, ""))); err != nil {
 		t.Errorf("approved gate fixture refused: %v", err)
+	}
+	if err := GuardFixture(write(windowsGate(t, "", false))); err != nil {
+		t.Errorf("approved Windows gate fixture refused: %v", err)
 	}
 	if err := GuardFixture(write(ok)); err != nil {
 		t.Errorf("approved fixture refused: %v", err)
@@ -392,6 +397,25 @@ func gateFixture(t *testing.T, edit string) map[string]string {
 	}
 	if edit != "" {
 		files["gate.sh"] += edit + "\n"
+	}
+	return files
+}
+
+// windowsGate returns the approved WIN1 gated fixture, with gate.ps1 changed when edit is set,
+// or with the Unix fixture's main.tf in place of its own when mixed is set.
+func windowsGate(t *testing.T, edit string, mixed bool) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	for _, name := range []string{"main.tf", "gate.ps1", "launch.tfvars"} {
+		b, err := fs.ReadFile(fixtures.Qualify, "qualify/launch-gate-windows/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = string(b)
+	}
+	files["gate.ps1"] += edit
+	if mixed {
+		files["main.tf"] = gateFixture(t, "")["main.tf"]
 	}
 	return files
 }

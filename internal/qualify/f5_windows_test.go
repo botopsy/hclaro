@@ -4,7 +4,9 @@ package qualify
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -27,6 +29,13 @@ func TestF5WindowsInterrupt(t *testing.T) {
 	}
 	home, _ := os.UserHomeDir()
 	repo, _ := filepath.Abs("../..")
+	// go test runs in the checkout, so the commit comes from git (qualify.sh uses -ldflags).
+	if out, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
+		buildCommit = strings.TrimSpace(string(out))
+	}
+	if out, err := exec.Command("git", "status", "--porcelain").Output(); err == nil && len(out) == 0 {
+		buildDirty = "false"
+	}
 	if img := os.Getenv("ImageOS"); img != "" {
 		buildRunnerImage, buildRunnerImageVersion = os.Getenv("RUNNER_LABEL")+"/"+img, os.Getenv("ImageVersion")
 	}

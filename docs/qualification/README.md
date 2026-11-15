@@ -301,7 +301,23 @@ Platform scenarios (`TestRealPlatform`, and H5d in `TestRealHubPaths`):
 
 | ID | Where | What |
 | --- | --- | --- |
-| WIN1 | windows | `NOT_TESTED`: needs a PowerShell gate fixture (OD-8 covers only `gate.sh`) and a passing F-5. `SKIPPED` elsewhere, where A6, A7 and A7b run. |
+| WIN1 | windows | On Windows, A6, A7 and A7b run on `fixtures/qualify/launch-gate-windows`. Its `main.tf` is the gated fixture with a `local-exec` that runs `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ./gate.ps1`, with `GATE_MODE` in the environment. `gate.ps1` registers a console control handler (C# compiled locally by `Add-Type`; its build files go to `TEMP`, inside the run directory). The handler records CTRL_BREAK/CTRL_C in `.qual/interrupted` like `gate.sh`'s INT trap. It then exits 130 in `normal` mode, or keeps polling in `trap` mode. The markers and timeouts are those of `gate.sh`. The guard accepts provisioners only when `main.tf` and `gate.ps1` are byte-identical to that fixture. WIN1 is `PASS` only if A6, A7 and A7b all `PASS` for its engine. A `FAIL` among them fails it; any other status makes it `NOT_TESTED`. The owner approved the PowerShell gate for WIN1 only, so H10 stays `NOT_TESTED` on Windows. `SKIPPED` elsewhere, where A6, A7 and A7b run on `gate.sh`. |
 | WIN2 (H5d) | windows | Drive-letter case, the 8.3 short name (when the volume has one) and a `mklink /J` junction are each refused as the same project and claim the same root. The claim half uses the named-pipe hold, which is Unix-only, so it is `NOT_TESTED` until there is a Windows hold. |
 | WIN3 | windows | Saved-plan folder and file ACLs, parsed from `icacls`: only the owner, SYSTEM, Administrators and CREATOR OWNER may hold allow entries. Saved plans are removed after the apply and after shutdown, with the read-only attribute set. Expiry is a separate `NOT_TESTED` record (`win3-plan-expiry`): the one-hour plan age has no setting to shorten it. |
 | WIN4 | every platform | `.tf` and `.tfvars` files, the canary var file included, are rewritten with CRLF line endings before init. Then the I1 import (preview, plan, apply) and the I3 generated-configuration import (redaction) run. The engine writes the generated file itself; whether it uses CRLF is recorded, not asserted. |
+
+### Dispatch manifest
+
+After a dispatch, its artifacts are downloaded unchanged (`gh run download <id>`) into one directory per dispatch, and the job log is saved there as `run-<id>.log`. Then `scripts/qualify/dispatch-manifest.sh <dir> <id> <commit>` writes `<dir>/manifest.json`:
+
+- The workflow run ID, the commit and the job log's SHA-256.
+- One entry per platform (`qualify`, and on Windows `f5`), with:
+  - the runner image and version, OS build and architecture, and filesystem case sensitivity;
+  - the Hclaro binary hash;
+  - each engine's version, binary and archive hash, and provenance;
+  - the mirror manifest hash;
+  - the isolation mechanism, level and reason, and `goTestExit`;
+  - status counts, and every scenario's status and reason, grouped by engine;
+  - every file of that platform's artifact, with its SHA-256.
+
+Each platform's `run.json` and artifacts stay in their own directory; the manifest only links them. The script fails if a `run.json` is missing, partial, dirty or from another commit.
