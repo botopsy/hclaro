@@ -94,6 +94,9 @@ func (s *Scenario) launchPlan(h *Hclaro, project, engine string, varFiles, repla
 			} `json:"context"`
 		} `json:"context"`
 		ProfileError string `json:"profileError"`
+		// Hub views: the engine is in scope, the fingerprint at the top level.
+		Scope              *OpScope `json:"scope"`
+		ContextFingerprint string   `json:"contextFingerprint"`
 	}
 	path := "plans/options"
 	if profileID != "" {
@@ -102,7 +105,11 @@ func (s *Scenario) launchPlan(h *Hclaro, project, engine string, varFiles, repla
 	if r, err := h.client.Do("GET", path, nil, &opts); err != nil || r.Status != 200 {
 		s.Fatalf("plans/options: %v %d", err, r.Status)
 	}
-	s.AssertEngine(project, engine, opts.Engine, opts.Version)
+	if h.view != nil {
+		s.assertScope(h, opts.Scope)
+	} else {
+		s.AssertEngine(project, engine, opts.Engine, opts.Version)
+	}
 	if !opts.CanPlan {
 		s.Fatalf("planning unavailable: %s", opts.Reason)
 	}
@@ -112,6 +119,9 @@ func (s *Scenario) launchPlan(h *Hclaro, project, engine string, varFiles, repla
 			s.Fatalf("profile context unavailable: %s", opts.ProfileError)
 		}
 		body["profileId"], body["contextFingerprint"] = profileID, opts.Context.Context.Fingerprint
+	}
+	if h.view != nil {
+		body["contextFingerprint"] = opts.ContextFingerprint
 	}
 	s.Guard(project)
 	var op Operation

@@ -35,6 +35,23 @@ type Client struct {
 	// dialRetries counts loopback connects refused with EPERM and retried (F0-LB).
 	mu          sync.Mutex
 	dialRetries int
+	// prefix is "contexts/<cid>/" for a Hub workspace view (M27.05): the launch routes the
+	// harness uses are then sent to their scoped equivalents.
+	prefix string
+}
+
+// scopedRoots are the first path segments with a scoped route under contexts/{cid}/.
+var scopedRoots = map[string]bool{"plans": true, "operations": true, "imports": true, "drift-scans": true, "graphs": true, "resources": true}
+
+// scoped maps a launch route to the view's scoped route; other routes (history, projects,
+// contexts, session) are shared by the whole process.
+func (c *Client) scoped(path string) string {
+	root, _, _ := strings.Cut(path, "/")
+	root, _, _ = strings.Cut(root, "?")
+	if c.prefix != "" && scopedRoots[root] {
+		return c.prefix + path
+	}
+	return path
 }
 
 func newClient(h *Hclaro, s *Scenario) *Client {
@@ -97,6 +114,7 @@ func (c *Client) Do(method, path string, body, out any) (Response, error) {
 }
 
 func (c *Client) do(method, path string, body, out any, o reqOpts) (Response, error) {
+	path = c.scoped(path)
 	var payload io.Reader
 	if method != "GET" {
 		b, err := json.Marshal(body)
@@ -190,6 +208,8 @@ type Operation struct {
 	Command      []string `json:"command"`
 	PlanFileLeft bool     `json:"planFileLeft"`
 	CompletedAt  string   `json:"completedAt"`
+	// Scope is set on scoped (Hub workspace) operations.
+	Scope *OpScope `json:"scope"`
 	// Workspace is set for Hub workspace commands.
 	Workspace *struct {
 		CLIDefaultBefore string   `json:"cliDefaultBefore"`
@@ -208,9 +228,18 @@ type Operation struct {
 	} `json:"engineDiagnostics"`
 }
 
+// OpScope is the part of a scoped response's scope the harness asserts.
+type OpScope struct {
+	ContextID string `json:"contextId"`
+	Engine    string `json:"engine"`
+	Version   string `json:"version"`
+	Workspace string `json:"workspace"`
+}
+
 // Follow reads the operation's SSE stream (path is "operations/<id>" or a scoped
 // equivalent) until the server's end event and returns the last status. timeout is hard.
 func (c *Client) Follow(path string, timeout time.Duration) (Operation, error) {
+	path = c.scoped(path)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", c.h.baseURL().String()+"/api/v1/"+path+"/events?after=0", nil)
@@ -300,6 +329,26 @@ func (c *Client) NegativeChecks() error {
 // WaitLog reads the operation's SSE stream until a log event contains text (true) or the
 // stream ends or timeout passes (false). It synchronises on observable engine output.
 func (c *Client) WaitLog(path, text string, timeout time.Duration) (bool, error) {
+	return c.scan(path, timeout, func(line string) bool { return strings.HasPrefix(line, "data: ") && strings.Contains(line, text) })
+}
+
+// Text reads the operation's SSE stream to its end and returns its data lines (status and
+// log events), one per line.
+func (c *Client) Text(path string, timeout time.Duration) (string, error) {
+	var b strings.Builder
+	_, err := c.scan(path, timeout, func(line string) bool {
+		if d, ok := strings.CutPrefix(line, "data: "); ok {
+			b.WriteString(d + "\n")
+		}
+		return false
+	})
+	return b.String(), err
+}
+
+// scan reads the operation's SSE stream until stop returns true for a line (true), or the
+// stream ends or timeout passes (false).
+func (c *Client) scan(path string, timeout time.Duration, stop func(string) bool) (bool, error) {
+	path = c.scoped(path)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", c.h.baseURL().String()+"/api/v1/"+path+"/events?after=0", nil)
@@ -321,7 +370,7 @@ func (c *Client) WaitLog(path, text string, timeout time.Duration) (bool, error)
 	for sc.Scan() {
 		line := sc.Text()
 		c.record("SSE "+path, []byte(line))
-		if strings.HasPrefix(line, "data: ") && strings.Contains(line, text) {
+		if stop(line) {
 			return true, nil
 		}
 		if line == "event: end" {

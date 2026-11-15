@@ -36,13 +36,27 @@ func engines() []string {
 // launch prepares a launch project from template, initializes it directly and starts
 // Hclaro on it.
 func launch(s *Scenario, engine, template string, allowed ...string) (string, ProcessDirs, []string, *Hclaro) {
-	project := s.Project(template, append(slices.Clone(stateWrites), allowed...)...)
+	return openWith(s, launchStart, engine, template, allowed...)
+}
+
+// starter initializes a prepared project and returns the Hclaro handle the scenario drives:
+// the launch process (M27.03, M27.04) or a Hub workspace view (M27.05 H2).
+type starter func(s *Scenario, engine, project string) (ProcessDirs, []string, *Hclaro)
+
+func launchStart(s *Scenario, engine, project string) (ProcessDirs, []string, *Hclaro) {
 	dirs, env, err := s.Process(engine)
 	if err != nil {
 		s.Fatalf("%v", err)
 	}
 	s.SetupInit(dirs, env, engine, project)
-	return project, dirs, env, s.StartLaunch(dirs, env, engine, project)
+	return dirs, env, s.StartLaunch(dirs, env, engine, project)
+}
+
+// openWith prepares a project from template (state files allowed) and starts it with start.
+func openWith(s *Scenario, start starter, engine, template string, allowed ...string) (string, ProcessDirs, []string, *Hclaro) {
+	project := s.Project(template, append(slices.Clone(stateWrites), allowed...)...)
+	dirs, env, h := start(s, engine, project)
+	return project, dirs, env, h
 }
 
 // creates returns the addresses a plan creates.
@@ -138,94 +152,13 @@ func TestRealLaunchApply(t *testing.T) {
 	}
 	for _, name := range engines() {
 		run.Scenario(t, "a1-apply-"+name, name, "launch", false, func(s *Scenario) {
-			project, dirs, env, h := launch(s, name, "launch")
-			got := applyBase(s, h, dirs, env, name, project)
-			s.Observe("applied %d objects: %s", len(got), strings.Join(addresses(got), ", "))
+			a1Apply(s, name, launchStart)
 		})
 		run.Scenario(t, "a2-destructive-"+name, name, "launch", false, func(s *Scenario) {
-			project, dirs, env, h := launch(s, name, "launch")
-			before := applyBase(s, h, dirs, env, name, project)
-			detail := s.LaunchPlan(h, project, name, []string{"launch.tfvars", "destroy.tfvars"})
-			if detail.Summary["delete"] != 1 || detail.Summary["replace"] != 1 || len(detail.Changes)-detail.Summary["no-op"] != 2 {
-				s.Fatalf("destructive plan: %s, want 1 delete and 1 replace", detail)
-			}
-			a, r := s.Approve(h, detail.ID)
-			if r.Status != 200 || !a.Destructive || a.Phrase == "" {
-				s.Fatalf("approval: %d %s destructive %v phrase %q", r.Status, r.Code, a.Destructive, a.Phrase)
-			}
-			sum, serial := stateFile(s, project)
-			if _, r := s.StartApply(h, detail.ID, a.Token, ""); r.Status == 202 {
-				s.Fatalf("destructive apply without the typed phrase was accepted")
-			} else {
-				s.Observe("without the phrase: %d %s", r.Status, r.Code)
-			}
-			assertStateUnchanged(s, project, sum, serial, "after the refused apply")
-			// The refusal may consume the token; the dialog then asks for a new approval.
-			op, r := s.StartApply(h, detail.ID, a.Token, a.Phrase)
-			if r.Status != 202 {
-				s.Observe("same token after the refusal: %d %s; approving again", r.Status, r.Code)
-				a, r = s.Approve(h, detail.ID)
-				if r.Status != 200 {
-					s.Fatalf("second approval: %d %s", r.Status, r.Code)
-				}
-				if op, r = s.StartApply(h, detail.ID, a.Token, a.Phrase); r.Status != 202 {
-					s.Fatalf("apply with the phrase: %d %s", r.Status, r.Code)
-				}
-			}
-			op = s.FollowOp(h, op.ID, 15*time.Minute)
-			if op.Status != "succeeded" || op.Outcome != "applied" {
-				s.Fatalf("apply ended %s, outcome %q", op.Status, op.Outcome)
-			}
-			after := s.ShowState(dirs, env, name, project, "")
-			if _, ok := after["terraform_data.retired[0]"]; ok {
-				s.Fatalf("deleted object still in state")
-			}
-			if after["terraform_data.rotated"].ID == before["terraform_data.rotated"].ID {
-				s.Fatalf("replaced object kept its ID")
-			}
-			if after["terraform_data.kept"].ID != before["terraform_data.kept"].ID {
-				s.Fatalf("unrelated object changed ID")
-			}
+			a2Destructive(s, name, launchStart)
 		})
 		run.Scenario(t, "a3-stale-plan-"+name, name, "launch", false, func(s *Scenario) {
-			project, dirs, env, h := launch(s, name, "launch")
-			applyBase(s, h, dirs, env, name, project)
-			sum, serial := stateFile(s, project)
-			main := filepath.Join(project, "main.tf")
-			edit := func(from, to string) {
-				b, _ := os.ReadFile(main)
-				edited := strings.Replace(string(b), from, to, 1)
-				if edited == string(b) || os.WriteFile(main, []byte(edited), 0o600) != nil {
-					s.Fatalf("could not edit main.tf")
-				}
-				s.RefreshBaseline(project)
-			}
-			// (i) Edited before the preflight: the preflight blocks; no approval exists.
-			detail := s.LaunchPlan(h, project, name, []string{"launch.tfvars", "destroy.tfvars"})
-			edit(`input = "kept"`, `input = "edited"`)
-			if _, r := s.Approve(h, detail.ID); r.Status == 200 || !strings.Contains(r.Code, "context.fingerprint") {
-				s.Fatalf("edited before the preflight: %d %q, want a context.fingerprint block", r.Status, r.Code)
-			}
-			assertStateUnchanged(s, project, sum, serial, "after the blocked preflight")
-			// (ii) Edited after the approval: the apply is refused with context_changed.
-			detail = s.LaunchPlan(h, project, name, []string{"launch.tfvars", "destroy.tfvars"})
-			a, r := s.Approve(h, detail.ID)
-			if r.Status != 200 {
-				s.Fatalf("approval: %d %s", r.Status, r.Code)
-			}
-			edit(`input = "edited"`, `input = "edited again"`)
-			op, r := s.StartApply(h, detail.ID, a.Token, a.Phrase)
-			if r.Status == 202 {
-				op = s.FollowOp(h, op.ID, 15*time.Minute)
-				s.Fatalf("stale plan was applied: %s %s", op.Status, op.Outcome)
-			}
-			if r.Code != "context_changed" {
-				s.Fatalf("edited after the approval: %d %q, want context_changed", r.Status, r.Code)
-			}
-			assertStateUnchanged(s, project, sum, serial, "after the refused apply")
-			if got := s.ShowState(dirs, env, name, project, ""); len(got) != 3 {
-				s.Fatalf("state holds %v after the refusals", addresses(got))
-			}
+			a3StalePlan(s, name, launchStart)
 		})
 		run.Scenario(t, "a4-superseded-"+name, name, "launch", false, func(s *Scenario) {
 			project, dirs, env, h := launch(s, name, "launch")
@@ -256,74 +189,7 @@ func TestRealLaunchApply(t *testing.T) {
 			assertStateUnchanged(s, project, sum, serial, "after the superseded apply")
 		})
 		run.Scenario(t, "r1-replace-"+name, name, "launch", false, func(s *Scenario) {
-			project, dirs, env, h := launch(s, name, "launch")
-			before := applyBase(s, h, dirs, env, name, project, "fleet.tfvars")
-			ids := s.Resources(h)
-			fleet := func(n int) []string {
-				var out []string
-				for i := range n {
-					out = append(out, fmt.Sprintf("terraform_data.fleet[%d]", i))
-				}
-				return out
-			}
-			for _, n := range []int{1, 50} {
-				var sel []string
-				for _, a := range fleet(n) {
-					if ids[a] == "" {
-						s.Fatalf("%s missing from the resource list", a)
-					}
-					sel = append(sel, ids[a])
-				}
-				detail := s.LaunchPlanWith(h, project, name, []string{"launch.tfvars", "fleet.tfvars"}, sel)
-				argv := planCommand(s, h, detail)
-				var replaces []string
-				for _, arg := range argv {
-					if strings.HasPrefix(arg, "-target") {
-						s.Fatalf("plan argv carries %s", arg)
-					}
-					if a, ok := strings.CutPrefix(arg, "-replace="); ok {
-						replaces = append(replaces, a)
-					}
-				}
-				sort.Strings(replaces)
-				want := fleet(n)
-				sort.Strings(want)
-				if !slices.Equal(replaces, want) {
-					s.Fatalf("select %d: argv -replace %v, want %v", n, replaces, want)
-				}
-				if detail.Summary["replace"] != n || len(detail.Changes)-detail.Summary["no-op"] != n {
-					s.Fatalf("select %d: plan %s", n, detail)
-				}
-				_, op := s.ApplyReviewed(h, detail.ID)
-				if op.Status != "succeeded" || op.Outcome != "applied" {
-					s.Fatalf("select %d: apply ended %s, outcome %q", n, op.Status, op.Outcome)
-				}
-				after := s.ShowState(dirs, env, name, project, "")
-				chosen := map[string]bool{}
-				for _, a := range want {
-					chosen[a] = true
-				}
-				for a, o := range after {
-					if chosen[a] == (o.ID == before[a].ID) {
-						s.Fatalf("select %d: %s ID changed=%v, selected=%v", n, a, o.ID != before[a].ID, chosen[a])
-					}
-				}
-				before = after
-				ids = s.Resources(h)
-			}
-			var sel []string
-			for _, a := range fleet(51) {
-				sel = append(sel, ids[a])
-			}
-			ops := len(s.operations(h))
-			r, err := h.client.Do("POST", "plans", map[string]any{"acknowledgeBackendAccess": true, "varFiles": []string{"launch.tfvars", "fleet.tfvars"}, "replace": sel}, nil)
-			if err != nil || r.Status < 400 {
-				s.Fatalf("51 selections: %v %d", err, r.Status)
-			}
-			if n := len(s.operations(h)); n != ops {
-				s.Fatalf("51 selections started an operation")
-			}
-			s.Observe("51 selections refused: %d %s", r.Status, r.Code)
+			r1Replace(s, name, launchStart)
 		})
 	}
 }
@@ -378,8 +244,7 @@ func TestRealLaunchImport(t *testing.T) {
 	}
 	for _, name := range engines() {
 		run.Scenario(t, "i1-import-"+name, name, "launch", false, func(s *Scenario) {
-			project, dirs, env, h := launch(s, name, "launch-import", "imports.tf")
-			i1Import(s, h, dirs, env, name, project)
+			i1ImportScenario(s, name, launchStart)
 		})
 		run.Scenario(t, "i2-import-collision-"+name, name, "launch", false, func(s *Scenario) {
 			project, dirs, env, h := launch(s, name, "launch-import", "imports.tf")
@@ -965,4 +830,177 @@ func TestRealLaunchOptions(t *testing.T) {
 			_ = env
 		})
 	}
+}
+
+func a1Apply(s *Scenario, name string, start starter) {
+	project, dirs, env, h := openWith(s, start, name, "launch")
+	got := applyBase(s, h, dirs, env, name, project)
+	s.Observe("applied %d objects: %s", len(got), strings.Join(addresses(got), ", "))
+}
+
+func a2Destructive(s *Scenario, name string, start starter) {
+	project, dirs, env, h := openWith(s, start, name, "launch")
+	before := applyBase(s, h, dirs, env, name, project)
+	detail := s.LaunchPlan(h, project, name, []string{"launch.tfvars", "destroy.tfvars"})
+	if detail.Summary["delete"] != 1 || detail.Summary["replace"] != 1 || len(detail.Changes)-detail.Summary["no-op"] != 2 {
+		s.Fatalf("destructive plan: %s, want 1 delete and 1 replace", detail)
+	}
+	a, r := s.Approve(h, detail.ID)
+	if r.Status != 200 || !a.Destructive || a.Phrase == "" {
+		s.Fatalf("approval: %d %s destructive %v phrase %q", r.Status, r.Code, a.Destructive, a.Phrase)
+	}
+	sum, serial := stateFile(s, project)
+	if _, r := s.StartApply(h, detail.ID, a.Token, ""); r.Status == 202 {
+		s.Fatalf("destructive apply without the typed phrase was accepted")
+	} else {
+		s.Observe("without the phrase: %d %s", r.Status, r.Code)
+	}
+	assertStateUnchanged(s, project, sum, serial, "after the refused apply")
+	// The refusal may consume the token; the dialog then asks for a new approval.
+	op, r := s.StartApply(h, detail.ID, a.Token, a.Phrase)
+	if r.Status != 202 {
+		s.Observe("same token after the refusal: %d %s; approving again", r.Status, r.Code)
+		a, r = s.Approve(h, detail.ID)
+		if r.Status != 200 {
+			s.Fatalf("second approval: %d %s", r.Status, r.Code)
+		}
+		if op, r = s.StartApply(h, detail.ID, a.Token, a.Phrase); r.Status != 202 {
+			s.Fatalf("apply with the phrase: %d %s", r.Status, r.Code)
+		}
+	}
+	op = s.FollowOp(h, op.ID, 15*time.Minute)
+	if op.Status != "succeeded" || op.Outcome != "applied" {
+		s.Fatalf("apply ended %s, outcome %q", op.Status, op.Outcome)
+	}
+	after := s.ShowState(dirs, env, name, project, "")
+	if _, ok := after["terraform_data.retired[0]"]; ok {
+		s.Fatalf("deleted object still in state")
+	}
+	if after["terraform_data.rotated"].ID == before["terraform_data.rotated"].ID {
+		s.Fatalf("replaced object kept its ID")
+	}
+	if after["terraform_data.kept"].ID != before["terraform_data.kept"].ID {
+		s.Fatalf("unrelated object changed ID")
+	}
+}
+
+func a3StalePlan(s *Scenario, name string, start starter) {
+	project, dirs, env, h := openWith(s, start, name, "launch")
+	applyBase(s, h, dirs, env, name, project)
+	sum, serial := stateFile(s, project)
+	main := filepath.Join(project, "main.tf")
+	edit := func(from, to string) {
+		b, _ := os.ReadFile(main)
+		edited := strings.Replace(string(b), from, to, 1)
+		if edited == string(b) || os.WriteFile(main, []byte(edited), 0o600) != nil {
+			s.Fatalf("could not edit main.tf")
+		}
+		s.RefreshBaseline(project)
+	}
+	// (i) Edited before the preflight: the preflight blocks; no approval exists.
+	detail := s.LaunchPlan(h, project, name, []string{"launch.tfvars", "destroy.tfvars"})
+	edit(`input = "kept"`, `input = "edited"`)
+	if _, r := s.Approve(h, detail.ID); r.Status == 200 || !strings.Contains(r.Code, "context.fingerprint") {
+		s.Fatalf("edited before the preflight: %d %q, want a context.fingerprint block", r.Status, r.Code)
+	}
+	assertStateUnchanged(s, project, sum, serial, "after the blocked preflight")
+	// (ii) Edited after the approval: the apply is refused with context_changed.
+	detail = s.LaunchPlan(h, project, name, []string{"launch.tfvars", "destroy.tfvars"})
+	a, r := s.Approve(h, detail.ID)
+	if r.Status != 200 {
+		s.Fatalf("approval: %d %s", r.Status, r.Code)
+	}
+	edit(`input = "edited"`, `input = "edited again"`)
+	op, r := s.StartApply(h, detail.ID, a.Token, a.Phrase)
+	if r.Status == 202 {
+		op = s.FollowOp(h, op.ID, 15*time.Minute)
+		s.Fatalf("stale plan was applied: %s %s", op.Status, op.Outcome)
+	}
+	if r.Code != "context_changed" {
+		s.Fatalf("edited after the approval: %d %q, want context_changed", r.Status, r.Code)
+	}
+	assertStateUnchanged(s, project, sum, serial, "after the refused apply")
+	if got := s.ShowState(dirs, env, name, project, ""); len(got) != 3 {
+		s.Fatalf("state holds %v after the refusals", addresses(got))
+	}
+}
+
+func r1Replace(s *Scenario, name string, start starter) {
+	project, dirs, env, h := openWith(s, start, name, "launch")
+	before := applyBase(s, h, dirs, env, name, project, "fleet.tfvars")
+	ids := s.Resources(h)
+	fleet := func(n int) []string {
+		var out []string
+		for i := range n {
+			out = append(out, fmt.Sprintf("terraform_data.fleet[%d]", i))
+		}
+		return out
+	}
+	for _, n := range []int{1, 50} {
+		var sel []string
+		for _, a := range fleet(n) {
+			if ids[a] == "" {
+				s.Fatalf("%s missing from the resource list", a)
+			}
+			sel = append(sel, ids[a])
+		}
+		detail := s.LaunchPlanWith(h, project, name, []string{"launch.tfvars", "fleet.tfvars"}, sel)
+		argv := planCommand(s, h, detail)
+		var replaces []string
+		for _, arg := range argv {
+			if strings.HasPrefix(arg, "-target") {
+				s.Fatalf("plan argv carries %s", arg)
+			}
+			if a, ok := strings.CutPrefix(arg, "-replace="); ok {
+				replaces = append(replaces, a)
+			}
+		}
+		sort.Strings(replaces)
+		want := fleet(n)
+		sort.Strings(want)
+		if !slices.Equal(replaces, want) {
+			s.Fatalf("select %d: argv -replace %v, want %v", n, replaces, want)
+		}
+		if detail.Summary["replace"] != n || len(detail.Changes)-detail.Summary["no-op"] != n {
+			s.Fatalf("select %d: plan %s", n, detail)
+		}
+		_, op := s.ApplyReviewed(h, detail.ID)
+		if op.Status != "succeeded" || op.Outcome != "applied" {
+			s.Fatalf("select %d: apply ended %s, outcome %q", n, op.Status, op.Outcome)
+		}
+		after := s.ShowState(dirs, env, name, project, "")
+		chosen := map[string]bool{}
+		for _, a := range want {
+			chosen[a] = true
+		}
+		for a, o := range after {
+			if chosen[a] == (o.ID == before[a].ID) {
+				s.Fatalf("select %d: %s ID changed=%v, selected=%v", n, a, o.ID != before[a].ID, chosen[a])
+			}
+		}
+		before = after
+		ids = s.Resources(h)
+	}
+	var sel []string
+	for _, a := range fleet(51) {
+		sel = append(sel, ids[a])
+	}
+	ops := len(s.operations(h))
+	body := map[string]any{"acknowledgeBackendAccess": true, "varFiles": []string{"launch.tfvars", "fleet.tfvars"}, "replace": sel}
+	if h.view != nil {
+		body["contextFingerprint"] = s.fingerprint(h, "plans/options")
+	}
+	r, err := h.client.Do("POST", "plans", body, nil)
+	if err != nil || r.Status < 400 {
+		s.Fatalf("51 selections: %v %d", err, r.Status)
+	}
+	if n := len(s.operations(h)); n != ops {
+		s.Fatalf("51 selections started an operation")
+	}
+	s.Observe("51 selections refused: %d %s", r.Status, r.Code)
+}
+
+func i1ImportScenario(s *Scenario, name string, start starter) {
+	project, dirs, env, h := openWith(s, start, name, "launch-import", "imports.tf")
+	i1Import(s, h, dirs, env, name, project)
 }

@@ -79,9 +79,25 @@ module "m" { source = "./mod" }
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if err := GuardFixture(filepath.Join("../../fixtures/qualify", e.Name())); err != nil {
+		dir := filepath.Join("../../fixtures/qualify", e.Name())
+		if e.Name() == "hub-remote" {
+			// H12's s3 backend: rejected by the guard, accepted only by GuardRemote.
+			if GuardFixture(dir) == nil || GuardRemote(dir) != nil {
+				t.Errorf("hub-remote: guard %v, remote guard %v", GuardFixture(dir), GuardRemote(dir))
+			}
+			continue
+		}
+		if err := GuardFixture(dir); err != nil {
 			t.Errorf("template %s: %v", e.Name(), err)
 		}
+		if GuardRemote(dir) == nil {
+			t.Errorf("template %s passes the H12 remote guard", e.Name())
+		}
+	}
+	// The exception is byte-exact: another backend line or another file content is refused.
+	edited := write(map[string]string{"main.tf": "terraform {\n  backend \"s3\" {}\n}\n"})
+	if GuardRemote(edited) == nil {
+		t.Error("GuardRemote accepted a project other than hub-remote")
 	}
 }
 
@@ -354,4 +370,30 @@ func gateFixture(t *testing.T, edit string) map[string]string {
 		files["gate.sh"] += edit + "\n"
 	}
 	return files
+}
+
+// A Hub view sends the launch routes the scenarios use to their scoped equivalents; shared
+// routes stay unscoped, and the process handle never rewrites.
+func TestScopedRoutes(t *testing.T) {
+	v := &Client{prefix: "contexts/c1/"}
+	for in, want := range map[string]string{
+		"plans/options":                   "contexts/c1/plans/options",
+		"plans":                           "contexts/c1/plans",
+		"operations/o1":                   "contexts/c1/operations/o1",
+		"imports/preview":                 "contexts/c1/imports/preview",
+		"drift-scans/s1/resources/r1":     "contexts/c1/drift-scans/s1/resources/r1",
+		"graphs?planId=p":                 "contexts/c1/graphs?planId=p",
+		"resources?mode=managed&limit=50": "contexts/c1/resources?mode=managed&limit=50",
+		"history?limit=200":               "history?limit=200",
+		"projects/p1/inspect":             "projects/p1/inspect",
+		"contexts/c1":                     "contexts/c1",
+		"session":                         "session",
+	} {
+		if got := v.scoped(in); got != want {
+			t.Errorf("view %q → %q, want %q", in, got, want)
+		}
+		if got := (&Client{}).scoped(in); got != in {
+			t.Errorf("process %q → %q", in, got)
+		}
+	}
 }

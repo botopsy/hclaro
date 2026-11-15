@@ -43,6 +43,8 @@ try {
   if ($Tofu) { Copy-Item $Tofu "$run\engines\tofu.exe"; $tofuPath = "$run\engines\tofu.exe" }
   foreach ($f in "mirror-manifest.json", "terraform.tfrc", "tofu.tfrc") { Copy-Item (Join-Path $Mirror $f) "$run\mirror\" }
   foreach ($d in "terraform", "tofu") { Copy-Item -Recurse (Join-Path $Mirror $d) "$run\mirror\$d" }
+  # Hub processes with both engines use the combined config (M27.05).
+  Copy-Item (Join-Path $PSScriptRoot "hub.tfrc") "$run\mirror\hub.tfrc"
   & "$run\netprobe.exe" control | Out-File -Encoding ascii "$run\f0-control.json"
 
   $psi = New-Object System.Diagnostics.ProcessStartInfo

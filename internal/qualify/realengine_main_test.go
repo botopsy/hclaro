@@ -129,6 +129,14 @@ func newRealRun(out string) (*Run, error) {
 		}
 		cli[name] = p
 	}
+	// The combined config for Hub processes with both engines (M27.05).
+	if b, err := os.ReadFile(filepath.Join(mirror, "hub.tfrc")); err == nil {
+		p := filepath.Join(root, "hub.tfrc")
+		if err := os.WriteFile(p, bytes.ReplaceAll(b, []byte("@MIRROR@"), []byte(mirror)), 0o600); err != nil {
+			return nil, err
+		}
+		cli["hub"] = p
+	}
 	r, err := NewRun(Config{Hclaro: hclaro, Engines: engines, CLIConfig: cli, Out: out, Root: root,
 		Approved: od1, Home: buildHome, Repo: buildRepo, Keep: os.Getenv("HCLARO_QUAL_KEEP") == "1"})
 	if err != nil {
@@ -136,6 +144,17 @@ func newRealRun(out string) (*Run, error) {
 	}
 	if err := r.recordProviders(mirror); err != nil {
 		return nil, err
+	}
+	if p := filepath.Join(mirror, "hub.tfrc"); cli["hub"] != "" {
+		r.hubConfigSha, _ = fileSHA256(p)
+	}
+	// A second approved binary of an engine, for the M27.05 H6 binary swap only.
+	for name, v := range map[string]string{"terraform": "HCLARO_QUAL_TERRAFORM_ALT", "tofu": "HCLARO_QUAL_TOFU_ALT"} {
+		if p := os.Getenv(v); p != "" {
+			if err := r.SetAlternate(name, p); err != nil {
+				return nil, err
+			}
+		}
 	}
 	r.isolationBefore(runDir)
 	return r, nil

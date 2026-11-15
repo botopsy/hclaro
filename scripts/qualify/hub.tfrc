@@ -1,0 +1,13 @@
+provider_installation {
+  filesystem_mirror {
+    path    = "@MIRROR@/terraform"
+    include = ["registry.terraform.io/*/*"]
+  }
+  filesystem_mirror {
+    path    = "@MIRROR@/tofu"
+    include = ["registry.opentofu.org/*/*"]
+  }
+  direct {
+    exclude = ["*/*"]
+  }
+}
