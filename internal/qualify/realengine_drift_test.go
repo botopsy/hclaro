@@ -476,9 +476,12 @@ func failurePlans(s *Scenario, h *Hclaro, project, label string) {
 	engineRan(s, label+" F1", op)
 	s.Observe("%s F1: %s (%s): %s", label, op.Status, code(op), diagnostics(op))
 	// The var-file value is a path holding the canary: the diagnostic must reach Hclaro's
-	// output with that value replaced, not merely be absent (the canary scan covers the rest).
-	if op.Status != "failed" || code(op) != "plan_failed" || !strings.Contains(diagnostics(op), `no file exists at "[redacted]"`) {
-		s.Fatalf("%s F1: plan %s (%s), want plan_failed with the file() diagnostic and its path redacted", label, op.Status, code(op))
+	// output with that value replaced, or with its line withheld when the random canary looks
+	// like a secret; never merely absent (the canary scan covers the rest).
+	d := diagnostics(op)
+	redacted := strings.Contains(d, `no file exists at "[redacted]"`) || strings.Contains(d, "Invalid function argument\n[line withheld: looks like a secret]")
+	if op.Status != "failed" || code(op) != "plan_failed" || !redacted {
+		s.Fatalf("%s F1: plan %s (%s), want plan_failed with the file() diagnostic and its path redacted or withheld", label, op.Status, code(op))
 	}
 	if err := os.RemoveAll(filepath.Join(project, ".terraform", "providers")); err != nil {
 		s.Fatalf("%v", err)
@@ -586,14 +589,26 @@ func TestRealFailures(t *testing.T) {
 			}
 		})
 		run.Scenario(t, "f4-unknown-actions-"+name, name, "launch", false, func(s *Scenario) {
-			project, _, _, h := launch(s, name, "forget")
+			project := s.Project("forget", stateWrites...)
+			dirs, env, err := s.Process(name)
+			if err != nil {
+				s.Fatalf("%v", err)
+			}
+			e, _ := run.Engine(name)
+			// An engine that rejects the only trigger found (lifecycle destroy) cannot emit it.
+			if _, err := s.Direct(filepath.Join(dirs.Bin, exeName(name)), project, env, "init -input=false -no-color"); err != nil {
+				s.NotTested(fmt.Sprintf("no engine emits an unsupported combination: %s %s rejects the fixture at init: %.700s", e.Name, e.Version, err))
+			}
+			s.result.SetupInit = "direct"
+			s.Guard(project)
+			s.RefreshBaseline(project)
+			h := s.StartLaunch(dirs, env, name, project)
 			if op, r := s.failedPlan(h, project, []string{"launch.tfvars"}); op.Status != "succeeded" {
 				// An engine that rejects the only trigger found (lifecycle destroy) cannot emit it.
 				if op.ID == "" {
 					s.Fatalf("F4 plan refused before the engine: %d %s", r.Status, r.Code)
 				}
 				engineRan(s, "F4", op)
-				e, _ := run.Engine(name)
 				s.NotTested(fmt.Sprintf("no engine emits an unsupported combination: %s %s rejects the fixture (%s): %s", e.Name, e.Version, code(op), strings.TrimSpace(diagnostics(op))))
 			} else {
 				detail := PlanDetail{}
