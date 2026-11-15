@@ -76,7 +76,8 @@ G8. Avoid telemetry, credential uploads, or persistent storage of unredacted sta
 - CI/CD, GitHub/GitLab pipelines or state backend replacement.
 - Cloud-provider SDK inventory and editing resources directly via cloud APIs.
 - Terraform/HCL authoring IDE or generic drag-and-drop infrastructure editor.
-- Automatic drift detection, scheduled refresh, costs, AI, MCP, distributed tracing.
+- Automatic drift detection, scheduled refresh, costs, MCP, distributed tracing.
+- AI assistance in v0.1. It is planned after the beta as an optional, consent-based integration; see FR-09.
 - Destroy-all or arbitrary `state rm`, `state mv`, `force-unlock`, state push/pull editing from UI.
 - Implicit apply after a speculative plan; silent mutation of HCL; automatic `terraform init` or `tofu init`.
 - Support for remote-execution backends where a saved-plan review/apply contract cannot be guaranteed; these remain read-only/plan-only until a validated adapter exists.
@@ -227,7 +228,20 @@ Whitespace before commands above is purely illustrative; actual CLI should accep
 ### FR-08 Future-proof extensions
 - Adapter interface encapsulates CLI dialect/version differences.
 - Backend execution modes are explicit (`local-cli`, `remote-exec`, `unsupported`).
-- Do not overgeneralize dependency graph or AI in v0.1; reserve interface extension points.
+- Do not overgeneralize dependency graph or AI in v0.1; reserve interface extension points. AI assistance is specified in FR-09.
+
+### FR-09 Optional AI assistance (post-v0.1)
+Users may consult the AI coding assistant they already use (for example Claude Code, OpenAI Codex or GitHub Copilot CLI) about a plan, drift result, import or resource. Hclaro builds the context; the assistant only analyzes and recommends.
+- **Optional and off by default.** Hclaro works the same with no assistant installed or configured. No Hclaro-hosted model, account, API key storage or billing.
+- **Explicit sharing only.** Context is built locally, sanitized, shown in a preview and shared only after a user action. The shared bytes are exactly the previewed bytes. If sanitization is uncertain, sharing is blocked.
+- **Never shared:** state or raw state contents, `.tfvars` values, saved-plan files, full plan JSON, the process environment, credentials or backend configuration values.
+- **Two modes.** *Handoff:* the user copies or downloads the context and gives it to any assistant; Hclaro's guarantees end there and the UI says so. *Headless:* Hclaro runs a supported assistant once, non-interactively, with its tools disabled, the context on stdin, an empty private working directory and an allowlisted environment. A provider is supported only if those settings are documented and verified for its version.
+- **Disclosure.** The UI states that a local assistant CLI may send context to a cloud model and bill the user's own account. `--strict-local` disables headless runs.
+- **Untrusted output.** Replies are shown as inert text. Hclaro never executes, applies or writes anything an assistant returns. Replies are not stored in history; history keeps metadata only.
+- **No authority.** AI code cannot read or change approvals, saved-plan bindings, preflight, workspace selection or Git state, and cannot start any engine operation.
+- **Configuration.** Assistant executable paths are set by CLI flag or local config file only, never through the HTTP API.
+
+**Acceptance:** with planted sentinel secrets in state, `.tfvars`, environment and HCL, no sentinel reaches a preview, export, provider input, API response, log or history entry; plan approval and apply gating behave identically with AI enabled, disabled or running.
 
 ## 9. Primary user flows
 
@@ -360,6 +374,8 @@ Avoid serializing complete raw state or raw plan into HTTP responses. Normalize 
 
 **S-10 Diagnostics/history:** persist operation metadata only (timestamp/action/status/obfuscated target counts) with configurable deletion. No raw secrets in browser devtools/network payloads; test with planted sentinel credentials.
 
+**S-11 AI assistance:** treat context content and assistant replies as untrusted; an assistant process never runs in the project directory, never inherits cloud, Terraform or backend credentials, and has its tools disabled; its executable cannot be chosen through the API. See FR-09.
+
 ## 12. Performance and reliability
 
 - Cold launch target: UI reachable within ~2 seconds on reference development machine **excluding CLI/backend access**. Clearly separate startup from state-fetch latency.
@@ -438,6 +454,7 @@ Metrics are internal usability objectives, not promises.
 - **Local-first**, no SaaS requirement.
 - **Import and Replace** are priority differentiators.
 - **Preview-first** architecture and read-only launch.
+- **AI assistance** is an optional, post-v0.1, bring-your-own-assistant integration with explicit consent (FR-09, S-11).
 
 ### Assumptions to validate while implementing
 - Default workspace engine preference can be Terraform unless overridden; verify behavior for existing OpenTofu projects.
@@ -449,7 +466,7 @@ Metrics are internal usability objectives, not promises.
 - Final product name/domain, open-source license and brand.
 - Pricing, hosted collaboration, plugins and cost estimate.
 - Advanced remote-execution adapters and enterprise approvals.
-- Graph topology, state surgery and AI assistance.
+- Graph topology and state surgery.
 
 ## 17. Milestone definitions and acceptance / Definition of Done
 
