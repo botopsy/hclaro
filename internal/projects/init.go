@@ -283,8 +283,9 @@ func (h *Hub) StartInitWith(id, expected, profileID string) (operations.Operatio
 			return ""
 		},
 		Initialized: func() bool {
+			// A root that needs no init has nothing written by a successful one (M27.03 D-1).
 			fi, err := os.Stat(data)
-			return err == nil && fi.IsDir()
+			return err == nil && fi.IsDir() || !workspace.NeedsInit(p.RootPath)
 		},
 		Lockfile: func() []byte {
 			f, err := os.Open(filepath.Join(p.RootPath, ".terraform.lock.hcl"))
