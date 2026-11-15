@@ -428,6 +428,7 @@ func TestRealHubPaths(t *testing.T) {
 		if !sensitive {
 			s.Skip("two folders differing only by case cannot exist on a case-insensitive filesystem (" + fsNote + ")")
 		}
+		s.Observe("H5c′ requires a case-sensitive volume: %s", fsNote)
 		h5cPrime(s, name)
 	})
 	// H5d is WIN2 (M27.07): drive-letter case, the 8.3 short name and a junction alias.
