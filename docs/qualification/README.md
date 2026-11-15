@@ -80,7 +80,8 @@ Everything else goes through Hclaro. `internal/qualify/direct.go` holds the only
 | `version -json` | Record the engine version |
 | `init -input=false -no-color` (mirror config) | Setup when the scenario does not test init; recorded as `setupInit: direct` |
 | `show -json`, `show -json <statefile>`, `state list`, `workspace show`, `workspace list` | Read-only verification |
-| The F-2 lock holder (OD-9) and `plan -lock-timeout=0s` | Added with M27.03 A5 and M27.04 L1; not present yet |
+| F-2 lock holders (OD-9): `console -no-color` with stdin held open (Terraform 1.5.x, OpenTofu); `plan -input=false -no-color` with `TF_VAR_hold=true`, blocked on a named pipe read by a gated `data "local_file"` (Terraform 1.17.2, Unix only) | M27.03 A5; long-running, started by `startHolder`, released by closing stdin or writing the pipe. Recorded as `lock holder: <command>` in `directEngineCall` |
+| `plan -lock-timeout=0s` | Added with M27.04 L1; not present yet |
 
 ## Isolation levels
 
@@ -178,6 +179,29 @@ The recorded differences from RE-01 are the reconstruction itself and the missin
 **Fixture correction, kept distinguishable.**
 - The first real run (2026-11-15, Terraform 1.5.5, `enforced`) was `FAIL`, "canary found in responses". Its evidence is preserved unchanged at `~/hclaro-qualify/evidence/m27-02-dev/run2/`, with `run.json` sha256 `71f63bb8…b13c`. The cause was the fixture: the deleted resource `terraform_data.retired` held the canary in a state value that was not marked sensitive, so Hclaro showed it in that change's detail. The raw response transcript of that run was not kept; only the sanitised results are.
 - The fixture now marks that value sensitive (`sensitive_attributes`), which reads RE-01's "sensitive, deleted and output values" as a sensitive deleted value. Later runs with the corrected fixture pass, for example `~/hclaro-qualify/evidence/m27-02-2026-11-15/ref-tf155/` from a clean commit. Each run records the correction in `differences`.
+
+## M27.03 launch scenarios
+
+`realengine_launch_test.go` holds the M27.03 scenarios (task file `tasks/M27/tasks/M27-03-LAUNCH-APPLY-IMPORT-INIT.md`), once per configured engine. A run holds at most one `terraform` and one `tofu`, so `CORE` takes two runs: Terraform 1.5.5 with OpenTofu 1.13.9, then Terraform 1.17.2.
+
+| Test | Scenarios | Fixture |
+| --- | --- | --- |
+| `TestRealLaunchApply` | A1 apply, A2 destructive (typed phrase), A3 stale plan (edited before the preflight, and after the approval), A4 superseded plan, R1 replace (1, 50, and 51 refused) | `launch` |
+| `TestRealLaunchImport` | I1 import, I2 collision (ID equal to the state id), I3 generated configuration | `launch-import` |
+| `TestRealLaunchHub` | N1 init from the launch session (only when isolation is `enforced`; the launch view is read again), W1 workspaces with per-context reads (Hub), W3 the launch session refuses to plan after the CLI default changes, W2 inherited `TF_CLI_ARGS_workspace_delete=-force` | `providers`, `launch` |
+| `TestRealLaunchOptions` | A5 apply options and lock wait | `launch-lock` |
+| `TestRealLaunchGate` | A6 cancel during apply, A7 Hclaro shutdown during apply (phases P1–P5), A7b shutdown with the engine outliving the grace period | `launch-gate` (OD-8) |
+
+Notes on how the scenarios observe things:
+
+- **Loopback retries.** Inside `sandbox-exec`, a loopback connect can fail with EPERM for up to about a second when a process is new or has been idle (F0-LB). The client retries such a connect for up to 5 s. Nothing was sent, so the retry is safe for any request. Each Hclaro process records its retry count as an observation.
+- **A5 lock wait.** The engine prints its lock-wait message only after waiting about 400 ms. A5 (b) waits for that message in the apply's event stream, then releases the holder. If the message never arrives, an apply still running after 60 s while the holder holds the lock shows the wait instead, and the missing message is recorded as a failure (defect D-3).
+- **I3 echo.** For `random_password` the import ID is the password, so I3 uses the canary as the ID. The import preview has to repeat the user's own input in the block and in the manual recipe. Only those two exact forms are masked before the canary scan; the generated configuration, the plan, history and logs stay under the check.
+- **No canary path.** N1 (init reads no variables) and W2 (no plan runs) record that the canary is not on their path; "canary absent" there proves nothing.
+- **Gated fixture (OD-8, approved with restrictions on 2026-11-15, for A6, A7 and A7b only).** The engine's `local-exec` runs the fixed script `fixtures/qualify/launch-gate/gate.sh` as `/bin/sh ./gate.sh normal|trap`. The script is deterministic, uses no network, touches only `<project>/.qual/`, and exits on release, on its INT trap (normal mode, exit 130) or on a hard timeout (120 s normal, 900 s trap). The fixture guard refuses any `provisioner` unless the project's `main.tf` and `gate.sh` are byte-identical to the approved fixture. The Windows variant is not implemented, so Windows records `NOT_TESTED`. Interrupt delivery is observed at the gate's trap marker and, as the second source, in the engine's "Interrupt received" log line. The SSE stream is read for A6; the history excerpt for A7 and A7b, because Hclaro is gone by then.
+- **History outcome names.** History stores an apply whose operation outcome is `uncertain` (or a cancelled apply) as result `partial` (`internal/history/convert.go`). A7 and A7b accept `partial` as the task's "uncertain".
+- **NOT_TESTED still checks cleanup.** A scenario stopped as `NOT_TESTED` still gets the canary and cleanup checks, so a leftover process or file makes it `FAIL`.
+- **N1 isolation.** N1 runs once the isolated probe before the run has passed. If the probe after the run fails, a `PASS` becomes `NOT_TESTED` (offline not verified).
 
 ## Limitations
 

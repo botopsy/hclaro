@@ -3,6 +3,7 @@ package qualify
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"hclaro/fixtures"
 )
 
 func TestGuardFixture(t *testing.T) {
@@ -42,6 +45,9 @@ module "m" { source = "./mod" }
 		"override file":    {"main_override.tf": "resource \"terraform_data\" \"a\" {}\n"},
 		"locked aws":       {".terraform.lock.hcl": "provider \"registry.terraform.io/hashicorp/aws\" {\n}\n"},
 		"module s3 nested": {"main.tf": "", "mod/main.tf": "terraform {\n  backend \"s3\" {}\n}\n"},
+		// OD-8: local-exec only in the approved gate fixture, byte-identical.
+		"local-exec":  {"main.tf": "resource \"terraform_data\" \"x\" {\n  provisioner \"local-exec\" {\n    command = \"true\"\n  }\n}\n"},
+		"edited gate": gateFixture(t, "exit 0"),
 	}
 	write := func(files map[string]string) string {
 		dir := t.TempDir()
@@ -55,6 +61,9 @@ module "m" { source = "./mod" }
 			}
 		}
 		return dir
+	}
+	if err := GuardFixture(write(gateFixture(t, ""))); err != nil {
+		t.Errorf("approved gate fixture refused: %v", err)
 	}
 	if err := GuardFixture(write(ok)); err != nil {
 		t.Errorf("approved fixture refused: %v", err)
@@ -149,6 +158,9 @@ func TestDirectCallsAllowlisted(t *testing.T) {
 		if !want[sub] {
 			t.Errorf("%q is not a documented direct call", sub)
 		}
+	}
+	if len(holderAllowed) != 2 || !holderAllowed["console -no-color"] || !holderAllowed["plan -input=false -no-color"] {
+		t.Errorf("lock holders %v are not the F-2 candidates", holderAllowed)
 	}
 	// Every engine exec in the package goes through direct.go.
 	files, _ := filepath.Glob("*.go")
@@ -325,4 +337,21 @@ func TestFinishFailsClosed(t *testing.T) {
 	if got := read(r); got.GoTestExit != 2 || got.Scenarios[len(got.Scenarios)-1].Status != Fail {
 		t.Errorf("non-zero exit without FAIL: %+v", got)
 	}
+}
+
+// gateFixture returns the approved gated fixture, with gate.sh changed when edit is set.
+func gateFixture(t *testing.T, edit string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	for _, name := range []string{"main.tf", "gate.sh", "launch.tfvars"} {
+		b, err := fs.ReadFile(fixtures.Qualify, "qualify/launch-gate/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = string(b)
+	}
+	if edit != "" {
+		files["gate.sh"] += edit + "\n"
+	}
+	return files
 }

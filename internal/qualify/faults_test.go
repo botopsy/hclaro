@@ -24,6 +24,8 @@ func TestHarnessReportsFaults(t *testing.T) {
 		"s3-backend":   `fixture_scope: main.tf: backend "s3"`,
 		"canary-leak":  "canary found in responses",
 		"credential":   "environment: credential-like variables [AWS_SECRET_ACCESS_KEY]",
+		// A failed assertion stays FAIL when a later precondition gives NOT_TESTED.
+		"fail-then-not-tested": "deliberate assertion; then not tested: late precondition",
 	}
 	for fault, reason := range cases {
 		t.Run(fault, func(t *testing.T) {
@@ -103,6 +105,9 @@ func TestFaultChild(t *testing.T) {
 		switch fault {
 		case "panic":
 			panic("deliberate fault")
+		case "fail-then-not-tested":
+			s.Errorf("deliberate assertion")
+			s.NotTested("late precondition")
 		case "s3-backend":
 			f, err := os.OpenFile(filepath.Join(project, "main.tf"), os.O_APPEND|os.O_WRONLY, 0)
 			if err != nil {

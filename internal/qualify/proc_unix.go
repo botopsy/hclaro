@@ -37,3 +37,6 @@ func listProcesses() ([]process, error) {
 	}
 	return procs, nil
 }
+
+// mkfifo creates the named pipe the F-2 plan lock holder blocks on.
+func mkfifo(path string) error { return syscall.Mkfifo(path, 0o600) }

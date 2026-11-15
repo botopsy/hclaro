@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -13,8 +15,8 @@ import (
 // Direct engine calls are the complete M27.02 list: setup and read-only verification only.
 // Every apply, import, replace, state or workspace mutation goes through Hclaro.
 // TestDirectCallsAllowlisted keeps mutating subcommands out of this file.
-// The F-2 lock holder (OD-9) and `plan -lock-timeout=0s` are added by the scenarios that
-// need them (M27.03 A5, M27.04 L1).
+// The F-2 lock holders (OD-9) are in holderAllowed; `plan -lock-timeout=0s` is added by
+// M27.04 L1.
 var directAllowed = map[string]bool{
 	"version -json":               true,
 	"init -input=false -no-color": true,
@@ -57,4 +59,84 @@ func parseVersion(out []byte) (string, error) {
 		return "", fmt.Errorf("version -json: unexpected output")
 	}
 	return v.Terraform, nil
+}
+
+// Lock holders (F-2, OD-9) for M27.03 A5 and M27.04 L1: long-running, non-mutating engine
+// processes that hold the local-backend state lock. `console` holds it while its stdin is open
+// (Terraform 1.5.x, OpenTofu). `plan` (no -out) holds it while a data "local_file" gated by
+// TF_VAR_hold blocks on a named pipe (Terraform 1.17.2, whose console takes no lock).
+var holderAllowed = map[string]bool{
+	"console -no-color":           true,
+	"plan -input=false -no-color": true,
+}
+
+// Holder is a running lock holder.
+type Holder struct {
+	cmd   *exec.Cmd
+	stdin io.WriteCloser
+	fifo  string
+	done  chan struct{}
+	Log   bytes.Buffer
+}
+
+// startHolder starts sub in dir with env (allowlist plus the declared extras). For the plan
+// holder, fifo is the named pipe the gated data source reads.
+func startHolder(engine, dir string, env []string, extra map[string]string, sub, fifo string) (*Holder, error) {
+	if !holderAllowed[sub] {
+		return nil, fmt.Errorf("lock holder %q is not allowed", sub)
+	}
+	if err := CheckEnvironment(env, extra); err != nil {
+		return nil, err
+	}
+	h := &Holder{cmd: exec.Command(engine, strings.Fields(sub)...), fifo: fifo, done: make(chan struct{})}
+	h.cmd.Dir, h.cmd.Env = dir, env
+	h.cmd.Stdout, h.cmd.Stderr = &h.Log, &h.Log
+	var err error
+	if h.stdin, err = h.cmd.StdinPipe(); err != nil {
+		return nil, err
+	}
+	if err := h.cmd.Start(); err != nil {
+		return nil, err
+	}
+	go func() { _ = h.cmd.Wait(); close(h.done) }()
+	return h, nil
+}
+
+// Release lets the holder finish (closes stdin; writes the pipe once) and waits up to 60 s.
+func (h *Holder) Release() error {
+	_ = h.stdin.Close()
+	if h.fifo != "" {
+		go func() {
+			if f, err := os.OpenFile(h.fifo, os.O_WRONLY, 0); err == nil {
+				_, _ = f.WriteString("gate\n")
+				f.Close()
+			}
+		}()
+	}
+	select {
+	case <-h.done:
+		return nil
+	case <-time.After(60 * time.Second):
+		_ = h.cmd.Process.Kill()
+		<-h.done
+		return fmt.Errorf("lock holder did not exit within 60 s of its release; killed")
+	}
+}
+
+// Kill stops a holder that was not released (a failed scenario); a no-op once it exited.
+func (h *Holder) Kill() {
+	if h.Alive() {
+		_ = h.cmd.Process.Kill()
+		<-h.done
+	}
+}
+
+// Alive reports whether the holder is still running.
+func (h *Holder) Alive() bool {
+	select {
+	case <-h.done:
+		return false
+	default:
+		return true
+	}
 }

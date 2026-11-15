@@ -63,8 +63,8 @@ func smokeRun(t *testing.T) *Run {
 	return r
 }
 
-// TestSmokeFakeEngine runs the harness end to end against the fake engine: a launch-mode plan
-// and a Hub registration. It is a self-test of the harness, not qualification evidence.
+// TestSmokeFakeEngine runs the harness end to end against the fake engine: a launch-mode plan,
+// a reviewed apply and a Hub registration. It is a self-test of the harness, not qualification evidence.
 func TestSmokeFakeEngine(t *testing.T) {
 	r := smokeRun(t)
 	r.Scenario(t, "smoke-launch-plan", "terraform", "launch", false, func(s *Scenario) {
@@ -80,6 +80,23 @@ func TestSmokeFakeEngine(t *testing.T) {
 			s.Fatalf("fake plan has no changes")
 		}
 		s.Observe("fake plan: %s", detail)
+	})
+	r.Scenario(t, "smoke-launch-apply", "terraform", "launch", false, func(s *Scenario) {
+		project := s.Project("smoke")
+		dirs, env, err := s.Process("terraform")
+		if err != nil {
+			s.Fatalf("%v", err)
+		}
+		s.SetupInit(dirs, env, "terraform", project)
+		h := s.StartLaunch(dirs, env, "terraform", project)
+		detail := s.LaunchPlan(h, project, "terraform", []string{"smoke.tfvars"})
+		approval, op := s.ApplyReviewed(h, detail.ID)
+		if op.Outcome != "applied" || len(approval.Command) == 0 {
+			s.Fatalf("fake apply: %s %q command %v", op.Status, op.Outcome, approval.Command)
+		}
+		if e := s.LastHistory(h, "apply"); e.Outcome.PlanID != detail.ID {
+			s.Fatalf("history apply entry for plan %q, want %q", e.Outcome.PlanID, detail.ID)
+		}
 	})
 	r.Scenario(t, "smoke-hub-register", "tofu", "hub", false, func(s *Scenario) {
 		project := s.Project("smoke")
@@ -103,7 +120,7 @@ func TestSmokeFakeEngine(t *testing.T) {
 	if err != nil || json.Unmarshal(b, &got) != nil {
 		t.Fatalf("run.json: %v", err)
 	}
-	if got.GoTestExit != exit || got.Partial || len(got.Scenarios) != 2 {
+	if got.GoTestExit != exit || got.Partial || len(got.Scenarios) != 3 {
 		t.Fatalf("run.json: exit %d partial %v scenarios %d", got.GoTestExit, got.Partial, len(got.Scenarios))
 	}
 	for _, sc := range got.Scenarios {

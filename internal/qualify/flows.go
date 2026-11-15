@@ -25,25 +25,7 @@ func (s *Scenario) StartLaunch(dirs ProcessDirs, env []string, engine, project s
 	if err != nil {
 		s.Fatalf("start hclaro: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Minute)
-	for {
-		var ws struct {
-			Status string `json:"status"`
-		}
-		if _, err := h.client.Do("GET", "workspace", nil, &ws); err != nil {
-			s.Fatalf("workspace: %v", err)
-		}
-		if ws.Status != "loading" {
-			if ws.Status != "ready" && ws.Status != "empty" {
-				s.Fatalf("workspace status %q after the startup read", ws.Status)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			s.Fatalf("workspace still loading after 2 minutes")
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	s.waitReady(h)
 	if !s.run.negativeDone {
 		if err := h.client.NegativeChecks(); err != nil {
 			s.Fatalf("%v", err)
@@ -56,13 +38,21 @@ func (s *Scenario) StartLaunch(dirs ProcessDirs, env []string, engine, project s
 
 // PlanDetail is the part of GET /api/v1/plans/{id} the harness reads.
 type PlanDetail struct {
-	ID            string         `json:"id"`
-	Engine        string         `json:"engine"`
-	EngineVersion string         `json:"engineVersion"`
-	Errored       bool           `json:"errored"`
-	Summary       map[string]int `json:"summary"`
-	Changes       []struct {
+	ID          string `json:"id"`
+	OperationID string `json:"operationId"`
+	Kind        string `json:"kind"`
+	Destructive bool   `json:"destructive"`
+	// GeneratedConfig is the redacted engine-generated configuration of an import plan.
+	GeneratedConfig string         `json:"generatedConfig"`
+	Engine          string         `json:"engine"`
+	EngineVersion   string         `json:"engineVersion"`
+	Errored         bool           `json:"errored"`
+	Summary         map[string]int `json:"summary"`
+	// Imports counts changes that import an object, whatever their action.
+	Imports int `json:"imports"`
+	Changes []struct {
 		ID              string   `json:"id"`
+		Importing       bool     `json:"importing"`
 		Address         string   `json:"address"`
 		PreviousAddress string   `json:"previousAddress"`
 		Actions         []string `json:"actions"`
@@ -75,22 +65,57 @@ type PlanDetail struct {
 // LaunchPlan asks Hclaro for a plan with varFiles, as the plan dialog does, follows the
 // operation to its end and reads the plan and every change detail.
 func (s *Scenario) LaunchPlan(h *Hclaro, project, engine string, varFiles []string) PlanDetail {
+	return s.LaunchPlanWith(h, project, engine, varFiles, nil)
+}
+
+// LaunchPlanWith is LaunchPlan with resource IDs selected for -replace (from GET resources).
+func (s *Scenario) LaunchPlanWith(h *Hclaro, project, engine string, varFiles, replace []string) PlanDetail {
+	return s.launchPlan(h, project, engine, varFiles, replace, "")
+}
+
+// LaunchPlanProfile plans with an execution profile of the registered launch project,
+// sending the fingerprint of the context summary the plan dialog showed.
+func (s *Scenario) LaunchPlanProfile(h *Hclaro, project, engine, profileID string, varFiles []string) PlanDetail {
+	return s.launchPlan(h, project, engine, varFiles, nil, profileID)
+}
+
+func (s *Scenario) launchPlan(h *Hclaro, project, engine string, varFiles, replace []string, profileID string) PlanDetail {
+	if replace == nil {
+		replace = []string{}
+	}
 	var opts struct {
 		CanPlan bool   `json:"canPlan"`
 		Reason  string `json:"reason"`
 		Engine  string `json:"engine"`
 		Version string `json:"version"`
+		Context *struct {
+			Context struct {
+				Fingerprint string `json:"fingerprint"`
+			} `json:"context"`
+		} `json:"context"`
+		ProfileError string `json:"profileError"`
 	}
-	if r, err := h.client.Do("GET", "plans/options", nil, &opts); err != nil || r.Status != 200 {
+	path := "plans/options"
+	if profileID != "" {
+		path += "?profileId=" + profileID
+	}
+	if r, err := h.client.Do("GET", path, nil, &opts); err != nil || r.Status != 200 {
 		s.Fatalf("plans/options: %v %d", err, r.Status)
 	}
 	s.AssertEngine(project, engine, opts.Engine, opts.Version)
 	if !opts.CanPlan {
 		s.Fatalf("planning unavailable: %s", opts.Reason)
 	}
+	body := map[string]any{"acknowledgeBackendAccess": true, "varFiles": varFiles, "replace": replace}
+	if profileID != "" {
+		if opts.Context == nil || opts.Context.Context.Fingerprint == "" {
+			s.Fatalf("profile context unavailable: %s", opts.ProfileError)
+		}
+		body["profileId"], body["contextFingerprint"] = profileID, opts.Context.Context.Fingerprint
+	}
 	s.Guard(project)
 	var op Operation
-	r, err := h.client.Do("POST", "plans", map[string]any{"acknowledgeBackendAccess": true, "varFiles": varFiles, "replace": []string{}}, &op)
+	r, err := h.client.Do("POST", "plans", body, &op)
 	if err != nil || r.Status != 202 {
 		s.Fatalf("POST plans: %v %d %s", err, r.Status, r.Code)
 	}
