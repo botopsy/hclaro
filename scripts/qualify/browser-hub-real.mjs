@@ -40,7 +40,9 @@ assert(!run.startsWith(home+'/'),'run dir under the home directory')
 const out=path.resolve(OUT)
 await fs.mkdir(out,{recursive:true})
 const canary='HCLARO-QUAL-CANARY-'+crypto.randomBytes(8).toString('hex')
-const record={startedAt:new Date().toISOString(),engines,steps:[],flag:'--experimental-hub-execution'}
+const git=(...a)=>execFileSync('git',a,{cwd:repo}).toString().trim()
+const record={startedAt:new Date().toISOString(),engines,steps:[],flag:'--experimental-hub-execution',
+ hclaroCommit:git('rev-parse','HEAD'),hclaroDirty:git('status','--porcelain')!=='',hclaroBinarySha256:await sha(path.join(repo,'bin/hclaro'))}
 let server
 try{
  for(const d of ['bin','home','tmp','config','projects']) await fs.mkdir(path.join(run,d),{recursive:true})
@@ -65,6 +67,11 @@ try{
   record[`isolated${tag}`]=ok
   assert(ok,`netprobe isolated ${tag}: not enforced`)
  }
+ // Positive control outside the sandbox (OD-5 endpoints): without it, denial proves nothing.
+ const control=JSON.parse(execFileSync(path.join(run,'netprobe'),['control']).toString())
+ await fs.writeFile(path.join(out,'netprobe-control.json'),JSON.stringify(control,null,1))
+ record.control=['ipv4_tcp','udp_dns'].every(n=>control.checks.some(k=>k.name===n&&k.ok))
+ assert(record.control,'netprobe control did not reach the OD-5 endpoints: isolation not enforced')
  await probe('Before')
  const projects={}
  for(const name of ['terraform','tofu']){

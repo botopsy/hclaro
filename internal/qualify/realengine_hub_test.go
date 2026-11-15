@@ -42,6 +42,27 @@ func (s *Scenario) view(h *Hclaro, pid, project, engine, workspace, profile stri
 	return h.In(HubView{ContextID: cid, ProjectID: pid, Project: project, Engine: engine, Workspace: workspace})
 }
 
+// contextRead is a view's read result: status, diagnostic code and the backend Hclaro found.
+func (s *Scenario) contextRead(h *Hclaro, cid string) (status, code, backend string, initialized bool) {
+	var c struct {
+		Status     string `json:"status"`
+		Diagnostic *struct {
+			Code string `json:"code"`
+		} `json:"diagnostic"`
+		Info struct {
+			Backend     string `json:"backend"`
+			Initialized bool   `json:"initialized"`
+		} `json:"info"`
+	}
+	if r, err := h.client.Do("GET", "contexts/"+cid, nil, &c); err != nil || r.Status != 200 {
+		s.Fatalf("context: %v %d", err, r.Status)
+	}
+	if c.Diagnostic != nil {
+		code = c.Diagnostic.Code
+	}
+	return c.Status, code, c.Info.Backend, c.Info.Initialized
+}
+
 // hubStart is the H2 starter: a Hub process with both engines, the project registered with
 // engine as its preference and its default workspace open.
 func hubStart(s *Scenario, engine, project string) (ProcessDirs, []string, *Hclaro) {
@@ -184,6 +205,10 @@ func TestRealHubEngines(t *testing.T) {
 		for _, name := range engines() {
 			pid := s.HubRegister(h, projects[name], name, name)
 			v := s.view(h, pid, projects[name], name, "default", "")
+			// A new project has no state: the read ends state_absent, which can be planned.
+			if st, c, backend, _ := s.contextRead(h, v.view.ContextID); st != "error" || c != "state_absent" || backend != "local" {
+				s.Fatalf("H1 %s context read %s %s backend %q, want error state_absent on the local backend", name, st, c, backend)
+			}
 			var plan struct {
 				CanPlan bool     `json:"canPlan"`
 				Reason  string   `json:"reason"`
@@ -364,7 +389,7 @@ func TestRealHubPaths(t *testing.T) {
 	name := engines()[0]
 	type variant struct{ id, why string }
 	sensitive := run.Result.FilesystemCaseSensitive
-	fsNote := fmt.Sprintf("filesystem case-sensitive %v (F-4: APFS case-insensitive on darwin/amd64)", sensitive)
+	fsNote := fmt.Sprintf("run root filesystem case-sensitive %v (probed by the harness; F-4 found APFS case-insensitive on darwin/amd64)", sensitive)
 	paths := func(s *Scenario, project string) map[string][]string {
 		parent, base := filepath.Dir(project), filepath.Base(project)
 		alias := filepath.Join(s.Dir, "alias")
@@ -452,8 +477,8 @@ func h5Claim(s *Scenario, dirs ProcessDirs, env []string, name, project, form st
 	if r, err := h.client.Do("DELETE", "projects/"+pid, map[string]any{}, nil); err != nil || r.Status != 200 {
 		s.Fatalf("unregister: %v %d %s", err, r.Status, r.Code)
 	}
-	if _, err := h.Stop(60 * time.Second); err != nil {
-		s.Fatalf("stop: %v", err)
+	if code, err := h.Stop(60 * time.Second); err != nil || code != 0 {
+		s.Fatalf("stop hclaro on %s: exit %d %v", s.run.San.String(form), code, err)
 	}
 	h.shutdown = true
 }
@@ -809,6 +834,13 @@ func h12Remote(s *Scenario, name string) {
 		s.Fatalf("register: %v %d %s", err, r.Status, r.Code)
 	}
 	v := s.view(h, p.ID, project, name, "default", "")
+	// The read stops at the missing initialization; Hclaro reads the backend type from the
+	// configuration (workspace.Inspect), not from the engine.
+	rs, c, backend, initialized := s.contextRead(h, v.view.ContextID)
+	s.Observe("H12 context read: %s %s, backend %q, initialized %v", rs, c, backend, initialized)
+	if c != "uninitialized" || backend != "s3" || initialized {
+		s.Fatalf("H12 context read %s %s backend %q initialized %v, want uninitialized on the s3 backend", rs, c, backend, initialized)
+	}
 	var opts struct {
 		CanPlan bool   `json:"canPlan"`
 		Code    string `json:"code"`
