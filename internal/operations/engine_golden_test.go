@@ -83,6 +83,11 @@ func TestRealEngineFailureStreams(t *testing.T) {
 				if len(e.op.Diagnostics) == 0 || strings.Contains(text, "DO_NOT_LEAK") {
 					t.Fatalf("diagnostics %q", text)
 				}
+				// The recorded path holds "SECRET", so the line is withheld before the value
+				// scrub; the M27.04 F1 run (a canary path) shows the scrub: no file exists at "[redacted]".
+				if file == "local-missing-file.jsonl" && !strings.Contains(text, "Invalid function argument\n[line withheld: looks like a secret]") {
+					t.Fatalf("file() diagnostic line not withheld: %s", text)
+				}
 				if got := engine.Classify(text); got != want {
 					t.Fatalf("classified %q, want %q: %s", got, want, text)
 				}

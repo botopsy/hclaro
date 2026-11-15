@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"hclaro/internal/graph"
 )
 
 // M27.04 scenarios (tasks/M27/tasks/M27-04-DRIFT-GRAPH-FAILURES.md), once per configured
@@ -235,6 +237,7 @@ type graphView struct {
 		Planned         []struct {
 			ChangeID string `json:"changeId"`
 			Address  string `json:"address"`
+			Action   string `json:"action"`
 		} `json:"planned"`
 	} `json:"nodes"`
 	Plan *struct {
@@ -287,6 +290,13 @@ func checkGraph(s *Scenario, h *Hclaro, plan PlanDetail, orphans []string) {
 		}
 		for _, c := range n.Planned {
 			seen[c.ChangeID]++
+			// A change sits on its own instanced node or on its configuration resource.
+			if key, _ := graph.ConfigAddress(c.Address); c.Address != n.ResourceAddress && key != n.ResourceAddress {
+				s.Errorf("change %s is on node %s", c.Address, n.ResourceAddress)
+			}
+			if a := actionOf(plan, c.ChangeID); c.Action != a {
+				s.Errorf("change %s shows %q on the graph, the plan says %q", c.Address, c.Action, a)
+			}
 		}
 	}
 	var unmapped []string
@@ -318,6 +328,15 @@ func checkGraph(s *Scenario, h *Hclaro, plan PlanDetail, orphans []string) {
 	}
 }
 
+func actionOf(plan PlanDetail, id string) string {
+	for _, c := range plan.Changes {
+		if c.ID == id {
+			return c.Action
+		}
+	}
+	return ""
+}
+
 // TestRealGraph covers G1 on the M26.16 recording project and the module-heavy project.
 func TestRealGraph(t *testing.T) {
 	if run == nil {
@@ -329,6 +348,21 @@ func TestRealGraph(t *testing.T) {
 			if err := os.Rename(filepath.Join(project, "state.json"), filepath.Join(project, "terraform.tfstate")); err != nil {
 				s.Fatalf("%v", err)
 			}
+			// The project's test secret becomes the run canary, so the standard scan covers it.
+			for _, f := range []string{"prod.tfvars", "terraform.tfstate", "remote.json"} {
+				p := filepath.Join(project, f)
+				b, err := os.ReadFile(p)
+				if err == nil {
+					err = os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "DO_NOT_LEAK_HCLARO_TEST_SECRET", s.run.Canary)), 0o600)
+				}
+				if err != nil {
+					s.Fatalf("%v", err)
+				}
+			}
+			if b, _ := os.ReadFile(filepath.Join(project, "prod.tfvars")); !strings.Contains(string(b), s.run.Canary) {
+				s.Fatalf("the canary is not in prod.tfvars")
+			}
+			s.RefreshBaseline(project)
 			dirs, env, err := s.Process(name)
 			if err != nil {
 				s.Fatalf("%v", err)
@@ -337,10 +371,6 @@ func TestRealGraph(t *testing.T) {
 			h := s.StartLaunch(dirs, env, name, project)
 			plan := s.LaunchPlan(h, project, name, []string{"prod.tfvars"})
 			checkGraph(s, h, plan, []string{"terraform_data.gone", "terraform_data.counted_gone[0]", "terraform_data.counted_gone[1]", `module.old["x"].terraform_data.this`})
-			// The project's own test secret (not the run canary) must not be shown either.
-			if b, _ := os.ReadFile(filepath.Join(s.Dir, "responses.raw")); strings.Contains(string(b), "DO_NOT_LEAK_HCLARO_TEST_SECRET") {
-				s.Fatalf("the M26.16 project's secret is visible in a response")
-			}
 		})
 		run.Scenario(t, "g1-graph-modules-"+name, name, "launch", false, func(s *Scenario) {
 			project, h := launchApplied(s, name, "graph", []string{"launch.tfvars"})
@@ -431,7 +461,7 @@ func TestRealLocks(t *testing.T) {
 		})
 		run.Scenario(t, "l2-unlock-failed-"+name, name, "launch", false, func(s *Scenario) {
 			e, _ := run.Engine(name)
-			s.NotTested(fmt.Sprintf("unlock failure not reproducible on %s %s (F-3 source analysis 2026-11-14, NOT_REPRODUCIBLE for the local backend); synthetic state_unlock_failed coverage stays in internal/engine/planner_test.go and internal/operations/apply_test.go", e.Name, e.Version))
+			s.NotTested(fmt.Sprintf("unlock failure not reproducible on %s %s (F-3 source analysis 2026-11-14, NOT_REPRODUCIBLE for the local backend); synthetic state_unlock_failed coverage stays in internal/engine/planner_test.go and internal/operations/apply_test.go", map[string]string{"terraform": "Terraform", "tofu": "OpenTofu"}[e.Name], e.Version))
 		})
 	}
 }
@@ -445,9 +475,10 @@ func failurePlans(s *Scenario, h *Hclaro, project, label string) {
 	}
 	engineRan(s, label+" F1", op)
 	s.Observe("%s F1: %s (%s): %s", label, op.Status, code(op), diagnostics(op))
-	// The var-file value (a path holding the canary) is checked by the canary scan.
-	if op.Status != "failed" || code(op) != "plan_failed" || !strings.Contains(diagnostics(op), "Invalid function argument") {
-		s.Fatalf("%s F1: plan %s (%s), want plan_failed with the file() diagnostic", label, op.Status, code(op))
+	// The var-file value is a path holding the canary: the diagnostic must reach Hclaro's
+	// output with that value replaced, not merely be absent (the canary scan covers the rest).
+	if op.Status != "failed" || code(op) != "plan_failed" || !strings.Contains(diagnostics(op), `no file exists at "[redacted]"`) {
+		s.Fatalf("%s F1: plan %s (%s), want plan_failed with the file() diagnostic and its path redacted", label, op.Status, code(op))
 	}
 	if err := os.RemoveAll(filepath.Join(project, ".terraform", "providers")); err != nil {
 		s.Fatalf("%v", err)
@@ -521,7 +552,9 @@ func TestRealFailures(t *testing.T) {
 				if ws.Diagnostic.Code != "uninitialized" || !strings.Contains(strings.ToLower(ws.Diagnostic.Message), "init") {
 					s.Fatalf("F2 (never initialized): project read %s %q, want uninitialized pointing at init", ws.Diagnostic.Code, ws.Diagnostic.Message)
 				}
-				return
+				// The engine never ran, so init_required classification is not exercised here
+				// (the engine's missing-init text is pinned by local-noinit.jsonl).
+				s.NotTested("engine not run: Hclaro refuses before the engine with " + ws.Diagnostic.Code + ", not init_required; classifier not exercised on this path")
 			}
 			op, r := s.failedPlan(h, project, []string{"launch.tfvars"})
 			s.Observe("F2 (never initialized): POST %d %s, plan %s (%s): %s", r.Status, r.Code, op.Status, code(op), diagnostics(op))
@@ -553,10 +586,24 @@ func TestRealFailures(t *testing.T) {
 			}
 		})
 		run.Scenario(t, "f4-unknown-actions-"+name, name, "launch", false, func(s *Scenario) {
-			if e, _ := run.Engine(name); e.Name == "terraform" && strings.HasPrefix(e.Version, "1.5.") {
-				s.NotTested("no engine emits an unsupported combination: Terraform " + e.Version + " has no lifecycle destroy argument, the only trigger found (2026-11-15 probe)")
+			project, _, _, h := launch(s, name, "forget")
+			if op, r := s.failedPlan(h, project, []string{"launch.tfvars"}); op.Status != "succeeded" {
+				// An engine that rejects the only trigger found (lifecycle destroy) cannot emit it.
+				if op.ID == "" {
+					s.Fatalf("F4 plan refused before the engine: %d %s", r.Status, r.Code)
+				}
+				engineRan(s, "F4", op)
+				e, _ := run.Engine(name)
+				s.NotTested(fmt.Sprintf("no engine emits an unsupported combination: %s %s rejects the fixture (%s): %s", e.Name, e.Version, code(op), strings.TrimSpace(diagnostics(op))))
+			} else {
+				detail := PlanDetail{}
+				if r, err := h.client.Do("GET", "plans/"+op.PlanID, nil, &detail); err != nil || r.Status != 200 {
+					s.Fatalf("F4 setup plan: %v %d", err, r.Status)
+				}
+				if _, applied := s.ApplyReviewed(h, detail.ID); applied.Outcome != "applied" {
+					s.Fatalf("F4 setup apply ended %s, outcome %q", applied.Status, applied.Outcome)
+				}
 			}
-			project, h := launchApplied(s, name, "forget", []string{"launch.tfvars"})
 			sum, serial := stateFile(s, project)
 			detail := s.LaunchPlan(h, project, name, []string{"gen2.tfvars"})
 			var actions []string

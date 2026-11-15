@@ -12,7 +12,7 @@ These are the documented behaviours that the M27.03 and M27.04 scenarios rely on
 | `keepers` on `random_integer`, `random_string` and `random_password`: a changed value forces recreation | documented | `v3.9.1` `integer.md`, `string.md`, `password.md` (argument `keepers`) | M27.03 (I1, I3, R1 group) |
 | `random_password.result` and `bcrypt_hash` are sensitive | documented | `v3.9.1` `docs/resources/password.md` ("String, Sensitive") | M27.03 (I1, I3, R1 group) |
 | `local_file` file deleted outside the engine: detected as deleted, and a diff re-creates it | documented ("will detect the resource as having been deleted … and will generate a diff to re-create it") | `terraform-provider-local` `v2.9.1` `docs/resources/file.md` | M27.04 D1 |
-| `local_file` file edited outside the engine: whether it shows as removed or updated | **unconfirmed** (not documented at `v2.9.1`) | — | M27.04 D2 decides |
+| `local_file` file edited outside the engine: whether it shows as removed or updated | **removed** (not documented at `v2.9.1`; observed): the refresh-only plan reports it deleted on Terraform 1.5.5, 1.17.2 and OpenTofu 1.13.9 (`fixtures/engines/*/local-drift.json`) | — | M27.04 D2 (2026-11-15) |
 | `data "local_file"` reads a file's content | documented | `v2.9.1` `docs/data-sources/file.md` | F-2 candidate 2 (used on Terraform 1.17.2) |
 | `terraform_data.triggers_replace` forces replacement | **unconfirmed** here (engine documentation, not fetched under OD-1a) | — | M27.03 (I1, I3, R1 group) |
 
