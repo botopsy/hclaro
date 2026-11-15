@@ -189,7 +189,8 @@ The recorded differences from RE-01 are the reconstruction itself and the missin
 | `TestRealLaunchApply` | A1 apply, A2 destructive (typed phrase), A3 stale plan (edited before the preflight, and after the approval), A4 superseded plan, R1 replace (1, 50, and 51 refused) | `launch` |
 | `TestRealLaunchImport` | I1 import, I2 collision (ID equal to the state id), I3 generated configuration | `launch-import` |
 | `TestRealLaunchHub` | N1 init from the launch session (only when isolation is `enforced`; the launch view is read again), W1 workspaces with per-context reads (Hub), W3 the launch session refuses to plan after the CLI default changes, W2 inherited `TF_CLI_ARGS_workspace_delete=-force` | `providers`, `launch` |
-| `TestRealLaunchOptions` | A5 apply options and lock wait; A6, A7, A7b recorded `NOT_TESTED` until OD-8 approves the gated fixture | `launch-lock` |
+| `TestRealLaunchOptions` | A5 apply options and lock wait | `launch-lock` |
+| `TestRealLaunchGate` | A6 cancel during apply, A7 Hclaro shutdown during apply (phases P1–P5), A7b shutdown with the engine outliving the grace period | `launch-gate` (OD-8) |
 
 Notes on how the scenarios observe things:
 
@@ -197,6 +198,9 @@ Notes on how the scenarios observe things:
 - **A5 lock wait.** The engine prints its lock-wait message only after waiting about 400 ms. A5 (b) waits for that message in the apply's event stream, then releases the holder. If the message never arrives, an apply still running after 60 s while the holder holds the lock shows the wait instead, and the missing message is recorded as a failure (defect D-3).
 - **I3 echo.** For `random_password` the import ID is the password, so I3 uses the canary as the ID. The import preview has to repeat the user's own input in the block and in the manual recipe. Only those two exact forms are masked before the canary scan; the generated configuration, the plan, history and logs stay under the check.
 - **No canary path.** N1 (init reads no variables) and W2 (no plan runs) record that the canary is not on their path; "canary absent" there proves nothing.
+- **Gated fixture (OD-8, approved with restrictions on 2026-11-15, for A6, A7 and A7b only).** The engine's `local-exec` runs the fixed script `fixtures/qualify/launch-gate/gate.sh` as `/bin/sh ./gate.sh normal|trap`. The script is deterministic, uses no network, touches only `<project>/.qual/`, and exits on release, on its INT trap (normal mode, exit 130) or on a hard timeout (120 s normal, 900 s trap). The fixture guard refuses any `provisioner` unless the project's `main.tf` and `gate.sh` are byte-identical to the approved fixture. The Windows variant is not implemented, so Windows records `NOT_TESTED`. Interrupt delivery is observed at the gate's trap marker and, as the second source, in the engine's "Interrupt received" log line. The SSE stream is read for A6; the history excerpt for A7 and A7b, because Hclaro is gone by then.
+- **History outcome names.** History stores an apply whose operation outcome is `uncertain` (or a cancelled apply) as result `partial` (`internal/history/convert.go`). A7 and A7b accept `partial` as the task's "uncertain".
+- **NOT_TESTED still checks cleanup.** A scenario stopped as `NOT_TESTED` still gets the canary and cleanup checks, so a leftover process or file makes it `FAIL`.
 - **N1 isolation.** N1 runs once the isolated probe before the run has passed. If the probe after the run fails, a `PASS` becomes `NOT_TESTED` (offline not verified).
 
 ## Limitations

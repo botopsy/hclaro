@@ -117,6 +117,10 @@ type HistoryEntry struct {
 		Result string `json:"result"`
 		PlanID string `json:"planId"`
 	} `json:"outcome"`
+	// Excerpt is the kept, sanitised log tail (history detail and history.json only).
+	Excerpt []struct {
+		Text string `json:"text"`
+	} `json:"excerpt"`
 }
 
 // History lists Hclaro's history, newest first.

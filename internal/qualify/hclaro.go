@@ -28,6 +28,9 @@ type Hclaro struct {
 	waitErr             error
 	client              *Client
 	scenario            *Scenario
+	// shutdown is set when the scenario stopped Hclaro itself (A7, A7b); its exit code is
+	// recorded by the scenario, not judged by the cleanup.
+	shutdown bool
 }
 
 // StartHclaro starts the binary with args and the allowlisted env, waits for the session URL
@@ -132,6 +135,36 @@ func (h *Hclaro) Stop(timeout time.Duration) (int, error) {
 	return h.cmd.ProcessState.ExitCode(), nil
 }
 
+// Interrupt sends the stop signal (SIGINT on Unix, CTRL_BREAK on Windows) without waiting;
+// the scenario then observes the shutdown phases itself.
+func (h *Hclaro) Interrupt() error {
+	h.shutdown = true
+	return interruptProcess(h.cmd.Process)
+}
+
+// Exited reports whether the process has ended.
+func (h *Hclaro) Exited() bool {
+	select {
+	case <-h.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// Wait waits up to d for the process to end and returns its exit code.
+func (h *Hclaro) Wait(d time.Duration) (int, bool) {
+	select {
+	case <-h.done:
+		if h.cmd.ProcessState == nil {
+			return -1, true
+		}
+		return h.cmd.ProcessState.ExitCode(), true
+	case <-time.After(d):
+		return 0, false
+	}
+}
+
 // Pid of the running process.
 func (h *Hclaro) Pid() int { return h.cmd.Process.Pid }
 
@@ -169,4 +202,23 @@ func leftoverProcesses(root string, exclude map[int]bool) ([]string, error) {
 type process struct {
 	pid     int
 	command string
+}
+
+// enginePIDs lists running processes started from the engine binary in bin (a Process bin
+// directory), whatever their subcommand.
+func enginePIDs(bin, engine string) ([]int, error) {
+	procs, err := listProcesses()
+	if err != nil {
+		return nil, err
+	}
+	var out []int
+	for _, p := range procs {
+		for _, form := range pathForms(filepath.Join(bin, exeName(engine))) {
+			if strings.HasPrefix(p.command, form) || strings.Contains(p.command, " "+form) {
+				out = append(out, p.pid)
+				break
+			}
+		}
+	}
+	return out, nil
 }

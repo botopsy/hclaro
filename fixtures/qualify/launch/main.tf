@@ -4,13 +4,8 @@
 # output, which the engine marks. It is not a terraform_data input: Terraform 1.5.5 marks the
 # input sensitive in state but not the output derived from it, and Hclaro shows unmarked values
 # (owner decision 2026-11-15; M27.03 finding, tasks/M27-PROGRESS.md).
-# The explicit local backend makes init write .terraform/: without a provider or a backend
-# block, init creates nothing and Hclaro reports the project uninitialized (M27.03 finding
-# D-1, tasks/M27-PROGRESS.md).
-terraform {
-  backend "local" {}
-}
-
+# No backend block and no provider: init writes nothing here, which Hclaro must still read as
+# initialized (M27.03 D-1).
 variable "token" {
   type      = string
   sensitive = true

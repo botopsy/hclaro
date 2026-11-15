@@ -216,6 +216,9 @@ type Scenario struct {
 	allowed  map[string]bool
 	// startCodes are workspace diagnostics a scenario accepts after a read (N1: uninitialized).
 	startCodes map[string]bool
+	// keepLock and keepPlanDir are set by A7b, which asserts these leftovers itself (the
+	// lock-info file is never force-unlocked; the temp dir deletion removes it).
+	keepLock, keepPlanDir bool
 }
 
 // Scenario runs fn as subtest id and records its result. PASS needs fn to return, then the
@@ -258,7 +261,7 @@ func (s *Scenario) finish(p any, completed bool) {
 			s.setFail("skipped without a recorded reason")
 			t.Errorf("t.Skip without NotTested/Skip reason")
 		}
-		return
+		// A NOT_TESTED scenario may have run processes: canary and cleanup are still checked.
 	case t.Failed() || !completed:
 		s.setFail("assertion failed")
 	}
@@ -463,6 +466,8 @@ func (s *Scenario) stopAll() []string {
 		code, err := h.Stop(60 * time.Second)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("hclaro %d: %v", i, err))
+		} else if h.shutdown {
+			s.Observe("hclaro %d: exit code %d after the scenario's shutdown", i, code)
 		} else if code != 0 {
 			errs = append(errs, fmt.Sprintf("hclaro %d exited %d after the interrupt", i, code))
 		}
@@ -521,7 +526,9 @@ func (s *Scenario) cleanupCheck() []string {
 		}
 	}
 	s.result.Cleanup.TempDirs = "removed"
-	if len(dirs) > 0 {
+	if len(dirs) > 0 && s.keepPlanDir {
+		s.result.Cleanup.TempDirs = "left (asserted by the scenario): " + strings.Join(dirs, ", ")
+	} else if len(dirs) > 0 {
 		s.result.Cleanup.TempDirs = "left: " + strings.Join(dirs, ", ")
 		problems = append(problems, "saved-plan or drift directories left: "+strings.Join(dirs, ", "))
 	}
@@ -540,7 +547,9 @@ func (s *Scenario) cleanupCheck() []string {
 		}
 	}
 	s.result.Cleanup.LockFiles = "none"
-	if len(locks) > 0 {
+	if len(locks) > 0 && s.keepLock {
+		s.result.Cleanup.LockFiles = "left (asserted by the scenario; removed with the temp dir): " + strings.Join(locks, ", ")
+	} else if len(locks) > 0 {
 		s.result.Cleanup.LockFiles = "left: " + strings.Join(locks, ", ")
 		problems = append(problems, "lock-info files left")
 	}

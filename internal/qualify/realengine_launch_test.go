@@ -868,8 +868,7 @@ func waitRunning(s *Scenario, h *Hclaro, id string) Operation {
 
 const lockWait = "Acquiring state lock. This may take a few moments..."
 
-// TestRealLaunchOptions covers A5 (apply options and lock timeout) and records A6, A7 and
-// A7b, which need the OD-8 gated fixture.
+// TestRealLaunchOptions covers A5 (apply options and lock timeout).
 func TestRealLaunchOptions(t *testing.T) {
 	if run == nil {
 		t.Skip(runSkip)
@@ -965,10 +964,5 @@ func TestRealLaunchOptions(t *testing.T) {
 			assertStateUnchanged(s, project, sum, serial, "after the locked apply")
 			_ = env
 		})
-		for _, id := range []string{"a6-interrupt-apply-", "a7-shutdown-apply-", "a7b-shutdown-grace-"} {
-			run.Scenario(t, id+name, name, "launch", false, func(s *Scenario) {
-				s.NotTested("no approved synchronisation fixture (OD-8 not decided)")
-			})
-		}
 	}
 }

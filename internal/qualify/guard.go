@@ -1,12 +1,15 @@
 package qualify
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"hclaro/fixtures"
 )
 
 // Fixture guard (M27.02): a project may use only the local backend, the built-in
@@ -22,7 +25,12 @@ var (
 	guardBlock        = regexp.MustCompile(`(?m)^\s*(resource|data|provider|module|ephemeral|import|check)\b\s*("[^"]*")?\s*("[^"]*")?`)
 	guardLockProvider = regexp.MustCompile(`(?m)^provider\s+"([^"]*)"`)
 	guardLockAny      = regexp.MustCompile(`(?m)^(\w+)`)
+	guardProvisioner  = regexp.MustCompile(`\bprovisioner\b`)
 )
+
+// gateFiles are the only project files that may hold a provisioner: the OD-8 gated fixture
+// (M27.03 A6, A7, A7b), byte-identical to fixtures/qualify/launch-gate.
+var gateFiles = []string{"main.tf", "gate.sh"}
 
 var allowedProviderSources = map[string]bool{
 	"hashicorp/random": true, "hashicorp/local": true,
@@ -51,6 +59,7 @@ func allowedType(kind, typ string) bool {
 // anything outside the approved scope.
 func GuardFixture(root string) error {
 	var problems []string
+	provisioner := false
 	bad := func(rel, format string, args ...any) {
 		problems = append(problems, rel+": "+fmt.Sprintf(format, args...))
 	}
@@ -95,11 +104,17 @@ func GuardFixture(root string) error {
 				return err
 			}
 			guardHCL(rel, string(b), bad)
+			if guardProvisioner.Match(b) {
+				provisioner = true
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("fixture_scope: %v", err)
+	}
+	if provisioner && !isGateFixture(root) {
+		bad(".", "provisioners are allowed only in the approved OD-8 gated fixture (byte-identical main.tf and gate.sh)")
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("fixture_scope: %s", strings.Join(problems, "; "))
@@ -136,4 +151,17 @@ func guardHCL(rel, text string, bad func(string, string, ...any)) {
 			}
 		}
 	}
+}
+
+// isGateFixture reports whether root holds the approved gated fixture's main.tf and gate.sh
+// unchanged.
+func isGateFixture(root string) bool {
+	for _, name := range gateFiles {
+		want, err := fs.ReadFile(fixtures.Qualify, "qualify/launch-gate/"+name)
+		got, err2 := os.ReadFile(filepath.Join(root, name))
+		if err != nil || err2 != nil || !bytes.Equal(want, got) {
+			return false
+		}
+	}
+	return true
 }
