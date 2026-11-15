@@ -639,6 +639,9 @@ func osVersion() string {
 }
 
 func currentUser() string {
+	if buildUser != "" {
+		return buildUser
+	}
 	for _, k := range []string{"USER", "USERNAME", "LOGNAME"} {
 		if v := os.Getenv(k); v != "" {
 			return v
@@ -660,6 +663,8 @@ var (
 	// buildHome is the real home directory, for sanitising and the final scan: inside the
 	// isolation HOME is unset.
 	buildHome = ""
-	// buildRepo is the repository path, sanitised as <REPO>.
+	// buildRepo is the repository path, sanitised as <REPO>; buildUser the username (the
+	// cleared environment has no USER or USERNAME).
 	buildRepo = ""
+	buildUser = ""
 )

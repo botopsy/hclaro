@@ -38,7 +38,7 @@ commit=$(git -C "$repo" rev-parse HEAD)
 dirty=false
 [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] || dirty=true
 pkg=hclaro/internal/qualify
-ldflags="-X $pkg.buildCommit=$commit -X $pkg.buildDirty=$dirty -X $pkg.buildHome=$real_home -X $pkg.buildRepo=$repo"
+ldflags="-X $pkg.buildCommit=$commit -X $pkg.buildDirty=$dirty -X $pkg.buildHome=$real_home -X $pkg.buildRepo=$repo -X $pkg.buildUser=$(id -un)"
 (cd "$repo" && go test -c -tags realengine -ldflags "$ldflags" -o "$run/qualify.test" ./internal/qualify)
 (cd "$repo" && CGO_ENABLED=0 go build -o "$run/netprobe" ./internal/qualify/netprobe)
 cp "$hclaro" "$run/hclaro"

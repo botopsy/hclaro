@@ -230,3 +230,26 @@ func TestLeftoverProcesses(t *testing.T) {
 		t.Fatalf("after kill: %v", left)
 	}
 }
+
+// TestRealEngineTagNotInCI: the realengine tag is never set in PR or push CI.
+func TestRealEngineTagNotInCI(t *testing.T) {
+	var files []string
+	_ = filepath.WalkDir("../../.github", func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && (strings.HasSuffix(p, ".yml") || strings.HasSuffix(p, ".yaml")) {
+			files = append(files, p)
+		}
+		return nil
+	})
+	if len(files) == 0 {
+		t.Skip("no workflows")
+	}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), "realengine") || strings.Contains(string(b), "make qualify") {
+			t.Errorf("%s mentions the realengine harness", f)
+		}
+	}
+}

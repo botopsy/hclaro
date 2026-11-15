@@ -1,3 +1,5 @@
+The harness itself (`make qualify`, environment allowlist, direct calls, isolation levels, results) is documented in [`docs/qualification/README.md`](../../docs/qualification/README.md).
+
 # M27 qualification: provider capabilities (F-1)
 
 These are the documented behaviours that the M27.03 and M27.04 scenarios rely on, for the OD-2 provider versions: `hashicorp/random` 3.9.1 and `hashicorp/local` 2.9.1. The sources are the provider docs at the exact release tags, fetched under OD-1a in F-6 (2026-11-14, evidence `f6-2026-11-14/fetch-log.jsonl`). The "Confirmed in" column follows the checklist's grouping (M27.03 I1, I3, R1; M27.04 D1, D2); only I1 (`random_integer` import), D1 (deleted) and D2 (edited) name a single behaviour in their task files. The real runs decide: a contradiction there is `FAIL`, never a reworded expectation.
