@@ -311,9 +311,18 @@ func TestRealEngineTagNotInCI(t *testing.T) {
 			t.Errorf("%s mentions the realengine harness", f)
 			continue
 		}
-		if !strings.Contains(w, "\non:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:") &&
-			!strings.Contains(w, "\non:\n  workflow_dispatch:\npermissions:\n  contents: read\ndefaults:") {
+		// The on: block is workflow_dispatch alone (its inputs indented below it), followed by
+		// permissions: contents: read.
+		_, after, _ := strings.Cut(w, "\non:\n")
+		trigger, rest, _ := strings.Cut(after, "\npermissions:\n  contents: read\n")
+		lines := strings.Split(trigger, "\n")
+		if lines[0] != "  workflow_dispatch:" || !strings.HasPrefix(rest, "jobs:") && !strings.HasPrefix(rest, "defaults:") {
 			t.Errorf("%s: triggers must be workflow_dispatch only, with permissions contents: read", f)
+		}
+		for _, l := range lines[1:] {
+			if !strings.HasPrefix(l, "    ") {
+				t.Errorf("%s: unexpected line in the on: block: %q", f, l)
+			}
 		}
 		for _, bad := range []string{"secrets.", "pull_request", "\n  push:", "schedule:", "workflow_run", "permissions:\n    ", "HCLARO_QUAL_KEEP", "-Keep"} {
 			if strings.Contains(w, bad) {
@@ -443,5 +452,54 @@ func TestScopedRoutes(t *testing.T) {
 		if got := (&Client{}).scoped(in); got != in {
 			t.Errorf("process %q → %q", in, got)
 		}
+	}
+}
+
+// TestHolderClose: the deferred L1 cleanup releases a holder gracefully (it exits by itself on
+// stdin EOF, as `console` does), kills one that ignores the release only after the bounded
+// wait, and is a no-op once the holder exited.
+func TestHolderClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts child processes")
+	}
+	start := func(mode string) *Holder {
+		h := &Holder{cmd: exec.Command(os.Args[0], "-test.run=^TestHolderChild$"), done: make(chan struct{})}
+		h.cmd.Env = append(os.Environ(), "QUAL_HOLDER_CHILD="+mode)
+		var err error
+		if h.stdin, err = h.cmd.StdinPipe(); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		go func() { _ = h.cmd.Wait(); close(h.done) }()
+		return h
+	}
+	defer func(w time.Duration) { holderReleaseWait = w }(holderReleaseWait)
+	holderReleaseWait = 3 * time.Second
+
+	h := start("stdin")
+	if err := h.Close(); err != nil || h.Alive() || h.cmd.ProcessState.ExitCode() != 0 {
+		t.Fatalf("graceful close: err %v alive %v exit %d", err, h.Alive(), h.cmd.ProcessState.ExitCode())
+	}
+	if err := h.Close(); err != nil {
+		t.Fatalf("close after exit: %v", err)
+	}
+	h = start("ignore")
+	t0 := time.Now()
+	if err := h.Close(); err == nil || h.Alive() || time.Since(t0) < holderReleaseWait {
+		t.Fatalf("stuck holder: err %v alive %v after %s", err, h.Alive(), time.Since(t0))
+	}
+}
+
+// TestHolderChild is the child of TestHolderClose.
+func TestHolderChild(t *testing.T) {
+	switch os.Getenv("QUAL_HOLDER_CHILD") {
+	case "stdin":
+		_, _ = io.Copy(io.Discard, os.Stdin)
+	case "ignore":
+		time.Sleep(time.Minute)
+	default:
+		t.Skip("child of TestHolderClose")
 	}
 }

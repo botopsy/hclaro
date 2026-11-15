@@ -204,7 +204,13 @@ func TestRealHubEngines(t *testing.T) {
 			projects[name] = s.ProjectAs("hub-hold", "p-"+name, stateWrites...)
 			s.SetupInit(dirs, env, name, projects[name])
 			// The combined config installed each family's providers from its own mirror.
-			checkLockfile(s, name, projects[name])
+			var cli string
+			for _, kv := range env {
+				if v, ok := strings.CutPrefix(kv, "TF_CLI_CONFIG_FILE="); ok {
+					cli = v
+				}
+			}
+			checkLockfile(s, name, projects[name], cli)
 		}
 		h := s.StartHub(dirs, env, true)
 		for _, name := range engines() {

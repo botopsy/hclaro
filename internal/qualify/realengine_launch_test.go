@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -388,7 +390,8 @@ func TestRealLaunchHub(t *testing.T) {
 			if op.Status != "succeeded" {
 				s.Fatalf("init ended %s", op.Status)
 			}
-			checkLockfile(s, name, project)
+			// Launch mode, one engine per process: its family CLI config (Scenario.Process).
+			checkLockfile(s, name, project, s.run.Cfg.CLIConfig[name])
 			if fi, err := os.Stat(filepath.Join(project, ".terraform", "providers")); err != nil || !fi.IsDir() {
 				s.Fatalf(".terraform/providers missing after init")
 			}
@@ -567,9 +570,65 @@ func TestRealLaunchHub(t *testing.T) {
 	}
 }
 
+// lockfileEvidence keeps, before any assertion, what is needed to explain a lock-file hash
+// mismatch (dispatch 3, run 43760321517: OpenTofu on Windows): the lock file and mirror files
+// exactly as read, the engine, platform and init inputs, the observed and manifest hashes per
+// provider, and "sha256  path" for every file of each installed package (h1: is a hash of
+// exactly these lines, so it can be recomputed offline). Nothing is normalised or rewritten.
+func lockfileEvidence(s *Scenario, engine, project, cfg string, lock, manifest []byte, blocks [][]string) {
+	s.Artifact("lockfile-"+engine+".hcl", lock)
+	s.Artifact("mirror-manifest.json", manifest)
+	e, _ := s.run.Engine(engine)
+	cfgSum, _ := fileSHA256(cfg)
+	s.Observe("lock evidence: %s %s on %s_%s; setup command `%s init -input=false -no-color` in the project, TF_CLI_CONFIG_FILE %s sha256 %s",
+		engine, e.Version, runtime.GOOS, runtime.GOARCH, engine, filepath.Base(cfg), cfgSum)
+	mirror := os.Getenv("HCLARO_QUAL_MIRROR")
+	for _, blk := range blocks {
+		addr := blk[1] // host/namespace/name
+		version := regexp.MustCompile(`version\s*=\s*"([^"]+)"`).FindStringSubmatch(blk[2])
+		observed := regexp.MustCompile(`"((?:h1|zh):[^"]+)"`).FindAllStringSubmatch(blk[2], -1)
+		var obs []string
+		for _, h := range observed {
+			obs = append(obs, h[1])
+		}
+		s.Observe("lock evidence %s %v: observed hashes %v", addr, version, obs)
+		if version == nil {
+			continue
+		}
+		family := "terraform"
+		if engine == "tofu" {
+			family = "tofu"
+		}
+		if j, err := os.ReadFile(filepath.Join(mirror, family, filepath.FromSlash(addr), version[1]+".json")); err == nil {
+			s.Artifact("mirror-"+strings.ReplaceAll(addr, "/", "_")+"-"+version[1]+".json", j)
+		} else {
+			s.Observe("lock evidence %s: mirror JSON not readable: %v", addr, err)
+		}
+		pkg := filepath.Join(project, ".terraform", "providers", filepath.FromSlash(addr), version[1], runtime.GOOS+"_"+runtime.GOARCH)
+		var lines []string
+		err := filepath.WalkDir(pkg, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			sum, err := fileSHA256(p)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(pkg, p)
+			lines = append(lines, sum+"  "+filepath.ToSlash(rel))
+			return nil
+		})
+		if err != nil {
+			s.Observe("lock evidence %s: installed package not listed: %v", addr, err)
+		}
+		sort.Strings(lines)
+		s.Artifact("installed-"+strings.ReplaceAll(addr, "/", "_")+".txt", []byte(strings.Join(lines, "\n")+"\n"))
+	}
+}
+
 // checkLockfile asserts the lock file pins the mirrored versions with hashes from the mirror
 // manifest (h1 hashes, or zh hashes of the mirrored archives).
-func checkLockfile(s *Scenario, engine, project string) {
+func checkLockfile(s *Scenario, engine, project, cli string) {
 	b, err := os.ReadFile(filepath.Join(project, ".terraform.lock.hcl"))
 	if err != nil {
 		s.Fatalf("lock file: %v", err)
@@ -588,6 +647,7 @@ func checkLockfile(s *Scenario, engine, project string) {
 		s.Fatalf("mirror manifest: %v", err)
 	}
 	blocks := regexp.MustCompile(`(?s)provider "([^"]+)" \{(.*?)\n\}`).FindAllStringSubmatch(string(b), -1)
+	lockfileEvidence(s, engine, project, cli, b, mb, blocks)
 	if len(blocks) != 2 {
 		s.Fatalf("lock file has %d providers, want random and local", len(blocks))
 	}
