@@ -3,16 +3,20 @@
 package qualify
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"hclaro/internal/engine"
 )
 
 // M27.05 Hub execution scenarios (tasks/M27/tasks/M27-05-HUB-EXECUTION.md). Every Hclaro
@@ -483,7 +487,7 @@ func h5Claim(s *Scenario, dirs ProcessDirs, env []string, name, project, form st
 	h.shutdown = true
 }
 
-// TestRealHubChanges covers H6 to H9, H11 and H12, once per engine, and records H10.
+// TestRealHubChanges covers H6 to H9, H11 and H12, once per engine.
 func TestRealHubChanges(t *testing.T) {
 	if run == nil {
 		t.Skip(runSkip)
@@ -495,9 +499,6 @@ func TestRealHubChanges(t *testing.T) {
 		hubScenario(t, "h7-busy-edits-"+name, name, func(s *Scenario) { h7BusyEdits(s, name) })
 		hubScenario(t, "h8-capacity-"+name, name, func(s *Scenario) { h8Capacity(s, name) })
 		hubScenario(t, "h9-close-context-"+name, name, func(s *Scenario) { h9Close(s, name) })
-		hubScenario(t, "h10-shutdown-applies-"+name, name, func(s *Scenario) {
-			s.NotTested("OD-8 is approved for M27.03 A6, A7 and A7b only; M27.05 H10 needs its own approval (tasks/M27-PROGRESS.md decision record), so no gated apply runs in a Hub scope")
-		})
 		hubScenario(t, "h11-import-no-stall-"+name, name, func(s *Scenario) { h11Import(s, name) })
 		hubScenario(t, "h12-remote-backend-"+name, name, func(s *Scenario) { h12Remote(s, name) })
 	}
@@ -834,12 +835,13 @@ func h12Remote(s *Scenario, name string) {
 		s.Fatalf("register: %v %d %s", err, r.Status, r.Code)
 	}
 	v := s.view(h, p.ID, project, name, "default", "")
-	// The read stops at the missing initialization; Hclaro reads the backend type from the
-	// configuration (workspace.Inspect), not from the engine.
+	// The read stops at the missing initialization. Hclaro takes the backend type from the
+	// init metadata, so a never-initialized s3 project reports "unknown" (recorded): the
+	// refusals below are the uninitialized path, not a remote-backend-specific one.
 	rs, c, backend, initialized := s.contextRead(h, v.view.ContextID)
 	s.Observe("H12 context read: %s %s, backend %q, initialized %v", rs, c, backend, initialized)
-	if c != "uninitialized" || backend != "s3" || initialized {
-		s.Fatalf("H12 context read %s %s backend %q initialized %v, want uninitialized on the s3 backend", rs, c, backend, initialized)
+	if c != "uninitialized" || initialized {
+		s.Fatalf("H12 context read %s %s backend %q initialized %v, want uninitialized", rs, c, backend, initialized)
 	}
 	var opts struct {
 		CanPlan bool   `json:"canPlan"`
@@ -894,4 +896,147 @@ func h12Remote(s *Scenario, name string) {
 	if e := s.History(h); len(e) != 0 {
 		s.Fatalf("H12 %d history entries", len(e))
 	}
+}
+
+// TestRealHubShutdown covers H10 with the OD-8 gated fixture (extended to M27.05 H10 by the
+// owner on 2026-11-15, same restrictions): applies in two Hub scopes, one per engine, are
+// held at the gate; Hclaro is interrupted once. M27.03 A7's phases P1-P5 are checked per
+// scope, each against its own engine PID, history entry, state and files.
+func TestRealHubShutdown(t *testing.T) {
+	if run == nil {
+		t.Skip(runSkip)
+	}
+	both := strings.Join(engines(), "+")
+	hubScenario(t, "h10-shutdown-applies", both, func(s *Scenario) {
+		if runtime.GOOS == "windows" {
+			s.NotTested("the Windows gate variant is not implemented (M27.07, F-5)")
+		}
+		if len(engines()) < 2 {
+			s.NotTested("H10 tells the two scopes' engines apart by name; this run configures " + both)
+		}
+		dirs, env := hubProcess(s)
+		gates := map[string]*gateRun{}
+		for _, name := range engines() {
+			project := s.ProjectAs("launch-gate", "g-"+name, append(slices.Clone(stateWrites), ".qual/reached", ".qual/interrupted", ".qual/release")...)
+			s.SetupInit(dirs, env, name, project)
+			gates[name] = &gateRun{project: project, dirs: dirs, env: env, mode: "normal"}
+		}
+		h := s.StartHub(dirs, env, true)
+		s.Observe("gate command (OD-8, H10): /bin/sh ./gate.sh normal, working directory each project, files under .qual/ only")
+		for _, name := range engines() {
+			g := gates[name]
+			defer release(s, g)
+			pid := s.HubRegister(h, g.project, name, name)
+			v := s.view(h, pid, g.project, name, "default", "")
+			detail := s.LaunchPlan(v, g.project, name, []string{"launch.tfvars"})
+			if detail.Summary["create"] != 6 {
+				s.Fatalf("%s gated plan: %s, want 6 creates", name, detail)
+			}
+			g.planID, g.h = detail.ID, h
+			a, r := s.Approve(v, detail.ID)
+			if r.Status != 200 {
+				s.Fatalf("%s approval: %d %s", name, r.Status, r.Code)
+			}
+			g.started = time.Now()
+			op, r := s.StartApply(v, detail.ID, a.Token, a.Phrase)
+			if r.Status != 202 {
+				s.Fatalf("%s apply: %d %s", name, r.Status, r.Code)
+			}
+			g.op = op
+			waitRunning(s, v, op.ID)
+			if !waitFile(g.qual("reached"), 60*time.Second) {
+				s.NotTested(name + " gate not reached")
+			}
+			pids, err := enginePIDs(dirs.Bin, name)
+			if err != nil || len(pids) != 1 {
+				s.NotTested(fmt.Sprintf("%s engine process not identified (%v, %v)", name, pids, err))
+			}
+			g.pid = pids[0]
+			s.Observe("%s scope: gate reached, engine pid %d", name, g.pid)
+		}
+		for _, name := range engines() {
+			if !alive(gates[name], name) {
+				s.NotTested("shutdown timing not established (" + name + " engine gone before the interrupt)")
+			}
+		}
+		t0 := time.Now()
+		if err := h.Interrupt(); err != nil {
+			s.Fatalf("interrupt hclaro: %v", err)
+		}
+		// P1: one notice while Hclaro runs.
+		deadline := time.Now().Add(60 * time.Second)
+		for !stdoutHas(h, shutdownNotice) {
+			if h.Exited() || time.Now().After(deadline) {
+				s.Fatalf("P1: no shutdown notice while Hclaro ran (exited %v)", h.Exited())
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		// P2: one interrupt per scope engine.
+		for _, name := range engines() {
+			s.Observe("P2 %s: gate interrupts %d by %s", name, waitInterrupts(gates[name], 10*time.Second), time.Since(t0).Round(time.Millisecond))
+		}
+		for _, name := range engines() {
+			release(s, gates[name])
+		}
+		// P3: each engine exits unaided, before Hclaro.
+		for _, name := range engines() {
+			g := gates[name]
+			gone, ok, outlived := waitGone(g, name, 5*time.Minute)
+			if !ok {
+				s.Fatalf("P3 %s: engine pid %d still running 5 min after the interrupt", name, g.pid)
+			}
+			s.Observe("P3 %s: engine gone %s after the interrupt; seen alive after Hclaro exited: %v", name, gone.Sub(t0).Round(time.Millisecond), outlived)
+			if outlived {
+				s.Errorf("P3 %s: the engine was still running after Hclaro exited", name)
+			}
+			if gone.Sub(t0) > engine.ApplyGracePeriod-time.Minute {
+				s.Errorf("P3 %s: the engine took %s, not well before the grace period", name, gone.Sub(t0))
+			}
+		}
+		code, exited := h.Wait(engine.ApplyGracePeriod + 2*time.Minute)
+		if !exited {
+			s.Fatalf("Hclaro still running %s after the interrupt", engine.ApplyGracePeriod+2*time.Minute)
+		}
+		b, _ := os.ReadFile(h.Stdout)
+		notices := bytes.Count(b, []byte(shutdownNotice))
+		s.Observe("P1: %d shutdown notice(s); Hclaro exit %d at %s", notices, code, time.Since(t0).Round(time.Millisecond))
+		if notices != 1 {
+			s.Errorf("P1: %d shutdown notices, want one", notices)
+		}
+		// P4 and P5 per scope.
+		for _, name := range engines() {
+			g := gates[name]
+			e := historyFile(s, g)
+			stage2 := gateState(s, g, name)
+			_, lockErr := os.Stat(filepath.Join(g.project, ".terraform.tfstate.lock.info"))
+			diag := ""
+			if e.Diagnostic != nil {
+				diag = e.Diagnostic.Code
+			}
+			acks := excerptAcks(e)
+			s.Observe("P4 %s history: status %s outcome %q exit %s diagnostic %q, acknowledgements %d; P5 stage-2 %v, lock-info present %v",
+				name, e.Status, e.Outcome.Result, exitCode(e.ExitCode), diag, acks, stage2, lockErr == nil)
+			if interrupts(g) == 0 && acks == 0 {
+				s.NotTested("shutdown timing not established for " + name + " (no gate marker, no engine acknowledgement)")
+			}
+			if interrupts(g) > 1 || acks > 1 {
+				s.Errorf("P2 %s: more than one interrupt: gate %d, engine acknowledgements %d", name, interrupts(g), acks)
+			}
+			if e.Outcome.Result == "not_applied" {
+				s.Errorf("P4 %s: outcome not_applied with stage-1 objects in state", name)
+			}
+			if e.Outcome.Result == "applied" && !(e.ExitCode != nil && *e.ExitCode == 0 && len(stage2) == 2) {
+				s.Errorf("P4 %s: outcome applied, but exit %s and stage-2 %v", name, exitCode(e.ExitCode), stage2)
+			}
+			if e.Outcome.Result != "applied" && !historyUncertain(e.Outcome.Result) {
+				s.Errorf("P4 %s: outcome %q, want applied or uncertain (history: partial)", name, e.Outcome.Result)
+			}
+			if lockErr == nil {
+				s.Errorf("P5 %s: lock-info file left", name)
+			}
+		}
+		if plans := savedPlanDirs(h); len(plans) > 0 || stdoutHas(h, "saved plan was not deleted") {
+			s.Errorf("P5: saved plans left %v or the not-deleted notice printed", plans)
+		}
+	})
 }

@@ -238,7 +238,8 @@ Notes on how the scenarios observe things:
 | `TestRealHubEngines` | H1 two projects (`terraform`, `tofu` preference) in one Hub: engine, version, plan and apply capability per scope, lock files from the combined config; H4 both projects plan at once | `hub-hold` |
 | `TestRealHubFlows` | H2: A1, A2, A3, R1, I1, D1, G1 (both projects) in a Hub workspace view, per engine; H3 `default` and `qa` of one project | `launch`, `launch-import`, `drift`, `graph`, `engines/project` |
 | `TestRealHubPaths` | H5a trailing separator, `./`, `..`; H5b symlink; H5c case-only (case-insensitive volume); H5c′ and H5d recorded `SKIPPED` where they do not apply | `hub-hold` |
-| `TestRealHubChanges` | H6 change after approval (configuration, profile, engine preference, engine binary), H7 busy edits, H8 capacity, H9 closing a view, H10 (`NOT_TESTED`, see below), H11 import without stall, H12 non-local backend | `launch`, `hub-hold`, `hub-remote` |
+| `TestRealHubChanges` | H6 change after approval (configuration, profile, engine preference, engine binary), H7 busy edits, H8 capacity, H9 closing a view, H11 import without stall, H12 non-local backend | `launch`, `hub-hold`, `hub-remote` |
+| `TestRealHubShutdown` | H10 shutdown with applies running in two scopes | `launch-gate` (OD-8) |
 
 - **Views.** `Hclaro.In` returns a handle whose launch routes (`plans`, `operations`, `imports`, `drift-scans`, `graphs`, `resources`) go to `contexts/{cid}/…`. The M27.03 and M27.04 scenario bodies run unchanged through it (H2). Starts send back the `contextFingerprint` the options returned. Every scoped options and operation response has its `scope` checked: same context and workspace, and the expected engine and version.
 - **Holding an operation.** `hub-hold` reads `data.local_file.gate` from the named pipe `.qual/gate.fifo` when `hold.tfvars` sets `hold = true`. A plan or import plan then stays `running` until the harness writes the pipe. H4, H5, H7, H9 and H11 use this hold, not timing. It is a plan-time read with no `local-exec`, so it is outside OD-8. Windows has no named pipe, so these scenarios are `NOT_TESTED` there.
@@ -250,8 +251,8 @@ Notes on how the scenarios observe things:
   - the view's profile edited, or the project's engine preference changed: the view is closed, `404 context_closed`;
   - engine binary replaced at the same path: `409 scope_changed`, detail `engine_changed`.
   The state's bytes are unchanged after each refusal.
-- **H10** is `NOT_TESTED`: OD-8 approves the gated `local-exec` fixture for M27.03 only, and H10 needs its own approval.
-- **H12** runs only under `enforced` isolation. `hub-remote` is the only fixture with a non-local backend, an `s3` block that is never initialized. `GuardRemote` accepts it only when it is byte-identical. The project is registered without the inspection. Every execution start (plan, drift scan, graph, import preview and import) must be refused, no operation or history entry may exist, and no `.terraform` directory may appear. Init is never started; its status is only read.
+- **H10** (OD-8 extended to M27.05 H10 on 2026-11-15, same restrictions) holds applies at the gate in two Hub scopes, one per engine, in one process, then interrupts Hclaro once. M27.03 A7's phases are checked per scope: one notice in all, one interrupt per engine, each engine gone before Hclaro exits, each plan's own history entry, state and lock file, and no saved plan left. It needs both engines in the run.
+- **H12** runs only under `enforced` isolation. `hub-remote` is the only fixture with a non-local backend, an `s3` block that is never initialized. `GuardRemote` accepts it only when it is byte-identical. The project is registered without the inspection. The view's read must end `uninitialized`; Hclaro reports the backend as `unknown` before init, so this is the uninitialized refusal, not a remote-backend-specific one. Every execution start (plan, drift scan, graph, import preview and import) must be refused, no operation or history entry may exist, and no `.terraform` directory may appear. Init is never started; its status is only read.
 
 ## Limitations
 
