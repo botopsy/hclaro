@@ -39,8 +39,8 @@ The harness's working root is a directory next to the test binary inside the run
 
 ## Engines
 
-- Each engine binary must match the OD-1 SHA-256 list compiled into `realengine_main_test.go`. Today that list has darwin_amd64 only: Terraform 1.5.5, 1.5.7 and 1.17.2, and OpenTofu 1.6.3 and 1.13.9. Any other binary is refused before anything runs.
-- The other platforms' archives are pinned (OD-3-M27.07), but signed `SHA256SUMS` list archive hashes, not binary hashes. Their binary hashes are added to the list from the first real-engine workflow run (`fetch-engines.sh` prints `binary=` in the job summary); until then that run's `preflight` record is `FAIL` with "not on the OD-1 list". The check is not relaxed.
+- Each engine binary must match the OD-1 SHA-256 list compiled into `realengine_main_test.go`. On darwin_amd64 that list has Terraform 1.5.5, 1.5.7 and 1.17.2, and OpenTofu 1.6.3 and 1.13.9. Any other binary is refused before anything runs.
+- The M27.07 platforms (Terraform 1.17.2 and OpenTofu 1.13.9 on darwin_arm64, linux_amd64, linux_arm64, windows_amd64) are on the list too. Signed `SHA256SUMS` list archive hashes only, so their binary hashes came from real-engine workflow run 43753465542, where each binary was extracted from its pinned, signature-checked archive (`fetch-engines.sh` `binary=`). That run's `preflight` records were `FAIL` ("not on the OD-1 list"), as intended.
 - The run records the binary and archive SHA-256 and `provenance: verified`.
 - Every Hclaro process gets its own `bin/` directory with at most one `terraform` and one `tofu`, both copies of the configured binaries. That directory is the only engine-bearing entry on its `PATH`.
 - Launch mode always passes `--engine`. In Hub mode, each project is registered with an explicit `engine` preference.
