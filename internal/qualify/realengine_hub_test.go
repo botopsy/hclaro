@@ -428,7 +428,8 @@ func TestRealHubPaths(t *testing.T) {
 		if !sensitive {
 			s.Skip("two folders differing only by case cannot exist on a case-insensitive filesystem (" + fsNote + ")")
 		}
-		s.NotTested("case-sensitive volume variant not implemented on this platform")
+		s.Observe("H5c′ requires a case-sensitive volume: %s", fsNote)
+		h5cPrime(s, name)
 	})
 	// H5d is WIN2 (M27.07): drive-letter case, the 8.3 short name and a junction alias.
 	hubScenario(t, "h5d-windows-forms-"+name, name, func(s *Scenario) {
@@ -459,6 +460,44 @@ func TestRealHubPaths(t *testing.T) {
 			h5Claim(s, dirs, env, name, project, form, forms)
 		}
 	})
+}
+
+// h5cPrime (H5c′, case-sensitive volumes): "Proj" and "proj" are two distinct folders, so they
+// are two projects with independent claims. A plan held on one must not block a plan on the
+// other; both proceed.
+func h5cPrime(s *Scenario, name string) {
+	upper := s.ProjectAs("hub-hold", "Proj", stateWrites...)
+	lower := s.ProjectAs("hub-hold", "proj", stateWrites...)
+	if filepath.Base(upper) == filepath.Base(lower) || filepath.Dir(upper) != filepath.Dir(lower) {
+		s.Fatalf("H5c′ folders are not siblings differing only by case: %s, %s", filepath.Base(upper), filepath.Base(lower))
+	}
+	dirs, env := hubProcess(s)
+	s.SetupInit(dirs, env, name, upper)
+	s.SetupInit(dirs, env, name, lower)
+	h := s.StartHub(dirs, env, true)
+	up, low := s.HubRegister(h, upper, name, name), s.HubRegister(h, lower, name, name)
+	if up == low {
+		s.Fatalf("H5c′ Proj and proj registered as one project %q", up)
+	}
+	vu, vl := s.view(h, up, upper, name, "default", ""), s.view(h, low, lower, name, "default", "")
+	held, p := s.startHeld(vu, upper)
+	defer p.close()
+	var op Operation
+	r, err := vl.client.Do("POST", "plans", s.planBody(vl, []string{"launch.tfvars"}), &op)
+	if err != nil || r.Status != 202 {
+		s.Fatalf("H5c′ plan on proj while Proj is held: %v %d %s, want 202", err, r.Status, r.Code)
+	}
+	if done := s.FollowOp(vl, op.ID, 5*time.Minute); done.Status != "succeeded" {
+		s.Fatalf("H5c′ plan on proj ended %s (%s)", done.Status, code(done))
+	}
+	if st := s.opStatus(vu, held.ID); st != "running" {
+		s.Fatalf("H5c′ held plan on Proj is %s after the proj plan finished, want running", st)
+	}
+	p.release()
+	if done := s.FollowOp(vu, held.ID, 5*time.Minute); done.Status != "succeeded" {
+		s.Fatalf("H5c′ held plan on Proj ended %s (%s)", done.Status, code(done))
+	}
+	s.Observe("H5c′ Proj and proj are projects %s and %s; the proj plan succeeded while the Proj plan was held, then the Proj plan succeeded", up, low)
 }
 
 // h5Claim starts Hclaro on the launch path form (with the Hub flag), registers the

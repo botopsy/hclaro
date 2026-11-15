@@ -39,6 +39,9 @@ resource "terraform_data" "gate" {
     working_dir = path.module
     environment = {
       GATE_MODE = var.gate_mode
+      # Run 43755588532: PowerShell wrote its module analysis cache into the project
+      # (Microsoft/Windows/PowerShell/ModuleAnalysisCache). NUL disables that cache file.
+      PSModuleAnalysisCachePath = "NUL"
     }
   }
 }
