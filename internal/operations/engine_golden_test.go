@@ -12,7 +12,7 @@ import (
 
 // Real engine `plan -json` streams recorded by scripts/fixtures/record-engine.sh.
 func TestRealEngineStreams(t *testing.T) {
-	for _, engine := range []string{"terraform-1.5.5", "terraform-1.17.2", "tofu-1.13.9"} {
+	for _, engine := range []string{"terraform-1.5.5", "terraform-1.5.7", "terraform-1.17.2", "tofu-1.6.3", "tofu-1.13.9"} {
 		for kind, want := range map[string][]string{
 			"plan": {
 				"Planning started",
@@ -55,7 +55,7 @@ func TestRealEngineStreams(t *testing.T) {
 func TestRealEngineFailureStreams(t *testing.T) {
 	project := filepath.Join("..", "..", "fixtures", "engines", "local-project")
 	k := collectKnown(project, []string{"missing.tfvars"}, nil)
-	for _, recording := range []string{"terraform-1.5.5", "terraform-1.17.2", "tofu-1.13.9"} {
+	for _, recording := range []string{"terraform-1.5.5", "terraform-1.5.7", "terraform-1.17.2", "tofu-1.6.3", "tofu-1.13.9"} {
 		for file, want := range map[string]string{
 			"local-missing-file.jsonl": "", // no shared class: the manager reports plan_failed
 			"local-noinit.jsonl":       "init_required",

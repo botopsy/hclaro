@@ -11,7 +11,7 @@ import (
 
 // engineGoldens are real engine recordings of fixtures/engines/project
 // (scripts/fixtures/record-engine.sh), one per supported engine line.
-var engineGoldens = []string{"terraform-1.5.5", "terraform-1.17.2", "tofu-1.13.9"}
+var engineGoldens = []string{"terraform-1.5.5", "terraform-1.5.7", "terraform-1.17.2", "tofu-1.6.3", "tofu-1.13.9"}
 
 func TestRealEnginePlans(t *testing.T) {
 	wantActions := map[string]string{

@@ -11,7 +11,7 @@ import (
 // Real `show -json` state output recorded by scripts/fixtures/record-engine.sh from the
 // hand-written synthetic state in fixtures/engines/project.
 func TestRealEngineStates(t *testing.T) {
-	for _, engine := range []string{"terraform-1.5.5", "terraform-1.17.2", "tofu-1.13.9"} {
+	for _, engine := range []string{"terraform-1.5.5", "terraform-1.5.7", "terraform-1.17.2", "tofu-1.6.3", "tofu-1.13.9"} {
 		t.Run(engine, func(t *testing.T) {
 			input, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "engines", engine, "state.json"))
 			if err != nil {

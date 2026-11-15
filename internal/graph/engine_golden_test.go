@@ -28,7 +28,9 @@ func TestRealEngineGraphs(t *testing.T) {
 		resources []string
 	}{
 		"terraform-1.5.5":  {"full", full},
+		"terraform-1.5.7":  {"full", full},
 		"terraform-1.17.2": {"resources", resources},
+		"tofu-1.6.3":       {"full", full},
 		"tofu-1.13.9":      {"full", full},
 	} {
 		t.Run(engine, func(t *testing.T) {
@@ -83,6 +85,38 @@ func TestRealEngineGraphs(t *testing.T) {
 			}
 			if counted != 2 || module != 1 {
 				t.Errorf("keyed orphans mapped to %d and %d instances (%v)", counted, module, mapped)
+			}
+		})
+	}
+}
+
+// OpenTofu 1.13.9 splits each variable into "(expand, input)" and "(expand, reference)" walk nodes;
+// Terraform 1.5 and OpenTofu 1.6.3 print one "(expand)" node (M27.06). Both must collapse to the
+// same variable, output, module and provider nodes.
+func TestRealEngineGraphVariableNodes(t *testing.T) {
+	want := []string{
+		"module|module.group", "output|output.ids", "output|output.label", "output|output.token",
+		`provider|provider["terraform.io/builtin/terraform"]`, "variable|module.group.var.name", "variable|var.token",
+	}
+	for _, engine := range []string{"terraform-1.5.5", "terraform-1.5.7", "tofu-1.6.3", "tofu-1.13.9"} {
+		t.Run(engine, func(t *testing.T) {
+			dot, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "engines", engine, "graph.dot"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			g, err := Parse(dot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, n := range g.Nodes {
+				if !isResource(n.Kind) {
+					got = append(got, string(n.Kind)+"|"+n.DisplayName)
+				}
+			}
+			sort.Strings(got)
+			if !slices.Equal(got, want) {
+				t.Fatalf("nodes:\n got %v\nwant %v", got, want)
 			}
 		})
 	}
