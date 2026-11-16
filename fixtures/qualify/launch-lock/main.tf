@@ -2,7 +2,8 @@
 # mirror, local backend. Each var file sets a generation, so each profile's plan replaces
 # terraform_data.rotated. data.local_file.gate exists only when TF_VAR_hold=true, which only
 # the F-2 plan lock holder (Terraform 1.17.2) receives: it blocks on .qual/gate.fifo while
-# holding the lock. Hclaro's own plans never read it.
+# holding the lock (on Windows on the harness's named pipe, TF_VAR_gate; FU-WIN-HOLD).
+# Hclaro's own plans never read it.
 terraform {
   backend "local" {}
   required_providers {
@@ -31,6 +32,12 @@ variable "hold" {
   default = false
 }
 
+# Empty: .qual/gate.fifo (Unix). Windows: the harness's named pipe.
+variable "gate" {
+  type    = string
+  default = ""
+}
+
 output "token" {
   value     = var.token
   sensitive = true
@@ -46,5 +53,5 @@ resource "terraform_data" "rotated" {
 
 data "local_file" "gate" {
   count    = var.hold ? 1 : 0
-  filename = "${path.module}/.qual/gate.fifo"
+  filename = var.gate != "" ? var.gate : "${path.module}/.qual/gate.fifo"
 }
