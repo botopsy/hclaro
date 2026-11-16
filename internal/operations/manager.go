@@ -40,6 +40,9 @@ var (
 	ErrBusy        = errors.New("another operation is running")
 	ErrUnavailable = errors.New("planning is unavailable for this workspace")
 	ErrLoading     = errors.New("the workspace is still being read")
+	// ErrStateLocked: the workspace's state could not be read because another process holds
+	// the state lock. Nothing runs on unread state.
+	ErrStateLocked = errors.New("another process holds the state lock")
 	ErrVarFiles    = errors.New("invalid variable file selection")
 	ErrReplace     = errors.New("invalid replace selection")
 	ErrNotFound    = errors.New("operation not found")
@@ -223,6 +226,8 @@ type Manager struct {
 	stop   context.CancelFunc
 	wg     sync.WaitGroup
 	closed bool
+	// lockRetry cancels the bounded re-read of a lock-blocked state read (lockretry.go).
+	lockRetry context.CancelFunc
 	// NewID creates operation and plan IDs. Synthetic helpers replace it for determinism.
 	NewID func() string
 }
@@ -278,6 +283,9 @@ func (m *Manager) StartPlanWith(req PlanStart) (Operation, error) {
 	snap := m.store.Get()
 	if snap.Status == "loading" {
 		return Operation{}, ErrLoading
+	}
+	if snap.Locked() {
+		return Operation{}, ErrStateLocked
 	}
 	if m.planner == nil || !snap.Info.Capabilities.CanPlan {
 		return Operation{}, ErrUnavailable
@@ -905,12 +913,14 @@ func (m *Manager) Reread() error {
 	if !ok {
 		return ErrBusy
 	}
+	m.stopLockRetryLocked()
 	m.store.Reset(m.Reinspect())
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		defer release()
 		m.Reload(m.base)
+		release()
+		m.RetryLockedRead()
 	}()
 	return nil
 }

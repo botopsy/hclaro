@@ -300,7 +300,10 @@ var classes = []struct {
 }{
 	{"stale_plan", regexp.MustCompile(`saved plan is stale|plan file is stale|saved plan no longer valid`)},
 	{"state_unlock_failed", regexp.MustCompile(`error releasing the state lock|failed to unlock state|error unlocking state`)},
-	{"state_locked", regexp.MustCompile(`error acquiring the state lock|error locking state|lock info:|conditionalcheckfailed`)},
+	// The last alternative is a local-backend read on Windows while another process holds
+	// the lock (OpenTofu 1.13.9, run 43834356151): the OS lock-violation text, only together
+	// with a state-file read. The OS text is localised, so other languages stay unclassified.
+	{"state_locked", regexp.MustCompile(`error acquiring the state lock|error locking state|lock info:|conditionalcheckfailed|(?s)(failed to read state file|state file could not be read|read [^\n:]*\.tfstate\b).*another process has locked a portion of the file`)},
 	{"init_required", regexp.MustCompile(`backend initialization required|module not installed|required plugins are not installed|inconsistent dependency lock file|please run "(terraform|tofu) init"`)},
 	{"credentials", regexp.MustCompile(`credential|expiredtoken|token has expired|\bsso\b|unauthorized|authenticat|access ?denied|forbidden`)},
 	{"network", regexp.MustCompile(`no such host|i/o timeout|connection refused|network is unreachable|tls handshake timeout`)},
@@ -394,6 +397,9 @@ type Fake struct {
 	ListErr         error
 	ListErrAfter    bool
 	StateErr        error
+	// LockedReads makes that many State calls fail with ErrReadStateLocked, as a Windows
+	// local-backend read does while another process holds the lock (FU-WIN-STATE-READ).
+	LockedReads int
 	// ValidateOut, ValidateHumanOut, FormatOut, ProvidersOut and OutputsOut are the captured
 	// output of the project utilities; ToolErr fails them and BlockTool makes them wait for
 	// cancellation.
@@ -421,6 +427,9 @@ func (m *Fake) record(call string) {
 	defer m.mu.Unlock()
 	m.calls = append(m.calls, call)
 }
+
+// SetLockedReads sets LockedReads while other goroutines may read state.
+func (m *Fake) SetLockedReads(n int) { m.mu.Lock(); m.LockedReads = n; m.mu.Unlock() }
 
 // Calls returns the engine methods invoked so far.
 func (m *Fake) Calls() []string {
@@ -463,6 +472,12 @@ func (m *Fake) Version(context.Context) (string, error) {
 }
 func (m *Fake) State(context.Context) ([]byte, error) {
 	m.record("show")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.LockedReads > 0 {
+		m.LockedReads--
+		return nil, ErrReadStateLocked
+	}
 	return m.StateJSON, nil
 }
 func (m *Fake) Workspace(context.Context) (string, error) {

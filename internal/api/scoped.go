@@ -64,6 +64,8 @@ func scopeError(w http.ResponseWriter, r *http.Request, hub *projects.Hub, err e
 		openContext(w, r, hub)
 	case errors.Is(err, operations.ErrLoading):
 		reasonJSON(w, 409, "workspace_loading", "Hclaro is still reading this workspace. Try again when it is loaded.")
+	case errors.Is(err, operations.ErrStateLocked):
+		reasonJSON(w, 409, projects.CodeStateLocked, "Another process holds the state lock, so this workspace's state could not be read. Hclaro never unlocks state. It reads the state again for about two minutes; after that, read the workspace again once the other process has finished.")
 	case errors.Is(err, operations.ErrClosed):
 		reasonJSON(w, 503, "shutting_down", "Hclaro is shutting down.")
 	default:
@@ -94,12 +96,18 @@ func scopedRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		}
 		s, err := hub.Preview(r.PathValue("cid"))
 		var unsupported *projects.ScopeError
-		if errors.As(err, &unsupported) && unsupported.Code == projects.CodeExecutionUnsupported {
+		if errors.As(err, &unsupported) && (unsupported.Code == projects.CodeExecutionUnsupported || unsupported.Code == projects.CodeStateLocked) {
 			writeJSON(w, 200, options{Code: unsupported.Code, Reason: unsupported.Message, BackendAccess: true, VarFiles: []string{}})
 			return
 		}
 		if err != nil {
 			scopeError(w, r, hub, err)
+			return
+		}
+		// An open scope whose last read was blocked by a state lock cannot plan until the
+		// state has been read (FU-WIN-STATE-READ).
+		if snap := s.Snapshot(); snap.Locked() {
+			writeJSON(w, 200, options{Code: projects.CodeStateLocked, Reason: snap.Info.Capabilities.PlanReason, BackendAccess: true, VarFiles: []string{}})
 			return
 		}
 		view := s.View()

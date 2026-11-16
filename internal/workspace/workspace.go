@@ -106,6 +106,14 @@ func (s *Store) Reset(info Info) {
 	s.set(Snapshot{Status: "loading", Info: info, Index: state.Empty()})
 }
 
+// LockedCode is the diagnostic of a state read blocked by another process's state lock.
+const LockedCode = "state_locked"
+
+// Locked reports whether the snapshot's last read was blocked by a state lock.
+func (snap Snapshot) Locked() bool {
+	return snap.Status == "error" && snap.Diagnostic != nil && snap.Diagnostic.Code == LockedCode
+}
+
 func (s *Store) Get() Snapshot         { s.mu.RLock(); defer s.mu.RUnlock(); return s.snapshot }
 func (s *Store) set(snapshot Snapshot) { s.mu.Lock(); defer s.mu.Unlock(); s.snapshot = snapshot }
 
@@ -316,6 +324,16 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 	if err != nil {
 		if errors.Is(err, engine.ErrUnsafeArgs) {
 			fail("unsafe_cli_args", "Remove unsupported TF_CLI_ARGS_show settings and restart. Only -no-color is accepted; output-file overrides could persist raw secrets.")
+			return
+		}
+		if errors.Is(err, engine.ErrReadStateLocked) {
+			// Planning stays off: nothing may run on state Hclaro could not read.
+			fail(LockedCode, "Another process holds the state lock, so the state could not be read. Hclaro never unlocks state. It reads the state again a few times over the next two minutes; if the lock is still held after that, wait for the other process to finish, then "+again+". No refresh was run.")
+			if !s.readOnlyScope() {
+				snap.Info.Capabilities.PlanReason = "Another process holds the state lock. Planning is available again once the state has been read."
+				snap.Info.Capabilities.ImportReason = "Another process holds the state lock. Importing is available again once the state has been read."
+				s.set(snap)
+			}
 			return
 		}
 		fail("state_unavailable", "State is unavailable. "+engine.ReadAdvice(err, "Check backend access, credentials, SSO/VPN, and installed provider schemas with the CLI, then "+again+".")+" No refresh was run.")

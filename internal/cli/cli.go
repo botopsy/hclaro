@@ -280,10 +280,12 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	go func() {
 		defer close(loaded)
-		defer readRelease()
 		if root != "" {
 			store.Load(runCtx, adapter, engineName)
 		}
+		readRelease()
+		// A startup read blocked by another process's state lock is read again (bounded).
+		manager.RetryLockedRead()
 	}()
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()

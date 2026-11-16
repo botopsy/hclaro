@@ -37,7 +37,9 @@ export function useWorkbenchContext(route: Route, generation: number) {
     queryKey: ['workspace', readScope ? scopeKey(readScope) : 'none'],
     queryFn: () => api<Workspace>(snapshotPath(readScope!)),
     enabled: !!readScope,
-    refetchInterval: q => q.state.data?.status === 'loading' ? 700 : false
+    // While another process holds the state lock the server reads the state again on its own
+    // (bounded); polling shows the result without a click.
+    refetchInterval: q => q.state.data?.status === 'loading' ? 700 : q.state.data?.diagnostic?.code === 'state_locked' ? 5000 : false
   });
   // Plans and applies in a Hub workspace exist only when the server enables them (M24.06);
   // the UI never enables them on its own, and the server refuses them either way.

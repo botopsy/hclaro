@@ -591,3 +591,54 @@ func TestScopedApplyRequestValidation(t *testing.T) {
 		t.Fatalf("%d apply calls", n)
 	}
 }
+
+// FU-WIN-STATE-READ in a Hub scope: another process's state lock blocks the post-apply read
+// (Windows text from the synthetic engine). The workspace is state_locked, a plan is refused
+// with 409 state_locked before the engine, and once the lock is gone the bounded re-read
+// restores the workspace and a plan runs.
+func TestScopedLockedReloadIsReadAgain(t *testing.T) {
+	s := newScopedServer(t)
+	dev := s.openLoaded("network", "dev", "")
+	pid := s.planned(dev)
+	a := s.approve(dev, pid)
+	marker := filepath.Join(s.roots["network"], ".fake-show-locked")
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := s.do("POST", "/api/v1/contexts/"+dev+"/plans/"+pid+"/apply", applyBody(a))
+	if w.Code != 202 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	done := s.waitScoped(dev, decode[scopedOp](t, w).ID)
+	if done.Outcome != "applied" || done.StateReloaded || !done.StateReloadFailed {
+		t.Fatalf("%+v", done)
+	}
+	body := decode[map[string]any](t, s.do("GET", "/api/v1/contexts/"+dev, ""))
+	diag, _ := body["diagnostic"].(map[string]any)
+	if body["status"] != "error" || diag["code"] != "state_locked" || strings.Contains(fmt.Sprint(diag["message"]), "credentials") {
+		t.Fatalf("after the locked reload: %v", body)
+	}
+	plans := len(s.planCalls())
+	if o := s.options(dev); o.CanPlan || o.Code != "state_locked" {
+		t.Fatalf("options while locked: %+v", o)
+	}
+	wantError(t, s.do("POST", "/api/v1/contexts/"+dev+"/plans", `{"acknowledgeBackendAccess":true}`), 409, "state_locked")
+	if len(s.planCalls()) != plans {
+		t.Fatal("a plan ran on unread state")
+	}
+	// The other process exits: the next automatic read (about 2 s later) restores the view.
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if b := decode[map[string]any](t, s.do("GET", "/api/v1/contexts/"+dev, "")); b["status"] == "ready" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the workspace was not read again after the lock was released")
+		}
+	}
+	if s.planned(dev) == "" {
+		t.Fatal("no plan after the lock was released")
+	}
+}

@@ -17,6 +17,7 @@ const messages: Record<string, string> = {
   operation_running: 'Another operation is already running. Wait for it to finish or cancel it.',
   operation_not_running: 'This operation has already finished.',
   planning_unavailable: 'Planning is not available for this workspace.',
+  state_locked: 'Another process holds the state lock, so the state could not be read and nothing ran. Hclaro never unlocks state.',
   workspace_loading: 'Hclaro is still reading the workspace. Try again in a moment.',
   invalid_var_files: 'The selected variable files are no longer available. Reopen the plan dialog and choose again.',
   acknowledgement_required: 'Confirm that this may contact providers and the backend.',

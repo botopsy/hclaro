@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -420,5 +421,25 @@ func TestUnknownActionsRefusedOverHTTP(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(s.fake.Calls(), ","), "apply") {
 		t.Fatalf("engine apply ran: %v", s.fake.Calls())
+	}
+}
+
+// FU-WIN-STATE-READ: while the launch workspace's read is blocked by another process's state
+// lock, a plan is refused with 409 state_locked (not planning_unavailable) and never reaches
+// the engine; the workspace names the lock, not credentials or the network.
+func TestPlanRefusedWhileStateLocked(t *testing.T) {
+	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions, LockedReads: 1})
+	ws := decode[map[string]any](t, s.do("GET", "/api/v1/workspace", ""))
+	diag, _ := ws["diagnostic"].(map[string]any)
+	if ws["status"] != "error" || diag["code"] != "state_locked" || strings.Contains(fmt.Sprint(diag["message"]), "VPN") {
+		t.Fatalf("%v", ws)
+	}
+	w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`)
+	body := decode[map[string]string](t, w)
+	if w.Code != 409 || body["error"] != "state_locked" || !strings.Contains(body["reason"], "never unlocks") {
+		t.Fatalf("%d %v", w.Code, body)
+	}
+	if strings.Contains(strings.Join(s.fake.Calls(), ","), "plan") {
+		t.Fatal("a plan ran on unread state")
 	}
 }

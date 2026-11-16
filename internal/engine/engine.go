@@ -58,6 +58,9 @@ var (
 	ErrReadNetwork      = errors.New("engine read failed: the backend or a provider could not be reached")
 	ErrReadInitRequired = errors.New("engine read failed: initialization is required")
 	ErrReadTooLarge     = errors.New("engine read failed: the output exceeds the size limit")
+	// ErrReadStateLocked: another process holds the state lock and the read was blocked
+	// (Windows local backend). Never a reason to unlock.
+	ErrReadStateLocked = errors.New("engine read failed: another process holds the state lock")
 )
 
 // readLimit bounds what one engine read (state, saved plan JSON) may write. A variable only
@@ -73,6 +76,8 @@ func ReadAdvice(err error, fallback string) string {
 		return "The CLI could not reach the backend or a provider. Check your network, VPN or proxy, then try again. Nothing was changed."
 	case errors.Is(err, ErrReadTooLarge):
 		return fmt.Sprintf("The CLI's JSON output is larger than the %d MiB Hclaro reads, so none of it was used. Nothing was changed.", readLimit>>20)
+	case errors.Is(err, ErrReadStateLocked):
+		return "Another process holds the state lock, so the CLI could not read the state. Hclaro never unlocks state. Wait for the other process to finish, then try again. Nothing was changed."
 	case errors.Is(err, ErrReadInitRequired):
 		return "The CLI says this folder needs init (backend, modules or providers are not installed). Run init from the project's Hub page or in a terminal, then try again. Nothing was initialized automatically."
 	}
@@ -259,6 +264,8 @@ func (c *CLI) runEnv(ctx context.Context, timeout time.Duration, dropWorkspace b
 			return nil, ErrReadTooLarge
 		}
 		switch Classify(stderr.String()) {
+		case "state_locked":
+			return nil, ErrReadStateLocked
 		case "credentials":
 			return nil, ErrReadCredentials
 		case "network":

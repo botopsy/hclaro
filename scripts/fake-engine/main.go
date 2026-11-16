@@ -23,7 +23,10 @@
 // `workspace list` output (the "* " line is the CLI default); without one the list is
 // "default" and "demo" with "demo" selected. TF_WORKSPACE overrides the selection for every
 // command, like the real engines, and `show -json` prints ".fake-state/<workspace>.json"
-// when that file exists. `workspace new NAME`, `workspace select NAME` and
+// when that file exists, or fails, while a ".fake-show-locked" file exists in the working
+// directory, with the text OpenTofu 1.13.9 prints on Windows when another process holds the
+// local-backend state lock (FU-WIN-STATE-READ; deleting the file releases the lock).
+// `workspace new NAME`, `workspace select NAME` and
 // `workspace delete NAME` behave like the real engines: new and select refuse to run while
 // TF_WORKSPACE is set, new creates an empty state and selects it, delete refuses the default,
 // the selected and a non-empty workspace. New and select also write "environment" in the data
@@ -118,6 +121,10 @@ func main() {
 	case strings.Join(args, " ") == "workspace show":
 		fmt.Println(selectedWorkspace())
 	case strings.Join(args, " ") == "show -json":
+		if _, err := os.Stat(".fake-show-locked"); err == nil {
+			fmt.Fprint(os.Stderr, "\x1b[31m╷\x1b[0m\x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\x1b[1m\x1b[31mError: \x1b[0m\x1b[0m\x1b[1mfailed to load state: Failed to read state file: The state file could not be read: read terraform.tfstate: The process cannot access the file because another process has locked a portion of the file.\x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\n\x1b[31m╵\x1b[0m\x1b[0m\n")
+			os.Exit(1)
+		}
 		ws := selectedWorkspace()
 		if b, err := os.ReadFile(filepath.Join(".fake-state", filepath.Base(ws)+".json")); err == nil {
 			_, _ = os.Stdout.Write(b)
