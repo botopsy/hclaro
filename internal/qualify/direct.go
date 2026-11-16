@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -74,21 +73,21 @@ var holderAllowed = map[string]bool{
 type Holder struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
-	fifo  string
+	gate  gate
 	done  chan struct{}
 	Log   bytes.Buffer
 }
 
 // startHolder starts sub in dir with env (allowlist plus the declared extras). For the plan
-// holder, fifo is the named pipe the gated data source reads.
-func startHolder(engine, dir string, env []string, extra map[string]string, sub, fifo string) (*Holder, error) {
+// holder, g is the gate the gated data source reads (nil for console).
+func startHolder(engine, dir string, env []string, extra map[string]string, sub string, g gate) (*Holder, error) {
 	if !holderAllowed[sub] {
 		return nil, fmt.Errorf("lock holder %q is not allowed", sub)
 	}
 	if err := CheckEnvironment(env, extra); err != nil {
 		return nil, err
 	}
-	h := &Holder{cmd: exec.Command(engine, strings.Fields(sub)...), fifo: fifo, done: make(chan struct{})}
+	h := &Holder{cmd: exec.Command(engine, strings.Fields(sub)...), gate: g, done: make(chan struct{})}
 	h.cmd.Dir, h.cmd.Env = dir, env
 	h.cmd.Stdout, h.cmd.Stderr = &h.Log, &h.Log
 	var err error
@@ -118,13 +117,9 @@ func (h *Holder) Close() error {
 // holderReleaseWait, then kills it.
 func (h *Holder) Release() error {
 	_ = h.stdin.Close()
-	if h.fifo != "" {
-		go func() {
-			if f, err := os.OpenFile(h.fifo, os.O_WRONLY, 0); err == nil {
-				_, _ = f.WriteString("gate\n")
-				f.Close()
-			}
-		}()
+	if h.gate != nil {
+		h.gate.Release()
+		defer h.gate.Close()
 	}
 	select {
 	case <-h.done:
@@ -141,6 +136,9 @@ func (h *Holder) Kill() {
 	if h.Alive() {
 		_ = h.cmd.Process.Kill()
 		<-h.done
+	}
+	if h.gate != nil {
+		h.gate.Close()
 	}
 }
 

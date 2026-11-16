@@ -708,24 +708,25 @@ func createProfile(s *Scenario, h *Hclaro, pid, name, engine string, varFiles []
 
 // hold starts the F-2 holder in project and waits (60 s) for the lock-info file.
 func hold(s *Scenario, dirs ProcessDirs, engine, project string) *Holder {
-	sub, fifo := od9(engine), ""
+	sub := od9(engine)
+	var g gate
 	extra := map[string]string{"TF_VAR_hold": "false"}
 	if strings.HasPrefix(sub, "plan") {
-		fifo = filepath.Join(project, ".qual", "gate.fifo")
-		if err := os.MkdirAll(filepath.Dir(fifo), 0o700); err != nil {
-			s.Fatalf("%v", err)
-		}
-		_ = os.Remove(fifo) // the previous holder's pipe
-		if err := mkfifo(fifo); err != nil {
+		var err error
+		if g, err = newGate(project); err != nil {
 			s.NotTested("no F-2 lock holder on this platform: " + err.Error())
 		}
 		extra["TF_VAR_hold"] = "true"
+		// Windows: the gated data source reads the harness's named pipe (FU-WIN-HOLD).
+		if name := gateName(project); name != "" {
+			extra["TF_VAR_gate"] = name
+		}
 	}
 	env := Environment(dirs, s.run.Cfg.CLIConfig[engine], extra)
 	s.mu.Lock()
 	s.result.DirectEngineCall = append(s.result.DirectEngineCall, "lock holder: "+sub)
 	s.mu.Unlock()
-	h, err := startHolder(filepath.Join(dirs.Bin, exeName(engine)), project, env, extra, sub, fifo)
+	h, err := startHolder(filepath.Join(dirs.Bin, exeName(engine)), project, env, extra, sub, g)
 	if err != nil {
 		s.Fatalf("lock holder: %v", err)
 	}

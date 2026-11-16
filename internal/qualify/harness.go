@@ -661,7 +661,10 @@ func copyTemplate(name, dst, canary string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(target, bytes.ReplaceAll(b, []byte("@CANARY@"), []byte(canary)), 0o600)
+		b = bytes.ReplaceAll(b, []byte("@CANARY@"), []byte(canary))
+		// The project's gate: empty on Unix, its named pipe on Windows (FU-WIN-HOLD).
+		b = bytes.ReplaceAll(b, []byte("@GATE@"), []byte(gateHCL(dst)))
+		return os.WriteFile(target, b, 0o600)
 	})
 }
 

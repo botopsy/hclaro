@@ -2,7 +2,8 @@
 # 2.9.1 from the offline mirror, local backend. hold.tfvars sets hold = true: a plan (or an
 # import plan) then reads data.local_file.gate from the named pipe .qual/gate.fifo that the
 # harness creates, so the operation stays running until the harness writes the pipe (H4, H5,
-# H7, H9, H11). No local-exec; nothing outside the project is read or written.
+# H7, H9, H11). On Windows hold.tfvars also sets gate to a \\.\pipe\ named pipe the harness
+# serves (FU-WIN-HOLD). No local-exec; nothing outside the project is written.
 # random_integer.imported is the H11 import target (ID "<result>,<min>,<max>").
 terraform {
   backend "local" {}
@@ -28,6 +29,12 @@ variable "hold" {
   default = false
 }
 
+# Empty: .qual/gate.fifo (Unix). Windows: the harness's named pipe.
+variable "gate" {
+  type    = string
+  default = ""
+}
+
 output "token" {
   value     = var.token
   sensitive = true
@@ -44,5 +51,5 @@ resource "random_integer" "imported" {
 
 data "local_file" "gate" {
   count    = var.hold ? 1 : 0
-  filename = "${path.module}/.qual/gate.fifo"
+  filename = var.gate != "" ? var.gate : "${path.module}/.qual/gate.fifo"
 }

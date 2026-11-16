@@ -12,8 +12,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -100,52 +98,23 @@ func other(engine string) string {
 }
 
 // pipe holds an operation that reads the hub-hold fixture's data.local_file.gate (var file
-// hold.tfvars): the engine blocks opening the named pipe until the harness writes it.
-type pipe struct {
-	path  string
-	once  sync.Once
-	wrote chan struct{}
-}
+// hold.tfvars) through a gate (gate.go): a FIFO on Unix, a harness-served named pipe on
+// Windows (FU-WIN-HOLD).
+type pipe struct{ gate }
 
 func (s *Scenario) holdPipe(project string) *pipe {
-	p := filepath.Join(project, ".qual", "gate.fifo")
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		s.Fatalf("%v", err)
+	g, err := newGate(project)
+	if err != nil {
+		s.NotTested("no gate to hold an operation on this platform: " + err.Error())
 	}
-	_ = os.Remove(p)
-	if err := mkfifo(p); err != nil {
-		s.NotTested("no named pipe to hold an operation on this platform: " + err.Error())
-	}
-	return &pipe{path: p, wrote: make(chan struct{})}
+	return &pipe{g}
 }
 
-// release writes the pipe once, so the engine's read ends.
-func (p *pipe) release() {
-	p.once.Do(func() {
-		go func() {
-			if f, err := os.OpenFile(p.path, os.O_WRONLY, 0); err == nil {
-				_, _ = f.WriteString("gate\n")
-				f.Close()
-			}
-			close(p.wrote)
-		}()
-	})
-}
+// release lets the held engine read finish.
+func (p *pipe) release() { p.Release() }
 
-// close releases the pipe and removes it (the project file snapshot would block on it). A
-// writer still waiting because no engine opened the pipe is unblocked by a reader.
-func (p *pipe) close() {
-	p.release()
-	select {
-	case <-p.wrote:
-	case <-time.After(30 * time.Second):
-		if f, err := os.OpenFile(p.path, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
-			<-p.wrote
-			f.Close()
-		}
-	}
-	_ = os.Remove(p.path)
-}
+// close releases the gate and frees it.
+func (p *pipe) close() { p.Close() }
 
 // startHeld starts a plan with hold.tfvars and waits until its SSE stream reports it
 // running. The plan stays running until the pipe is released.
