@@ -35,10 +35,13 @@ import (
 // the expression text, so it is not detected and its routes miss the malformed-ID sweeps;
 // the method guard still protects them. Upgrade to a recorded registration if this grows.
 var dynamicRoutes = map[string][]string{
-	`"GET " + prefix + "/git/head"`:     nil,
-	`"POST " + prefix + "/git/status"`:  {"POST /api/v1/git/status", "POST /api/v1/projects/{id}/git/status"},
-	`"POST " + prefix + "/git/diff"`:    {"POST /api/v1/git/diff", "POST /api/v1/projects/{id}/git/diff"},
-	`"POST " + prefix + "/editor/open"`: {"POST /api/v1/editor/open", "POST /api/v1/projects/{id}/editor/open"},
+	`"GET " + prefix + "/git/head"`:            nil,
+	`"POST " + prefix + "/git/status"`:         {"POST /api/v1/git/status", "POST /api/v1/projects/{id}/git/status"},
+	`"POST " + prefix + "/git/diff"`:           {"POST /api/v1/git/diff", "POST /api/v1/projects/{id}/git/diff"},
+	`"POST " + prefix + "/git/branches"`:       {"POST /api/v1/git/branches", "POST /api/v1/projects/{id}/git/branches"},
+	`"POST " + prefix + "/git/switch/preview"`: {"POST /api/v1/git/switch/preview", "POST /api/v1/projects/{id}/git/switch/preview"},
+	`"POST " + prefix + "/git/switch"`:         {"POST /api/v1/git/switch", "POST /api/v1/projects/{id}/git/switch"},
+	`"POST " + prefix + "/editor/open"`:        {"POST /api/v1/editor/open", "POST /api/v1/projects/{id}/editor/open"},
 	`"POST /api/v1/projects/{id}/operations/" + string(tool)`: {
 		"POST /api/v1/projects/{id}/operations/validate", "POST /api/v1/projects/{id}/operations/fmt-check",
 		"POST /api/v1/projects/{id}/operations/providers", "POST /api/v1/projects/{id}/operations/outputs-metadata",
@@ -165,6 +168,9 @@ func TestUnroutedMutationsAreRefused(t *testing.T) {
 		"/api/v1/editor/run",
 		"/api/v1/imports/write",
 		"/api/v1/projects/" + id + "/git/commit",
+		// M29 switches existing local branches only; no other Git write is routed.
+		"/api/v1/git/branches/create", "/api/v1/git/branch", "/api/v1/git/fetch", "/api/v1/git/pull", "/api/v1/git/stash",
+		"/api/v1/git/reset", "/api/v1/git/merge", "/api/v1/git/push", "/api/v1/projects/" + id + "/git/branches/delete",
 		"/api/v1/contexts/" + id + "/plans/" + id + "/destroy",
 		"/api/v1/contexts/" + id + "/discovery/run",
 		"/api/v1/contexts/" + id + "/imports/run",

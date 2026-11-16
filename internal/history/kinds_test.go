@@ -99,3 +99,29 @@ func TestUILabelsMatchTheKindTable(t *testing.T) {
 		}
 	}
 }
+
+func TestBranchSwitchesAreRecorded(t *testing.T) {
+	s := open(t, t.TempDir())
+	branch := func(b operations.BranchSwitch) func(*operations.Record) {
+		return func(r *operations.Record) { r.Operation.Branch = &b }
+	}
+	finished(s, 1, "branch", operations.Succeeded, t0, branch(operations.BranchSwitch{From: "dev", To: "prod", Ran: true}))
+	finished(s, 2, "branch", operations.Failed, t0, branch(operations.BranchSwitch{From: "dev"}))
+	finished(s, 3, "branch", operations.Failed, t0, branch(operations.BranchSwitch{To: "prod", Ran: true}))
+	finished(s, 4, "branch", operations.Succeeded, t0, branch(operations.BranchSwitch{From: "dev", To: "password=" + canary}))
+	want := map[int][2]string{
+		1: {"completed", "from branch dev to branch prod"},
+		2: {"not_run", "a branch that was not found"},
+		3: {"unverified", "from a detached HEAD to branch prod"},
+		4: {"completed", "to a branch that was not found"},
+	}
+	for n, w := range want {
+		e, _ := s.Get(id(n))
+		if e.Kind != "branch" || e.Outcome.Result != w[0] || !strings.Contains(e.Outcome.Summary, w[1]) {
+			t.Fatalf("%d: %+v", n, e.Outcome)
+		}
+	}
+	if strings.Contains(readFile(t, s), canary) {
+		t.Fatal("a secret-shaped branch name was recorded")
+	}
+}

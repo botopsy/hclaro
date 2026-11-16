@@ -115,7 +115,7 @@ export function GitView({ projectId, editor, notify }: { projectId?: string; edi
      <div><span className="muted">HEAD</span><strong className="mono" title={h.commit}><GitCommitHorizontal size={13} />{h.unborn ? 'No commits yet' : shortCommit(h.commit)}</strong></div>
      <div><span className="muted">IaC working tree</span><strong className={c.clean ? 'tone-text-create' : 'tone-text-update'}>{c.clean ? 'Clean' : `${c.counts.changed} changed file${c.counts.changed === 1 ? '' : 's'}`}</strong></div>
     </div>
-    <div className="git-actions"><span className="read-only-badge"><ShieldCheck size={13} />Never commits, checks out or pushes</span><Button variant="ghost" size="small" onClick={refresh} disabled={status.isFetching}><RefreshCcw size={12} />Refresh</Button></div>
+    <div className="git-actions"><span className="read-only-badge"><ShieldCheck size={13} />Never commits, stashes or pushes; switches only to existing local branches after confirmation</span><Button variant="ghost" size="small" onClick={refresh} disabled={status.isFetching}><RefreshCcw size={12} />Refresh</Button></div>
    </section>
    {c.warnings.map(w => <div className="info-note warn-note" key={w.code} role="note"><TriangleAlert size={15} /><span>{w.message}</span></div>)}
    {(c.counts.other > 0 || c.counts.outside > 0) && <p className="info-line">{c.counts.outside > 0 && `${c.counts.outside} IaC file${c.counts.outside === 1 ? '' : 's'} changed elsewhere in the repository. `}{c.counts.other > 0 && `${c.counts.other} other changed file${c.counts.other === 1 ? '' : 's'} (not IaC) are not listed.`}</p>}

@@ -57,7 +57,7 @@ type Diagnostic struct {
 
 // Kinds lists every Operation.Kind the manager starts. History maps each one; a kind
 // missing here is recorded there as unknown and possibly mutating.
-var Kinds = []string{"plan", "apply", "drift", "graph", "init", "workspace", "tool"}
+var Kinds = []string{"plan", "apply", "drift", "graph", "init", "workspace", "tool", "branch"}
 
 type Operation struct {
 	ID          string   `json:"id"`
@@ -95,6 +95,8 @@ type Operation struct {
 	Workspace *WorkspaceResult `json:"workspace,omitempty"`
 	// Tool is set for Hub project utilities (validate, fmt -check, providers, outputs).
 	Tool *ToolResult `json:"tool,omitempty"`
+	// Branch is set for Git branch switches (kind "branch", M29).
+	Branch *BranchSwitch `json:"branch,omitempty"`
 	// Context is the execution profile context the operation was bound to, if any.
 	Context *ExecutionContext `json:"executionContext,omitempty"`
 	// DriftScanID is set for drift scans (kind "drift").
@@ -103,6 +105,15 @@ type Operation struct {
 	GraphID string `json:"graphId,omitempty"`
 	// Preflight is set for applies: the policy used and the acknowledged warning IDs.
 	Preflight *PreflightSummary `json:"preflight,omitempty"`
+}
+
+// BranchSwitch is a Git branch switch: the branch it left ("" for a detached HEAD) and the
+// validated target ("" when the request named no existing local branch). Ran is set once
+// git switch was started.
+type BranchSwitch struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Ran  bool   `json:"ran"`
 }
 
 // Plan is a reviewed, redacted plan. It is immutable once stored; whether its saved

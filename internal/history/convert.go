@@ -134,7 +134,7 @@ func kind(op operations.Operation, p *operations.Plan) string {
 			return "replace"
 		}
 		return "plan"
-	case "apply", "drift", "graph", "init", "workspace", "tool":
+	case "apply", "drift", "graph", "init", "workspace", "tool", "branch":
 		return op.Kind
 	}
 	return KindUnknown
@@ -322,6 +322,19 @@ func outcome(e HistoryEntry, op operations.Operation, r operations.Record) Outco
 			return Outcome{Result: "unverified", Summary: "The workspace command may or may not have taken effect. Check the workspace list with your CLI."}
 		}
 		return Outcome{Result: "not_run", Summary: "The workspace command was refused or stopped before the engine ran."}
+	case "branch":
+		b := op.Branch
+		if b == nil {
+			b = &operations.BranchSwitch{}
+		}
+		from, to := orUnknown(cleanBranch(b.From), "a detached HEAD"), orUnknown(cleanBranch(b.To), "a branch that was not found")
+		switch {
+		case e.Status == StatusSucceeded:
+			return Outcome{Result: "completed", Summary: "Switched the Git working tree from " + from + " to " + to + ". No Terraform/OpenTofu command ran; plans made before the switch must pass their checks again.", Verified: true}
+		case b.Ran:
+			return Outcome{Result: "unverified", Summary: "Git was asked to switch from " + from + " to " + to + " but did not confirm it. Check the working tree with git status. It did not change infrastructure."}
+		}
+		return Outcome{Result: "not_run", Summary: "The switch to " + to + " was refused before Git changed anything."}
 	case "tool":
 		if e.Status == StatusSucceeded && op.Tool != nil {
 			return Outcome{Result: word(op.Tool.Outcome), Summary: "A read-only project tool ran."}
@@ -412,4 +425,11 @@ func cleanList(list []string, limit int) []string {
 		out = append(out, clean(v, limit))
 	}
 	return out
+}
+
+func orUnknown(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return "branch " + s
 }
