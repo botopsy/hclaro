@@ -353,6 +353,38 @@ func TestRealGraph(t *testing.T) {
 	}
 }
 
+// l1Snapshot keeps Hclaro's workspace view (status, diagnostic, capabilities) and its
+// operations (each engine invocation's argv, status and code) at one point of L1, as
+// artifacts, with the UTC time and a one-line summary. Read-only GETs; no assertion.
+func l1Snapshot(s *Scenario, h *Hclaro, when string) {
+	at := time.Now().UTC().Format(time.RFC3339Nano)
+	var ws struct {
+		Status     string `json:"status"`
+		Diagnostic *struct {
+			Code string `json:"code"`
+		} `json:"diagnostic"`
+		Info struct {
+			Capabilities map[string]any `json:"capabilities"`
+		} `json:"info"`
+	}
+	r, err := h.client.Do("GET", "workspace", nil, &ws)
+	if err != nil {
+		s.Observe("L1 %s (%s): workspace not readable: %v", when, at, err)
+		return
+	}
+	s.Artifact("workspace-"+when+".json", r.Body)
+	diag := ""
+	if ws.Diagnostic != nil {
+		diag = ws.Diagnostic.Code
+	}
+	n := 0
+	if ro, err := h.client.Do("GET", "operations", nil, nil); err == nil {
+		s.Artifact("operations-"+when+".json", ro.Body)
+		n = len(s.operations(h))
+	}
+	s.Observe("L1 %s (%s): workspace %d status %q diagnostic %q canPlan %v; %d operations recorded", when, at, r.Status, ws.Status, diag, ws.Info.Capabilities["canPlan"], n)
+}
+
 // TestRealLocks covers L1 (F-2 holder) and L2 (F-3).
 func TestRealLocks(t *testing.T) {
 	if run == nil {
@@ -377,6 +409,15 @@ func TestRealLocks(t *testing.T) {
 			defer func() {
 				if err := holder.Close(); err != nil {
 					s.Errorf("L1 holder cleanup: %v", err)
+				}
+				// Diagnostics (dispatch 4, run 43767550235: Windows plan refused with
+				// planning_unavailable): the final workspace view once the holder is gone, and
+				// Hclaro's own output, on every exit path.
+				l1Snapshot(s, h, "after-release")
+				for name, f := range map[string]string{"hclaro.stdout": h.Stdout, "hclaro.stderr": h.Stderr} {
+					if b, err := os.ReadFile(f); err == nil {
+						s.Artifact(name, b)
+					}
 				}
 			}()
 			lock := filepath.Join(project, ".terraform.tfstate.lock.info")
@@ -413,8 +454,11 @@ func TestRealLocks(t *testing.T) {
 			if op.Outcome != "not_applied" {
 				s.Errorf("L1 apply outcome %q, want not_applied", op.Outcome)
 			}
+			l1Snapshot(s, h, "after-refused-apply")
 			op, r = s.failedPlan(h, project, []string{"gen3.tfvars"})
 			if op.ID == "" {
+				s.Artifact("plan-refusal.json", r.Body)
+				l1Snapshot(s, h, "at-plan-refusal")
 				s.Fatalf("plan refused before the engine: %d %s", r.Status, r.Code)
 			}
 			check("plan", op)

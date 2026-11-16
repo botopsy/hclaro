@@ -9,6 +9,22 @@ die() { echo "error: $*" >&2; exit 1; }
 
 sha256() { { sha256sum "$1" 2>/dev/null || shasum -a 256 "$1"; } | cut -d' ' -f1; }
 
+# norm_hashes: reads provider hashes, one per line, from stdin and prints them with only a
+# trailing CR removed (native jq on Windows ends lines with CRLF: run 43767550235 stored
+# "h1:…=\r" in the manifest). Every value must then be exactly h1:<44 base64 chars> or
+# zh:<64 lowercase hex>; anything else (an interior CR, a truncated or extended value, an
+# unknown scheme, no hashes at all) fails, so the normalisation cannot admit a corrupted hash.
+norm_hashes() {
+  local line n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    [[ $line =~ ^(h1:[A-Za-z0-9+/]{43}=|zh:[0-9a-f]{64})$ ]] || { echo "error: malformed provider hash: $(printf %q "$line")" >&2; return 1; }
+    printf '%s\n' "$line"
+    n=$((n + 1))
+  done
+  [ "$n" -gt 0 ] || { echo "error: no provider hashes" >&2; return 1; }
+}
+
 # fetch <url> <out>: HTTPS only, no redirects off https, size-capped.
 fetch() {
   curl --proto =https --proto-redir =https --tlsv1.2 -fsSL --max-filesize 209715200 -o "$2" "$1" || die "download failed: $1"

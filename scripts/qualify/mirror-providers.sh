@@ -70,7 +70,8 @@ for f in $families; do
       got=$(sha256 "$dir/$family/$hostdir/$zip")
       listed=$(awk -v z="$zip" '$2==z{print $1}' "$work/$family-$sums")
       [ -n "$listed" ] && [ "$got" = "$listed" ] || die "$family: $zip SHA-256 $got does not match signed SHA256SUMS '$listed'"
-      h1=$(jq -r --arg z "$zip" '.archives | to_entries[] | select(.value.url==$z) | .value.hashes[]' "$dir/$family/$hostdir/$v.json")
+      h1=$(jq -r --arg z "$zip" '.archives | to_entries[] | select(.value.url==$z) | .value.hashes[]' "$dir/$family/$hostdir/$v.json" | norm_hashes) ||
+        die "$family: $zip: hashes in $v.json are malformed"
       jq -nc --arg family "$family" --arg host "$host" --arg provider "hashicorp/$name" --arg version "$v" \
         --arg platform "$pl" --arg archive "$hostdir/$zip" --arg sha256 "$got" --arg h1 "$h1" \
         --arg signer "$fpr" --arg sums "$base/$sums" \
