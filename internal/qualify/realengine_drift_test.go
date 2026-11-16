@@ -385,6 +385,22 @@ func l1Snapshot(s *Scenario, h *Hclaro, when string) {
 	s.Observe("L1 %s (%s): workspace %d status %q diagnostic %q canPlan %v; %d operations recorded", when, at, r.Status, ws.Status, diag, ws.Info.Capabilities["canPlan"], n)
 }
 
+// showUnderHolder records what the engine's own `show -json` (the read Hclaro reloads state
+// with) prints while the F-2 holder holds the lock: FU-WIN-STATE-READ step 0 needs the exact
+// Windows text. Diagnostic only, never an assertion. A successful read is recorded by size,
+// never its content.
+func showUnderHolder(s *Scenario, dirs ProcessDirs, engine, project string) {
+	env := Environment(dirs, s.run.Cfg.CLIConfig[engine], nil)
+	out, err := s.Direct(filepath.Join(dirs.Bin, exeName(engine)), project, env, "show -json")
+	if err != nil {
+		s.Artifact("show-under-holder.txt", []byte(err.Error()+"\n"))
+		s.Observe("L1 direct show -json under the holder failed (see show-under-holder.txt)")
+		return
+	}
+	s.Artifact("show-under-holder.txt", []byte(fmt.Sprintf("succeeded, %d bytes of state JSON (not recorded)\n", len(out))))
+	s.Observe("L1 direct show -json under the holder succeeded (%d bytes)", len(out))
+}
+
 // TestRealLocks covers L1 (F-2 holder) and L2 (F-3).
 func TestRealLocks(t *testing.T) {
 	if run == nil {
@@ -455,6 +471,7 @@ func TestRealLocks(t *testing.T) {
 				s.Errorf("L1 apply outcome %q, want not_applied", op.Outcome)
 			}
 			l1Snapshot(s, h, "after-refused-apply")
+			showUnderHolder(s, dirs, name, project)
 			op, r = s.failedPlan(h, project, []string{"gen3.tfvars"})
 			if op.ID == "" {
 				s.Artifact("plan-refusal.json", r.Body)
