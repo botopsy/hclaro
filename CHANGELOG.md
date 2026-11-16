@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-beta.5 — 2026-11-16
+
+Real-engine qualification (M27) and Hub execution on by default. What ran against real engines is in `docs/support-matrix.md`; see `docs/BETA.md` for the limits.
 
 Changed:
 
@@ -9,6 +11,9 @@ Changed:
 Fixes:
 
 - Fix: on Windows, a state read while another process held the state lock (for example a `tofu console` in a terminal) made the workspace *State unavailable*, with advice about credentials and VPN, and planning stayed off until **Read again**. The workspace now says another process holds the state lock, a plan is refused with `state_locked`, and Hclaro reads the state again on its own for about two minutes. Hclaro still never unlocks state. The Windows message is recognised in English only. Requalified on Windows with OpenTofu 1.13.9 and Terraform 1.17.2 (workflow run 43888532622). Terraform prints the same message wrapped across lines; it is now recognised too. On Windows, Terraform's `-lock-timeout` does not wait for a lock held by another process, and the apply is refused at once with `state_locked`. (FU-WIN-STATE-READ, FU-WIN-HOLD)
+- Fix: a root module with no backend or `cloud` block, no module call and only built-in providers needs no `init`, and a successful init writes nothing there (no `.terraform` folder). Hclaro treated that as uninitialized, refused to read or plan the project, and called its own successful init unverified. Such a root now counts as initialized with the local backend; JSON configuration or files Hclaro cannot read or classify still count as needing init. Found by the M27.03 real-engine run (D-1).
+- Fix: a workspace action refused because of an inherited `TF_CLI_ARGS*` setting said only "a TF_CLI_ARGS_workspace* setting". It now names the variable and its flags, as plan and apply refusals do, never its value. (D-2)
+- Fix: an apply waiting for a state lock showed no reason in its operation log: with `-json`, Terraform and OpenTofu report the wait as `state_lock_acquire` (and the release as `state_lock_release`), which the log dropped. Both now appear. (D-3)
 
 Qualification (M27):
 
