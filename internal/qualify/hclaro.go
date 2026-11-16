@@ -115,6 +115,8 @@ func (s *Scenario) StartHclaro(dirs ProcessDirs, env []string, extra map[string]
 	case raw := <-found:
 		m := sessionURL.FindStringSubmatch(raw)
 		h.Host, h.Token, h.Origin = m[1], m[3], "http://"+m[1]
+		// The token is a credential for this session: never in any artifact or result.
+		s.run.San.Secret(h.Token, "<SESSION>")
 	case <-h.done:
 		return nil, fmt.Errorf("hclaro exited before printing the session URL: %v", h.waitErr)
 	case <-time.After(60 * time.Second):

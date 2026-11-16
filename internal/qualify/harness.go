@@ -215,7 +215,7 @@ func (r *Run) Finish(exit int) error {
 		names = append(names, filepath.ToSlash(rel))
 		_ = os.Remove(h)
 	}
-	reason := "result directory scan: forbidden value (canary, home path or username) in " + strings.Join(names, ", ") + "; file removed"
+	reason := "result directory scan: forbidden value (canary, home path, username or session token) in " + strings.Join(names, ", ") + "; file removed"
 	if err := r.W.Add(stubScenario("result-scan", Fail, reason)); err != nil {
 		return err
 	}

@@ -539,3 +539,74 @@ func TestNormHashes(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionTokenRedaction: no Hclaro session token survives sanitising (run 43815077862
+// uploaded "http://127.0.0.1:50629/#session=<64 hex>" in hclaro.stdout), whether it appears in
+// a URL (#, ? or &) or bare once registered with Secret; the final result scan refuses a file
+// that still holds one. Non-sensitive detail (host, port, other text) is kept.
+func TestSessionTokenRedaction(t *testing.T) {
+	tok := strings.Repeat("0123456789abcdef", 4)
+	san := NewSanitizer("", "", "", "", "", "")
+	for in, want := range map[string]string{
+		"Open this private session URL:\nhttp://127.0.0.1:50629/#session=" + tok + "\n": "Open this private session URL:\nhttp://127.0.0.1:50629/#session=<SESSION>\n",
+		"http://127.0.0.1:1/projects#session=" + tok:                                    "http://127.0.0.1:1/projects#session=<SESSION>",
+		"/x?session=" + tok + "&a=1":                                                    "/x?session=<SESSION>&a=1",
+		"/x?a=1&session=" + strings.ToUpper(tok):                                        "/x?a=1&session=<SESSION>",
+		`{"url":"http://h/#session=` + tok + `"}`:                                       `{"url":"http://h/#session=<SESSION>"}`,
+		"#session=abc and session=" + tok:                                               "#session=abc and session=" + tok, // short value, no delimiter: left as is
+	} {
+		if got := san.String(in); got != want {
+			t.Errorf("%q:\n got %q\nwant %q", in, got, want)
+		}
+	}
+	// A registered token is replaced anywhere, not only in a URL.
+	san.Secret(tok, "<SESSION>")
+	if got := san.String("X-Hclaro-Session: " + tok + "; session=" + tok); strings.Contains(got, tok) {
+		t.Errorf("registered token survived: %q", got)
+	}
+	san.Secret("short", "<SESSION>") // below 16 characters: ignored, so ordinary words are never replaced
+	if got := san.String("a short note"); got != "a short note" {
+		t.Errorf("short secret replaced text: %q", got)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "clean.txt"), []byte("http://127.0.0.1:1/#session=<SESSION>\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "leak.txt"), []byte("http://127.0.0.1:1/#session="+tok+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := ScanOut(dir, "")
+	if err != nil || len(hits) != 1 || filepath.Base(hits[0]) != "leak.txt" {
+		t.Fatalf("ScanOut: %v %v, want only leak.txt", hits, err)
+	}
+}
+
+// TestFinishRemovesSessionToken: a result file that still holds a session token fails the run
+// and is removed (the same fail-closed path as the canary).
+func TestFinishRemovesSessionToken(t *testing.T) {
+	out, home := t.TempDir(), t.TempDir()
+	res := &RunResult{SchemaVersion: 1, Partial: true}
+	r := &Run{Cfg: Config{Out: out, Home: home}, Canary: "HCLARO-QUAL-CANARY-0123456789abcdef", Result: res, user: "qualify-test-user"}
+	r.San = NewSanitizer(r.Canary, "", "", "", "", "")
+	r.W = NewWriter(out, res, r.San)
+	if err := r.W.Add(ScenarioResult{ID: "a", Status: Pass}); err != nil {
+		t.Fatal(err)
+	}
+	leak := filepath.Join(out, "artifacts", "a", "hclaro.stdout")
+	if err := os.MkdirAll(filepath.Dir(leak), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(leak, []byte("http://127.0.0.1:9/#session="+strings.Repeat("ab", 32)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Finish(0)
+	if _, err := os.Stat(leak); !os.IsNotExist(err) {
+		t.Fatalf("leaking file kept: %v", err)
+	}
+	var got RunResult
+	b, _ := os.ReadFile(filepath.Join(out, "run.json"))
+	if json.Unmarshal(b, &got) != nil || got.GoTestExit != 1 || !strings.Contains(string(b), "session token") {
+		t.Fatalf("run.json does not record the failed scan: %s", b)
+	}
+}
