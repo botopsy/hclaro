@@ -315,8 +315,9 @@ func pathForms(p string) []string {
 	return out
 }
 
-// unsanitised catches paths into a user folder that the sanitizer missed, including Windows 8.3 short forms.
-var unsanitised = regexp.MustCompile(`(?i)/Users/[a-z]|/home/[a-z]|[A-Z]:(\\\\|\\|/)Users(\\\\|\\|/)[A-Za-z0-9]`)
+// unsanitised catches paths into a user folder that the sanitizer missed, including Windows 8.3
+// short forms and a path whose username alone was replaced (c:\Users\<USER>\…, run 43815077862).
+var unsanitised = regexp.MustCompile(`(?i)/Users/[a-z<]|/home/[a-z<]|[A-Z]:(\\\\|\\|/)Users(\\\\|\\|/)[A-Za-z0-9<]`)
 
 // sessionToken matches Hclaro's private session token in a URL (`…/#session=<hex>`, and the
 // same after ? or &), so no session URL survives sanitising even if its token was never

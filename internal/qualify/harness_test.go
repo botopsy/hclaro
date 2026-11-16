@@ -154,11 +154,19 @@ func TestSanitizer(t *testing.T) {
 	if hits, err := ScanOut(dir, "alice", "/Users/alice"); err != nil || len(hits) != 0 {
 		t.Errorf("clean dir: %v %v", hits, err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(`{"o":"C:\\Users\\RUNNER~1\\AppData"}`), 0o600); err != nil {
+	for _, leak := range []string{`{"o":"C:\\Users\\RUNNER~1\\AppData"}`, `{"o":"c:\\Users\\<USER>\\AppData"}`, `/home/<USER>/x`} {
+		if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(leak), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if hits, err := ScanOut(dir, "alice"); err != nil || len(hits) != 1 {
+			t.Errorf("user-folder path in %s not found: %v %v", leak, hits, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(`{"o":"<HOME>\\AppData <TMP>/x"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if hits, err := ScanOut(dir, "alice"); err != nil || len(hits) != 1 {
-		t.Errorf("Windows user-folder path not found: %v %v", hits, err)
+	if hits, err := ScanOut(dir, "alice"); err != nil || len(hits) != 0 {
+		t.Errorf("sanitised paths flagged: %v %v", hits, err)
 	}
 	// Drive-letter case variants (any OS: the form is plain text).
 	w := NewSanitizer("", `C:\Users\bob\Temp\run`, "", "", "", "")
