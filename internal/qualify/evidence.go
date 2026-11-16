@@ -310,7 +310,13 @@ func Section(label string, r RunResult, runSha string, notes []string) string {
 		calls = append(calls, "`"+d+"`")
 	}
 	sort.Strings(calls)
-	w("\nReviewed saved-plan path: %d scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: %s.\n", reviewed, strings.Join(calls, ", "))
+	mutating := "none of them applies, imports or replaces"
+	for _, c := range calls {
+		if directMutation.MatchString(c) {
+			mutating = "**a direct call names apply, import or -replace**"
+		}
+	}
+	w("\nReviewed saved-plan path: %d scenarios record `reviewedPlanPath`. Direct engine calls (%s): %s.\n", reviewed, mutating, strings.Join(calls, ", "))
 	canary := map[string]int{}
 	for _, s := range r.Scenarios {
 		canary[s.Canary]++
@@ -333,6 +339,9 @@ func Section(label string, r RunResult, runSha string, notes []string) string {
 	w("\n")
 	return b.String()
 }
+
+// directMutation matches a direct engine call that would bypass the reviewed saved-plan path.
+var directMutation = regexp.MustCompile(`\b(apply|import|destroy|-replace)\b`)
 
 // probes summarises each isolation probe: per check, its outcomes and whether all matched.
 func probes(r RunResult) string {

@@ -141,3 +141,19 @@ func TestEvidenceRows(t *testing.T) {
 		t.Errorf("F-5 rows %v %v", rows, err)
 	}
 }
+
+func TestEvidenceSection(t *testing.T) {
+	r := evidenceRun()
+	r.Scenarios[0].DirectEngineCall = []string{"show -json", "init -input=false -no-color"}
+	r.Scenarios[0].Reason = "a | b <TMP>"
+	s := Section("m27-07 x", r, "abc", []string{"note"})
+	for _, want := range []string{"## 2026-11-15 m27-07 x\n", "| Engine versions | 1.17.2 + 1.13.9 |", "none of them applies", "`a \\| b <TMP>`", "- note"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("section lacks %q", want)
+		}
+	}
+	r.Scenarios[0].DirectEngineCall = []string{"apply -auto-approve"}
+	if s := Section("x", r, "", nil); !strings.Contains(s, "a direct call names apply") {
+		t.Error("a mutating direct call was not flagged")
+	}
+}

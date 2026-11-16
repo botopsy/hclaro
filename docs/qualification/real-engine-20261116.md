@@ -60,7 +60,7 @@ The Windows F-5 run of dispatch 5 (fake engines, isolation `none`) is not includ
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:32].
 
@@ -155,7 +155,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:16].
 
@@ -234,7 +234,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`.
 
 Canary: map[absent:28].
 
@@ -324,7 +324,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: plan -input=false -no-color`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: plan -input=false -no-color`.
 
 Canary: map[absent:14].
 
@@ -401,7 +401,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:44].
 
@@ -508,7 +508,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:106].
 
@@ -677,7 +677,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:106].
 
@@ -846,7 +846,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:106].
 
@@ -1015,7 +1015,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:106].
 
@@ -1184,7 +1184,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:116].
 
@@ -1363,7 +1363,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:116].
 
@@ -1542,7 +1542,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:116].
 
@@ -1721,7 +1721,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | resolved | false |
 | isolatedBefore | home_read |  | read | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:116].
 
@@ -1903,7 +1903,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | failed | false |
 | isolatedBefore | home_read |  | failed | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`; the harness has no other route to apply, import or replace. Direct engine calls: `init -input=false -no-color`, `show -json`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `show -json`.
 
 Canary: map[absent:10].
 
@@ -1922,5 +1922,5 @@ Canary: map[absent:10].
 
 Defects and notes:
 
-- Platform scenarios only (WIN4 and the WIN1/WIN3 halves that apply on darwin); every other darwin/amd64 result is from the M27.06 runs.
+- Platform scenarios only: WIN4 PASS for both engines; WIN1 and WIN3 SKIPPED (reasons in the table). Every other darwin/amd64 result is from the M27.06 runs.
 
