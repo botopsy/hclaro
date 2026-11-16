@@ -503,3 +503,39 @@ func TestHolderChild(t *testing.T) {
 		t.Skip("child of TestHolderClose")
 	}
 }
+
+// TestNormHashes: mirror-providers.sh reads provider hashes through norm_hashes (lib.sh). CRLF
+// output from native jq on Windows (run 43767550235 stored "h1:…=\r") is accepted with only the
+// trailing CR removed; a malformed or corrupted value is never accepted.
+func TestNormHashes(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not installed")
+	}
+	const h1 = "h1:Z2cj+Oz9b51lTth1MRf4p4b4XW9zzfHCrpMqmzfs9yA="
+	const zh = "zh:dba1e69536bf91578b7b7b47cad79ac2cf8f24bf6b3cbff35d72378312eb3f2c"
+	run := func(in string) (string, error) {
+		cmd := exec.Command(bash, "-c", ". ../../scripts/qualify/lib.sh && norm_hashes")
+		cmd.Stdin = strings.NewReader(in)
+		out, err := cmd.Output()
+		return string(out), err
+	}
+	for name, in := range map[string]string{"LF": h1 + "\n" + zh + "\n", "CRLF": h1 + "\r\n" + zh + "\r\n", "no final newline": h1 + "\r\n" + zh} {
+		if out, err := run(in); err != nil || out != h1+"\n"+zh+"\n" {
+			t.Errorf("%s: %q, %v", name, out, err)
+		}
+	}
+	for name, in := range map[string]string{
+		"interior CR":    "h1:Z2cj+Oz9b51lTth1\rMRf4p4b4XW9zzfHCrpMqmzfs9yA=\n",
+		"two CRs":        h1 + "\r\r\n",
+		"truncated h1":   h1[:len(h1)-2] + "=\n",
+		"extended zh":    zh + "0\n",
+		"uppercase zh":   strings.ToUpper(zh[:3]) + strings.ToUpper(zh[3:]) + "\n",
+		"unknown scheme": "h2:" + h1[3:] + "\n",
+		"empty":          "",
+	} {
+		if out, err := run(in); err == nil {
+			t.Errorf("%s accepted: %q", name, out)
+		}
+	}
+}
