@@ -131,7 +131,7 @@ Mechanisms (OD-4, OD-4-M27.07):
 
 A scenario starts as `NOT_TESTED`. It becomes `PASS` only after it returns and its canary and cleanup checks hold. A panic, a timeout or `t.Fatal` gives `FAIL`, and so does `t.Skip` without a recorded reason. The test binary exits non-zero when any scenario is `FAIL`. A run stopped before any scenario still writes `run.json`, with one `preflight` record that is `FAIL` with reason `environment` or `setup`.
 
-Before anything is written, absolute paths become `<TMP>`, `<HOME>` or `<REPO>`. The username and hostname become `<USER>` and `<HOST>`, matched as whole words, and the canary becomes `<CANARY>`. A final scan of `OUT` for the canary, the real home path and the username fails the run on a hit.
+Before anything is written, absolute paths become `<TMP>`, `<HOME>` or `<REPO>`. The username and hostname become `<USER>` and `<HOST>`, matched as whole words, and the canary becomes `<CANARY>`. Hclaro session tokens become `<SESSION>` in two ways: every `#session=`, `?session=` or `&session=` followed by 16 or more hex digits is replaced, and each process's own token is registered when it starts, so it is replaced wherever it appears. A final scan of `OUT` for the canary, the real home path, the username and session tokens fails the run on a hit, and removes the file.
 
 ## Canary and filesystem checks
 

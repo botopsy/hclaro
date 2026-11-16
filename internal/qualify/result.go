@@ -243,6 +243,7 @@ func stubScenario(id, status, reason string) ScenarioResult {
 // Sanitizer replaces absolute paths, the username, the hostname and the canary before
 // anything is written to the result directory.
 type Sanitizer struct {
+	mu    sync.RWMutex
 	pairs [][2]string
 	// words are replaced only as whole words, so a username like "runner" leaves
 	// "runnerImage" alone.
@@ -298,7 +299,26 @@ func pathForms(p string) []string {
 	return out
 }
 
+// sessionToken matches Hclaro's private session token in a URL (`…/#session=<hex>`, and the
+// same after ? or &), so no session URL survives sanitising even if its token was never
+// registered with Secret. Hex of 16 or more digits; Hclaro's tokens are 64.
+var sessionToken = regexp.MustCompile(`(?i)([#?&]session=)[0-9a-f]{16,}`)
+
+// Secret registers a value that must never appear in output (a process's session token),
+// replaced by label wherever it occurs.
+func (s *Sanitizer) Secret(v, label string) {
+	if len(v) < 16 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pairs = append([][2]string{{v, label}}, s.pairs...)
+}
+
 func (s *Sanitizer) Bytes(b []byte) []byte {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	b = sessionToken.ReplaceAll(b, []byte("${1}<SESSION>"))
 	for _, p := range s.pairs {
 		b = bytes.ReplaceAll(b, []byte(p[0]), []byte(p[1]))
 	}
@@ -315,7 +335,7 @@ func wordPattern(v string) *regexp.Regexp {
 func (s *Sanitizer) String(v string) string { return string(s.Bytes([]byte(v))) }
 
 // ScanOut lists the files in dir that hold one of the forbidden substrings (the canary,
-// the real home path) or the username as a whole word. It is the last step of a run.
+// the real home path), the username as a whole word, or a session token in a URL. It is the last step of a run.
 func ScanOut(dir, user string, forbidden ...string) ([]string, error) {
 	var hits []string
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -326,7 +346,7 @@ func ScanOut(dir, user string, forbidden ...string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		hit := len(user) >= 2 && wordPattern(user).Match(b)
+		hit := len(user) >= 2 && wordPattern(user).Match(b) || sessionToken.Match(b)
 		for _, f := range forbidden {
 			hit = hit || len(f) >= 3 && bytes.Contains(b, []byte(f))
 		}
