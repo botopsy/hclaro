@@ -316,6 +316,17 @@ Before asserting a lock file (H1, and the launch init check), the harness saves 
 
 It also records the engine version, platform, setup command, and the CLI config file name and SHA-256. For each provider it records the hashes observed in the lock file next to the manifest's. An `h1:` hash is the SHA-256 of these lines sorted by path, so it can be recomputed offline. On darwin/amd64 the recomputation matched all four lock-file hashes.
 
+`mirror-providers.sh` passes the hashes it reads with `jq` through `norm_hashes` (`lib.sh`). That removes only a trailing CR: native `jq` on the Windows runner ends lines with CRLF, and run 43767550235 stored `"h1:…=\r"` in `mirror-manifest.json`. It then requires each value to be exactly `h1:` plus 44 base64 characters, or `zh:` plus 64 lowercase hex characters. Any other value fails the mirror build. `TestNormHashes` covers LF, CRLF and malformed values.
+
+### L1 diagnostics
+
+L1 records Hclaro's `GET workspace` response (status, diagnostic, capabilities) and `GET operations` (each engine invocation's argv and status) as artifacts, with UTC timestamps, at three points:
+- after the refused apply;
+- at a plan refusal, together with the refusal body;
+- after the holder's release, on every exit path, with Hclaro's stdout and stderr.
+
+On darwin/amd64 the workspace stays `ready` with `canPlan` true after the refused apply, for both engines. This was added to explain the Windows `409 planning_unavailable` of run 43767550235.
+
 ### Dispatch manifest
 
 After a dispatch, its artifacts are downloaded unchanged (`gh run download <id>`) into one directory per dispatch, and the job log is saved there as `run-<id>.log`. Then `scripts/qualify/dispatch-manifest.sh <dir> <id> <commit>` writes `<dir>/manifest.json`:
