@@ -163,6 +163,8 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			errorJSON(w, 409, "operation_running")
 		case errors.Is(err, operations.ErrLoading):
 			errorJSON(w, 409, "workspace_loading")
+		case errors.Is(err, operations.ErrStateLocked):
+			writeJSON(w, 409, map[string]string{"error": "state_locked", "reason": "Another process holds the state lock, so the state could not be read and nothing was planned. Hclaro never unlocks state. It reads the state again for about two minutes; after that, read the project again once the other process has finished."})
 		case errors.Is(err, operations.ErrUnavailable):
 			errorJSON(w, 409, "planning_unavailable")
 		case errors.Is(err, operations.ErrVarFiles):

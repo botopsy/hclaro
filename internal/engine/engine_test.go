@@ -95,6 +95,31 @@ func TestFakeExecutable(t *testing.T) {
 }
 
 // A failed read is classified for the user; the stderr text never leaves the adapter.
+// lockedRead is the stderr of `tofu show -json` captured under the L1 holder on Windows
+// (FU-WIN-STATE-READ step 0), with its colour codes.
+const lockedRead = "\x1b[31m╷\x1b[0m\x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\x1b[1m\x1b[31mError: \x1b[0m\x1b[0m\x1b[1mfailed to load state: Failed to read state file: The state file could not be read: read terraform.tfstate: The process cannot access the file because another process has locked a portion of the file.\x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\n\x1b[31m╵\x1b[0m\x1b[0m\n"
+
+// The Windows lock-violation text is a lock only with a state-file read; anything else keeps
+// today's class. Windows "Access is denied." matches no class (not `access ?denied`), so it
+// stays generic rather than becoming a lock.
+func TestClassifyLockedStateRead(t *testing.T) {
+	for text, want := range map[string]string{
+		lockedRead: "state_locked",
+		"Error: Failed to read state file: The state file could not be read: read terraform.tfstate.d/qa/terraform.tfstate: The process cannot access the file because another process has locked a portion of the file.": "state_locked",
+		"Error: AccessDenied: not authorized to read the state bucket": "credentials",
+		"Error: Access is denied.":                                     "",
+		"Error: read terraform.tfstate: Access is denied.":             "",
+		"Error: open .terraform.lock.hcl: The process cannot access the file because another process has locked a portion of the file.": "",
+		"Error: The process cannot access the file because another process has locked a portion of the file.":                           "",
+		// Localised Windows text is not recognised: it stays generic and fail-closed.
+		"Error: Failed to read state file: read terraform.tfstate: Der Prozess kann nicht auf die Datei zugreifen, da ein anderer Prozess einen Teil der Datei gesperrt hat.": "",
+	} {
+		if got := Classify(text); got != want {
+			t.Errorf("Classify(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
 func TestReadFailureIsClassifiedWithoutStderr(t *testing.T) {
 	t.Setenv("HCLARO_TEST_HELPER", "1")
 	t.Setenv("TF_LOG_PATH", "")
@@ -115,6 +140,10 @@ func TestReadFailureIsClassifiedWithoutStderr(t *testing.T) {
 		{"Error: the SSO session has expired for account 123456789012 SECRET_TOKEN_x", ErrReadCredentials, "expired credentials"},
 		{"Error: dial tcp: lookup bucket.example: no such host SECRET_TOKEN_x", ErrReadNetwork, "could not reach"},
 		{"Error: Backend initialization required, please run \"terraform init\" SECRET_TOKEN_x", ErrReadInitRequired, "needs init"},
+		// OpenTofu 1.13.9 on Windows under another process's state lock (run 43834356151).
+		{lockedRead, ErrReadStateLocked, "holds the state lock"},
+		// Other lock text on a read keeps the generic failure (unchanged outside Windows).
+		{"Error: Error acquiring the state lock\nLock Info: SECRET_TOKEN_x", nil, "fallback"},
 		{"Error: something else entirely SECRET_TOKEN_x", nil, "fallback"},
 	} {
 		t.Setenv("HCLARO_TEST_STDERR", tc.stderr)

@@ -441,7 +441,7 @@ The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**,
 | Occupied port | Choose another `--port`, or omit the flag. |
 | Loopback permission denied | Run in an environment permitting listeners on 127.0.0.1. |
 | Plan unavailable | The Plans view states why: remote execution backend, unverified backend type, missing engine or workspace error. An unverified backend usually means a `backend` block that was not initialized: run `init` yourself, then **Read again**. |
-| State locked | Another operation holds the lock. Wait, or investigate with your CLI. Hclaro never force-unlocks. |
+| State locked | Another operation holds the lock. Wait, or investigate with your CLI. Hclaro never force-unlocks. On Windows the lock also blocks reading the state: the workspace shows **Another process holds the state lock**, and planning stays off. Hclaro reads it again on its own for about two minutes; after that, use **Read again** once the other process has finished. A non-English Windows shows the generic *State unavailable* message instead. |
 | Plan credentials/network errors | The message says whether the sign-in expired (refresh SSO), no credentials were found (check the profile or environment) or access was denied (wrong identity or missing permission). Check VPN for network errors, then run the plan again. |
 | `TF_CLI_ARGS_plan` / `TF_CLI_ARGS_apply` refused | The message names the variable and flag names (never values). Unset them in the shell that starts Hclaro and restart it; an execution profile cannot override them. They could change what a reviewed plan contains. |
 | Hub: "TF_DATA_DIR is an absolute path" | Restart Hclaro without `TF_DATA_DIR`, or with a relative value, to read Hub workspaces. |

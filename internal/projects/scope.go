@@ -67,6 +67,10 @@ var (
 	errCapacity       = &ScopeError{Code: CodeCapacityExceeded, Message: "Every open Hub workspace is running an operation or keeps a reviewed plan. Wait for an operation to finish, or apply or discard a reviewed plan (reading its workspace again discards it), then try again. Nothing was closed."}
 )
 
+// CodeStateLocked refuses an operation because the workspace's state read was blocked by
+// another process's state lock (FU-WIN-STATE-READ).
+const CodeStateLocked = "state_locked"
+
 func unsupportedScope(message string) *ScopeError {
 	return &ScopeError{Code: CodeExecutionUnsupported, Message: message}
 }
@@ -449,6 +453,9 @@ func (h *Hub) scope(cid string, keep bool) (*Scope, error) {
 	snap := c.Snapshot()
 	if snap.Status == "loading" {
 		return nil, operations.ErrLoading
+	}
+	if snap.Locked() {
+		return nil, &ScopeError{Code: CodeStateLocked, Message: snap.Info.Capabilities.PlanReason}
 	}
 	if !snap.Info.Capabilities.CanPlan {
 		reason := snap.Info.Capabilities.PlanReason

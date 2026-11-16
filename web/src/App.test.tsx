@@ -126,6 +126,32 @@ describe('Resource explorer', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Initialize this workspace first');
     expect(screen.queryByText('A clean slate')).not.toBeInTheDocument();
   });
+  it('names a state lock held by another process and picks up the automatic re-read without a click', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let reads = 0;
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        if (url.endsWith('/session')) return Response.json({ csrfToken: 'c'.repeat(64) });
+        if (url.endsWith('workspace')) {
+          reads++;
+          return Response.json(reads === 1 ? { ...workspace, status: 'error', diagnostic: { code: 'state_locked', message: 'Another process holds the state lock, so the state could not be read.' } } : workspace);
+        }
+        if (url.endsWith('operations')) return Response.json({ operations: [] });
+        return Response.json({ resources: [resource], total: 1 });
+      }));
+      app();
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('Another process holds the state lock');
+      expect(alert).not.toHaveTextContent('credentials');
+      expect(screen.getByRole('heading', { name: 'Another process holds the state lock' })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /Read again/ }).length).toBeGreaterThan(0);
+      await vi.advanceTimersByTimeAsync(5500);
+      await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+      expect(reads).toBeGreaterThanOrEqual(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('reads the terminal-opened project again after it was initialized, without running init or plan', async () => {
     let initialized = false;
     const posts: { url: string; body: unknown }[] = [];

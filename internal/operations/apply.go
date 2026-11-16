@@ -562,6 +562,8 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	o.LogDropped = e.log.Dropped()
 	m.running = nil
 	e.release()
+	// A post-apply read blocked by another process's state lock is read again (bounded).
+	m.retryLockedReadLocked()
 	m.mu.Unlock()
 	level := "info"
 	if code != "applied" {

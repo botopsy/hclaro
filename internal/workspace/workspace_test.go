@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"hclaro/fixtures"
@@ -118,6 +119,43 @@ func TestUnavailableDistinctFromEmpty(t *testing.T) {
 	s.Load(context.Background(), m, "terraform")
 	if s.Get().Status != "error" || s.Get().Diagnostic.Code != "state_unavailable" {
 		t.Fatal(s.Get())
+	}
+}
+
+type failingState struct {
+	engine.Mock
+	err error
+}
+
+func (m *failingState) State(context.Context) ([]byte, error) { return nil, m.err }
+
+// A read blocked by another process's state lock is state_locked, never credentials or
+// network advice, and planning stays off; other read failures keep state_unavailable.
+func TestLockedStateRead(t *testing.T) {
+	for err, code := range map[error]string{
+		engine.ErrReadStateLocked:  "state_locked",
+		engine.ErrReadCredentials:  "state_unavailable",
+		engine.ErrReadNetwork:      "state_unavailable",
+		engine.ErrReadInitRequired: "state_unavailable",
+		errors.New("generic"):      "state_unavailable",
+	} {
+		s := New(Info{Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
+		s.Load(context.Background(), &failingState{engine.Mock{VersionValue: "1.13.9", WorkspaceValue: "default"}, err}, "tofu")
+		snap := s.Get()
+		caps := snap.Info.Capabilities
+		if snap.Status != "error" || snap.Diagnostic == nil || snap.Diagnostic.Code != code || caps.CanPlan || caps.CanReadState || caps.CanApply || caps.CanImport || snap.Locked() != (code == "state_locked") {
+			t.Fatalf("%v: %+v", err, snap)
+		}
+		msg := snap.Diagnostic.Message
+		if code == "state_locked" && (!strings.Contains(msg, "holds the state lock") || strings.Contains(msg, "credentials") || strings.Contains(msg, "VPN") || !strings.Contains(caps.PlanReason, "state lock") || !strings.Contains(caps.ApplyReason, "state lock")) {
+			t.Errorf("locked read: %q / %q", msg, caps.PlanReason)
+		}
+	}
+	// A read-only Hub scope keeps its own read-only reasons.
+	s := NewScoped(Info{Initialized: true, Backend: "local", ExecutionMode: "local-cli"}, Scope{Workspace: "default", ReadOnlyReason: "read only"})
+	s.Load(context.Background(), &failingState{engine.Mock{VersionValue: "1.13.9", WorkspaceValue: "default"}, engine.ErrReadStateLocked}, "tofu")
+	if snap := s.Get(); !snap.Locked() || snap.Info.Capabilities.PlanReason != "read only" {
+		t.Errorf("read-only scope: %+v", snap)
 	}
 }
 
