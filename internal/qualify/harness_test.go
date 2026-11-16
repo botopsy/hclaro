@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -152,6 +153,46 @@ func TestSanitizer(t *testing.T) {
 	}
 	if hits, err := ScanOut(dir, "alice", "/Users/alice"); err != nil || len(hits) != 0 {
 		t.Errorf("clean dir: %v %v", hits, err)
+	}
+	for _, leak := range []string{`{"o":"C:\\Users\\RUNNER~1\\AppData"}`, `{"o":"c:\\Users\\<USER>\\AppData"}`, `/home/<USER>/x`} {
+		if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(leak), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if hits, err := ScanOut(dir, "alice"); err != nil || len(hits) != 1 {
+			t.Errorf("user-folder path in %s not found: %v %v", leak, hits, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(`{"o":"<HOME>\\AppData <TMP>/x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if hits, err := ScanOut(dir, "alice"); err != nil || len(hits) != 0 {
+		t.Errorf("sanitised paths flagged: %v %v", hits, err)
+	}
+	// Drive-letter case variants (any OS: the form is plain text).
+	w := NewSanitizer("", `C:\Users\bob\Temp\run`, "", "", "", "")
+	if got := w.String(`c:\Users\bob\Temp\run\x C:\Users\bob\Temp\run\y`); got != `<TMP>\x <TMP>\y` {
+		t.Errorf("drive-letter case: %s", got)
+	}
+}
+
+// The 8.3 short form of a sanitised path is replaced too (run 43815077862 leaked RUNNER~1).
+func TestSanitizerShortPaths(t *testing.T) {
+	dir := t.TempDir()
+	sp := shortPath(dir)
+	if runtime.GOOS != "windows" {
+		if sp != "" {
+			t.Fatalf("shortPath on %s: %q", runtime.GOOS, sp)
+		}
+		t.Skip("8.3 names exist on Windows only")
+	}
+	if sp == "" || sp == dir {
+		t.Skipf("no 8.3 form for %s on this volume", dir)
+	}
+	s := NewSanitizer("", dir, "", "", "", "")
+	q := func(v string) string { b, _ := json.Marshal(v); return string(b) }
+	in := `{"long":` + q(dir+`\x`) + `,"short":` + q(sp+`\x`) + `}`
+	if got := s.String(in); strings.Contains(got, sp) || strings.Count(got, "<TMP>") != 2 {
+		t.Errorf("short form %q not sanitised: %s", sp, got)
 	}
 }
 

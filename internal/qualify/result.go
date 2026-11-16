@@ -287,7 +287,9 @@ func NewSanitizer(canary, tmp, home, repo, user, host string) *Sanitizer {
 	return s
 }
 
-// pathForms returns a path as given and with symlinks resolved (macOS /tmp → /private/tmp).
+// pathForms returns a path as given, with symlinks resolved (macOS /tmp → /private/tmp), the
+// Windows 8.3 short form of each, and each with the other drive-letter case. The H5d
+// observation of run 43815077862 kept both C:\Users\RUNNER~1\… and c:\Users\….
 func pathForms(p string) []string {
 	if p == "" {
 		return nil
@@ -296,8 +298,26 @@ func pathForms(p string) []string {
 	if r, err := filepath.EvalSymlinks(p); err == nil && r != p {
 		out = append(out, r)
 	}
+	for _, v := range out {
+		if sp := shortPath(v); sp != "" && sp != v {
+			out = append(out, sp)
+		}
+	}
+	for _, v := range out {
+		if len(v) > 1 && v[1] == ':' {
+			if d := strings.ToLower(v[:1]); d != v[:1] {
+				out = append(out, d+v[1:])
+			} else {
+				out = append(out, strings.ToUpper(v[:1])+v[1:])
+			}
+		}
+	}
 	return out
 }
+
+// unsanitised catches paths into a user folder that the sanitizer missed, including Windows 8.3
+// short forms and a path whose username alone was replaced (c:\Users\<USER>\…, run 43815077862).
+var unsanitised = regexp.MustCompile(`(?i)/Users/[a-z<]|/home/[a-z<]|[A-Z]:(\\\\|\\|/)Users(\\\\|\\|/)[A-Za-z0-9<]`)
 
 // sessionToken matches Hclaro's private session token in a URL (`…/#session=<hex>`, and the
 // same after ? or &), so no session URL survives sanitising even if its token was never
@@ -335,7 +355,8 @@ func wordPattern(v string) *regexp.Regexp {
 func (s *Sanitizer) String(v string) string { return string(s.Bytes([]byte(v))) }
 
 // ScanOut lists the files in dir that hold one of the forbidden substrings (the canary,
-// the real home path), the username as a whole word, or a session token in a URL. It is the last step of a run.
+// the real home path), the username as a whole word, a session token in a URL, or a path
+// into a user folder (the evidence validator's unsanitised pattern). It is the last step of a run.
 func ScanOut(dir, user string, forbidden ...string) ([]string, error) {
 	var hits []string
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -346,7 +367,7 @@ func ScanOut(dir, user string, forbidden ...string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		hit := len(user) >= 2 && wordPattern(user).Match(b) || sessionToken.Match(b)
+		hit := len(user) >= 2 && wordPattern(user).Match(b) || sessionToken.Match(b) || unsanitised.Match(b)
 		for _, f := range forbidden {
 			hit = hit || len(f) >= 3 && bytes.Contains(b, []byte(f))
 		}
