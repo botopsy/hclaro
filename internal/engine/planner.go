@@ -291,6 +291,12 @@ func (c *CLI) ShowPlan(ctx context.Context, path string) ([]byte, error) {
 	return c.run(ctx, showPlanLimit, "show", "-json", path)
 }
 
+// lockedStateRead is a local-backend state read on Windows while another process holds the
+// lock (OpenTofu 1.13.9, run 43834356151): the OS lock-violation text, only together with a
+// state-file read. The OS text is localised, so other languages stay unclassified. It is the
+// only text a read (runEnv) turns into ErrReadStateLocked.
+var lockedStateRead = regexp.MustCompile(`(?s)(failed to read state file|state file could not be read|read [^\n:]*\.tfstate\b).*another process has locked a portion of the file`)
+
 // classes is the one engine failure table, matched in order against lowercased text. A
 // release error is printed after the engine ran (with its own Lock Info), so it is checked
 // before acquisition and is never a "did not run" lock failure.
@@ -300,10 +306,7 @@ var classes = []struct {
 }{
 	{"stale_plan", regexp.MustCompile(`saved plan is stale|plan file is stale|saved plan no longer valid`)},
 	{"state_unlock_failed", regexp.MustCompile(`error releasing the state lock|failed to unlock state|error unlocking state`)},
-	// The last alternative is a local-backend read on Windows while another process holds
-	// the lock (OpenTofu 1.13.9, run 43834356151): the OS lock-violation text, only together
-	// with a state-file read. The OS text is localised, so other languages stay unclassified.
-	{"state_locked", regexp.MustCompile(`error acquiring the state lock|error locking state|lock info:|conditionalcheckfailed|(?s)(failed to read state file|state file could not be read|read [^\n:]*\.tfstate\b).*another process has locked a portion of the file`)},
+	{"state_locked", regexp.MustCompile(`error acquiring the state lock|error locking state|lock info:|conditionalcheckfailed|` + lockedStateRead.String())},
 	{"init_required", regexp.MustCompile(`backend initialization required|module not installed|required plugins are not installed|inconsistent dependency lock file|please run "(terraform|tofu) init"`)},
 	{"credentials", regexp.MustCompile(`credential|expiredtoken|token has expired|\bsso\b|unauthorized|authenticat|access ?denied|forbidden`)},
 	{"network", regexp.MustCompile(`no such host|i/o timeout|connection refused|network is unreachable|tls handshake timeout`)},

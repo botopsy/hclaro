@@ -263,9 +263,12 @@ func (c *CLI) runEnv(ctx context.Context, timeout time.Duration, dropWorkspace b
 		if buf.overflow {
 			return nil, ErrReadTooLarge
 		}
-		switch Classify(stderr.String()) {
-		case "state_locked":
+		// Only the Windows lock-violation read is a lock here; any other lock text keeps the
+		// generic read failure it always had.
+		if lockedStateRead.MatchString(strings.ToLower(stderr.String())) {
 			return nil, ErrReadStateLocked
+		}
+		switch Classify(stderr.String()) {
 		case "credentials":
 			return nil, ErrReadCredentials
 		case "network":

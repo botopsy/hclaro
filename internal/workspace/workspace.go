@@ -332,6 +332,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 			if !s.readOnlyScope() {
 				snap.Info.Capabilities.PlanReason = "Another process holds the state lock. Planning is available again once the state has been read."
 				snap.Info.Capabilities.ImportReason = "Another process holds the state lock. Importing is available again once the state has been read."
+				snap.Info.Capabilities.ApplyReason = "Another process holds the state lock. Applying is available again once the state has been read."
 				s.set(snap)
 			}
 			return

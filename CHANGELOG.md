@@ -4,7 +4,7 @@
 
 Fixes:
 
-- Fix: on Windows, a state read while another process held the state lock (for example a `tofu console` in a terminal) made the workspace *State unavailable*, with advice about credentials and VPN, and planning stayed off until **Read again**. The workspace now says another process holds the state lock, a plan is refused with `state_locked`, and Hclaro reads the state again on its own for about two minutes. Hclaro still never unlocks state. The Windows message is recognised in English only. (FU-WIN-STATE-READ)
+- Fix: on Windows, a state read while another process held the state lock (for example a `tofu console` in a terminal) made the workspace *State unavailable*, with advice about credentials and VPN, and planning stayed off until **Read again**. The workspace now says another process holds the state lock, a plan is refused with `state_locked`, and Hclaro reads the state again on its own for about two minutes. Hclaro still never unlocks state. The Windows message is recognised in English only. This fix has not yet been rerun with a real engine on Windows, so the state-lock FAIL in the qualification entry below (row RE-42, recorded before the fix) still stands. (FU-WIN-STATE-READ)
 
 Qualification (M27):
 

@@ -142,6 +142,8 @@ func TestReadFailureIsClassifiedWithoutStderr(t *testing.T) {
 		{"Error: Backend initialization required, please run \"terraform init\" SECRET_TOKEN_x", ErrReadInitRequired, "needs init"},
 		// OpenTofu 1.13.9 on Windows under another process's state lock (run 43834356151).
 		{lockedRead, ErrReadStateLocked, "holds the state lock"},
+		// Other lock text on a read keeps the generic failure (unchanged outside Windows).
+		{"Error: Error acquiring the state lock\nLock Info: SECRET_TOKEN_x", nil, "fallback"},
 		{"Error: something else entirely SECRET_TOKEN_x", nil, "fallback"},
 	} {
 		t.Setenv("HCLARO_TEST_STDERR", tc.stderr)

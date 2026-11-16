@@ -94,6 +94,12 @@ func TestPlanRefusedWhileStateLocked(t *testing.T) {
 	if _, err := m.StartPlan(nil, nil); !errors.Is(err, ErrStateLocked) {
 		t.Fatalf("plan while locked: %v", err)
 	}
+	if _, _, err := m.StartDriftScan(DriftStart{}); rejected(err) != "state_locked" {
+		t.Fatalf("drift scan while locked: %v", err)
+	}
+	if _, _, err := m.StartGraph(GraphStart{}); rejected(err) != "state_locked" {
+		t.Fatalf("graph while locked: %v", err)
+	}
 	if len(fake.Requests()) != before {
 		t.Fatal("the engine planned on unread state")
 	}

@@ -171,6 +171,9 @@ func (m *Manager) StartGraph(req GraphStart) (Operation, GraphRun, error) {
 		return Operation{}, GraphRun{}, ErrLoading
 	}
 	if ok, reason := m.graphCapability(snap); !ok {
+		if snap.Locked() {
+			return Operation{}, GraphRun{}, reject("state_locked", reason)
+		}
 		return Operation{}, GraphRun{}, reject("graph_unsupported", reason)
 	}
 	bound, environ, err := m.bind(snap, req.ProfileID, req.ContextFingerprint)

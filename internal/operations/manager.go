@@ -228,6 +228,9 @@ type Manager struct {
 	closed bool
 	// lockRetry cancels the bounded re-read of a lock-blocked state read (lockretry.go).
 	lockRetry context.CancelFunc
+	// retryReading is set while a lock re-read runs, so Reread waits for it (ErrLoading)
+	// instead of racing it.
+	retryReading bool
 	// NewID creates operation and plan IDs. Synthetic helpers replace it for determinism.
 	NewID func() string
 }
@@ -905,7 +908,7 @@ func (m *Manager) Reread() error {
 		return ErrUnavailable
 	case m.running != nil:
 		return ErrBusy
-	case m.store.Get().Status == "loading":
+	case m.store.Get().Status == "loading" || m.retryReading:
 		return ErrLoading
 	}
 	// A shared claim keeps a Hub init or workspace command off the root while state is read.

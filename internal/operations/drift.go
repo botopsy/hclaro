@@ -157,6 +157,10 @@ func (m *Manager) StartDriftScan(req DriftStart) (Operation, DriftScan, error) {
 		return Operation{}, DriftScan{}, ErrLoading
 	}
 	if ok, reason := m.driftCapability(snap); !ok {
+		// A lock-blocked read is temporary, not an unsupported workspace.
+		if snap.Locked() {
+			return Operation{}, DriftScan{}, reject("state_locked", reason)
+		}
 		return Operation{}, DriftScan{}, reject("drift_unsupported", reason)
 	}
 	bound, environ, err := m.bind(snap, req.ProfileID, req.ContextFingerprint)

@@ -60,12 +60,17 @@ func (m *Manager) lockRetryLoop(ctx context.Context, cancel context.CancelFunc) 
 		}
 		// A shared claim, as for Reread: a Hub init or workspace command keeps the root.
 		release, ok := m.Locks.AcquireShared(m.root)
-		m.mu.Unlock()
 		if !ok {
+			m.mu.Unlock()
 			continue
 		}
+		m.retryReading = true
+		m.mu.Unlock()
 		m.Reload(ctx)
 		release()
+		m.mu.Lock()
+		m.retryReading = false
+		m.mu.Unlock()
 		if !m.store.Get().Locked() {
 			return
 		}

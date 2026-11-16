@@ -147,7 +147,7 @@ func TestLockedStateRead(t *testing.T) {
 			t.Fatalf("%v: %+v", err, snap)
 		}
 		msg := snap.Diagnostic.Message
-		if code == "state_locked" && (!strings.Contains(msg, "holds the state lock") || strings.Contains(msg, "credentials") || strings.Contains(msg, "VPN") || !strings.Contains(caps.PlanReason, "state lock")) {
+		if code == "state_locked" && (!strings.Contains(msg, "holds the state lock") || strings.Contains(msg, "credentials") || strings.Contains(msg, "VPN") || !strings.Contains(caps.PlanReason, "state lock") || !strings.Contains(caps.ApplyReason, "state lock")) {
 			t.Errorf("locked read: %q / %q", msg, caps.PlanReason)
 		}
 	}
