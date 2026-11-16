@@ -385,6 +385,62 @@ func l1Snapshot(s *Scenario, h *Hclaro, when string) {
 	s.Observe("L1 %s (%s): workspace %d status %q diagnostic %q canPlan %v; %d operations recorded", when, at, r.Status, ws.Status, diag, ws.Info.Capabilities["canPlan"], n)
 }
 
+// l1RereadBound is Hclaro's automatic re-read bound after a lock-blocked read (operations
+// lockRetryDelays, about 2 min) plus slack for one engine read.
+const l1RereadBound = 150 * time.Second
+
+// l1Workspace returns the launch workspace's status, diagnostic code and canPlan.
+func l1Workspace(s *Scenario, h *Hclaro) (string, string, bool) {
+	var ws struct {
+		Status     string `json:"status"`
+		Diagnostic *struct {
+			Code string `json:"code"`
+		} `json:"diagnostic"`
+		Info struct {
+			Capabilities struct {
+				CanPlan bool `json:"canPlan"`
+			} `json:"capabilities"`
+		} `json:"info"`
+	}
+	if r, err := h.client.Do("GET", "workspace", nil, &ws); err != nil || r.Status != 200 {
+		s.Fatalf("workspace: %v", err)
+	}
+	code := ""
+	if ws.Diagnostic != nil {
+		code = ws.Diagnostic.Code
+	}
+	return ws.Status, code, ws.Info.Capabilities.CanPlan
+}
+
+// l1WindowsLocked: while the holder holds the lock on Windows, the post-apply read is
+// state_locked, and a plan and a drift scan are refused with 409 state_locked before any
+// engine starts (FU-WIN-STATE-READ). The lock-info file stays as the holder wrote it.
+func l1WindowsLocked(s *Scenario, h *Hclaro, project string, holder *Holder, lock, info string) {
+	status, code, canPlan := l1Workspace(s, h)
+	s.Observe("L1 Windows after the refused apply: workspace %q diagnostic %q canPlan %v", status, code, canPlan)
+	if code != "state_locked" || canPlan {
+		s.Errorf("L1 Windows: workspace %q %q canPlan %v after the refused apply, want state_locked without planning", status, code, canPlan)
+	}
+	n := len(s.operations(h))
+	op, r := s.failedPlan(h, project, []string{"gen3.tfvars"})
+	s.Artifact("plan-refusal.json", r.Body)
+	if op.ID != "" || r.Status != 409 || r.Code != "state_locked" {
+		s.Errorf("L1 Windows plan while locked: operation %q, %d %s; want 409 state_locked before the engine", op.ID, r.Status, r.Code)
+	}
+	dr, err := h.client.Do("POST", "drift-scans", map[string]any{"acknowledgeProviderAccess": true, "varFiles": []string{"launch.tfvars"}}, nil)
+	if err != nil || dr.Status != 409 || dr.Code != "state_locked" {
+		s.Errorf("L1 Windows drift scan while locked: %v %d %s; want 409 state_locked before the engine", err, dr.Status, dr.Code)
+	}
+	if got := len(s.operations(h)); got != n {
+		s.Errorf("L1 Windows: %d operations started on unread state", got-n)
+	}
+	now, err := fileSHA256(lock)
+	s.Observe("L1 Windows plan and drift scan refused %d %s / %d %s; holder alive %v, lock info unchanged %v", r.Status, r.Code, dr.Status, dr.Code, holder.Alive(), err == nil && now == info)
+	if err != nil || now != info || !holder.Alive() {
+		s.Fatalf("L1 Windows: the lock-info file changed or went away while the holder held it")
+	}
+}
+
 // showUnderHolder records what the engine's own `show -json` (the read Hclaro reloads state
 // with) prints while the F-2 holder holds the lock: FU-WIN-STATE-READ step 0 needs the exact
 // Windows text. Diagnostic only, never an assertion. A successful read is recorded by size,
@@ -472,17 +528,23 @@ func TestRealLocks(t *testing.T) {
 			}
 			l1Snapshot(s, h, "after-refused-apply")
 			showUnderHolder(s, dirs, name, project)
-			op, r = s.failedPlan(h, project, []string{"gen3.tfvars"})
-			if op.ID == "" {
-				s.Artifact("plan-refusal.json", r.Body)
-				l1Snapshot(s, h, "at-plan-refusal")
-				s.Fatalf("plan refused before the engine: %d %s", r.Status, r.Code)
-			}
-			check("plan", op)
-			op, sc := s.driftScan(h, project, []string{"launch.tfvars"})
-			check("drift", op)
-			if sc.Status != "failed" || sc.Diagnostic == nil || sc.Diagnostic.Code != "state_locked" {
-				s.Errorf("L1 drift scan %s %v, want failed state_locked", sc.Status, sc.Diagnostic)
+			if runtime.GOOS == "windows" {
+				// FU-WIN-STATE-READ: the holder's lock blocks reading terraform.tfstate, so Hclaro
+				// could not read the state after the apply and must not start anything on it.
+				l1WindowsLocked(s, h, project, holder, lock, info)
+			} else {
+				op, r = s.failedPlan(h, project, []string{"gen3.tfvars"})
+				if op.ID == "" {
+					s.Artifact("plan-refusal.json", r.Body)
+					l1Snapshot(s, h, "at-plan-refusal")
+					s.Fatalf("plan refused before the engine: %d %s", r.Status, r.Code)
+				}
+				check("plan", op)
+				op, sc := s.driftScan(h, project, []string{"launch.tfvars"})
+				check("drift", op)
+				if sc.Status != "failed" || sc.Diagnostic == nil || sc.Diagnostic.Code != "state_locked" {
+					s.Errorf("L1 drift scan %s %v, want failed state_locked", sc.Status, sc.Diagnostic)
+				}
 			}
 			if err := holder.Release(); err != nil {
 				s.Fatalf("release: %v", err)
@@ -502,6 +564,20 @@ func TestRealLocks(t *testing.T) {
 			if runtime.GOOS == "windows" {
 				assertStateUnchanged(s, project, sum, serial, "by the refused apply, plan and drift scan (read after the release)")
 				s.Observe("L1 state unchanged by the refused apply, plan and drift scan (Windows: read after the release)")
+				// No Read again: Hclaro reads the state again on its own within its bound
+				// (about 2 min), then planning works.
+				start := time.Now()
+				for status := ""; status != "ready" && status != "empty"; time.Sleep(time.Second) {
+					if time.Since(start) > l1RereadBound {
+						l1Snapshot(s, h, "not-read-again")
+						s.Fatalf("L1 workspace not read again %v after the release (last status %q)", l1RereadBound, status)
+					}
+					status, _, _ = l1Workspace(s, h)
+				}
+				s.Observe("L1 workspace ready %v after the release, without Read again", time.Since(start).Round(time.Second))
+				l1Snapshot(s, h, "read-again")
+				s.LaunchPlan(h, project, name, []string{"gen3.tfvars"})
+				s.Observe("L1 plan after the release succeeded")
 			}
 		})
 		run.Scenario(t, "l2-unlock-failed-"+name, name, "launch", false, func(s *Scenario) {
