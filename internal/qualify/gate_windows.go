@@ -19,7 +19,6 @@ var (
 	createNamedPipe  = kernel32.NewProc("CreateNamedPipeW")
 	connectNamedPipe = kernel32.NewProc("ConnectNamedPipe")
 	flushFileBuffers = kernel32.NewProc("FlushFileBuffers")
-	disconnectPipe   = kernel32.NewProc("DisconnectNamedPipe")
 )
 
 const (
@@ -118,8 +117,10 @@ func (g *pipeGate) answer(h syscall.Handle) {
 	<-g.released
 	var n uint32
 	_ = syscall.WriteFile(h, []byte("gate\n"), &n, nil)
+	// Flush waits until the reader has the line; closing (not DisconnectNamedPipe, which the
+	// reader sees as ERROR_PIPE_NOT_CONNECTED) then ends its read with ERROR_BROKEN_PIPE,
+	// which Go's os.ReadFile, like hashicorp/local's data source, treats as end of file.
 	flushFileBuffers.Call(uintptr(h))
-	disconnectPipe.Call(uintptr(h))
 }
 
 func (g *pipeGate) Release() { g.release.Do(func() { close(g.released) }) }
