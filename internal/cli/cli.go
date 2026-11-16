@@ -40,14 +40,21 @@ type Options struct {
 	// StrictLocal refuses features that send data to a third-party service; today that is
 	// cost estimation (M17).
 	StrictLocal bool
-	// HubExecution turns on plans and applies in Hub workspaces (ADR M24.03, M24.04–.06). It
-	// is a hidden, experimental opt-in: not in --help, off by default, and not yet qualified
-	// with real engines (M24.02).
+	// HubExecution turns on plans and applies in Hub workspaces (ADR M24.03, M24.04–.06). On by
+	// default since OD-11 (2026-11-16); --no-hub-execution turns it off. Qualified with real
+	// engines for the local backend only (support-matrix HUB-02 to HUB-17).
 	HubExecution bool
 }
 
 // hiddenFlags are accepted but not listed in --help.
 var hiddenFlags = map[string]bool{"experimental-hub-execution": true}
+
+// noOp is a boolean flag that is accepted and changes nothing (the old opt-in, kept for scripts).
+type noOp struct{}
+
+func (noOp) String() string   { return "false" }
+func (noOp) Set(string) error { return nil }
+func (noOp) IsBoolFlag() bool { return true }
 
 func Parse(args []string, output io.Writer) (Options, error) {
 	o := Options{}
@@ -61,7 +68,8 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.BoolVar(&o.Hub, "hub", false, "Open the Workspace Hub; the current directory is not read unless --path is given")
 	flags.BoolVar(&o.StrictLocal, "strict-local", false, "Strict local-only mode: disable features that send data to third-party services (cost estimation)")
 	flags.StringVar(&o.ExportHistory, "export-history", "", "Write the redacted operation history to a new .json or .md `file` and exit")
-	flags.BoolVar(&o.HubExecution, "experimental-hub-execution", false, "Experimental: allow plans and applies in Hub workspaces")
+	noHubExecution := flags.Bool("no-hub-execution", false, "Keep Hub workspaces read-only: no plans, applies or imports outside the launch project")
+	flags.Var(noOp{}, "experimental-hub-execution", "Former opt-in for Hub execution; now the default (ignored)")
 	flags.Usage = func() {
 		fmt.Fprintln(output, "Hclaro — local Terraform & OpenTofu explorer\n\nUsage: hclaro [flags]\n\nRun inside a Terraform/OpenTofu root to open it; elsewhere, or with --hub, the Workspace\nHub opens with your registered projects.")
 		visible := flag.NewFlagSet("hclaro", flag.ContinueOnError)
@@ -79,6 +87,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	if err := flags.Parse(args); err != nil {
 		return o, err
 	}
+	o.HubExecution = !*noHubExecution
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "path" {
 			o.PathSet = true
@@ -192,11 +201,13 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	hub := projects.NewHub(registry, root)
 	hub.Profiles = executionProfiles
-	// Off unless the hidden experimental flag is given; every scoped route then answers
-	// scoped_execution_disabled and Hub workspaces stay read-only.
+	// With --no-hub-execution every scoped route answers scoped_execution_disabled and Hub
+	// workspaces stay read-only.
 	hub.ScopedExecution = o.HubExecution
 	if o.HubExecution {
-		fmt.Fprintln(output, "Experimental: plans and applies in Hub workspaces are enabled (--experimental-hub-execution). They are not yet qualified with real Terraform/OpenTofu engines; applies still need a reviewed saved plan and your confirmation.")
+		fmt.Fprintln(output, "Hub execution: plans and applies are available in Hub workspaces (turn off with --no-hub-execution). Qualified with real engines for the local backend only; applies still need a reviewed saved plan and your confirmation.")
+	} else {
+		fmt.Fprintln(output, "Hub execution: off (--no-hub-execution); Hub workspaces are read-only.")
 	}
 	hub.UseHistory(operationHistory)
 	defer hub.Close()
