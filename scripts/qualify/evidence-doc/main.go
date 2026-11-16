@@ -71,6 +71,11 @@ func run(root, listPath, out string) error {
 			return err
 		}
 		r, errs := qualify.ValidateRun(raw, spec.Rows)
+		if filter, err := qualify.RunFilter(filepath.Dir(p)); err != nil {
+			errs = append(errs, err)
+		} else if spec.Rows && filter != qualify.FullFilter {
+			errs = append(errs, fmt.Errorf("partial run (test filter %q); not a source of matrix rows", filter))
+		}
 		// The whole run output directory (run.json and artifacts) must be sanitised.
 		hits, err := qualify.ScanOut(filepath.Dir(p), u.Username, home, host)
 		if err != nil {
