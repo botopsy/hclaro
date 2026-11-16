@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -152,6 +153,33 @@ func TestSanitizer(t *testing.T) {
 	}
 	if hits, err := ScanOut(dir, "alice", "/Users/alice"); err != nil || len(hits) != 0 {
 		t.Errorf("clean dir: %v %v", hits, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte(`{"o":"C:\\Users\\RUNNER~1\\AppData"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if hits, err := ScanOut(dir, "alice"); err != nil || len(hits) != 1 {
+		t.Errorf("Windows user-folder path not found: %v %v", hits, err)
+	}
+}
+
+// The 8.3 short form of a sanitised path is replaced too (run 43815077862 leaked RUNNER~1).
+func TestSanitizerShortPaths(t *testing.T) {
+	dir := t.TempDir()
+	sp := shortPath(dir)
+	if runtime.GOOS != "windows" {
+		if sp != "" {
+			t.Fatalf("shortPath on %s: %q", runtime.GOOS, sp)
+		}
+		t.Skip("8.3 names exist on Windows only")
+	}
+	if sp == "" || sp == dir {
+		t.Skipf("no 8.3 form for %s on this volume", dir)
+	}
+	s := NewSanitizer("", dir, "", "", "", "")
+	q := func(v string) string { b, _ := json.Marshal(v); return string(b) }
+	in := `{"long":` + q(dir+`\x`) + `,"short":` + q(sp+`\x`) + `}`
+	if got := s.String(in); strings.Contains(got, sp) || strings.Count(got, "<TMP>") != 2 {
+		t.Errorf("short form %q not sanitised: %s", sp, got)
 	}
 }
 
