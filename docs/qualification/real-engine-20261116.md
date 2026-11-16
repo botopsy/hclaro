@@ -6,7 +6,7 @@ Statuses: PASS, FAIL, NOT_TESTED and SKIPPED as defined in the harness (`docs/qu
 
 One run never qualifies another engine version, platform, backend, provider or operation.
 
-The Windows F-5 run of dispatch 5 (fake engines, isolation `none`) is not included: it has no providers or credential-file record and cannot back a matrix row. Its result (CTRL_BREAK handled, PASS ×2) stays in the M27.07 record.
+The Windows F-5 run (`f5/run.json` beside the Windows run: fake engines, isolation `none`) is not included: it has no providers or credential-file record and cannot back a matrix row. Its result (CTRL_BREAK handled, PASS ×2) stays in the M27.07 and FU-WIN-STATE-READ records.
 
 ## 2026-11-15 m27-03 core-tf155-tofu1139
 
@@ -1669,16 +1669,16 @@ Defects and notes:
 
 - As linux/amd64 (same dispatch, #125). H5c′ SKIPPED: case-insensitive file system.
 
-## 2026-11-16 m27-07 dispatch5 windows-amd64 (offline not verified)
+## 2026-11-16 fu-win-state-read dispatch7 windows-amd64 (offline not verified)
 
 | Field | Value |
 | --- | --- |
-| Run ID | 3e17277e-d5d7-4f83-8bed-93ddf5d794b3 |
-| Started / finished (UTC) | 2026-11-16T06:13:17Z / 2026-11-16T07:14:39Z |
-| Hclaro commit | `fcab974ee329d8006aedf9a9117122d7f8c28751` |
+| Run ID | 743f7280-483b-4a23-9d4f-4d464003b204 |
+| Started / finished (UTC) | 2026-11-16T11:29:56Z / 2026-11-16T12:30:53Z |
+| Hclaro commit | `8f7ce50c2d828d741681a183c77f24f83357ef23` |
 | Hclaro version | hclaro 0.1.0-beta.4 |
-| Hclaro binary SHA-256 | `999abfc5dd0e02e986b25c8ea1da3319ad84306674d4bb95ef7ae5a7bc3b889f` |
-| run.json SHA-256 | `7f600146dfee387e7423654f7d74a194b8251255ece19de5f701e9054232a071` |
+| Hclaro binary SHA-256 | `fe85e2382935a01b06182ba20f57bdd0960e34ea9907dfa47e7ffa6cfbf03b9b` |
+| run.json SHA-256 | `824bda0882d8d2b1516a04026ba59d622b1a821b1047098dc98b0a198249e884` |
 | Engine versions | 1.17.2 + 1.13.9 |
 | OS / arch / build | windows / amd64 / Microsoft Windows [Version 10.0.26100.33674] |
 | Runner image | windows-2025/win25-vs2026 20261103.298.1 |
@@ -1686,7 +1686,7 @@ Defects and notes:
 | Isolation | firewall, level **weak-proxy** (before: system_resolver: resolved) |
 | Credential files reachable | true |
 | Mirror manifest SHA-256 | `c416ce6ad0650fdf85f62f9437cf6d33b863d9dcd5fb7fc4c42668b31daed212` |
-| go test exit | 1 |
+| go test exit | 0 |
 
 | Engine | Version | Binary SHA-256 | Archive SHA-256 | Provenance |
 | --- | --- | --- | --- | --- |
@@ -1741,7 +1741,7 @@ Canary: map[absent:116].
 | g1-graph-modules-tofu | tofu | launch | PASS |  | 1 in `artifacts/g1-graph-modules-tofu/` |
 | l1-state-locked-terraform | terraform | launch | NOT_TESTED | no F-2 lock holder on this platform: named pipes are not supported on Windows | — |
 | l2-unlock-failed-terraform | terraform | launch | NOT_TESTED | unlock failure not reproducible on Terraform 1.17.2 (F-3 source analysis 2026-11-14, NOT_REPRODUCIBLE for the local backend); synthetic state_unlock_failed coverage stays in internal/engine/planner_test.go and internal/operations/apply_test.go | — |
-| l1-state-locked-tofu | tofu | launch | FAIL | plan refused before the engine: 409 planning_unavailable; assertion failed | 9 in `artifacts/l1-state-locked-tofu/` |
+| l1-state-locked-tofu | tofu | launch | PASS |  | 10 in `artifacts/l1-state-locked-tofu/` |
 | l2-unlock-failed-tofu | tofu | launch | NOT_TESTED | unlock failure not reproducible on OpenTofu 1.13.9 (F-3 source analysis 2026-11-14, NOT_REPRODUCIBLE for the local backend); synthetic state_unlock_failed coverage stays in internal/engine/planner_test.go and internal/operations/apply_test.go | — |
 | f1-f2-plan-failed-init-required-terraform | terraform | launch | PASS |  | — |
 | f2-lockfile-changed-terraform | terraform | launch | PASS |  | — |
@@ -1846,10 +1846,9 @@ Canary: map[absent:116].
 
 Defects and notes:
 
-- Source: `dispatch5-sanitized-v2` (second sanitized replacement: session tokens, #128; runner 8.3 short path and drive-letter case in the H5d observation, #130). Statuses unchanged.
-- Isolation `weak-proxy`: the DNS Client service resolves names, the home directory is readable, and per-program firewall rules do not cover per-process engine copies or provider plugins. No Windows network-isolation claim; the isolation hold stays open (FU-WIN-ISO).
-- **L1 `l1-state-locked-tofu` FAIL** (owner decision 2026-11-16), linked to FU-WIN-STATE-READ: after the refused apply, Hclaro's state read failed under the holder's lock and the workspace became `state_unavailable`, so the plan was refused with `409 planning_unavailable`. Product fix not yet implemented.
-- H1 harness defect (CR in mirror hashes) fixed in #127 before this run. N1, H12 and the operation-hold scenarios (H4, H5 claim halves incl. WIN2, H7, H9, H11, Terraform A5 lock part) are accepted as NOT_TESTED on Windows (FU-WIN-HOLD).
+- Windows requalification run after FU-WIN-STATE-READ (#132), workflow run 43857995952 from `8f7ce50`. It replaces dispatch 5 of M27.07 (run 43815077862, `fcab974`) as the Windows source. In dispatch 5, `l1-state-locked-tofu` was a FAIL: Hclaro reported a state read blocked by the holder's lock as `state_unavailable` and refused plans with `planning_unavailable`. Here it is a PASS. Every other scenario has the same status in both runs.
+- Isolation `weak-proxy`: the DNS Client service resolves names, the home directory is readable, and per-program firewall rules do not cover per-process engine copies or provider plugins. There is no Windows network-isolation claim, and the isolation hold stays open (FU-WIN-ISO).
+- N1, H12 and the operation-hold scenarios (H4, the H5 claim halves including WIN2, H7, H9, H11, Terraform L1 and the Terraform A5 lock part) are NOT_TESTED on Windows (FU-WIN-HOLD).
 
 ## 2026-11-15 m27-07 darwin-amd64-platform
 
