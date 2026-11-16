@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+Added:
+
+- Git branch switching (M29): the chevron next to the Git badge lists existing local branches and switches to one after a preview and your confirmation. It is blocked while the working tree has any uncommitted or untracked change, when the target branch would overwrite an ignored file or remove the project folder, and while any operation runs in a project inside the repository. Hclaro never creates, deletes, fetches, pulls, merges, stashes, resets or discards anything, never runs repository hooks during the switch, never changes the Terraform workspace and runs no Terraform/OpenTofu command afterwards; plans made before the switch must pass the apply preflight's source checks again. Every switch and refused attempt is recorded in History as *Branch switch*.
+
 ## 0.1.0-beta.5 — 2026-11-16
 
 Real-engine qualification (M27) and Hub execution on by default. What ran against real engines is in `docs/support-matrix.md`; see `docs/BETA.md` for the limits.

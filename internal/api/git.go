@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"regexp"
@@ -22,7 +24,9 @@ var fileIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 // status; it never sends a path, Git argument, editor executable or URL. Reading HEAD and
 // locating a resource's source read files only (GET); status and diff run read-only Git
 // commands and opening an editor hands a validated URL to the OS, so they are CSRF-protected
-// POSTs.
+// POSTs. Listing branches and previewing a branch switch run read-only Git; switching
+// (M29) is the one Git write: an existing local branch, a clean working tree, the HEAD the
+// user reviewed, and an exclusive claim on every project root in the working tree.
 func gitRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, hub *projects.Hub) {
 	// launch resolves the launch project's root, or answers why there is none.
 	launch := func(w http.ResponseWriter) (*gitctx.Service, string, bool) {
@@ -57,6 +61,11 @@ func gitRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.M
 	both := map[string]resolver{
 		"/api/v1":               func(w http.ResponseWriter, _ *http.Request) (*gitctx.Service, string, bool) { return launch(w) },
 		"/api/v1/projects/{id}": project,
+	}
+	// Branch switches claim the working tree in the set shared by the launch manager and the Hub.
+	locks := manager.Locks
+	if hub != nil {
+		locks = hub.Locks
 	}
 	for prefix, resolve := range both {
 		mux.HandleFunc("GET "+prefix+"/git/head", func(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +111,68 @@ func gitRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.M
 				return
 			}
 			writeJSON(w, 200, diff)
+		})
+		mux.HandleFunc("POST "+prefix+"/git/branches", func(w http.ResponseWriter, r *http.Request) {
+			var body struct{}
+			if !decodeBody(w, r, &body) {
+				return
+			}
+			if s, root, ok := resolve(w, r); ok {
+				ctx, cancel := withDeadline(w, r, gitTimeout)
+				defer cancel()
+				writeJSON(w, 200, s.Branches(ctx, root))
+			}
+		})
+		mux.HandleFunc("POST "+prefix+"/git/switch/preview", func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				Branch string `json:"branch"`
+			}
+			if !decodeBody(w, r, &body) {
+				return
+			}
+			s, root, ok := resolve(w, r)
+			if !ok {
+				return
+			}
+			ctx, cancel := withDeadline(w, r, gitTimeout)
+			defer cancel()
+			preview, err := s.PreviewSwitch(ctx, root, body.Branch)
+			if err != nil {
+				switchError(w, err)
+				return
+			}
+			writeJSON(w, 200, preview)
+		})
+		mux.HandleFunc("POST "+prefix+"/git/switch", func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				Branch         string `json:"branch"`
+				ExpectedBranch string `json:"expectedBranch"`
+				ExpectedCommit string `json:"expectedCommit"`
+			}
+			if !decodeBody(w, r, &body) {
+				return
+			}
+			s, root, ok := resolve(w, r)
+			if !ok {
+				return
+			}
+			ctx, cancel := withDeadline(w, r, gitTimeout+gitctx.SwitchTimeout)
+			defer cancel()
+			from := ""
+			if h := s.HeadOf(root).Head; h != nil {
+				from = h.Branch
+			}
+			// The start is recorded before Git runs, with the commit checked out now.
+			finish := recordSwitch(manager.Recorder, root, from, body.Branch)
+			result, err := s.Switch(ctx, root, body.Branch, body.ExpectedBranch, body.ExpectedCommit, func(top string) (func(), bool) {
+				return locks.AcquireTree(top, "branch")
+			})
+			finish(err)
+			if err != nil {
+				switchError(w, err)
+				return
+			}
+			writeJSON(w, 200, map[string]any{"switch": result, "git": s.HeadOf(root)})
 		})
 		mux.HandleFunc("POST "+prefix+"/editor/open", func(w http.ResponseWriter, r *http.Request) {
 			var body struct {
@@ -189,5 +260,64 @@ func gitError(w http.ResponseWriter, err error) {
 		reasonJSON(w, 502, "editor_unavailable", "The operating system could not hand the link to the editor. Check that it is installed and registered for its links.")
 	default:
 		reasonJSON(w, 502, "git_failed", "Git could not produce a diff for this file.")
+	}
+}
+
+// switchError maps a refused or failed branch switch. Git's own output is never included.
+func switchError(w http.ResponseWriter, err error) {
+	var se *gitctx.SwitchError
+	if !errors.As(err, &se) {
+		reasonJSON(w, 502, "git_failed", "Git could not check this branch switch.")
+		return
+	}
+	status := 409
+	switch se.Code {
+	case "invalid_branch":
+		status = 400
+	case "unknown_branch":
+		status = 404
+	case "git_unavailable", "switch_failed", "switch_unverified":
+		status = 502
+	}
+	reasonJSON(w, status, se.Code, se.Message)
+}
+
+// recordSwitch records the start of a branch switch attempt in the operation history and
+// returns the func that records its end, refused or not. Only a well-formed target name is
+// recorded, and it is cleared at the end when it was not an existing local branch.
+func recordSwitch(rec operations.Recorder, root, from, target string) func(error) {
+	if rec == nil {
+		return func(error) {}
+	}
+	started := time.Now()
+	b := operations.BranchSwitch{From: from, To: gitctx.ValidBranchName(target)}
+	id := make([]byte, 16)
+	_, _ = rand.Read(id)
+	op := operations.Operation{ID: hex.EncodeToString(id), Kind: "branch", Status: operations.Running, StartedAt: started.UTC().Format(time.RFC3339), Command: []string{}, VarFiles: []string{}, Replace: []string{}, Diagnostics: []operations.EngineDiagnostic{}, Branch: &b}
+	command := func() []string {
+		if b.To == "" {
+			return []string{}
+		}
+		return append([]string{"git"}, gitctx.SwitchArgs(b.To)...)
+	}
+	op.Command = command()
+	rec.Record(operations.Record{Operation: op, Root: root})
+	return func(err error) {
+		var se *gitctx.SwitchError
+		errors.As(err, &se)
+		end := b
+		end.Ran = se != nil && se.Ran || err == nil
+		if se != nil && (se.Code == "invalid_branch" || se.Code == "unknown_branch") {
+			end.To = ""
+		}
+		b = end
+		op.Branch, op.Command = &end, command()
+		op.Status, op.CompletedAt, op.DurationMs = operations.Succeeded, time.Now().UTC().Format(time.RFC3339), time.Since(started).Milliseconds()
+		if se != nil {
+			op.Status, op.Diagnostic = operations.Failed, &operations.Diagnostic{Code: se.Code, Message: se.Message}
+		} else if err != nil {
+			op.Status = operations.Failed
+		}
+		rec.Record(operations.Record{Operation: op, Root: root, Final: true})
 	}
 }

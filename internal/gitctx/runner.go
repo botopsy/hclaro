@@ -1,8 +1,9 @@
 // Package gitctx reads the local Git context of a project: HEAD, branch, working tree
 // status of IaC files, redacted line diffs of HCL files, a source fingerprint for plans,
 // best-effort source locations of resources, and validated editor links. It never changes
-// a repository: Git runs only through Runner, which accepts a fixed set of read-only
-// subcommands with argv arrays, and never through a shell.
+// a repository through Runner, which accepts a fixed set of read-only subcommands with argv
+// arrays, and never through a shell. The one write is a reviewed switch to an existing local
+// branch (branch.go), which runs through Exec.Switch with its own exact argv.
 package gitctx
 
 import (
@@ -10,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,8 +36,13 @@ var (
 var readOnly = map[string]map[string]bool{
 	"rev-parse": {"--path-format=absolute": true, "--show-toplevel": true, "--git-dir": true, "--git-common-dir": true},
 	// --porcelain=v1 and --untracked-files=normal are the apply preflight's status.
-	"status": {"--porcelain=v2": true, "--porcelain=v1": true, "--branch": true, "-z": true, "--untracked-files=all": true, "--untracked-files=normal": true, "--no-renames": true, "--ignore-submodules=all": true},
-	"diff":   {"--no-ext-diff": true, "--no-textconv": true, "--no-color": true, "--no-renames": true, fullContext: true, "HEAD": true, "--": true},
+	"status": {"--porcelain=v2": true, "--porcelain=v1": true, "--branch": true, "-z": true, "--untracked-files=all": true, "--untracked-files=normal": true, "--no-renames": true, "--ignore-submodules=all": true, "--ignored=traditional": true},
+	// Branch switching reads: the local branch list, the paths two commits differ in, and
+	// whether a path exists in a commit (exact shapes checked in Allowed).
+	"for-each-ref": {branchFormat: true, "refs/heads/": true},
+	"diff-tree":    {"-r": true, "-z": true, "--name-only": true, "--no-renames": true},
+	"cat-file":     {"-t": true},
+	"diff":         {"--no-ext-diff": true, "--no-textconv": true, "--no-color": true, "--no-renames": true, fullContext: true, "HEAD": true, "--": true},
 }
 
 // Allowed reports whether args is a permitted read-only command: a known subcommand, only
@@ -47,6 +54,20 @@ func Allowed(args []string) bool {
 	options, ok := readOnly[args[0]]
 	if !ok {
 		return false
+	}
+	switch args[0] {
+	case "for-each-ref":
+		return slices.Equal(args, []string{"for-each-ref", branchFormat, "refs/heads/"})
+	case "diff-tree":
+		// diff-tree -r -z --name-only --no-renames <commit> <commit>
+		return len(args) == 7 && slices.Equal(args[:5], []string{"diff-tree", "-r", "-z", "--name-only", "--no-renames"}) && commitPattern.MatchString(args[5]) && commitPattern.MatchString(args[6])
+	case "cat-file":
+		// cat-file -t <commit>:<path>
+		if len(args) != 3 || args[1] != "-t" {
+			return false
+		}
+		commit, p, ok := strings.Cut(args[2], ":")
+		return ok && commitPattern.MatchString(commit) && validRepoPath(p) && !hasControl(p)
 	}
 	for i := 1; i < len(args); i++ {
 		a := args[i]
@@ -71,6 +92,9 @@ type Exec struct {
 	Observe func(args []string)
 }
 
+// branchFormat lists each local branch as "<commit> refs/heads/<name>".
+const branchFormat = "--format=%(objectname) %(refname)"
+
 // Environ returns environ without GIT_* variables, plus the fixed settings Hclaro uses.
 func Environ(environ []string) []string {
 	out := make([]string, 0, len(environ)+4)
@@ -88,6 +112,33 @@ func (e Exec) Run(ctx context.Context, dir string, limit int, args ...string) ([
 	if !Allowed(args) {
 		return nil, false, ErrRefused
 	}
+	return e.run(ctx, dir, limit, args)
+}
+
+// SwitchTimeout bounds one git switch.
+const SwitchTimeout = 10 * time.Minute
+
+// SwitchArgs is the only Git write Hclaro runs: a switch to an existing local branch. It
+// never creates a branch (no -c/-C, --no-guess stops remote-tracking guesses), never forces
+// or discards (no --force/--discard-changes/--merge) and does not touch submodules.
+func SwitchArgs(branch string) []string {
+	return []string{"switch", "--no-guess", "--no-recurse-submodules", "--", branch}
+}
+
+// Switch runs SwitchArgs(branch) in dir. The caller has validated branch against the local
+// branch list and checked the working tree under a claim on the whole tree.
+func (e Exec) Switch(ctx context.Context, dir, branch string) error {
+	if ValidBranchName(branch) == "" {
+		return ErrRefused
+	}
+	// Checking out a large tree (or through a filter such as Git LFS) can take a while; a
+	// killed switch would leave a half-updated tree and an index.lock.
+	e.Timeout = max(e.Timeout, SwitchTimeout)
+	_, _, err := e.run(ctx, dir, 64<<10, SwitchArgs(branch))
+	return err
+}
+
+func (e Exec) run(ctx context.Context, dir string, limit int, args []string) ([]byte, bool, error) {
 	exe, err := exec.LookPath("git")
 	if err != nil {
 		return nil, false, ErrGitMissing
@@ -101,7 +152,9 @@ func (e Exec) Run(ctx context.Context, dir string, limit int, args ...string) ([
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	argv := append([]string{"-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "--no-pager", "--no-optional-locks", "-C", dir}, args...)
+	// core.hooksPath is the null device, which is never a folder, so no repository hook
+	// (such as post-checkout) runs.
+	argv := append([]string{"-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.hooksPath=" + os.DevNull, "-c", "submodule.recurse=false", "--no-pager", "--no-optional-locks", "-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, exe, argv...)
 	cmd.Dir = dir
 	cmd.WaitDelay = time.Second

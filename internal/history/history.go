@@ -71,6 +71,7 @@ var kindTable = []kindInfo{
 	{"init", "Initialize", false},
 	{"workspace", "Workspace", true},
 	{"tool", "Project tool", false},
+	{"branch", "Branch switch", false},
 	{KindUnknown, "Unknown operation", true},
 }
 
@@ -390,6 +391,8 @@ func interruptedRisk(kind string) string {
 		return " Downloads under the data directory may be incomplete."
 	case "workspace":
 		return " Check the workspace list with your CLI."
+	case "branch":
+		return " Check the checked-out branch with git status. It did not change infrastructure."
 	}
 	if kindOf(kind).Mutates {
 		return " Infrastructure and state may be partly changed. Check state with your CLI and run a new plan."

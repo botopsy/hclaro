@@ -108,7 +108,7 @@ export type EngineDiagnostic = {
 };
 export type Operation = {
   id: string;
-  kind: 'plan' | 'apply' | 'init' | 'workspace' | 'tool' | 'drift' | 'graph';
+  kind: 'plan' | 'apply' | 'init' | 'workspace' | 'tool' | 'drift' | 'graph' | 'branch';
   // queued, cancelling and unknown are used by Hub initialization and workspace commands only.
   status: 'queued' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
   stage: string;
@@ -1013,7 +1013,7 @@ export type TargetStatus = {
 
 // Operation history (M13): redacted metadata kept on this machine. A historical plan can
 // never be applied; it has no plan file.
-export type HistoryKind = 'plan' | 'replace' | 'import' | 'apply' | 'drift' | 'graph' | 'init' | 'workspace' | 'tool' | 'unknown';
+export type HistoryKind = 'plan' | 'replace' | 'import' | 'apply' | 'drift' | 'graph' | 'init' | 'workspace' | 'tool' | 'branch' | 'unknown';
 export type HistoryStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
 export type HistoryPlan = {
   planId: string;
@@ -1118,6 +1118,28 @@ export type GitContext = {
   counts: { changed: number; untracked: number; outside: number; other: number };
   warnings: { code: string; message: string }[];
   incomplete: boolean;
+  checkedAt: string;
+};
+// Git branch switching (M29): existing local branches only.
+export type GitBranch = { name: string; commit: string; current: boolean };
+export type GitBranchList = {
+  state: GitState;
+  message?: string;
+  head?: GitHead;
+  branches: GitBranch[];
+  hidden: number;
+  incomplete: boolean;
+  checkedAt: string;
+};
+export type GitNotice = { code: string; message: string };
+export type GitSwitchPreview = {
+  from: GitHead;
+  to: GitBranch;
+  workingTree: { clean: boolean; staged: number; modified: number; untracked: number };
+  sourceChanges: { files: number; iac: number; inProject: number };
+  canSwitch: boolean;
+  blocked: GitNotice[];
+  warnings: GitNotice[];
   checkedAt: string;
 };
 export type DiffLine = { kind: 'context' | 'add' | 'delete' | 'note'; old?: number; new?: number; text: string; redacted?: boolean };

@@ -86,6 +86,8 @@ type GitContext struct {
 // the editor opener; a zero Service is not usable, use New.
 type Service struct {
 	Runner Runner
+	// Switcher runs the reviewed branch switch (M29); nil disables switching.
+	Switcher Switcher
 	// Environ supplies TF_DATA_DIR; nil uses the process environment.
 	Environ func() []string
 	// OpenURL hands a validated editor URL to the operating system; tests replace it.
@@ -101,7 +103,7 @@ func New() *Service {
 	if _, err := rand.Read(key); err != nil {
 		panic(err)
 	}
-	return &Service{Runner: Exec{}, OpenURL: OpenURL, ids: ids{key: key}}
+	return &Service{Runner: Exec{}, Switcher: Exec{}, OpenURL: OpenURL, ids: ids{key: key}}
 }
 
 // UseKey replaces the file ID key. Only the synthetic browser harness uses it, because it
@@ -334,8 +336,10 @@ type StatusEntry struct {
 
 // ParsedStatus is a parsed status document.
 type ParsedStatus struct {
-	Head       Head
-	Entries    []StatusEntry
+	Head    Head
+	Entries []StatusEntry
+	// Ignored lists ignored paths when status ran with --ignored; a folder ends in "/".
+	Ignored    []string
 	Incomplete bool
 }
 
@@ -396,14 +400,17 @@ func ParseStatus(b []byte, overflow bool) (ParsedStatus, error) {
 			if r[0] == '2' {
 				i++
 			}
-		case '?':
-			name := strings.TrimPrefix(r, "? ")
-			if name == r || !validRepoPath(name) {
+		case '?', '!':
+			// A whole untracked or ignored folder (or nested repository) ends in "/".
+			name := r[min(2, len(r)):]
+			if r[1:min(2, len(r))] != " " || !validRepoPath(strings.TrimSuffix(name, "/")) {
 				return p, errMalformed
 			}
+			if r[0] == '!' {
+				p.Ignored = append(p.Ignored, name)
+				continue
+			}
 			p.Entries = append(p.Entries, StatusEntry{Path: name, Status: "untracked", Unstaged: true})
-		case '!':
-			// Ignored files are not requested; skip if a configuration adds them.
 		default:
 			return p, errMalformed
 		}

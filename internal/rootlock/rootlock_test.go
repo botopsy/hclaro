@@ -149,3 +149,59 @@ func TestSharedClaims(t *testing.T) {
 	}
 	release()
 }
+
+func TestTreeClaims(t *testing.T) {
+	top := t.TempDir()
+	inner, outside := filepath.Join(top, "envs", "dev"), t.TempDir()
+	if err := os.MkdirAll(inner, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := New()
+	// A running operation inside the tree blocks the tree claim, and so does a shared one.
+	release, _ := s.Acquire(inner, "plan")
+	if _, ok := s.AcquireTree(top, "branch"); ok {
+		t.Fatal("tree claimed while a root inside it is claimed")
+	}
+	release()
+	shared, _ := s.AcquireShared(inner)
+	if _, ok := s.AcquireTree(top, "branch"); ok {
+		t.Fatal("tree claimed while a root inside it is read")
+	}
+	shared()
+	// A claim on a folder containing the tree blocks it too.
+	parent, _ := s.Acquire(filepath.Dir(top), "init")
+	if _, ok := s.AcquireTree(top, "branch"); ok {
+		t.Fatal("tree claimed inside a claimed root")
+	}
+	parent()
+	tree, ok := s.AcquireTree(top, "branch")
+	if !ok {
+		t.Fatal("free tree refused")
+	}
+	for _, root := range []string{top, inner} {
+		if _, ok := s.Acquire(root, "plan"); ok {
+			t.Fatalf("%s claimed during a tree claim", root)
+		}
+		if _, ok := s.AcquireShared(root); ok {
+			t.Fatalf("%s read during a tree claim", root)
+		}
+	}
+	if _, ok := s.AcquireTree(inner, "branch"); ok {
+		t.Fatal("two overlapping tree claims")
+	}
+	if r, ok := s.Acquire(outside, "plan"); !ok {
+		t.Fatal("a root outside the tree is independent")
+	} else {
+		r()
+	}
+	tree()
+	tree()
+	if r, ok := s.Acquire(inner, "plan"); !ok {
+		t.Fatal("tree release did not free the roots")
+	} else {
+		r()
+	}
+	if _, ok := s.AcquireTree(filepath.Join(top, "missing"), "branch"); ok {
+		t.Fatal("a missing tree was claimed")
+	}
+}

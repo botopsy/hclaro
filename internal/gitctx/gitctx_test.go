@@ -109,6 +109,11 @@ func TestAllowedIsReadOnly(t *testing.T) {
 		{"status", "--porcelain=v1", "-z", "--untracked-files=normal"}, // the apply preflight
 		{"rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"},
 		{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", fullContext, "HEAD", "--", ":(literal)main.tf"},
+		// Branch switching reads (M29).
+		{"status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal", "--ignored=traditional", "--no-renames", "--ignore-submodules=all"},
+		{"for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/"},
+		{"diff-tree", "-r", "-z", "--name-only", "--no-renames", strings.Repeat("a", 40), strings.Repeat("b", 40)},
+		{"cat-file", "-t", strings.Repeat("a", 40) + ":envs/prod"},
 	}
 	for _, args := range ok {
 		if !Allowed(args) {
@@ -121,6 +126,14 @@ func TestAllowedIsReadOnly(t *testing.T) {
 		{"status", "--porcelain=v2", "--output=/tmp/x"}, {"status", "-c", "core.pager=sh"},
 		{"diff", "HEAD", "--", "main.tf"}, {"diff", "HEAD", "--", ":(glob)*"}, {"diff", "--ext-diff", "HEAD", "--", ":(literal)a"},
 		{"diff", "HEAD", "--", ":(literal)a", ":(literal)b"}, {"diff", "--no-color"}, {"diff", "--output=x", "--", ":(literal)a"},
+		// The switch is not a read: it runs only through Exec.Switch.
+		{"switch", "dev"}, SwitchArgs("dev"), {"switch", "-c", "x"}, {"branch", "x"}, {"merge", "dev"}, {"rebase", "dev"},
+		{"for-each-ref", "--format=%(refname)", "refs/"}, {"for-each-ref", "--format=%(objectname) %(refname)", "refs/remotes/"},
+		{"for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/", "--shell"},
+		{"diff-tree", "-r", "-z", "--name-only", "--no-renames", "HEAD", "dev"}, {"diff-tree", "-p", strings.Repeat("a", 40), strings.Repeat("b", 40)},
+		{"diff-tree", "-r", "-z", "--name-only", "--no-renames", strings.Repeat("a", 40), strings.Repeat("b", 40), "--output=x"},
+		{"cat-file", "-p", strings.Repeat("a", 40) + ":main.tf"}, {"cat-file", "-t", "HEAD:main.tf"}, {"cat-file", "-t", strings.Repeat("a", 40) + ":../x"},
+		{"cat-file", "--batch"},
 	}
 	for _, args := range bad {
 		if Allowed(args) {

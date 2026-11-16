@@ -57,3 +57,17 @@
   .git-summary { align-items: flex-start; flex-direction: column; }
   .git-badge strong { max-width: 120px; }
 }
+
+/* Branch switching (M29) */
+.branch-switcher { position: relative; display: inline-flex; }
+.branch-trigger { display: inline-flex; align-items: center; padding: 2px 6px; margin-left: -4px; }
+.branch-popover { width: 280px; }
+.branch-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 8px; color: var(--muted); font-size: 12px; }
+.branch-safety { border-top: 1px solid var(--border-soft); margin-top: 6px; padding-top: 8px; }
+.branch-filter { width: 100%; margin: 2px 0 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+.branch-filter:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.switcher-option:disabled { cursor: default; }
+.branch-route { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+.branch-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 4px 0 12px; font-size: 13px; }
+.branch-facts dt { color: var(--muted); }
+.branch-facts dd { margin: 0; overflow-wrap: anywhere; }

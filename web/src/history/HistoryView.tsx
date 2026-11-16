@@ -21,6 +21,7 @@ const kinds: Record<HistoryKind, string> = {
   init: 'Initialize',
   workspace: 'Workspace',
   tool: 'Project tool',
+  branch: 'Branch switch',
   unknown: 'Unknown operation'
 };
 const statusLabels: Record<HistoryStatus, string> = {
