@@ -1669,16 +1669,16 @@ Defects and notes:
 
 - As linux/amd64 (same dispatch, #125). H5c′ SKIPPED: case-insensitive file system.
 
-## 2026-11-16 fu-win-state-read dispatch7 windows-amd64 (offline not verified)
+## 2026-11-16 fu-win-hold dispatch10 windows-amd64 (offline not verified)
 
 | Field | Value |
 | --- | --- |
-| Run ID | 743f7280-483b-4a23-9d4f-4d464003b204 |
-| Started / finished (UTC) | 2026-11-16T11:29:56Z / 2026-11-16T12:30:53Z |
-| Hclaro commit | `8f7ce50c2d828d741681a183c77f24f83357ef23` |
+| Run ID | 88c859ab-640d-4618-9332-424c1604a08b |
+| Started / finished (UTC) | 2026-11-16T14:43:41Z / 2026-11-16T15:20:38Z |
+| Hclaro commit | `9203ae2bdbba4bae1869062425c0c83b35fee32b` |
 | Hclaro version | hclaro 0.1.0-beta.4 |
-| Hclaro binary SHA-256 | `fe85e2382935a01b06182ba20f57bdd0960e34ea9907dfa47e7ffa6cfbf03b9b` |
-| run.json SHA-256 | `824bda0882d8d2b1516a04026ba59d622b1a821b1047098dc98b0a198249e884` |
+| Hclaro binary SHA-256 | `6dfc2adeca135e48cd1697627f36ad959f5ac72660f9e28bd0a19953559a5e48` |
+| run.json SHA-256 | `b855547778ed9ad1b3a1335ef5652cb5d3f2032460dce6f73bf633d887f7b3ff` |
 | Engine versions | 1.17.2 + 1.13.9 |
 | OS / arch / build | windows / amd64 / Microsoft Windows [Version 10.0.26100.33674] |
 | Runner image | windows-2025/win25-vs2026 20261103.298.1 |
@@ -1721,7 +1721,7 @@ Defects and notes:
 | isolatedBefore | system_resolver |  | resolved | false |
 | isolatedBefore | home_read |  | read | false |
 
-Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `show -json`, `workspace list`, `workspace show`.
+Reviewed saved-plan path: 0 scenarios record `reviewedPlanPath`. Direct engine calls (none of them applies, imports or replaces): `init -input=false -no-color`, `lock holder: console -no-color`, `lock holder: plan -input=false -no-color`, `show -json`, `workspace list`, `workspace show`.
 
 Canary: map[absent:116].
 
@@ -1739,7 +1739,7 @@ Canary: map[absent:116].
 | g1-graph-modules-terraform | terraform | launch | PASS |  | 1 in `artifacts/g1-graph-modules-terraform/` |
 | g1-graph-m2616-tofu | tofu | launch | PASS |  | 1 in `artifacts/g1-graph-m2616-tofu/` |
 | g1-graph-modules-tofu | tofu | launch | PASS |  | 1 in `artifacts/g1-graph-modules-tofu/` |
-| l1-state-locked-terraform | terraform | launch | NOT_TESTED | no F-2 lock holder on this platform: named pipes are not supported on Windows | — |
+| l1-state-locked-terraform | terraform | launch | PASS |  | 10 in `artifacts/l1-state-locked-terraform/` |
 | l2-unlock-failed-terraform | terraform | launch | NOT_TESTED | unlock failure not reproducible on Terraform 1.17.2 (F-3 source analysis 2026-11-14, NOT_REPRODUCIBLE for the local backend); synthetic state_unlock_failed coverage stays in internal/engine/planner_test.go and internal/operations/apply_test.go | — |
 | l1-state-locked-tofu | tofu | launch | PASS |  | 10 in `artifacts/l1-state-locked-tofu/` |
 | l2-unlock-failed-tofu | tofu | launch | NOT_TESTED | unlock failure not reproducible on OpenTofu 1.13.9 (F-3 source analysis 2026-11-14, NOT_REPRODUCIBLE for the local backend); synthetic state_unlock_failed coverage stays in internal/engine/planner_test.go and internal/operations/apply_test.go | — |
@@ -1757,12 +1757,12 @@ Canary: map[absent:116].
 | f5-locale-de-tofu | tofu | launch | SKIPPED | LANG is not the locale mechanism on Windows; a display-language test is out of scope | — |
 | a6-interrupt-apply-terraform | terraform | launch | PASS |  | — |
 | a7-shutdown-apply-terraform | terraform | launch | PASS |  | — |
-| a7b-shutdown-grace-terraform | terraform | launch | NOT_TESTED | engine did not outlive the grace period (exited 33s after the interrupt) | — |
+| a7b-shutdown-grace-terraform | terraform | launch | NOT_TESTED | engine did not outlive the grace period (exited 23s after the interrupt) | — |
 | a6-interrupt-apply-tofu | tofu | launch | PASS |  | — |
 | a7-shutdown-apply-tofu | tofu | launch | PASS |  | — |
-| a7b-shutdown-grace-tofu | tofu | launch | NOT_TESTED | engine did not outlive the grace period (exited 23s after the interrupt) | — |
+| a7b-shutdown-grace-tofu | tofu | launch | NOT_TESTED | engine did not outlive the grace period (exited 13s after the interrupt) | — |
 | h1-register-open | terraform+tofu | hub | PASS |  | 12 in `artifacts/h1-register-open/` |
-| h4-parallel-engines | terraform+tofu | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
+| h4-parallel-engines | terraform+tofu | hub | PASS |  | 2 in `artifacts/h4-parallel-engines/` |
 | h2-a1-terraform | terraform | hub | PASS |  | — |
 | h2-a2-terraform | terraform | hub | PASS |  | — |
 | h2-a3-terraform | terraform | hub | PASS |  | — |
@@ -1781,28 +1781,28 @@ Canary: map[absent:116].
 | h2-g1-m2616-tofu | tofu | hub | PASS |  | 1 in `artifacts/h2-g1-m2616-tofu/` |
 | h2-g1-modules-tofu | tofu | hub | PASS |  | 1 in `artifacts/h2-g1-modules-tofu/` |
 | h3-workspaces-tofu | tofu | hub | PASS |  | — |
-| h5a-path-identity-terraform | terraform | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
-| h5b-path-identity-terraform | terraform | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
-| h5c-path-identity-terraform | terraform | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
+| h5a-path-identity-terraform | terraform | hub | PASS |  | — |
+| h5b-path-identity-terraform | terraform | hub | PASS |  | — |
+| h5c-path-identity-terraform | terraform | hub | PASS |  | — |
 | h5c-prime-distinct-case-terraform | terraform | hub | SKIPPED | two folders differing only by case cannot exist on a case-insensitive filesystem (run root filesystem case-sensitive false (probed by the harness; F-4 found APFS case-insensitive on darwin/amd64)) | — |
-| h5d-windows-forms-terraform | terraform | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
+| h5d-windows-forms-terraform | terraform | hub | PASS |  | — |
 | h6-config-terraform | terraform | hub | PASS |  | — |
 | h6-profile-terraform | terraform | hub | PASS |  | — |
 | h6-engine-preference-terraform | terraform | hub | PASS |  | — |
 | h6-binary-terraform | terraform | hub | NOT_TESTED | no second approved terraform binary configured (TF_ALT / TOFU_ALT) | — |
-| h7-busy-edits-terraform | terraform | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
+| h7-busy-edits-terraform | terraform | hub | PASS |  | — |
 | h8-capacity-terraform | terraform | hub | PASS |  | — |
-| h9-close-context-terraform | terraform | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
-| h11-import-no-stall-terraform | terraform | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
+| h9-close-context-terraform | terraform | hub | PASS |  | — |
+| h11-import-no-stall-terraform | terraform | hub | PASS |  | — |
 | h12-remote-backend-terraform | terraform | hub | NOT_TESTED | a remote-backend fixture runs only under enforced isolation (isolation weak-proxy: before: system_resolver: resolved) | — |
 | h6-config-tofu | tofu | hub | PASS |  | — |
 | h6-profile-tofu | tofu | hub | PASS |  | — |
 | h6-engine-preference-tofu | tofu | hub | PASS |  | — |
 | h6-binary-tofu | tofu | hub | NOT_TESTED | no second approved tofu binary configured (TF_ALT / TOFU_ALT) | — |
-| h7-busy-edits-tofu | tofu | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
+| h7-busy-edits-tofu | tofu | hub | PASS |  | — |
 | h8-capacity-tofu | tofu | hub | PASS |  | — |
-| h9-close-context-tofu | tofu | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
-| h11-import-no-stall-tofu | tofu | hub | NOT_TESTED | no named pipe to hold an operation on this platform: named pipes are not supported on Windows | — |
+| h9-close-context-tofu | tofu | hub | PASS |  | — |
+| h11-import-no-stall-tofu | tofu | hub | PASS |  | — |
 | h12-remote-backend-tofu | tofu | hub | NOT_TESTED | a remote-backend fixture runs only under enforced isolation (isolation weak-proxy: before: system_resolver: resolved) | — |
 | h10-shutdown-applies | terraform+tofu | hub | NOT_TESTED | the PowerShell gate is approved for WIN1 (A6, A7, A7b) only; H10 on Windows needs its own approval | — |
 | a1-apply-terraform | terraform | launch | PASS |  | — |
@@ -1829,14 +1829,14 @@ Canary: map[absent:116].
 | w1-workspaces-tofu | tofu | hub | PASS |  | — |
 | w3-launch-cli-default-tofu | tofu | launch | PASS |  | — |
 | w2-inherited-force-tofu | tofu | hub | PASS |  | — |
-| a5-apply-options-terraform | terraform | launch | NOT_TESTED | no F-2 lock holder on this platform: named pipes are not supported on Windows | — |
+| a5-apply-options-terraform | terraform | launch | NOT_TESTED | (b) Terraform's -lock-timeout does not wait for a local-backend lock held by another process on Windows: the apply fails at once with state_locked (engine behaviour; Hclaro passed -lock-timeout=120s, (a)) | — |
 | a5-apply-options-tofu | tofu | launch | PASS |  | — |
-| win1-interrupt-terraform | terraform | launch | NOT_TESTED | WIN1 needs A6, A7 and A7b PASS on the PowerShell gate: a7b-shutdown-grace-terraform NOT_TESTED: engine did not outlive the grace period (exited 33s after the interrupt) | — |
+| win1-interrupt-terraform | terraform | launch | NOT_TESTED | WIN1 needs A6, A7 and A7b PASS on the PowerShell gate: a7b-shutdown-grace-terraform NOT_TESTED: engine did not outlive the grace period (exited 23s after the interrupt) | — |
 | win3-saved-plan-files-terraform | terraform | launch | PASS |  | 2 in `artifacts/win3-saved-plan-files-terraform/` |
 | win3-plan-expiry-terraform | terraform | launch | NOT_TESTED | saved-plan expiry is one hour (PlanMaxAge) and has no setting to shorten it; not waited for | — |
 | win4-crlf-import-terraform | terraform | launch | PASS |  | — |
 | win4-crlf-generated-terraform | terraform | launch | PASS |  | 1 in `artifacts/win4-crlf-generated-terraform/` |
-| win1-interrupt-tofu | tofu | launch | NOT_TESTED | WIN1 needs A6, A7 and A7b PASS on the PowerShell gate: a7b-shutdown-grace-tofu NOT_TESTED: engine did not outlive the grace period (exited 23s after the interrupt) | — |
+| win1-interrupt-tofu | tofu | launch | NOT_TESTED | WIN1 needs A6, A7 and A7b PASS on the PowerShell gate: a7b-shutdown-grace-tofu NOT_TESTED: engine did not outlive the grace period (exited 13s after the interrupt) | — |
 | win3-saved-plan-files-tofu | tofu | launch | PASS |  | 2 in `artifacts/win3-saved-plan-files-tofu/` |
 | win3-plan-expiry-tofu | tofu | launch | NOT_TESTED | saved-plan expiry is one hour (PlanMaxAge) and has no setting to shorten it; not waited for | — |
 | win4-crlf-import-tofu | tofu | launch | PASS |  | — |
@@ -1846,9 +1846,11 @@ Canary: map[absent:116].
 
 Defects and notes:
 
-- Windows requalification run after FU-WIN-STATE-READ (#132), workflow run 43857995952 from `8f7ce50`. It replaces dispatch 5 of M27.07 (run 43815077862, `fcab974`) as the Windows source. In dispatch 5, `l1-state-locked-tofu` was a FAIL: Hclaro reported a state read blocked by the holder's lock as `state_unavailable` and refused plans with `planning_unavailable`. Here it is a PASS. Every other scenario has the same status in both runs.
+- Windows run after FU-WIN-HOLD (#133, #136, #137), workflow run 43888532622 from `9203ae2`. It replaces the FU-WIN-STATE-READ requalification run (43857995952, `8f7ce50`) as the Windows source. A harness named-pipe hold now holds operations open on Windows, so H4, H5a/H5b/H5c/H5d (including WIN2), H7, H9, H11 and Terraform L1 change from NOT_TESTED to PASS. Every other scenario has the same status in both runs.
+- Terraform A5 is NOT_TESTED on Windows (owner decision 2026-11-16): Terraform 1.17.2's `-lock-timeout` does not wait for a local-backend lock held by another process on Windows, and the apply fails at once with `state_locked`. This is engine behaviour; Hclaro passed `-lock-timeout=120s` (part (a)). OpenTofu A5 PASS.
+- Terraform L1 on Windows accepts the engine's lock-acquisition error naming the blocked state read in place of Lock Info (owner decision 2026-11-16); the code is still `state_locked`.
 - Isolation `weak-proxy`: the DNS Client service resolves names, the home directory is readable, and per-program firewall rules do not cover per-process engine copies or provider plugins. There is no Windows network-isolation claim, and the isolation hold stays open (FU-WIN-ISO).
-- N1, H12 and the operation-hold scenarios (H4, the H5 claim halves including WIN2, H7, H9, H11, Terraform L1 and the Terraform A5 lock part) are NOT_TESTED on Windows (FU-WIN-HOLD).
+- N1 and H12 are NOT_TESTED on Windows (no enforced isolation, FU-WIN-ISO). H10 is NOT_TESTED (the PowerShell gate is approved for WIN1 only).
 
 ## 2026-11-15 m27-07 darwin-amd64-platform
 
