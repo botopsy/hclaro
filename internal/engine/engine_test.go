@@ -99,12 +99,17 @@ func TestFakeExecutable(t *testing.T) {
 // (FU-WIN-STATE-READ step 0), with its colour codes.
 const lockedRead = "\x1b[31m╷\x1b[0m\x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\x1b[1m\x1b[31mError: \x1b[0m\x1b[0m\x1b[1mfailed to load state: Failed to read state file: The state file could not be read: read terraform.tfstate: The process cannot access the file because another process has locked a portion of the file.\x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\n\x1b[31m╵\x1b[0m\x1b[0m\n"
 
+// lockedReadTerraform is Terraform 1.17.2's `show -json` stderr under the Windows holder (run
+// 43871517546): the same text, wrapped across "│ " lines with colour codes.
+const lockedReadTerraform = "\x1b[31m╷\x1b[0m\x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\x1b[1m\x1b[31mError: \x1b[0m\x1b[0m\x1b[1mFailed to read state file\x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\n\x1b[31m│\x1b[0m \x1b[0m\x1b[0mThe state file could not be read: read terraform.tfstate: The process\n\x1b[31m│\x1b[0m \x1b[0mcannot access the file because another process has locked a portion of the\n\x1b[31m│\x1b[0m \x1b[0mfile.\n\x1b[31m╵\x1b[0m\x1b[0m\n"
+
 // The Windows lock-violation text is a lock only with a state-file read; anything else keeps
 // today's class. Windows "Access is denied." matches no class (not `access ?denied`), so it
 // stays generic rather than becoming a lock.
 func TestClassifyLockedStateRead(t *testing.T) {
 	for text, want := range map[string]string{
-		lockedRead: "state_locked",
+		lockedRead:          "state_locked",
+		lockedReadTerraform: "state_locked",
 		"Error: Failed to read state file: The state file could not be read: read terraform.tfstate.d/qa/terraform.tfstate: The process cannot access the file because another process has locked a portion of the file.": "state_locked",
 		"Error: AccessDenied: not authorized to read the state bucket": "credentials",
 		"Error: Access is denied.":                                     "",
@@ -142,6 +147,7 @@ func TestReadFailureIsClassifiedWithoutStderr(t *testing.T) {
 		{"Error: Backend initialization required, please run \"terraform init\" SECRET_TOKEN_x", ErrReadInitRequired, "needs init"},
 		// OpenTofu 1.13.9 on Windows under another process's state lock (run 43834356151).
 		{lockedRead, ErrReadStateLocked, "holds the state lock"},
+		{lockedReadTerraform, ErrReadStateLocked, "holds the state lock"},
 		// Other lock text on a read keeps the generic failure (unchanged outside Windows).
 		{"Error: Error acquiring the state lock\nLock Info: SECRET_TOKEN_x", nil, "fallback"},
 		{"Error: something else entirely SECRET_TOKEN_x", nil, "fallback"},

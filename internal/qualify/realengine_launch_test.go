@@ -791,26 +791,47 @@ func TestRealLaunchOptions(t *testing.T) {
 				_ = holder.Release()
 				s.NotTested("(b) the holder released the lock before the apply ran")
 			}
-			if err != nil || !waiting {
-				// Without the message, the apply still running after 60 s while the holder holds
-				// the lock shows it waited (lock timeout 120 s).
-				var now Operation
-				if r, err := h.client.Do("GET", "operations/"+started.ID, nil, &now); err != nil || r.Status != 200 || now.Status != "running" {
-					_ = holder.Release()
-					s.Fatalf("(b) no lock-wait message and the apply is %q, not waiting: %v %d %.300s", now.Status, err, r.Status, r.Body)
+			// Terraform on Windows (run 43871517546): its lock acquisition cannot read the state
+			// another process has locked, fails at once and does not retry, so -lock-timeout does
+			// not wait. Owner decision 2026-11-16: (b) is NOT_TESTED there, after (c) runs.
+			bEngineLimit := ""
+			if runtime.GOOS == "windows" && name == "terraform" && (err != nil || !waiting) {
+				done := s.FollowOp(h, started.ID, 5*time.Minute)
+				code := ""
+				if done.Diagnostic != nil {
+					code = done.Diagnostic.Code
 				}
-				s.Errorf("(b) the apply waited 60 s for the lock, but Hclaro's operation log shows no lock-wait message (M27.03 defect D-3: -json type state_lock_acquire is dropped)")
+				s.Observe("(b) Windows Terraform: apply %s outcome %q diagnostic %q without waiting (holder alive %v)", done.Status, done.Outcome, code, holder.Alive())
+				if done.Status == "running" || code != "state_locked" || done.Outcome != "not_applied" {
+					_ = holder.Release()
+					s.Fatalf("(b) Windows Terraform: apply %s %q %q, want a refused apply (state_locked, not_applied)", done.Status, done.Outcome, code)
+				}
+				if err := holder.Release(); err != nil {
+					s.Fatalf("(b) %v", err)
+				}
+				bEngineLimit = "(b) Terraform's -lock-timeout does not wait for a local-backend lock held by another process on Windows: the apply fails at once with state_locked (engine behaviour; Hclaro passed -lock-timeout=120s, (a))"
+			} else {
+				if err != nil || !waiting {
+					// Without the message, the apply still running after 60 s while the holder holds
+					// the lock shows it waited (lock timeout 120 s).
+					var now Operation
+					if r, err := h.client.Do("GET", "operations/"+started.ID, nil, &now); err != nil || r.Status != 200 || now.Status != "running" {
+						_ = holder.Release()
+						s.Fatalf("(b) no lock-wait message and the apply is %q, not waiting: %v %d %.300s", now.Status, err, r.Status, r.Body)
+					}
+					s.Errorf("(b) the apply waited 60 s for the lock, but Hclaro's operation log shows no lock-wait message (M27.03 defect D-3: -json type state_lock_acquire is dropped)")
+				}
+				release := time.Now().UTC()
+				if err := holder.Release(); err != nil {
+					s.Fatalf("(b) %v", err)
+				}
+				done := s.FollowOp(h, started.ID, 5*time.Minute)
+				finished, _ := time.Parse(time.RFC3339Nano, done.CompletedAt)
+				if done.Outcome != "applied" || finished.Before(release.Truncate(time.Second)) {
+					s.Fatalf("(b) apply %s %s, finished %s, released %s", done.Status, done.Outcome, done.CompletedAt, release.Format(time.RFC3339Nano))
+				}
+				s.Observe("(b) holder %q released %s, apply finished %s", od9(name), release.Format(time.RFC3339Nano), done.CompletedAt)
 			}
-			release := time.Now().UTC()
-			if err := holder.Release(); err != nil {
-				s.Fatalf("(b) %v", err)
-			}
-			done := s.FollowOp(h, started.ID, 5*time.Minute)
-			finished, _ := time.Parse(time.RFC3339Nano, done.CompletedAt)
-			if done.Outcome != "applied" || finished.Before(release.Truncate(time.Second)) {
-				s.Fatalf("(b) apply %s %s, finished %s, released %s", done.Status, done.Outcome, done.CompletedAt, release.Format(time.RFC3339Nano))
-			}
-			s.Observe("(b) holder %q released %s, apply finished %s", od9(name), release.Format(time.RFC3339Nano), done.CompletedAt)
 			// (c) Short timeout with the holder kept: state_locked, state unchanged.
 			c := createProfile(s, h, pid, "a5-short", name, []string{"gen3.tfvars"}, 0, 2)
 			detail = s.LaunchPlanProfile(h, project, name, c, []string{"gen3.tfvars"})
@@ -826,7 +847,7 @@ func TestRealLaunchOptions(t *testing.T) {
 				_ = holder.Release()
 				s.Fatalf("(c) apply: %d %s", r.Status, r.Code)
 			}
-			done = s.FollowOp(h, started.ID, 5*time.Minute)
+			done := s.FollowOp(h, started.ID, 5*time.Minute)
 			alive := holder.Alive()
 			if err := holder.Release(); err != nil {
 				s.Fatalf("(c) %v", err)
@@ -841,6 +862,9 @@ func TestRealLaunchOptions(t *testing.T) {
 			}
 			assertStateUnchanged(s, project, sum, serial, "after the locked apply")
 			_ = env
+			if bEngineLimit != "" {
+				s.NotTested(bEngineLimit)
+			}
 		})
 	}
 }
