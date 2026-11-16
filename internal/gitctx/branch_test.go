@@ -106,7 +106,8 @@ func TestSwitchBetweenEnvironmentBranches(t *testing.T) {
 			t.Fatalf("%s: %+v %v", target, r, err)
 		}
 		b, _ := os.ReadFile(filepath.Join(dir, "main.tf"))
-		if want := "# " + target + "\n"; target != "main" && !strings.HasPrefix(string(b), want) {
+		// The user's Git configuration (core.autocrlf on Windows) decides line endings.
+		if want := "# " + target + "\n"; target != "main" && !strings.HasPrefix(strings.ReplaceAll(string(b), "\r\n", "\n"), want) {
 			t.Fatalf("%s: main.tf is %q", target, b)
 		}
 		list := s.Branches(context.Background(), dir)
