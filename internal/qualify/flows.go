@@ -196,8 +196,9 @@ func (s *Scenario) HubRegister(h *Hclaro, project, preference, expected string) 
 	return p.ID
 }
 
-// StartHub starts `hclaro --hub --no-browser`, with --experimental-hub-execution only when
-// hubFlag is set (M27.05 scenarios).
+// StartHub starts `hclaro --hub --no-browser`, with --experimental-hub-execution (now the default,
+// kept so the command line shows it) only when hubFlag is set (M27.05 scenarios); otherwise
+// StartHclaro adds --no-hub-execution.
 func (s *Scenario) StartHub(dirs ProcessDirs, env []string, hubFlag bool) *Hclaro {
 	args := []string{"--hub", "--no-browser"}
 	if hubFlag {

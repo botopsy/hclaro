@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Changed:
+
+- Hub execution is on by default: Hub workspaces can be planned and applied (plans, replacements, imports through a reviewed plan, applies, drift scans, dependency graphs and AWS discovery). Start Hclaro with the new `--no-hub-execution` flag to keep Hub workspaces read-only, as before. `--experimental-hub-execution` is still accepted and changes nothing. Applies still need a reviewed saved plan and your confirmation. Real-engine runs cover the local backend only (support matrix HUB-02 to HUB-17; Windows without verified network isolation); every other backend and engine pair is not run with a real engine (HUB-01). (OD-11)
+
 Fixes:
 
 - Fix: on Windows, a state read while another process held the state lock (for example a `tofu console` in a terminal) made the workspace *State unavailable*, with advice about credentials and VPN, and planning stayed off until **Read again**. The workspace now says another process holds the state lock, a plan is refused with `state_locked`, and Hclaro reads the state again on its own for about two minutes. Hclaro still never unlocks state. The Windows message is recognised in English only. Requalified on Windows with OpenTofu 1.13.9 and Terraform 1.17.2 (workflow run 43888532622). Terraform prints the same message wrapped across lines; it is now recognised too. On Windows, Terraform's `-lock-timeout` does not wait for a lock held by another process, and the apply is refused at once with `state_locked`. (FU-WIN-STATE-READ, FU-WIN-HOLD)

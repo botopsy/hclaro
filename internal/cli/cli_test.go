@@ -73,19 +73,29 @@ func TestExportHistory(t *testing.T) {
 	}
 }
 
-// Hub execution is a hidden, experimental opt-in: off by default and not listed in --help.
-func TestHubExecutionIsAHiddenOptIn(t *testing.T) {
-	if o, err := Parse([]string{}, io.Discard); err != nil || o.HubExecution {
-		t.Fatalf("hub execution by default: %+v %v", o, err)
+// Hub execution is on by default (OD-11); --no-hub-execution is the listed opt-out and the
+// old --experimental-hub-execution opt-in is a hidden no-op that never turns it off.
+func TestHubExecutionDefaultAndOptOut(t *testing.T) {
+	cases := []struct {
+		args []string
+		want bool
+	}{
+		{nil, true},
+		{[]string{"--experimental-hub-execution"}, true},
+		{[]string{"--experimental-hub-execution=false"}, true},
+		{[]string{"--no-hub-execution"}, false},
+		{[]string{"--experimental-hub-execution", "--no-hub-execution"}, false},
 	}
-	if o, err := Parse([]string{"--experimental-hub-execution"}, io.Discard); err != nil || !o.HubExecution {
-		t.Fatalf("--experimental-hub-execution: %+v %v", o, err)
+	for _, c := range cases {
+		if o, err := Parse(c.args, io.Discard); err != nil || o.HubExecution != c.want {
+			t.Fatalf("%v: hub execution %v, want %v (%v)", c.args, o.HubExecution, c.want, err)
+		}
 	}
 	var help strings.Builder
 	if _, err := Parse([]string{"-h"}, &help); !errors.Is(err, flag.ErrHelp) {
 		t.Fatal(err)
 	}
-	if strings.Contains(help.String(), "hub-execution") || !strings.Contains(help.String(), "-strict-local") || !strings.Contains(help.String(), "-export-history file") {
+	if strings.Contains(help.String(), "experimental-hub-execution") || !strings.Contains(help.String(), "-no-hub-execution") || !strings.Contains(help.String(), "-strict-local") || !strings.Contains(help.String(), "-export-history file") {
 		t.Fatalf("help:\n%s", help.String())
 	}
 }

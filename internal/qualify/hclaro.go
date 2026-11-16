@@ -59,6 +59,10 @@ func (s *Scenario) StartHclaro(dirs ProcessDirs, env []string, extra map[string]
 	if err := CheckEnvironment(env, extra); err != nil {
 		return nil, err
 	}
+	if !s.result.HubExecutionFlag {
+		// Hub execution is on by default since OD-11; a scenario recorded without it must turn it off.
+		args = append(args, "--no-hub-execution")
+	}
 	for k := range extra {
 		s.result.ExtraEnvironment = append(s.result.ExtraEnvironment, k)
 	}
