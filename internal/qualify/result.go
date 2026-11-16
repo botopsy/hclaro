@@ -287,9 +287,9 @@ func NewSanitizer(canary, tmp, home, repo, user, host string) *Sanitizer {
 	return s
 }
 
-// pathForms returns a path as given, with symlinks resolved (macOS /tmp → /private/tmp), and
-// the Windows 8.3 short form of each (C:\Users\RUNNER~1, seen unsanitised in an H5d
-// observation of run 43815077862).
+// pathForms returns a path as given, with symlinks resolved (macOS /tmp → /private/tmp), the
+// Windows 8.3 short form of each, and each with the other drive-letter case. The H5d
+// observation of run 43815077862 kept both C:\Users\RUNNER~1\… and c:\Users\….
 func pathForms(p string) []string {
 	if p == "" {
 		return nil
@@ -301,6 +301,15 @@ func pathForms(p string) []string {
 	for _, v := range out {
 		if sp := shortPath(v); sp != "" && sp != v {
 			out = append(out, sp)
+		}
+	}
+	for _, v := range out {
+		if len(v) > 1 && v[1] == ':' {
+			if d := strings.ToLower(v[:1]); d != v[:1] {
+				out = append(out, d+v[1:])
+			} else {
+				out = append(out, strings.ToUpper(v[:1])+v[1:])
+			}
 		}
 	}
 	return out
