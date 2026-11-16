@@ -385,6 +385,14 @@ func l1Snapshot(s *Scenario, h *Hclaro, when string) {
 	s.Observe("L1 %s (%s): workspace %d status %q diagnostic %q canPlan %v; %d operations recorded", when, at, r.Status, ws.Status, diag, ws.Info.Capabilities["canPlan"], n)
 }
 
+// windowsLockRead reports whether engine diagnostics show a lock acquisition that failed
+// because another process's lock blocked reading the state (Terraform on Windows): both the
+// lock error and the OS lock-violation text, whatever the line wrapping.
+func windowsLockRead(d string) bool {
+	flat := strings.Join(strings.Fields(strings.ToLower(d)), " ")
+	return strings.Contains(flat, "error acquiring the state lock") && strings.Contains(flat, "another process has locked a portion of the file")
+}
+
 // l1RereadBound is Hclaro's automatic re-read bound after a lock-blocked read (operations
 // lockRetryDelays, about 2 min) plus slack for one engine read.
 const l1RereadBound = 150 * time.Second
@@ -507,8 +515,14 @@ func TestRealLocks(t *testing.T) {
 				if err != nil || now != info || !holder.Alive() {
 					s.Fatalf("L1 %s: the lock-info file changed or went away while the holder held it", what)
 				}
-				if !strings.Contains(diagnostics(op), "Lock Info") {
-					s.Errorf("L1 %s: no lock info in the engine diagnostics: %q", what, diagnostics(op))
+				// On Windows Terraform cannot read the held lock's info and reports the blocked
+				// read instead (run 43871517546); owner decision 2026-11-16 accepts that there only.
+				switch d := diagnostics(op); {
+				case strings.Contains(d, "Lock Info"):
+				case runtime.GOOS == "windows" && windowsLockRead(d):
+					s.Observe("L1 %s: no Lock Info; the engine reports the state lock blocked by another process's lock (Windows)", what)
+				default:
+					s.Errorf("L1 %s: no lock info in the engine diagnostics: %q", what, d)
 				}
 				// On Windows the holder's lock blocks every read of terraform.tfstate (run
 				// 43760321517: "another process has locked a portion of the file"), so the state is
