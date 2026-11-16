@@ -809,6 +809,16 @@ func TestRealLaunchOptions(t *testing.T) {
 				if err := holder.Release(); err != nil {
 					s.Fatalf("(b) %v", err)
 				}
+				// Hclaro's read after the refused apply hit the lock, so the workspace is
+				// state_locked until its automatic re-read (FU-WIN-STATE-READ); (c) plans after it.
+				start := time.Now()
+				for status := ""; status != "ready" && status != "empty"; time.Sleep(time.Second) {
+					if time.Since(start) > l1RereadBound {
+						s.Fatalf("(b) workspace not read again %v after the release (last status %q)", l1RereadBound, status)
+					}
+					status, _, _ = l1Workspace(s, h)
+				}
+				s.Observe("(b) workspace ready %v after the release, without Read again", time.Since(start).Round(time.Second))
 				bEngineLimit = "(b) Terraform's -lock-timeout does not wait for a local-backend lock held by another process on Windows: the apply fails at once with state_locked (engine behaviour; Hclaro passed -lock-timeout=120s, (a))"
 			} else {
 				if err != nil || !waiting {
