@@ -159,7 +159,8 @@ func TestSanitizer(t *testing.T) {
 	}
 	if hits, err := ScanOut(dir, "alice"); err != nil || len(hits) != 1 {
 		t.Errorf("Windows user-folder path not found: %v %v", hits, err)
-	}	// Drive-letter case variants (any OS: the form is plain text).
+	}
+	// Drive-letter case variants (any OS: the form is plain text).
 	w := NewSanitizer("", `C:\Users\bob\Temp\run`, "", "", "", "")
 	if got := w.String(`c:\Users\bob\Temp\run\x C:\Users\bob\Temp\run\y`); got != `<TMP>\x <TMP>\y` {
 		t.Errorf("drive-letter case: %s", got)
