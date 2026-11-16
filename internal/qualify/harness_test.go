@@ -370,6 +370,13 @@ func TestRealEngineTagNotInCI(t *testing.T) {
 				t.Errorf("%s: %q is not allowed in the real-engine workflow", f, bad)
 			}
 		}
+		// A free-text input reaches the job only as an env value, never interpolated into a
+		// script (injection); the platform choice may also select the matrix.
+		for _, line := range strings.Split(w, "\n") {
+			if strings.Contains(line, "inputs.run_filter") && strings.TrimSpace(line) != "RUN_FILTER: ${{ inputs.run_filter }}" {
+				t.Errorf("%s: inputs.run_filter outside its env entry: %q", f, strings.TrimSpace(line))
+			}
+		}
 		if strings.Count(w, "uses: actions/checkout@") != strings.Count(w, "persist-credentials: false") {
 			t.Errorf("%s: every checkout needs persist-credentials: false", f)
 		}

@@ -2,6 +2,8 @@ package qualify
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -139,6 +141,21 @@ func TestEvidenceRows(t *testing.T) {
 	r.Scenarios = []ScenarioResult{{ID: "f5-hub-stop-terraform", Engine: "terraform", Status: Pass}}
 	if rows, err := Rows(r, ""); err != nil || len(rows) != 0 {
 		t.Errorf("F-5 rows %v %v", rows, err)
+	}
+}
+
+func TestRunFilter(t *testing.T) {
+	dir := t.TempDir()
+	if f, err := RunFilter(dir); err != nil || f != FullFilter {
+		t.Fatalf("no file: %q %v", f, err)
+	}
+	for content, want := range map[string]string{"^TestReal\n": FullFilter, "^TestRealLocks$\r\n": "^TestRealLocks$"} {
+		if err := os.WriteFile(filepath.Join(dir, "run-filter.txt"), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if f, err := RunFilter(dir); err != nil || f != want {
+			t.Errorf("%q: %q %v", content, f, err)
+		}
 	}
 }
 

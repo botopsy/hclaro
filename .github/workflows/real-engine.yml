@@ -15,6 +15,12 @@ on:
         type: choice
         default: all
         options: [all, windows_amd64]
+      run_filter:
+        # A narrower -test.run makes a recheck take minutes. A filtered run is partial: its
+        # run-filter.txt marks it, and the M27.08 evidence validator never uses it for rows.
+        description: Go test filter for the real-engine scenarios (default ^TestReal = every scenario)
+        type: string
+        default: '^TestReal'
 permissions:
   contents: read
 defaults:
@@ -33,6 +39,8 @@ jobs:
       RUNNER_LABEL: ${{ matrix.runner }}
       PLATFORM: ${{ matrix.platform }}
       ISOLATION: ${{ matrix.isolation }}
+      # Passed only through the environment, never interpolated into a script.
+      RUN_FILTER: ${{ inputs.run_filter }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,6 +49,15 @@ jobs:
         with:
           go-version: '1.27.4'
           cache: false
+      - name: Check the run filter
+        run: |
+          set -euo pipefail
+          # Test names, subtest paths and regexp operators only; it must select real-engine tests.
+          if [ "${#RUN_FILTER}" -gt 200 ] || ! [[ $RUN_FILTER =~ ^\^?\(?TestReal[A-Za-z0-9_/|().*+?$^-]*$ ]]; then
+            echo "run_filter must start with TestReal (optionally ^ and a group) and use only test-name and regexp characters, at most 200: $RUN_FILTER"
+            exit 1
+          fi
+          echo "run filter: $RUN_FILTER$( [ "$RUN_FILTER" = '^TestReal' ] || echo ' (PARTIAL run: not usable as matrix evidence)')" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Record the environment
         run: |
           set -euo pipefail
@@ -77,6 +94,7 @@ jobs:
           TF="$RUNNER_TEMP/q/engines/terraform-1.17.2-$PLATFORM/terraform"
           TOFU="$RUNNER_TEMP/q/engines/opentofu-1.13.9-$PLATFORM/tofu"
           MIRROR="$RUNNER_TEMP/q/mirror" OUT="$RUNNER_TEMP/q/out/qualify"
+          RUN_FILTER="$RUN_FILTER"
       - name: Qualify (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -85,6 +103,10 @@ jobs:
           -Terraform "$env:RUNNER_TEMP\q\engines\terraform-1.17.2-$env:PLATFORM\terraform.exe"
           -Tofu "$env:RUNNER_TEMP\q\engines\opentofu-1.13.9-$env:PLATFORM\tofu.exe"
           -Mirror "$env:RUNNER_TEMP\q\mirror" -Out "$env:RUNNER_TEMP\q\out\qualify" -Isolation $env:ISOLATION
+          -RunFilter $env:RUN_FILTER
+      - name: Record the run filter
+        if: always()
+        run: mkdir -p "$RUNNER_TEMP/q/out/qualify" && printf '%s\n' "$RUN_FILTER" > "$RUNNER_TEMP/q/out/qualify/run-filter.txt"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

@@ -3,7 +3,11 @@ package qualify
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -71,6 +75,23 @@ func ValidateRun(raw []byte, rows bool) (RunResult, []error) {
 		bad("unsanitised path %q", m)
 	}
 	return r, errs
+}
+
+// FullFilter is the default -test.run of a qualification run: every real-engine scenario.
+const FullFilter = "^TestReal"
+
+// RunFilter returns the test filter recorded next to a run.json (run-filter.txt, written by
+// the real-engine workflow); a run without the file used the default. A run with another
+// filter is partial and never a source of matrix rows.
+func RunFilter(dir string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "run-filter.txt"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return FullFilter, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 // Offline reports whether the run's isolation was enforced; anything else is "offline not verified".
