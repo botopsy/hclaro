@@ -321,7 +321,7 @@ It also records the engine version, platform, setup command, and the CLI config 
 ### L1 diagnostics
 
 L1 records Hclaro's `GET workspace` response (status, diagnostic, capabilities) and `GET operations` (each engine invocation's argv and status) as artifacts, with UTC timestamps, at three points:
-- after the refused apply;
+- after the refused apply, followed by one direct `show -json` (already on the direct-call list) while the holder still holds the lock: its sanitised error text goes to `show-under-holder.txt`, and a successful read is recorded only by its size (FU-WIN-STATE-READ step 0: the exact Windows text for Hclaro's post-apply state read). It is diagnostic only and asserts nothing;
 - at a plan refusal, together with the refusal body;
 - after the holder's release, on every exit path, with Hclaro's stdout and stderr.
 
