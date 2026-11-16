@@ -105,13 +105,15 @@
       ]
     },
     {
-      "label": "fu-win-state-read dispatch7 windows-amd64",
-      "path": "fu-win-state-read-2026-11-16/dispatch7/real-engine-windows_amd64/qualify/run.json",
+      "label": "fu-win-hold dispatch10 windows-amd64",
+      "path": "fu-win-hold-2026-11-16/dispatch10/real-engine-windows_amd64/qualify/run.json",
       "rows": true,
       "notes": [
-        "Windows requalification run after FU-WIN-STATE-READ (#132), workflow run 43857995952 from `8f7ce50`. It replaces dispatch 5 of M27.07 (run 43815077862, `fcab974`) as the Windows source. In dispatch 5, `l1-state-locked-tofu` was a FAIL: Hclaro reported a state read blocked by the holder's lock as `state_unavailable` and refused plans with `planning_unavailable`. Here it is a PASS. Every other scenario has the same status in both runs.",
+        "Windows run after FU-WIN-HOLD (#133, #136, #137), workflow run 43888532622 from `9203ae2`. It replaces the FU-WIN-STATE-READ requalification run (43857995952, `8f7ce50`) as the Windows source. A harness named-pipe hold now holds operations open on Windows, so H4, H5a/H5b/H5c/H5d (including WIN2), H7, H9, H11 and Terraform L1 change from NOT_TESTED to PASS. Every other scenario has the same status in both runs.",
+        "Terraform A5 is NOT_TESTED on Windows (owner decision 2026-11-16): Terraform 1.17.2's `-lock-timeout` does not wait for a local-backend lock held by another process on Windows, and the apply fails at once with `state_locked`. This is engine behaviour; Hclaro passed `-lock-timeout=120s` (part (a)). OpenTofu A5 PASS.",
+        "Terraform L1 on Windows accepts the engine's lock-acquisition error naming the blocked state read in place of Lock Info (owner decision 2026-11-16); the code is still `state_locked`.",
         "Isolation `weak-proxy`: the DNS Client service resolves names, the home directory is readable, and per-program firewall rules do not cover per-process engine copies or provider plugins. There is no Windows network-isolation claim, and the isolation hold stays open (FU-WIN-ISO).",
-        "N1, H12 and the operation-hold scenarios (H4, the H5 claim halves including WIN2, H7, H9, H11, Terraform L1 and the Terraform A5 lock part) are NOT_TESTED on Windows (FU-WIN-HOLD)."
+        "N1 and H12 are NOT_TESTED on Windows (no enforced isolation, FU-WIN-ISO). H10 is NOT_TESTED (the PowerShell gate is approved for WIN1 only)."
       ]
     },
     {
