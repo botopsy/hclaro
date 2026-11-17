@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,7 +98,8 @@ func TestAIHeadlessRun(t *testing.T) {
 	}
 
 	// A blocked package was never stored, so its hash cannot be sent.
-	w := s.do("POST", "/api/v1/ai/packages", `{"kind":"import","import":{"address":"aws_s3_bucket.x","id":"`+root+`/bucket","file":"imports.tf"}}`)
+	// %q escapes Windows backslashes so the body stays valid JSON.
+	w := s.do("POST", "/api/v1/ai/packages", fmt.Sprintf(`{"kind":"import","import":{"address":"aws_s3_bucket.x","id":%q,"file":"imports.tf"}}`, root+"/bucket"))
 	if w.Code != 422 {
 		t.Fatalf("%d", w.Code)
 	}
