@@ -36,7 +36,8 @@ const messages: Record<string, string> = {
   invalid_request: 'The request was refused. Reload the page and try again.'
 };
 export class ApiError extends Error {
-  constructor(public code: string, message: string) {
+  // fields are the structural paths of a blocked AI context package, never values.
+  constructor(public code: string, message: string, public fields: string[] = []) {
     super(message);
   }
 }
@@ -45,12 +46,14 @@ async function failure(response: Response): Promise<ApiError> {
   if (response.status === 401) return new ApiError('unauthorized', 'This session is locked. Open the private URL printed by the running Hclaro CLI.');
   let code = '';
   let reason = '';
+  let fields: string[] = [];
   try {
-    const body = await response.json() as { error?: string; reason?: string };
+    const body = await response.json() as { error?: string; reason?: string; blockedFields?: unknown };
     code = body.error || '';
     reason = body.reason || '';
+    if (Array.isArray(body.blockedFields)) fields = body.blockedFields.filter((f): f is string => typeof f === 'string');
   } catch {/* Non-JSON errors use the generic message. */}
-  return new ApiError(code, reason || messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.');
+  return new ApiError(code, reason || messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.', fields);
 }
 export type Session = { csrfToken: string; capabilities?: { scopedExecution?: boolean } };
 // The one /session read: it serves the capabilities query and the CSRF header of mutations.

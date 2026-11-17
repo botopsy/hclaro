@@ -12,6 +12,7 @@ import { clock, engineLabel } from '../plans/labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
 import { ScopeSummary } from '../plans/PreflightDialog';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import { AskAI } from '../assist/AskAI';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 
 // Classifications are distinguished by icon and text, never by color alone.
@@ -209,6 +210,7 @@ function ScanResult({ scope, scan, openResource, runPlan, rescan, canScan, copy 
    </div>
    {!scan.current && <div className="plan-warning" role="alert"><TriangleAlert size={15} /><span><strong>This scan no longer matches.</strong> {scan.staleReason} {scan.withheld && 'Its resource list is withheld so it cannot be mistaken for the current workspace.'}</span>{canScan && <Button variant="outline" size="small" onClick={rescan}><ScanSearch size={13} />Scan again</Button>}</div>}
    <Outcome scan={scan} />
+   {scan.current && (scan.status === 'completed' || scan.status === 'partial') && <AskAI scope={scope} request={{ kind: 'drift', scanId: scan.id }} label="Investigate with AI" />}
    {scan.warnings.map(w => <div className="plan-warning" key={w} role="note"><TriangleAlert size={15} />{w}</div>)}
    {scan.current && scan.status !== 'failed' && scan.status !== 'cancelled' && <>
     <div className="summary-grid" role="group" aria-label="Filter by classification">{order.filter(c => c !== 'unrecognized' || counts.unrecognized).map(c => {

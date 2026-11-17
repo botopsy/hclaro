@@ -1,4 +1,8 @@
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Monitor, Moon, ShieldCheck, Sun } from 'lucide-react';
+import { post } from '../api';
+import { assistSettingsQuery, type AssistSettings } from '../assist/AskAI';
 import { HclaroLogo } from '../brand/HclaroLogo';
 import { editorLabels } from '../git/GitView';
 import type { EditorName } from '../types';
@@ -21,5 +25,23 @@ export function SettingsPanel({
         grouping: e.target.value as Preferences['grouping']
       })}><option value="module">Module tree</option><option value="flat">Flat list</option></select></div><div className="setting-row"><div><h2>Source editor</h2><p>Used by Open in editor links. Hclaro asks the operating system to open the editor's link; it never runs a command you type.</p></div><select aria-label="Source editor" value={preferences.editor} onChange={e => changePreference({
         editor: e.target.value === 'cursor' ? 'cursor' : 'vscode'
-      })}>{(Object.keys(editorLabels) as EditorName[]).map(name => <option key={name} value={name}>{editorLabels[name]}</option>)}</select></div><div className="settings-security"><ShieldCheck size={23} /><div><h2>Your machine. Your infrastructure.</h2><p>No telemetry, cloud accounts, or external services. Only display preferences are saved in this browser. Hub projects are saved as paths and names in your user configuration directory. To change engines, restart with <code>--engine terraform</code> or <code>--engine tofu</code>.</p></div></div></div>;
+      })}>{(Object.keys(editorLabels) as EditorName[]).map(name => <option key={name} value={name}>{editorLabels[name]}</option>)}</select></div><AssistSetting /><div className="settings-security"><ShieldCheck size={23} /><div><h2>Your machine. Your infrastructure.</h2><p>No telemetry, cloud accounts, or external services. Only display preferences are saved in this browser. Hub projects are saved as paths and names in your user configuration directory. To change engines, restart with <code>--engine terraform</code> or <code>--engine tofu</code>.</p></div></div></div>;
+}
+
+// The AI master switch lives on the server for this session only: it starts off at every
+// launch, and turning it off drops every context package built so far.
+function AssistSetting() {
+  const client = useQueryClient();
+  const settings = useQuery(assistSettingsQuery);
+  const [error, setError] = useState<string>();
+  const s = settings.data;
+  async function change(enabled: boolean) {
+    setError(undefined);
+    try {
+      client.setQueryData(assistSettingsQuery.queryKey, await post<AssistSettings>('ai/settings', { enabled }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'AI assistance could not be changed.');
+    }
+  }
+  return <div className="setting-row"><div><h2>AI assistance</h2><p>Preview a sanitized context package for a plan, drift scan, import or resource, then copy or download it for the assistant you choose. Off at every launch. Nothing is shared without your click.</p>{s?.enabled && <ul className="assist-disclosure">{s.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}{s?.strictLocal && <p className="muted">Strict local-only mode: copy and download stay available; Hclaro never runs an assistant itself.</p>}{error && <p className="dialog-error" role="alert">{error}</p>}</div><div className="segmented" role="group" aria-label="AI assistance">{([false, true] as const).map(on => <button key={String(on)} aria-pressed={!!s && s.enabled === on} disabled={!s} onClick={() => void change(on)}>{on ? 'On' : 'Off'}</button>)}</div></div>;
 }

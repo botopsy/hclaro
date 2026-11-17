@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"hclaro/internal/api"
+	"hclaro/internal/assist"
 	"hclaro/internal/awsauth"
 	"hclaro/internal/awsvault"
 	"hclaro/internal/cost"
@@ -268,6 +269,9 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		manager.Cost.Store = cost.OpenStore(dir)
 	}
 	cost.SweepStale("", time.Now())
+	// AI assistance (AI-01.03): off until switched on in Settings; packages stay in memory.
+	// Strict local-only mode keeps handoff (OD-AI-4).
+	manager.Assist = assist.NewSession(o.StrictLocal)
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
 	}

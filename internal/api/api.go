@@ -48,6 +48,7 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 	gitRoutes(mux, store, manager, hub)
 	discoveryRoutes(mux, manager, hub)
 	costRoutes(mux, store, manager)
+	assistRoutes(mux, store, manager, hub)
 	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": version})
 	})

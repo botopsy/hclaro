@@ -65,12 +65,23 @@ export function Drawer({ label, onClose, children }: { label: string; onClose: (
     function key(event: globalThis.KeyboardEvent) {
       if (event.key === 'Escape' && !event.defaultPrevented) onClose();
     }
+    // A drawer opened over another (the AI preview) takes Escape alone, before the bubble
+    // listeners of the drawer below and of the app, as a modal does; an open modal wins.
+    function stacked(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'Escape' || document.querySelector('[aria-modal="true"]')) return;
+      const open = document.querySelectorAll('aside.inspector');
+      if (open.length < 2 || open[open.length - 1] !== panel.current) return;
+      event.stopPropagation();
+      onClose();
+    }
     function resize() {
       setViewport(window.innerWidth);
     }
+    window.addEventListener('keydown', stacked, true);
     window.addEventListener('keydown', key);
     window.addEventListener('resize', resize);
     return () => {
+      window.removeEventListener('keydown', stacked, true);
       window.removeEventListener('keydown', key);
       window.removeEventListener('resize', resize);
     };

@@ -23,3 +23,4 @@
 @import "./styles/discovery.css";
 @import "./styles/cost.css";
 @import "./styles/launch-tools.css";   /* Tools page for the terminal-launched project */
+@import "./styles/assist.css";         /* AI handoff entry points and context preview */
