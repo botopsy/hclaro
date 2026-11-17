@@ -179,8 +179,9 @@ func TestBlockedWhenScanFindsSecret(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	// Absolute local paths.
-	root := t.TempDir()
+	// Absolute local paths. A fixed root: on Windows a temp dir name (CamelCase test name plus
+	// random digits between backslashes) looks secret, so the redactor hides it before the path check.
+	root := filepath.Join(string(filepath.Separator)+"projects", "network")
 	s = scope()
 	s.Root = root
 	r = review(t, []map[string]any{rc("local_file.out", []string{"create"}, nil, map[string]any{"filename": filepath.Join(root, "out.txt")}, nil)}, nil, nil)
