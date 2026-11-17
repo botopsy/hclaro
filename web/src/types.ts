@@ -1055,7 +1055,7 @@ export type TargetStatus = {
 
 // Operation history (M13): redacted metadata kept on this machine. A historical plan can
 // never be applied; it has no plan file.
-export type HistoryKind = 'plan' | 'replace' | 'import' | 'apply' | 'drift' | 'graph' | 'init' | 'workspace' | 'tool' | 'branch' | 'unknown';
+export type HistoryKind = 'plan' | 'replace' | 'import' | 'apply' | 'drift' | 'graph' | 'init' | 'workspace' | 'tool' | 'branch' | 'assist' | 'unknown';
 export type HistoryStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
 export type HistoryPlan = {
   planId: string;
@@ -1092,6 +1092,7 @@ export type HistoryEntry = {
   command: string[];
   diagnostic?: { code: string; message: string };
   plan?: HistoryPlan;
+  assist?: { provider: string; contextKind: string; packageSha256: string };
   outcome: {
     result: string;
     summary: string;

@@ -127,6 +127,8 @@ func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 		"/api/v1/ai/settings":                         `{"enabled":false}`,
 		"/api/v1/ai/packages":                         `{"kind":"plan","planId":"` + planID + `"}`,
 		"/api/v1/ai/packages/" + p.SHA256 + "/export": `{}`,
+		"/api/v1/ai/packages/" + p.SHA256 + "/run":    `{"provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
+		"/api/v1/ai/run/cancel":                       `{}`,
 	}
 	for path, body := range routes {
 		for _, tc := range []struct {
@@ -155,6 +157,9 @@ func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	// Refused requests changed nothing: AI is still on and the package still exports.
 	if !s.manager.Assist.Enabled() {
 		t.Fatal("a refused request turned AI off")
+	}
+	if _, ran := s.manager.Assist.Current(); ran {
+		t.Fatal("a refused request started an assistant")
 	}
 	exportSame(t, s.do("POST", "/api/v1/ai/packages/"+p.SHA256+"/export", `{}`), p)
 }
@@ -349,7 +354,8 @@ func TestAIHubRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	page := decode[struct{ Resources []struct{ ID string } }](t, s.do("GET", "/api/v1/contexts/"+cid+"/resources?limit=1", ""))
 	body := `{"kind":"resource","resourceId":"` + page.Resources[0].ID + `"}`
 	p := build(t, s.do("POST", "/api/v1/contexts/"+cid+"/ai/packages", body))
-	routes := map[string]string{"/api/v1/contexts/" + cid + "/ai/packages": body, "/api/v1/contexts/" + cid + "/ai/packages/" + p.SHA256 + "/export": `{}`}
+	routes := map[string]string{"/api/v1/contexts/" + cid + "/ai/packages": body, "/api/v1/contexts/" + cid + "/ai/packages/" + p.SHA256 + "/export": `{}`,
+		"/api/v1/contexts/" + cid + "/ai/packages/" + p.SHA256 + "/run": `{"provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`}
 	for path, b := range routes {
 		for _, tc := range []struct {
 			name string

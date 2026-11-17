@@ -40,3 +40,27 @@
   list-style: disc;
   text-align: left;
 }
+
+/* AI-01.04: headless request and reply */
+.assist-run {
+  margin-top: 12px;
+}
+
+.assist-running {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.assist-note {
+  margin-top: 6px;
+  text-align: right;
+  font-size: 12px;
+}
+
+.assist-providers {
+  margin: 8px 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 13px;
+}

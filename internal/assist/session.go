@@ -1,12 +1,13 @@
 package assist
 
 import (
+	"context"
 	"sync"
 	"time"
 )
 
 // DisclosureVersion changes whenever the disclosure text changes.
-const DisclosureVersion = "1"
+const DisclosureVersion = "3"
 
 // Disclosure is shown next to every package and in Settings (R10).
 type Disclosure struct {
@@ -15,19 +16,26 @@ type Disclosure struct {
 }
 
 var disclosure = Disclosure{Version: DisclosureVersion, Lines: []string{
-	"Hclaro builds this context on your machine and shares nothing by itself. Only Copy or Download hands it over.",
+	"Hclaro builds this context on your machine and shares nothing by itself. Only Copy, Download or Send to an assistant hands it over.",
 	"An AI assistant you give it to may send it to a cloud model, and its runs bill your own assistant account.",
 	"Once copied or downloaded, the text is outside Hclaro: its redaction and blocking no longer protect it.",
+	"Send runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials. It sends exactly the previewed text to its cloud model, signed in as you.",
+	"Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
+	"The reply is unverified AI output. Hclaro shows it as text, keeps it in memory for this session only, and never runs, applies or approves anything it suggests.",
 }}
 
-// Settings is the session's AI state. Only handoff exists in AI-01.03; strict local-only mode
-// keeps handoff available (OD-AI-4), because the user carries the data out themselves.
+// Settings is the session's AI state. Strict local-only mode keeps handoff available but
+// never runs an assistant (OD-AI-4), because handoff leaves the data with the user.
 type Settings struct {
 	Enabled     bool       `json:"enabled"`
 	StrictLocal bool       `json:"strictLocal"`
 	Handoff     bool       `json:"handoff"`
 	Headless    bool       `json:"headless"`
 	Disclosure  Disclosure `json:"disclosure"`
+	// Accepted is true once the current disclosure was accepted in this session.
+	Accepted        bool             `json:"disclosureAccepted"`
+	Providers       []ProviderStatus `json:"providers"`
+	DefaultProvider string           `json:"defaultProvider,omitempty"`
 }
 
 const (
@@ -45,22 +53,37 @@ type stored struct {
 // Session holds the master switch and the built packages, in memory only. Nothing is
 // written to disk; disabling AI or closing Hclaro drops every package.
 type Session struct {
-	mu       sync.Mutex
-	strict   bool
-	enabled  bool
-	packages map[string]stored
-	Now      func() time.Time
+	mu        sync.Mutex
+	strict    bool
+	enabled   bool
+	packages  map[string]stored
+	Now       func() time.Time
+	providers []Assistant
+	detected  []ProviderStatus
+	preferred string
+	accepted  bool
+	run       *Run
+	cancel    context.CancelFunc
+	base      context.Context
+	stop      context.CancelFunc
+	wg        sync.WaitGroup
+	// Record receives metadata of each finished run (never payload or reply), e.g. history.
+	Record func(RunRecord)
 }
 
-// NewSession returns a session with AI off.
-func NewSession(strictLocal bool) *Session {
-	return &Session{strict: strictLocal, packages: map[string]stored{}, Now: time.Now}
+// NewSession returns a session with AI off. providers are detected only once AI is on.
+func NewSession(strictLocal bool, providers ...Assistant) *Session {
+	base, stop := context.WithCancel(context.Background())
+	return &Session{strict: strictLocal, packages: map[string]stored{}, Now: time.Now, providers: providers, base: base, stop: stop}
 }
 
 func (s *Session) Settings() Settings {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return Settings{Enabled: s.enabled, StrictLocal: s.strict, Handoff: s.enabled, Disclosure: disclosure}
+	st := Settings{Enabled: s.enabled, StrictLocal: s.strict, Handoff: s.enabled, Disclosure: disclosure, Accepted: s.accepted,
+		Providers: append([]ProviderStatus{}, s.detected...), DefaultProvider: s.preferred}
+	st.Headless = s.enabled && !s.strict && s.eligible(s.preferred)
+	return st
 }
 
 func (s *Session) Enabled() bool {
@@ -69,12 +92,37 @@ func (s *Session) Enabled() bool {
 	return s.enabled
 }
 
-// SetEnabled turns AI on or off for this session. Turning it off drops every package.
+// SetEnabled turns AI on or off for this session. Turning it on detects the providers (unless
+// strict local-only). Turning it off drops every package, the reply and the acceptance, and
+// cancels a running request.
 func (s *Session) SetEnabled(on bool) Settings {
+	var found []ProviderStatus
+	if on && !s.strict {
+		ctx, cancel := context.WithTimeout(s.base, 30*time.Second)
+		for _, p := range s.providers {
+			found = append(found, p.Detect(ctx))
+		}
+		cancel()
+	}
 	s.mu.Lock()
 	s.enabled = on
-	if !on {
-		s.packages = map[string]stored{}
+	if on {
+		s.detected = found
+		if !s.eligible(s.preferred) {
+			s.preferred = ""
+			for _, d := range found {
+				if d.Mode == ModeHeadless {
+					s.preferred = d.ID
+					break
+				}
+			}
+		}
+	} else {
+		s.packages, s.accepted, s.run, s.detected = map[string]stored{}, false, nil, nil
+		if s.cancel != nil {
+			s.cancel()
+			s.cancel = nil
+		}
 	}
 	s.mu.Unlock()
 	return s.Settings()

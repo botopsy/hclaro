@@ -71,14 +71,19 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 		writeJSON(w, 200, manager.Assist.Settings())
 	})
+	// Settings changes: the master switch, the default assistant (among detected
+	// headless-eligible ones) and accepting the disclosure for this session. Executable paths
+	// are never set here (OD-AI-3).
 	mux.HandleFunc("POST /api/v1/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Enabled *bool `json:"enabled"`
+			Enabled          *bool   `json:"enabled"`
+			DefaultProvider  *string `json:"defaultProvider"`
+			AcceptDisclosure *string `json:"acceptDisclosure"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		if body.Enabled == nil {
+		if body.Enabled == nil && body.DefaultProvider == nil && body.AcceptDisclosure == nil {
 			errorJSON(w, 400, "invalid_request")
 			return
 		}
@@ -86,7 +91,46 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			reasonJSON(w, 409, "ai_unavailable", "AI assistance is not available in this session.")
 			return
 		}
-		writeJSON(w, 200, manager.Assist.SetEnabled(*body.Enabled))
+		if body.Enabled != nil {
+			manager.Assist.SetEnabled(*body.Enabled)
+		}
+		if body.DefaultProvider != nil {
+			if err := manager.Assist.SetDefault(*body.DefaultProvider); err != nil {
+				aiRefusal(w, err)
+				return
+			}
+		}
+		if body.AcceptDisclosure != nil {
+			if err := manager.Assist.Accept(*body.AcceptDisclosure); err != nil {
+				aiRefusal(w, err)
+				return
+			}
+		}
+		writeJSON(w, 200, manager.Assist.Settings())
+	})
+	// The session's one headless request: poll it, or cancel it.
+	mux.HandleFunc("GET /api/v1/ai/run", func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		run, found := sess.Current()
+		if !found {
+			aiRefusal(w, &assist.Refusal{Code: assist.RefuseNoRun})
+			return
+		}
+		writeJSON(w, 200, run)
+	})
+	mux.HandleFunc("POST /api/v1/ai/run/cancel", func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"cancelled": sess.Cancel()})
 	})
 
 	launch := func(w http.ResponseWriter) (assistSource, bool) {
@@ -186,6 +230,39 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 	}
 
+	// run sends a previewed package to an assistant. The browser names only the hash, the
+	// provider and the disclosure version it accepted; the bytes are the stored package.
+	run := func(w http.ResponseWriter, r *http.Request, src assistSource) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct {
+			Provider          string `json:"provider"`
+			DisclosureVersion string `json:"disclosureVersion"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		hash := r.PathValue("hash")
+		if !packageHash.MatchString(hash) {
+			aiRefusal(w, &assist.Refusal{Code: assist.RefuseNotFound})
+			return
+		}
+		scope := assist.RunScope{Project: src.scope.Project, Root: src.scope.Root, Workspace: src.scope.Workspace, Engine: src.scope.Engine}
+		started, err := sess.Start(src.key, hash, body.Provider, body.DisclosureVersion, scope)
+		if err != nil {
+			aiRefusal(w, err)
+			return
+		}
+		writeJSON(w, 202, started)
+	}
+	mux.HandleFunc("POST /api/v1/ai/packages/{hash}/run", func(w http.ResponseWriter, r *http.Request) {
+		if src, ok := launch(w); ok {
+			run(w, r, src)
+		}
+	})
+
 	mux.HandleFunc("POST /api/v1/ai/packages", func(w http.ResponseWriter, r *http.Request) {
 		build(w, r, func(string) (assistSource, bool) { return launch(w) })
 	})
@@ -197,6 +274,11 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 	}
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/packages", func(w http.ResponseWriter, r *http.Request) {
 		build(w, r, func(kind string) (assistSource, bool) { return hubSource(w, r, kind) })
+	})
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/packages/{hash}/run", func(w http.ResponseWriter, r *http.Request) {
+		if src, ok := hubSource(w, r, assist.KindResource); ok {
+			run(w, r, src)
+		}
 	})
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/packages/{hash}/export", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := on(w); ok && openContext(w, r, hub) != nil {
@@ -304,4 +386,20 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 		assist.Package
 		Disclosure assist.Disclosure `json:"disclosure"`
 	}{p, sess.Settings().Disclosure})
+}
+
+func aiRefusal(w http.ResponseWriter, err error) {
+	var r *assist.Refusal
+	if !errors.As(err, &r) {
+		errorJSON(w, 500, "ai_failed")
+		return
+	}
+	status := 409
+	switch r.Code {
+	case assist.RefuseNotFound, assist.RefuseNoRun:
+		status = 404
+	case assist.RefuseInvalidArgs:
+		status = 400
+	}
+	reasonJSON(w, status, r.Code, r.Error())
 }

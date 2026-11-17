@@ -405,6 +405,7 @@ func scrubEntry(e HistoryEntry) HistoryEntry {
 		}
 		e.Plan = &c
 	}
+	e.Assist = scrubAssist(e.Assist)
 	e.Outcome.Result, e.Outcome.Summary = word(e.Outcome.Result), clean(e.Outcome.Summary, maxMessage)
 	if e.Git != nil && (!hexPattern.MatchString(e.Git.Commit) || len(e.Git.Commit) > 64) {
 		e.Git = nil

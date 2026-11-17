@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"time"
@@ -41,12 +42,15 @@ type Options struct {
 	// ExportHistory writes the redacted operation history to a new file and exits.
 	ExportHistory string
 	// StrictLocal refuses features that send data to a third-party service; today that is
-	// cost estimation (M17).
+	// cost estimation (M17) and headless AI requests (AI-01.04).
 	StrictLocal bool
 	// HubExecution turns on plans and applies in Hub workspaces (ADR M24.03, M24.04–.06). On by
 	// default since OD-11 (2026-11-16); --no-hub-execution turns it off. Qualified with real
 	// engines for the local backend only (support-matrix HUB-02 to HUB-17).
 	HubExecution bool
+	// ClaudePath is the Claude Code executable for headless AI requests (AI-01.04). It is set
+	// only by this flag, never from the browser (OD-AI-3); empty looks up claude on PATH.
+	ClaudePath string
 }
 
 // hiddenFlags are accepted but not listed in --help.
@@ -69,7 +73,8 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.BoolVar(&o.NoBrowser, "no-browser", false, "Print URL without opening a browser")
 	flags.BoolVar(&o.Version, "version", false, "Print version and exit")
 	flags.BoolVar(&o.Hub, "hub", false, "Open the Workspace Hub; the current directory is not read unless --path is given")
-	flags.BoolVar(&o.StrictLocal, "strict-local", false, "Strict local-only mode: disable features that send data to third-party services (cost estimation)")
+	flags.BoolVar(&o.StrictLocal, "strict-local", false, "Strict local-only mode: disable features that send data to third-party services (cost estimation, AI requests sent by Hclaro)")
+	flags.StringVar(&o.ClaudePath, "claude-path", "", "Claude Code executable for AI requests sent from the UI (default: claude on PATH)")
 	flags.StringVar(&o.ExportHistory, "export-history", "", "Write the redacted operation history to a new .json or .md `file` and exit")
 	noHubExecution := flags.Bool("no-hub-execution", false, "Keep Hub workspaces read-only: no plans, applies or imports outside the launch project")
 	flags.Var(noOp{}, "experimental-hub-execution", "Former opt-in for Hub execution; now the default (ignored)")
@@ -96,6 +101,13 @@ func Parse(args []string, output io.Writer) (Options, error) {
 			o.PathSet = true
 		}
 	})
+	if o.ClaudePath != "" {
+		abs, err := filepath.Abs(o.ClaudePath)
+		if err != nil {
+			return o, errors.New("invalid --claude-path")
+		}
+		o.ClaudePath = abs
+	}
 	if flags.NArg() > 0 {
 		return o, errors.New("unexpected positional argument; use --path")
 	}
@@ -269,9 +281,12 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		manager.Cost.Store = cost.OpenStore(dir)
 	}
 	cost.SweepStale("", time.Now())
-	// AI assistance (AI-01.03): off until switched on in Settings; packages stay in memory.
-	// Strict local-only mode keeps handoff (OD-AI-4).
-	manager.Assist = assist.NewSession(o.StrictLocal)
+	// AI assistance (AI-01.03, AI-01.04): off until switched on in Settings; packages and
+	// replies stay in memory. Strict local-only mode keeps handoff and never runs an assistant
+	// (OD-AI-4). History keeps request metadata only.
+	manager.Assist = assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath})
+	manager.Assist.Record = operationHistory.RecordAssist
+	defer manager.Assist.Close()
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
 	}

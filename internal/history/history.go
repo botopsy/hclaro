@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/assist"
 	"hclaro/internal/operations"
 )
 
@@ -72,6 +73,7 @@ var kindTable = []kindInfo{
 	{"workspace", "Workspace", true},
 	{"tool", "Project tool", false},
 	{"branch", "Branch switch", false},
+	{"assist", "AI analysis", false},
 	{KindUnknown, "Unknown operation", true},
 }
 
@@ -118,6 +120,7 @@ type HistoryEntry struct {
 	Command     []string        `json:"command"`
 	Diagnostic  *Diagnostic     `json:"diagnostic,omitempty"`
 	Plan        *PlanSummary    `json:"plan,omitempty"`
+	Assist      *AssistSummary  `json:"assist,omitempty"`
 	Outcome     Outcome         `json:"outcome"`
 	Git         *GitIdentity    `json:"git,omitempty"`
 	Excerpt     []Line          `json:"excerpt"`
@@ -153,6 +156,14 @@ type Line struct {
 type GitIdentity struct {
 	Commit string `json:"commit"`
 	Branch string `json:"branch,omitempty"`
+}
+
+// AssistSummary is the metadata of one AI assistant request (AI-01.04). The context package
+// and the reply are never kept.
+type AssistSummary struct {
+	Provider      string `json:"provider"`
+	ContextKind   string `json:"contextKind"`
+	PackageSHA256 string `json:"packageSha256"`
 }
 
 // PlanSummary is what a reviewed plan proposed: counts and the addresses with their actions.
@@ -831,6 +842,49 @@ func (s *Store) Record(r operations.Record) {
 		}
 		return nil
 	})
+}
+
+// RecordAssist keeps the metadata of a finished AI assistant request.
+func (s *Store) RecordAssist(r assist.RunRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status != Ready {
+		return
+	}
+	status := map[string]string{assist.RunCompleted: StatusSucceeded, assist.RunFailed: StatusFailed, assist.RunCancelled: StatusCancelled}[r.Status]
+	if status == "" {
+		status = StatusUnknown
+	}
+	e := HistoryEntry{ID: r.ID, Kind: "assist", Action: word(r.Provider), Status: status, StartedAt: r.StartedAt.UTC().Format(time.RFC3339),
+		FinishedAt: r.StartedAt.Add(r.Duration).UTC().Format(time.RFC3339), DurationMs: r.Duration.Milliseconds(), Engine: word(r.Engine),
+		Command: []string{}, Excerpt: []Line{}, Assist: scrubAssist(&AssistSummary{Provider: r.Provider, ContextKind: r.Kind, PackageSHA256: r.SHA256})}
+	e.ProjectID, e.ProjectName, e.Registered = s.project(operations.Record{Root: r.Root})
+	if r.Project != "" {
+		e.ProjectName = clean(r.Project, 120)
+	}
+	if workspaceRe.MatchString(r.Workspace) {
+		e.Workspace = r.Workspace
+	}
+	if r.Code != "" && codePattern.MatchString(r.Code) {
+		e.Diagnostic = &Diagnostic{Code: r.Code, Message: clean(assist.Message(r.Code), maxMessage)}
+	}
+	e.Outcome = Outcome{Result: map[bool]string{true: "answered", false: "not_answered"}[status == StatusSucceeded],
+		Summary: "A sanitized context package was sent to an AI assistant. The package and the reply are not kept. Nothing was run, applied or approved."}
+	_ = s.mutate(func(d *document) error {
+		d.Entries = append(d.Entries, e)
+		return nil
+	})
+}
+
+func scrubAssist(a *AssistSummary) *AssistSummary {
+	if a == nil {
+		return nil
+	}
+	out := &AssistSummary{Provider: word(a.Provider), ContextKind: word(a.ContextKind)}
+	if len(a.PackageSHA256) == 64 && hexPattern.MatchString(a.PackageSHA256) {
+		out.PackageSHA256 = a.PackageSHA256
+	}
+	return out
 }
 
 func (p *PlanSummary) executionOrNil() *ExecutionRecord {
