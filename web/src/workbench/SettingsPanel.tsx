@@ -4,6 +4,7 @@ import { Monitor, Moon, ShieldCheck, Sun } from 'lucide-react';
 import { post } from '../api';
 import { assistSettingsQuery, type AssistSettings } from '../assist/AskAI';
 import { HclaroLogo } from '../brand/HclaroLogo';
+import { Button } from '../components/ui/button';
 import { editorLabels } from '../git/GitView';
 import type { EditorName } from '../types';
 import type { Preferences } from './preferences';
@@ -35,13 +36,22 @@ function AssistSetting() {
   const settings = useQuery(assistSettingsQuery);
   const [error, setError] = useState<string>();
   const s = settings.data;
-  async function change(enabled: boolean) {
+  async function change(body: { enabled?: boolean; defaultProvider?: string; acceptDisclosure?: string }) {
     setError(undefined);
     try {
-      client.setQueryData(assistSettingsQuery.queryKey, await post<AssistSettings>('ai/settings', { enabled }));
+      client.setQueryData(assistSettingsQuery.queryKey, await post<AssistSettings>('ai/settings', body));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'AI assistance could not be changed.');
     }
   }
-  return <div className="setting-row"><div><h2>AI assistance</h2><p>Preview a sanitized context package for a plan, drift scan, import or resource, then copy or download it for the assistant you choose. Off at every launch. Nothing is shared without your click.</p>{s?.enabled && <ul className="assist-disclosure">{s.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}{s?.strictLocal && <p className="muted">Strict local-only mode: copy and download stay available; Hclaro never runs an assistant itself.</p>}{error && <p className="dialog-error" role="alert">{error}</p>}</div><div className="segmented" role="group" aria-label="AI assistance">{([false, true] as const).map(on => <button key={String(on)} aria-pressed={!!s && s.enabled === on} disabled={!s} onClick={() => void change(on)}>{on ? 'On' : 'Off'}</button>)}</div></div>;
+  const eligible = (s?.providers ?? []).filter(p => p.mode === 'headless-eligible');
+  return <div className="setting-row"><div><h2>AI assistance</h2><p>Preview a sanitized context package for a plan, drift scan, import or resource, then copy or download it for the assistant you choose, or send it to a detected assistant. Off at every launch. Nothing is shared without your click.</p>
+   {s?.enabled && <ul className="assist-disclosure">{s.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
+   {s?.enabled && !s.strictLocal && <>
+    <ul className="assist-providers" aria-label="Detected assistants">{(s.providers ?? []).map(p => <li key={p.id}><strong>{p.name}</strong> · {p.mode.replace('-', ' ')}{p.version && <> · <span className="mono">{p.version}</span></>}{p.path && <> · <code title="Set with a command-line flag when starting Hclaro; it cannot be changed here.">{p.path}</code></>}{p.message && <span className="muted"> · {p.message}</span>}</li>)}</ul>
+    {eligible.length > 0 && <p><label>Default assistant <select aria-label="Default assistant" value={s.defaultProvider ?? ''} onChange={e => void change({ defaultProvider: e.target.value })}>{eligible.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label></p>}
+    {eligible.length > 0 && (s.disclosureAccepted ? <p className="muted" role="status">Disclosure accepted for this session. Send is available in the context preview.</p>
+      : <p><Button variant="outline" size="small" onClick={() => void change({ acceptDisclosure: s.disclosure.version })}>Accept the disclosure for this session</Button></p>)}
+   </>}
+   {s?.strictLocal && <p className="muted">Strict local-only mode: copy and download stay available; Hclaro never runs an assistant itself.</p>}{error && <p className="dialog-error" role="alert">{error}</p>}</div><div className="segmented" role="group" aria-label="AI assistance">{([false, true] as const).map(on => <button key={String(on)} aria-pressed={!!s && s.enabled === on} disabled={!s} onClick={() => void change({ enabled: on })}>{on ? 'On' : 'Off'}</button>)}</div></div>;
 }

@@ -22,6 +22,7 @@ const kinds: Record<HistoryKind, string> = {
   workspace: 'Workspace',
   tool: 'Project tool',
   branch: 'Branch switch',
+  assist: 'AI analysis',
   unknown: 'Unknown operation'
 };
 const statusLabels: Record<HistoryStatus, string> = {
@@ -37,6 +38,8 @@ const results: Record<string, { label: string; tone: string }> = {
   unknown: { label: 'Unknown · may be changed', tone: 'warn' },
   planned: { label: 'Planned · not applied', tone: 'muted' },
   not_planned: { label: 'No plan kept', tone: 'muted' },
+  answered: { label: 'Answered', tone: 'muted' },
+  not_answered: { label: 'No answer', tone: 'muted' },
   applied: { label: 'Engine reported applied', tone: 'create' },
   partial: { label: 'Partial · may be changed', tone: 'warn' },
   not_applied: { label: 'Nothing applied', tone: 'muted' },
@@ -226,9 +229,10 @@ function HistoryDetails({ id, copy, writable, onClose, onDeleted }: { id: string
      {e.context?.profileName && <div><dt>Profile</dt><dd>{e.context.profileName} <span className="muted">revision {e.context.profileRevision}</span></dd></div>}
      {(e.context?.fingerprint || e.plan?.fingerprint) && <div><dt>Context</dt><dd className="mono" title="Equal fingerprints mean the same engine, workspace, variable files, configuration and environment names.">{e.plan?.fingerprint || e.context?.fingerprint}</dd></div>}
      {e.git && <div><dt>Git</dt><dd className="history-git"><GitBranch size={12} aria-hidden="true" /><span className="mono">{e.git.commit.slice(0, 12)}</span>{e.git.branch && <span className="muted"> · {e.git.branch}</span>} <Button variant="ghost" size="icon" aria-label="Copy commit" onClick={() => void copy(e.git!.commit, 'Commit')}><Copy size={12} /></Button></dd></div>}
+     {e.assist && <div><dt>AI request</dt><dd>{e.assist.provider} · {e.assist.contextKind} <span className="mono" title={e.assist.packageSha256}>{e.assist.packageSha256.slice(0, 12)}</span> <span className="muted">(context and reply not kept)</span></dd></div>}
      <div><dt>ID</dt><dd className="mono">{e.id}</dd></div>
     </dl>
-    <p className="mono history-command">{e.command.join(' ')}</p>
+    {e.command.length > 0 && <p className="mono history-command">{e.command.join(' ')}</p>}
     {e.plan && <section className="history-stage" aria-labelledby="stage-planned">
      <h3 id="stage-planned"><span className="stage-number">1</span>Planned</h3>
      <div className="history-counts">{sortedCounts.length ? sortedCounts.map(([a, n]) => <span key={a} className="history-count"><ActionBadge action={a === 'import' ? 'read' : a} /><strong>{n}</strong>{a === 'import' && <span className="muted">import</span>}</span>) : <span className="muted">No resource changes.</span>}{e.plan.outputs > 0 && <span className="muted">{e.plan.outputs} output change(s)</span>}{e.plan.drift > 0 && <span className="muted">{e.plan.drift} changed outside</span>}</div>
