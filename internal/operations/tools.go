@@ -206,7 +206,7 @@ func toolSuccess(t engine.Tool, r *ToolResult) string {
 // same tool in the same context is refused while one is active.
 func (r *Inits) StartTool(req ToolRequest) (Operation, error) {
 	op := Operation{
-		Kind: "tool", Command: ToolCommand(req.Engine, req.Tool, true, req.Recursive), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
+		Kind: "tool", Command: req.Context.Display(ToolCommand(req.Engine, req.Tool, true, req.Recursive)), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 		Tool: &ToolResult{Tool: req.Tool, ContextID: req.ContextID, Workspace: req.Workspace, UsesWorkspace: engine.WorkspaceDependent(req.Tool), Outcome: "not_checked", Findings: []Finding{}},
 	}
 	conflict := func(entries []*initEntry) error {
@@ -512,7 +512,7 @@ func (t *toolRun) validate(ctx context.Context, req ToolRequest) (string, *int) 
 func (t *toolRun) validateHuman(ctx context.Context, req ToolRequest) (string, *int) {
 	t.e.log.Append("warn", "The engine printed no machine-readable validate result. Running validate again with human-readable output.")
 	t.r.update(t.e, func(o *Operation) {
-		o.Command = ToolCommand(req.Engine, engine.ToolValidate, false, false)
+		o.Command = req.Context.Display(ToolCommand(req.Engine, engine.ToolValidate, false, false))
 		o.Tool.Output = "human"
 	})
 	t.shown.Reset()

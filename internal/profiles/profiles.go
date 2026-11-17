@@ -27,8 +27,10 @@ import (
 	"hclaro/internal/state"
 )
 
-// SchemaVersion is the profile file format written by this build.
-const SchemaVersion = 1
+// SchemaVersion is the profile file format written by this build. Schema 2 added the AWS
+// authentication binding (method and expected account/role); schema 1 files are read and
+// upgraded on the first change, after a backup copy is written.
+const SchemaVersion = 2
 
 const (
 	fileName = "profiles.json"
@@ -59,23 +61,39 @@ type Profile struct {
 	Options    Options  `json:"options"`
 	AWSProfile string   `json:"aws_profile,omitempty"`
 	AWSRegion  string   `json:"aws_region,omitempty"`
-	EnvNames   []string `json:"env_names"`
-	Revision   int      `json:"revision"`
-	CreatedAt  string   `json:"created_at"`
-	UpdatedAt  string   `json:"updated_at"`
+	// AWSAuth is the credential adapter: "" runs the engine and the AWS CLI with AWS_PROFILE
+	// (aws-cli); AWSVault runs them through `aws-vault exec <AWSProfile> --`.
+	AWSAuth string `json:"aws_auth,omitempty"`
+	// AWSExpectedAccount and AWSExpectedRole guard apply: the verified STS identity must
+	// match them. They are names and patterns, never credentials.
+	AWSExpectedAccount string   `json:"aws_expected_account,omitempty"`
+	AWSExpectedRole    string   `json:"aws_expected_role,omitempty"`
+	EnvNames           []string `json:"env_names"`
+	Revision           int      `json:"revision"`
+	CreatedAt          string   `json:"created_at"`
+	UpdatedAt          string   `json:"updated_at"`
 }
 
 // Input is the editable part of a profile.
 type Input struct {
-	Name       string
-	Engine     string
-	Workspace  string
-	VarFiles   []string
-	Options    Options
-	AWSProfile string
-	AWSRegion  string
-	EnvNames   []string
+	Name               string
+	Engine             string
+	Workspace          string
+	VarFiles           []string
+	Options            Options
+	AWSProfile         string
+	AWSRegion          string
+	AWSAuth            string
+	AWSExpectedAccount string
+	AWSExpectedRole    string
+	EnvNames           []string
 }
+
+// AWS authentication methods.
+const (
+	AWSCLI   = "aws-cli"
+	AWSVault = "aws-vault"
+)
 
 type document struct {
 	Version  int       `json:"version"`
@@ -194,7 +212,7 @@ func (s *Store) read() (document, error) {
 	dec := json.NewDecoder(strings.NewReader(string(b)))
 	// Unknown fields are refused, so a hand-edited file cannot smuggle values in.
 	dec.DisallowUnknownFields()
-	if dec.Decode(&doc) != nil || doc.Version != SchemaVersion {
+	if dec.Decode(&doc) != nil || doc.Version < 1 || doc.Version > SchemaVersion {
 		return document{}, &corruptError{"the schema is not recognized"}
 	}
 	if doc.Profiles == nil {
@@ -208,7 +226,9 @@ func (s *Store) read() (document, error) {
 	}
 	ids := map[string]bool{}
 	for _, p := range doc.Profiles {
-		if !validID(p.ID) || !validID(p.ProjectID) || ids[p.ID] || p.Revision < 1 || check(inputOf(p)) != nil {
+		// Schema 1 had no authentication binding.
+		v1Auth := doc.Version == 1 && (p.AWSAuth != "" || p.AWSExpectedAccount != "" || p.AWSExpectedRole != "")
+		if !validID(p.ID) || !validID(p.ProjectID) || ids[p.ID] || p.Revision < 1 || v1Auth || check(inputOf(p)) != nil {
 			return document{}, &corruptError{"it contains an invalid profile"}
 		}
 		ids[p.ID] = true
@@ -253,6 +273,41 @@ func (s *Store) write(doc document) error {
 		return errors.New("the execution profile file cannot be written")
 	}
 	return nil
+}
+
+// backup copies the file, byte for byte, to <file>.schema-<from>-<UTC time> (0600, never
+// replacing an existing file; a second backup in the same second gets a -2, -3… suffix)
+// before it is upgraded to SchemaVersion, and returns its path.
+func (s *Store) backup(from int) (string, error) {
+	b, err := os.ReadFile(s.path)
+	if err != nil {
+		return "", err
+	}
+	base := fmt.Sprintf("%s.schema-%d-%s", s.path, from, s.Now().UTC().Format("20060102T150405Z"))
+	name := base
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	for n := 2; errors.Is(err, fs.ErrExist) && n <= 100; n++ {
+		name = fmt.Sprintf("%s-%d", base, n)
+		f, err = os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	}
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(name)
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(name)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	return name, nil
 }
 
 func clone(doc document) document {
@@ -305,8 +360,21 @@ func (s *Store) mutate(change func(*document) error) error {
 	if err := change(&next); err != nil {
 		return err
 	}
+	upgraded := ""
+	if doc.Version < SchemaVersion {
+		name, err := s.backup(doc.Version)
+		if err != nil {
+			s.status, s.notice = Unavailable, fmt.Sprintf("The execution profile file uses schema %d and must be upgraded to schema %d, but a backup copy could not be written, so the file was left unchanged and profiles are read-only.", doc.Version, SchemaVersion)
+			return ErrUnavailable
+		}
+		upgraded = fmt.Sprintf("The execution profile file was upgraded from schema %d to schema %d. The previous file was kept as %s.", doc.Version, SchemaVersion, filepath.Base(name))
+		next.Version = SchemaVersion
+	}
 	if err := s.write(next); err != nil {
 		return err
+	}
+	if upgraded != "" {
+		s.notice = upgraded
 	}
 	s.cached = next
 	return nil
@@ -456,11 +524,12 @@ func (s *Store) RemoveProject(projectID string) error {
 }
 
 func inputOf(p Profile) Input {
-	return Input{Name: p.Name, Engine: p.Engine, Workspace: p.Workspace, VarFiles: slices.Clone(p.VarFiles), Options: p.Options, AWSProfile: p.AWSProfile, AWSRegion: p.AWSRegion, EnvNames: slices.Clone(p.EnvNames)}
+	return Input{Name: p.Name, Engine: p.Engine, Workspace: p.Workspace, VarFiles: slices.Clone(p.VarFiles), Options: p.Options, AWSProfile: p.AWSProfile, AWSRegion: p.AWSRegion, AWSAuth: p.AWSAuth, AWSExpectedAccount: p.AWSExpectedAccount, AWSExpectedRole: p.AWSExpectedRole, EnvNames: slices.Clone(p.EnvNames)}
 }
 
 func apply(p Profile, in Input) Profile {
 	p.Name, p.Engine, p.Workspace, p.Options, p.AWSProfile, p.AWSRegion = in.Name, in.Engine, in.Workspace, in.Options, in.AWSProfile, in.AWSRegion
+	p.AWSAuth, p.AWSExpectedAccount, p.AWSExpectedRole = in.AWSAuth, in.AWSExpectedAccount, in.AWSExpectedRole
 	p.VarFiles, p.EnvNames = slices.Clone(in.VarFiles), slices.Clone(in.EnvNames)
 	return cloneProfile(p)
 }
@@ -472,6 +541,10 @@ func normalize(in Input) Input {
 	if in.EnvNames == nil {
 		in.EnvNames = []string{}
 	}
+	// The AWS CLI method is the default and is stored as "".
+	if in.AWSAuth == AWSCLI {
+		in.AWSAuth = ""
+	}
 	return in
 }
 
@@ -480,6 +553,9 @@ var (
 	awsProfileName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+=@,-]{0,63}$`)
 	awsRegion      = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$`)
 	envName        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+	awsAccount     = regexp.MustCompile(`^[0-9]{12}$`)
+	// awsRolePattern is an ARN in which * stands for part of one segment (see RoleMatches).
+	awsRolePattern = regexp.MustCompile(`^arn:aws[a-z-]{0,20}:(sts|iam)::([0-9]{12}|\*):[A-Za-z0-9+=,.@/_*-]{1,400}$`)
 )
 
 func validID(id string) bool { return idPattern.MatchString(id) }
@@ -563,6 +639,17 @@ func check(in Input) error {
 	if in.AWSRegion != "" && !awsRegion.MatchString(in.AWSRegion) {
 		return invalid("awsRegion", "Enter an AWS region code such as eu-west-1.")
 	}
+	switch {
+	// "aws-cli" is stored as "", but a hand-edited file that spells it out stays readable.
+	case in.AWSAuth != "" && in.AWSAuth != AWSCLI && in.AWSAuth != AWSVault:
+		return invalid("awsAuth", "The AWS authentication method must be the AWS CLI or aws-vault.")
+	case in.AWSAuth == AWSVault && in.AWSProfile == "":
+		return invalid("awsAuth", "aws-vault needs the name of the vault profile in AWS profile.")
+	case in.AWSExpectedAccount != "" && !awsAccount.MatchString(in.AWSExpectedAccount):
+		return invalid("awsExpectedAccount", "Enter a 12-digit AWS account ID, or leave it empty.")
+	case in.AWSExpectedRole != "" && (!awsRolePattern.MatchString(in.AWSExpectedRole) || state.LooksSecret(in.AWSExpectedRole)):
+		return invalid("awsExpectedRole", "Enter a role ARN such as arn:aws:sts::111122223333:assumed-role/Deploy/*, where * stands for part of one segment, or leave it empty.")
+	}
 	if len(in.EnvNames) > MaxEnvNames {
 		return invalid("envNames", fmt.Sprintf("A profile can list at most %d environment variable names.", MaxEnvNames))
 	}
@@ -581,4 +668,25 @@ func check(in Input) error {
 		names[strings.ToUpper(n)] = true
 	}
 	return nil
+}
+
+// RoleMatches reports whether arn matches pattern exactly, where * matches any run of
+// characters within one segment: it never crosses ':' or '/'. So
+// arn:aws:sts::111122223333:assumed-role/Deploy/* matches every session of the Deploy role
+// in that account, but not the DeployAdmin role or another account.
+func RoleMatches(pattern, arn string) bool {
+	if pattern == "" || arn == "" {
+		return false
+	}
+	var b strings.Builder
+	b.WriteString("^")
+	for i, part := range strings.Split(pattern, "*") {
+		if i > 0 {
+			b.WriteString(`[^:/]*`)
+		}
+		b.WriteString(regexp.QuoteMeta(part))
+	}
+	b.WriteString("$")
+	re, err := regexp.Compile(b.String())
+	return err == nil && re.MatchString(arn)
 }

@@ -4,16 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
 
-	"hclaro/internal/bounded"
+	"hclaro/internal/discovery"
 	"hclaro/internal/state"
 )
 
@@ -119,39 +117,22 @@ var (
 	accountID = regexp.MustCompile(`^[0-9]{12}$`)
 )
 
-// AWSIdentity runs `aws sts get-caller-identity --output json` with environ. It is called
-// only after the user asks for it: STS is a read-only call, but it contacts AWS. The pager
-// and prompts are disabled, stdin is empty and stderr is discarded. Only the account ID and
-// a validated ARN are returned; the user ID and any other output are dropped.
+// AWSIdentity runs `aws sts get-caller-identity --output json` with environ, through
+// aws-vault when the composed environment selects it, exactly as the engine would run. It is
+// called only after the user asks for it: STS is a read-only call, but it contacts AWS. The
+// pager and prompts are disabled, stdin is empty and stderr is only classified. Only the
+// account ID and a validated ARN are returned; the user ID and any other output are dropped.
 func AWSIdentity(ctx context.Context, environ []string) Identity {
-	exe, err := exec.LookPath("aws")
+	out, err := discovery.Exec{Timeout: identityTimeout}.Run(ctx, environ, []string{"sts", "get-caller-identity", "--output", "json"})
 	if err != nil {
-		return Identity{State: "unavailable", Message: "The AWS CLI was not found on PATH."}
-	}
-	ctx, cancel := context.WithTimeout(ctx, identityTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, "sts", "get-caller-identity", "--output", "json")
-	cmd.WaitDelay = time.Second
-	if environ == nil {
-		environ = os.Environ()
-	}
-	for _, item := range environ {
-		key, _, _ := strings.Cut(item, "=")
-		if strings.EqualFold(key, "AWS_PAGER") || strings.EqualFold(key, "AWS_CLI_AUTO_PROMPT") {
-			continue
+		kind := discovery.KindOf(err)
+		state := "failed"
+		if kind == discovery.KindMissingCLI || kind == discovery.KindVaultMissing {
+			state = "unavailable"
 		}
-		cmd.Env = append(cmd.Env, item)
+		return Identity{State: state, Kind: kind, Message: discovery.Message(kind)}
 	}
-	cmd.Env = append(cmd.Env, "AWS_PAGER=", "AWS_CLI_AUTO_PROMPT=off")
-	out := &bounded.Buffer{Limit: 64 << 10}
-	cmd.Stdout = out
-	if err := cmd.Run(); err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return Identity{State: "failed", Message: "STS did not answer within 20 seconds."}
-		}
-		return Identity{State: "failed", Message: "The AWS CLI could not verify the caller identity (credentials missing or expired, or AWS unreachable)."}
-	}
-	return ParseIdentity(out.Bytes())
+	return ParseIdentity(out)
 }
 
 // ParseIdentity extracts the account and ARN from get-caller-identity JSON.
@@ -170,4 +151,23 @@ func ParseIdentity(b []byte) Identity {
 		id.ARN = "ARN withheld"
 	}
 	return id
+}
+
+// Principal is the stable part of an STS caller ARN: an assumed-role ARN without its session
+// name (aws-vault and SSO name every session differently), any other ARN unchanged.
+func Principal(arn string) string {
+	if head, rest, ok := strings.Cut(arn, ":assumed-role/"); ok {
+		if role, _, ok := strings.Cut(rest, "/"); ok {
+			return head + ":assumed-role/" + role
+		}
+	}
+	return arn
+}
+
+// SameIdentity reports whether two verified identities are the same account and principal.
+// An identity that is not verified, or whose ARN was withheld (so its principal is unknown),
+// is never the same as anything.
+func SameIdentity(a, b Identity) bool {
+	return a.State == "verified" && b.State == "verified" && arnRE.MatchString(a.ARN) && arnRE.MatchString(b.ARN) &&
+		a.Account == b.Account && Principal(a.ARN) == Principal(b.ARN)
 }

@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import type { ExecutionProfile } from '../types';
 import { IdentityBadge } from './ContextSummary';
 import { ProfilesDialog } from './ProfilesDialog';
+import { AuthIndicator } from './AuthPanel';
 import type { useProfileSelection } from './selection';
 
 type Selection = ReturnType<typeof useProfileSelection>;
@@ -33,7 +34,7 @@ export function ContextSelector({ projectId, selection, workspaces, onChosen, co
     <option value="">None (inherited environment)</option>
     {list.map(p => <option key={p.id} value={p.id}>{p.name}{p.default ? ' (default)' : ''}{p.workspace ? ` · ${p.workspace}` : ''}</option>)}
    </select>
-   {current && <IdentityBadge />}
+   {current && (current.awsProfile ? <AuthIndicator projectId={projectId} profileId={current.id} /> : <IdentityBadge />)}
    {selection.missing && <span className="issue-text" role="status">The profile chosen in this tab was removed.</span>}
    <Button variant="ghost" size="small" onClick={() => setManaging(true)} title="Create, edit, clone, remove or set the default profile"><SlidersHorizontal size={12} />Manage</Button>
   </div>

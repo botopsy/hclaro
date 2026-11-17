@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"hclaro/internal/awsvault"
 	"hclaro/internal/bounded"
 )
 
@@ -44,6 +45,8 @@ const (
 	KindFailed           = "failed"
 	KindIdentityChanged  = "identity_changed"
 	KindOutputTooLarge   = "output_too_large"
+	KindVaultMissing     = "vault_missing"
+	KindVault            = "vault_failed"
 	maxOutput            = 8 << 20
 	maxStderr            = 16 << 10
 	defaultCallTimeout   = 60 * time.Second
@@ -69,6 +72,8 @@ var kindMessages = map[string]string{
 	KindFailed:          "The AWS CLI call failed. Details are withheld because CLI messages can echo configuration.",
 	KindIdentityChanged: "The AWS credentials now belong to another account than the one you verified. Verify the AWS context again before scanning or importing.",
 	KindOutputTooLarge:  "The AWS CLI returned more output than Hclaro reads for one page.",
+	KindVaultMissing:    "This profile uses aws-vault, but aws-vault was not found on PATH. Install aws-vault and restart Hclaro, or choose the AWS CLI method.",
+	KindVault:           "aws-vault could not provide credentials. It may need a keychain password, an MFA code or another prompt Hclaro cannot show. Run the aws-vault command shown in a terminal once, then verify again.",
 }
 
 // Message returns the user-facing explanation of an error kind.
@@ -173,7 +178,7 @@ func Allowed(args []string) bool {
 // chain, already composed by the execution profile.
 func Environ(environ []string) []string {
 	if environ == nil {
-		environ = os.Environ()
+		environ = awsvault.Strip(os.Environ())
 	}
 	out := make([]string, 0, len(environ)+5)
 	for _, item := range environ {
@@ -202,6 +207,11 @@ func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte,
 	if err != nil {
 		return nil, &CallError{KindMissingCLI}
 	}
+	// Only an environment composed for an execution profile selects aws-vault.
+	vault := ""
+	if environ != nil {
+		vault, environ = awsvault.Split(environ)
+	}
 	if e.Observe != nil {
 		e.Observe(append([]string(nil), args...))
 	}
@@ -213,9 +223,17 @@ func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte,
 	defer cancel()
 	argv := append([]string(nil), args...)
 	if args[0] != "--version" {
-		argv = append(argv, "--no-cli-pager", "--cli-connect-timeout", defaultConnectSecond, "--cli-read-timeout", defaultReadSecond)
+		// The pager is disabled through AWS_PAGER= (Environ); --no-cli-pager is not passed
+		// because AWS CLI v1, which the STS identity probe still supports, rejects it.
+		argv = append(argv, "--cli-connect-timeout", defaultConnectSecond, "--cli-read-timeout", defaultReadSecond)
 	}
-	cmd := exec.CommandContext(ctx, exe, argv...)
+	name := exe
+	if args[0] != "--version" {
+		if name, argv, err = awsvault.Command(vault, exe, argv); err != nil {
+			return nil, &CallError{KindVaultMissing}
+		}
+	}
+	cmd := exec.CommandContext(ctx, name, argv...)
 	cmd.WaitDelay = time.Second
 	cmd.Env = Environ(environ)
 	out := &bounded.Buffer{Limit: maxOutput}
@@ -253,6 +271,8 @@ func Classify(stderr string) string {
 		return false
 	}
 	switch {
+	case has("aws-vault: error"):
+		return KindVault
 	case has("ExpiredToken", "token has expired", "UnauthorizedSSOTokenError", "Error loading SSO Token", "SSO session", "sso token", "token is expired", "RequestExpired"):
 		return KindExpired
 	case has("could not be found") && has("profile"):

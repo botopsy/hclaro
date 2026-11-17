@@ -165,9 +165,9 @@ func (h *Hub) InitStatusFor(id, profileID string) (InitStatus, error) {
 		}
 	}
 	s.Engine = name
-	s.Command = operations.InitCommand(name, false)
+	s.Command = s.Execution.Display(operations.InitCommand(name, false))
 	if s.Engine == "" {
-		s.Command = operations.InitCommand("terraform", false)
+		s.Command = s.Execution.Display(operations.InitCommand("terraform", false))
 	}
 	h.mu.Lock()
 	if in, ok := h.inspections[p.ID]; ok && in.Engine == name {

@@ -189,7 +189,7 @@ func (m *Manager) StartDriftScan(req DriftStart) (Operation, DriftScan, error) {
 	}
 	now := time.Now()
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
-	op := Operation{ID: m.NewID(), Kind: "drift", Status: Running, Stage: "Starting", StartedAt: now.UTC().Format(time.RFC3339), Command: command, VarFiles: selected, Replace: []string{}, Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: bound}
+	op := Operation{ID: m.NewID(), Kind: "drift", Status: Running, Stage: "Starting", StartedAt: now.UTC().Format(time.RFC3339), Command: bound.Display(command), VarFiles: selected, Replace: []string{}, Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: bound}
 	scan := &DriftScan{
 		ID: m.NewID(), OperationID: op.ID, Status: ScanRunning, StartedAt: op.StartedAt, Engine: snap.Info.Engine,
 		EngineVersion: snap.Info.Version, Workspace: snap.Info.Workspace, VarFiles: slices.Clone(selected), Context: bound.Clone(),

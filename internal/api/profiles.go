@@ -22,6 +22,9 @@ type profileView struct {
 	LockTimeoutSeconds int      `json:"lockTimeoutSeconds"`
 	AWSProfile         string   `json:"awsProfile"`
 	AWSRegion          string   `json:"awsRegion"`
+	AWSAuth            string   `json:"awsAuth"`
+	AWSExpectedAccount string   `json:"awsExpectedAccount"`
+	AWSExpectedRole    string   `json:"awsExpectedRole"`
 	EnvNames           []string `json:"envNames"`
 	Revision           int      `json:"revision"`
 	CreatedAt          string   `json:"createdAt"`
@@ -30,7 +33,14 @@ type profileView struct {
 }
 
 func viewOf(p profiles.Profile, defaultID string) profileView {
-	return profileView{p.ID, p.ProjectID, p.Name, p.Engine, p.Workspace, p.VarFiles, p.Options.Parallelism, p.Options.LockTimeoutSeconds, p.AWSProfile, p.AWSRegion, p.EnvNames, p.Revision, p.CreatedAt, p.UpdatedAt, p.ID == defaultID}
+	auth := ""
+	if p.AWSProfile != "" {
+		auth = profiles.AWSCLI
+		if p.AWSAuth == profiles.AWSVault {
+			auth = profiles.AWSVault
+		}
+	}
+	return profileView{p.ID, p.ProjectID, p.Name, p.Engine, p.Workspace, p.VarFiles, p.Options.Parallelism, p.Options.LockTimeoutSeconds, p.AWSProfile, p.AWSRegion, auth, p.AWSExpectedAccount, p.AWSExpectedRole, p.EnvNames, p.Revision, p.CreatedAt, p.UpdatedAt, p.ID == defaultID}
 }
 
 // profileBody is the editable profile. Strict decoding refuses any other field, so a
@@ -44,11 +54,14 @@ type profileBody struct {
 	LockTimeoutSeconds int      `json:"lockTimeoutSeconds"`
 	AWSProfile         string   `json:"awsProfile"`
 	AWSRegion          string   `json:"awsRegion"`
+	AWSAuth            string   `json:"awsAuth"`
+	AWSExpectedAccount string   `json:"awsExpectedAccount"`
+	AWSExpectedRole    string   `json:"awsExpectedRole"`
 	EnvNames           []string `json:"envNames"`
 }
 
 func (b profileBody) input() profiles.Input {
-	return profiles.Input{Name: b.Name, Engine: b.Engine, Workspace: b.Workspace, VarFiles: b.VarFiles, Options: profiles.Options{Parallelism: b.Parallelism, LockTimeoutSeconds: b.LockTimeoutSeconds}, AWSProfile: b.AWSProfile, AWSRegion: b.AWSRegion, EnvNames: b.EnvNames}
+	return profiles.Input{Name: b.Name, Engine: b.Engine, Workspace: b.Workspace, VarFiles: b.VarFiles, Options: profiles.Options{Parallelism: b.Parallelism, LockTimeoutSeconds: b.LockTimeoutSeconds}, AWSProfile: b.AWSProfile, AWSRegion: b.AWSRegion, AWSAuth: b.AWSAuth, AWSExpectedAccount: b.AWSExpectedAccount, AWSExpectedRole: b.AWSExpectedRole, EnvNames: b.EnvNames}
 }
 
 // checkVarFiles resolves every referenced variable file inside the project root before a

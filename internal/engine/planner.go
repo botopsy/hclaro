@@ -317,7 +317,7 @@ var classes = []struct {
 	{"state_unlock_failed", regexp.MustCompile(`error releasing the state lock|failed to unlock state|error unlocking state`)},
 	{"state_locked", regexp.MustCompile(`error acquiring the state lock|error locking state|lock info:|conditionalcheckfailed`)},
 	{"init_required", regexp.MustCompile(`backend initialization required|module not installed|required plugins are not installed|inconsistent dependency lock file|please run "(terraform|tofu) init"`)},
-	{"credentials", regexp.MustCompile(`credential|expiredtoken|token has expired|\bsso\b|unauthorized|authenticat|access ?denied|forbidden`)},
+	{"credentials", regexp.MustCompile(`credential|aws-vault: error|expiredtoken|token has expired|\bsso\b|unauthorized|authenticat|access ?denied|forbidden`)},
 	{"network", regexp.MustCompile(`no such host|i/o timeout|connection refused|network is unreachable|tls handshake timeout`)},
 }
 

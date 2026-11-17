@@ -63,6 +63,7 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 	if hub != nil {
 		projectRoutes(mux, hub)
 		profileRoutes(mux, hub)
+		authRoutes(mux, hub)
 		comparisonRoutes(mux, hub)
 		if hub.History != nil {
 			historyRoutes(mux, hub.History, manager, inits, version)

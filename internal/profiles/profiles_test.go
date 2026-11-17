@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"hclaro/internal/awsvault"
 	"hclaro/internal/engine"
 )
 
@@ -342,7 +343,7 @@ func TestComposeUsesTheChosenAWSProfile(t *testing.T) {
 		t.Fatalf("env\n got %v\nwant %v", env, want)
 	}
 	notices := strings.Join(r.Notices, "\n")
-	if !strings.Contains(notices, "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN are not passed") || strings.Contains(notices, canary) || !strings.Contains(notices, "does not verify") {
+	if !strings.Contains(notices, "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN are not passed") || strings.Contains(notices, canary) || !strings.Contains(notices, "Verify identity checks the AWS CLI credentials on request") {
 		t.Fatalf("notices %q", notices)
 	}
 	if r.Identity != IdentityNotVerified {
@@ -378,5 +379,100 @@ func TestFingerprintChangesWithRevisionAndContext(t *testing.T) {
 	present := Resolve(p, root, []string{"VAULT_ADDR=https://vault"})
 	if missing.Fingerprint == present.Fingerprint || missing.Blocking() == nil || missing.Blocking().Code != "env_missing" || present.Blocking() != nil {
 		t.Fatalf("env presence: %+v %+v", missing, present)
+	}
+}
+
+func TestRoleMatchesIsSegmentPrecise(t *testing.T) {
+	const p = "arn:aws:sts::111122223333:assumed-role/Deploy/*"
+	for arn, want := range map[string]bool{
+		"arn:aws:sts::111122223333:assumed-role/Deploy/alice":      true,
+		"arn:aws:sts::111122223333:assumed-role/Deploy/":           true,
+		"arn:aws:sts::111122223333:assumed-role/DeployAdmin/alice": false,
+		"arn:aws:sts::444455556666:assumed-role/Deploy/alice":      false,
+		"arn:aws:sts::111122223333:assumed-role/Deploy/a/b":        false,
+		"xarn:aws:sts::111122223333:assumed-role/Deploy/alice":     false,
+		"ARN withheld": false,
+		"":             false,
+	} {
+		if got := RoleMatches(p, arn); got != want {
+			t.Errorf("%q: %v", arn, got)
+		}
+	}
+	if !RoleMatches("arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_Admin_*/*", "arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_Admin_0123abcd/alice@example.com") {
+		t.Error("SSO role")
+	}
+	// Regular expression characters in the pattern are literal.
+	if RoleMatches("arn:aws:iam::111122223333:user/a.b", "arn:aws:iam::111122223333:user/aXb") {
+		t.Error("dot matched any character")
+	}
+}
+
+func TestAuthBindingValidation(t *testing.T) {
+	for name, in := range map[string]Input{
+		"method":    {Name: "x", AWSProfile: "p", AWSAuth: "shell"},
+		"vault":     {Name: "x", AWSAuth: AWSVault},
+		"account":   {Name: "x", AWSExpectedAccount: "1234"},
+		"role":      {Name: "x", AWSExpectedRole: "Deploy"},
+		"roleSpace": {Name: "x", AWSExpectedRole: "arn:aws:sts::111122223333:assumed-role/a b"},
+		"option":    {Name: "x", AWSProfile: "--endpoint-url"},
+	} {
+		if err := check(normalize(in)); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	ok := normalize(Input{Name: "x", AWSProfile: "prod", AWSAuth: AWSCLI, AWSExpectedAccount: "111122223333", AWSExpectedRole: "arn:aws:sts::*:assumed-role/Deploy/*"})
+	if err := check(ok); err != nil || ok.AWSAuth != "" {
+		t.Fatalf("%v %q", err, ok.AWSAuth)
+	}
+}
+
+// With aws-vault, the vault passes credentials: AWS_PROFILE is not set and only the
+// internal marker names the vault profile. Inherited credential, role, web identity and
+// container variables and an inherited marker are all dropped.
+func TestComposeIsolatesAWSVault(t *testing.T) {
+	base := []string{"PATH=/bin", "AWS_ACCESS_KEY_ID=AKIA_TEST_CANARY", "AWS_ROLE_ARN=arn:aws:iam::1:role/x", "AWS_WEB_IDENTITY_TOKEN_FILE=/t", "AWS_CONTAINER_CREDENTIALS_FULL_URI=http://x", "AWS_VAULT=other", "AWS_PROFILE=other", awsvault.Marker + "=evil"}
+	p := Profile{ID: NewID(), ProjectID: projectA, Name: "prod", Revision: 1, AWSProfile: "prod", AWSAuth: AWSVault}
+	r := Resolve(p, t.TempDir(), base)
+	env, err := Compose(base, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"PATH=/bin", awsvault.Marker + "=prod"}; !slices.Equal(env, want) {
+		t.Fatalf("env %v", env)
+	}
+	if r.AWSAuth != AWSVault || !strings.Contains(strings.Join(r.Notices, " "), "aws-vault exec prod --") {
+		t.Fatalf("%+v", r)
+	}
+	// Without a profile nothing is composed; an inherited marker is still never honoured
+	// because only a composed environment reaches awsvault.Split.
+	none := Resolve(Profile{ID: NewID(), ProjectID: projectA, Name: "n", Revision: 1}, t.TempDir(), base)
+	env, _ = Compose(base, none)
+	if slices.ContainsFunc(env, func(s string) bool { return strings.HasPrefix(s, awsvault.Marker) }) {
+		t.Fatalf("inherited marker passed: %v", env)
+	}
+	// The binding is part of the fingerprint.
+	q := p
+	q.AWSExpectedAccount = "111122223333"
+	if Resolve(q, t.TempDir(), base).Fingerprint == r.Fingerprint {
+		t.Fatal("expected account not in fingerprint")
+	}
+}
+
+// Profiles without an M20 binding keep the fingerprint they had: the aws-cli method is what
+// schema 1 did, so it adds nothing to the hash.
+func TestAWSCLIBindingKeepsTheFingerprint(t *testing.T) {
+	p := Profile{ID: NewID(), ProjectID: projectA, Name: "dev", Revision: 2, AWSProfile: "dev"}
+	r := Resolve(p, t.TempDir(), nil)
+	if r.AWSAuth != AWSCLI {
+		t.Fatal(r.AWSAuth)
+	}
+	legacy := r
+	legacy.AWSAuth = ""
+	if r.fingerprint() != legacy.fingerprint() {
+		t.Fatal("aws-cli changed the fingerprint")
+	}
+	p.AWSAuth = AWSVault
+	if Resolve(p, t.TempDir(), nil).Fingerprint == r.Fingerprint {
+		t.Fatal("aws-vault not in the fingerprint")
 	}
 }

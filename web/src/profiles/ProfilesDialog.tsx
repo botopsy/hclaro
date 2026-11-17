@@ -1,14 +1,15 @@
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, LoaderCircle, Pencil, Plus, Star, Trash2, X } from 'lucide-react';
+import { Cloud, Copy, LoaderCircle, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
 import { api, send } from '../api';
 import type { ExecutionProfile, ProfileInput, VarFile } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { IdentityBadge } from './ContextSummary';
 import { profilesQuery } from './selection';
+import { AuthPanel } from './AuthPanel';
 
-const blank: ProfileInput = { name: '', engine: '', workspace: '', varFiles: [], parallelism: 0, lockTimeoutSeconds: 0, awsProfile: '', awsRegion: '', envNames: [] };
+const blank: ProfileInput = { name: '', engine: '', workspace: '', varFiles: [], parallelism: 0, lockTimeoutSeconds: 0, awsProfile: '', awsRegion: '', awsAuth: '', awsExpectedAccount: '', awsExpectedRole: '', envNames: [] };
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : 'The profile could not be saved.';
@@ -31,6 +32,7 @@ export function ProfilesDialog({ projectId, workspaces = [], selected, onSelect,
   const profiles = useQuery(profilesQuery(projectId));
   const [editing, setEditing] = useState<ExecutionProfile | 'new'>();
   const [confirmDelete, setConfirmDelete] = useState<string>();
+  const [auth, setAuth] = useState<string>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const close = useRef<HTMLButtonElement>(null);
@@ -67,9 +69,10 @@ export function ProfilesDialog({ projectId, workspaces = [], selected, onSelect,
      <p>A profile names the workspace, variable files, AWS profile and region an operation uses. Choosing one affects only this browser tab. Profiles never store credentials, tokens or variable values. <IdentityBadge /></p>
      {profiles.data?.notice && <p className="plan-warning" role="note">{profiles.data.notice}</p>}
      {profiles.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /></div> : profiles.error ? <p className="dialog-error" role="alert">{message(profiles.error)}</p> : list.length === 0 ? <p className="muted">No profiles yet. Without a profile, operations use the environment Hclaro was started with.</p> : <ul className="profile-list">{list.map(p => <li key={p.id} className={p.id === selected ? 'chosen' : undefined}>
-       <div className="profile-text"><strong>{p.name}</strong>{p.default && <span className="hub-tag">Default</span>}{p.id === selected && <span className="hub-tag hub-tag-quiet">This tab</span>}<span className="muted">{[p.workspace && `workspace ${p.workspace}`, p.awsProfile && `AWS ${p.awsProfile}`, p.awsRegion, p.varFiles.length ? `${p.varFiles.length} variable file${p.varFiles.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ') || 'Inherited environment with this name'} · rev {p.revision}</span></div>
+       <div className="profile-text"><strong>{p.name}</strong>{p.default && <span className="hub-tag">Default</span>}{p.id === selected && <span className="hub-tag hub-tag-quiet">This tab</span>}<span className="muted">{[p.workspace && `workspace ${p.workspace}`, p.awsProfile && `AWS ${p.awsAuth === 'aws-vault' ? 'aws-vault ' : ''}${p.awsProfile}`, p.awsExpectedAccount && `expects ${p.awsExpectedAccount}`, p.awsRegion, p.varFiles.length ? `${p.varFiles.length} variable file${p.varFiles.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ') || 'Inherited environment with this name'} · rev {p.revision}</span></div>
        <div className="profile-actions">
         <Button size="small" variant="outline" onClick={() => onSelect(p.id)} disabled={p.id === selected}>Use in this tab</Button>
+        {p.awsProfile && <Button size="small" variant="ghost" aria-expanded={auth === p.id} aria-controls={`auth-${p.id}`} onClick={() => setAuth(auth === p.id ? undefined : p.id)}><Cloud size={13} />AWS</Button>}
         <Button size="icon" variant="ghost" aria-label={`Edit ${p.name}`} disabled={readOnly || busy} onClick={() => setEditing(p)}><Pencil size={13} /></Button>
         <Button size="icon" variant="ghost" aria-label={`Clone ${p.name}`} disabled={readOnly || busy} onClick={() => void act(() => send('POST', `${base}/${p.id}/clone`, { name: `${p.name} copy`.slice(0, 60) }))}><Copy size={13} /></Button>
         <Button size="icon" variant="ghost" aria-label={p.default ? `Stop using ${p.name} as default` : `Make ${p.name} the default`} aria-pressed={p.default} disabled={readOnly || busy} onClick={() => void act(() => send('POST', `${base}/default`, { profileId: p.default ? '' : p.id }))}><Star size={13} /></Button>
@@ -79,6 +82,7 @@ export function ProfilesDialog({ projectId, workspaces = [], selected, onSelect,
             if (p.id === selected) onSelect('');
           })}>Remove {p.name}</Button> : <Button size="icon" variant="ghost" aria-label={`Remove ${p.name}`} disabled={readOnly || busy} onClick={() => setConfirmDelete(p.id)}><Trash2 size={13} /></Button>}
        </div>
+       {auth === p.id && <div id={`auth-${p.id}`} className="profile-auth"><AuthPanel projectId={projectId} profileId={p.id} /></div>}
       </li>)}</ul>}
      {error && <p className="dialog-error" role="alert">{error}</p>}
      <div className="dialog-actions"><Button variant="ghost" onClick={() => onSelect('')} disabled={!selected}>Use no profile in this tab</Button><span className="context-spacer" /><Button onClick={() => setEditing('new')} disabled={readOnly}><Plus size={14} />New profile</Button></div>
@@ -94,7 +98,10 @@ function ProfileEditor({ projectId, profile, workspaces, onDone, onCancel }: {
   onDone: (saved?: ExecutionProfile) => void;
   onCancel: () => void;
 }) {
-  const [form, setForm] = useState<ProfileInput>(() => profile ? { name: profile.name, engine: profile.engine, workspace: profile.workspace, varFiles: profile.varFiles, parallelism: profile.parallelism, lockTimeoutSeconds: profile.lockTimeoutSeconds, awsProfile: profile.awsProfile, awsRegion: profile.awsRegion, envNames: profile.envNames } : blank);
+  const [form, setForm] = useState<ProfileInput>(() => profile ? { name: profile.name, engine: profile.engine, workspace: profile.workspace, varFiles: profile.varFiles, parallelism: profile.parallelism, lockTimeoutSeconds: profile.lockTimeoutSeconds, awsProfile: profile.awsProfile, awsRegion: profile.awsRegion, awsAuth: profile.awsAuth, awsExpectedAccount: profile.awsExpectedAccount, awsExpectedRole: profile.awsExpectedRole, envNames: profile.envNames } : blank);
+  // AWS profile names come from `aws configure list-profiles`, only when asked. No values.
+  const [awsNames, setAwsNames] = useState<string[]>();
+  const [awsNote, setAwsNote] = useState('');
   const [envText, setEnvText] = useState(() => (profile?.envNames || []).join(', '));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -129,10 +136,13 @@ function ProfileEditor({ projectId, profile, workspaces, onDone, onCancel }: {
     <small className="muted">Only approved files can be passed with -var-file. File contents are never shown.</small>
     <label className="field"><span>Expected environment variable names</span><input value={envText} onChange={e => setEnvText(e.target.value)} placeholder="VAULT_ADDR, TF_VAR_db_password" aria-describedby="env-hint" /><small id="env-hint" className="muted">Names only. Hclaro checks that they are set before running and never reads or stores values.</small></label>
    </fieldset>
-   <fieldset><legend>Cloud identity</legend>
-    <label className="field"><span>AWS profile</span><input value={form.awsProfile} maxLength={64} placeholder="Inherited" autoComplete="off" onChange={e => change({ awsProfile: e.target.value.trim() })} /><small className="muted">The name of a profile in your AWS configuration, used through your normal SSO or credential setup. Never enter an access key.</small></label>
+   <fieldset><legend>AWS authentication</legend>
+    <label className="field"><span>Method</span><select value={form.awsAuth || 'aws-cli'} onChange={e => change({ awsAuth: e.target.value as ProfileInput['awsAuth'] })}><option value="aws-cli">AWS CLI profile (AWS_PROFILE)</option><option value="aws-vault">aws-vault (aws-vault exec &lt;profile&gt; --)</option></select><small className="muted">{form.awsAuth === 'aws-vault' ? 'Engine and AWS CLI commands run through aws-vault exec with this vault profile. aws-vault passes temporary credentials to that command only; Hclaro never reads them. Prompts for a keychain password or MFA code need a terminal.' : 'Commands get AWS_PROFILE set to this profile; inherited access keys, role and web identity variables are not passed.'}</small></label>
+    <label className="field"><span>{form.awsAuth === 'aws-vault' ? 'aws-vault profile' : 'AWS profile'}</span><span className="field-row"><input value={form.awsProfile} list="aws-profile-names" maxLength={64} placeholder="Inherited" autoComplete="off" onChange={e => change({ awsProfile: e.target.value.trim() })} /><Button type="button" size="small" variant="ghost" onClick={() => api<{ profiles: string[] }>('auth/aws/profiles').then(r => { setAwsNames(r.profiles); setAwsNote(`${r.profiles.length} profile${r.profiles.length === 1 ? '' : 's'} found`); }, e => setAwsNote(message(e)))} title="Run aws configure list-profiles (local, names only)"><Search size={12} />Find profiles</Button></span><datalist id="aws-profile-names">{(awsNames || []).map(n => <option key={n} value={n} />)}</datalist><small className="muted" role="status">{awsNote || 'The name of a profile in your AWS configuration, used through your normal SSO or credential setup. Never enter an access key.'}</small></label>
     <label className="field"><span>AWS region</span><input value={form.awsRegion} maxLength={32} placeholder="Inherited" autoComplete="off" onChange={e => change({ awsRegion: e.target.value.trim() })} /></label>
-    <p className="muted"><IdentityBadge /> Hclaro does not check which account these names resolve to.</p>
+    <label className="field"><span>Expected account ID</span><input value={form.awsExpectedAccount} inputMode="numeric" maxLength={12} placeholder="No guard" autoComplete="off" onChange={e => change({ awsExpectedAccount: e.target.value.trim() })} aria-describedby="expected-account-hint" /><small id="expected-account-hint" className="muted">When set, apply is blocked unless STS verifies this 12-digit account immediately before applying.</small></label>
+    <label className="field"><span>Expected role ARN</span><input value={form.awsExpectedRole} maxLength={460} placeholder="Optional, e.g. arn:aws:sts::111122223333:assumed-role/Deploy/*" autoComplete="off" onChange={e => change({ awsExpectedRole: e.target.value.trim() })} /><small className="muted">* stands for part of one ARN segment; it never spans : or /.</small></label>
+    <p className="muted"><IdentityBadge /> Names only. Verify identity in the AWS panel checks the CLI execution identity on request; provider aliases or assume_role can still use another account.</p>
    </fieldset>
    <fieldset><legend>Plan and apply options</legend>
     <label className="field"><span>Parallelism</span><input type="number" min={0} max={256} value={form.parallelism || ''} placeholder="Engine default" onChange={e => change({ parallelism: Number(e.target.value) || 0 })} /></label>

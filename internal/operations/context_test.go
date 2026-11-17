@@ -1,6 +1,7 @@
 package operations
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/workspace"
 )
@@ -54,6 +56,9 @@ func profileSetup(t *testing.T, fake *engine.Fake, environ []string) (*Manager, 
 		}
 		return Binding{Context: FromResolved(r), Environ: env}, nil
 	}
+	// The STS probe answers with one synthetic identity; profiles that name an AWS profile
+	// need it verified before approval (M20).
+	m.IdentityProbe = func(context.Context, []string) preflight.Identity { return verifiedAs("123456789012") }
 	rec := &binding{}
 	m.Bind = func(env []string, ws string) engine.Planner {
 		rec.mu.Lock()
@@ -126,7 +131,7 @@ func TestProfilePlanAndApplyUseTheBoundContext(t *testing.T) {
 	if changed, status := m.ContextStatus(plan); changed || !status.Available {
 		t.Fatalf("fresh plan: changed %v status %+v", changed, status)
 	}
-	approval, err := approve(m, done.PlanID)
+	approval, err := approveVerified(m, done.PlanID)
 	if err != nil || approval.Context == nil || approval.Context.ProfileID != p.ID {
 		t.Fatalf("approval %+v %v", approval, err)
 	}
@@ -230,7 +235,7 @@ func TestProfileChangeInvalidatesStoredPlanAndToken(t *testing.T) {
 			t.Fatal(err)
 		}
 		done := wait(t, m, op.ID)
-		approval, err := approve(m, done.PlanID)
+		approval, err := approveVerified(m, done.PlanID)
 		if err != nil {
 			t.Fatal(err)
 		}

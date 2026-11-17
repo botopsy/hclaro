@@ -99,7 +99,7 @@ The sidebar shows the current **project** and **workspace** at the top, then the
 | --- | --- |
 | "An IaC engine is needed" | Install Terraform or OpenTofu on `PATH`, or pass `--engine`, then restart. |
 | "Initialize this workspace first" | Run `init` yourself, or use **Initialize…** on the project's Hub page, then **Read again**. |
-| "Rejected or expired credentials" | Sign in again in a terminal (for example `aws sso login`), then **Read again** or **Try again**. |
+| "Rejected or expired credentials" | With an execution profile that names an AWS profile, open the AWS state badge in the header and choose **Sign in with AWS (SSO)** (IAM Identity Center profiles) or run the terminal command it shows, then **Verify identity**. Otherwise sign in again in a terminal (for example `aws sso login`). Then **Read again** or **Try again**. |
 | "Could not reach the backend or a provider" | Check network, VPN or proxy, then try again. |
 | "Needs init" although `.terraform` exists | Providers or modules are missing or the lockfile changed: run init again from the Hub project page or in a terminal. |
 | State or workspaces unavailable, no reason given | Check credentials, SSO session, VPN and backend in your terminal. Hclaro withholds raw CLI errors because they can contain secrets; it only recognizes common credential, network and init messages. |

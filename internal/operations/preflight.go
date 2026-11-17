@@ -21,6 +21,8 @@ type preflightBinding struct {
 	acknowledge []string
 	identity    preflight.Identity
 	policy      string
+	// epoch is the AWS authentication epoch of the plan's profile when the preflight ran.
+	epoch uint64
 }
 
 // PreflightRequest asks for a preflight. VerifyIdentity runs the read-only cloud identity
@@ -136,6 +138,7 @@ func (m *Manager) facts(ctx context.Context, p *Plan, identity preflight.Identit
 	m.mu.Unlock()
 	if p.Context != nil {
 		in.ProfileName, in.AWSProfile = p.Context.ProfileName, p.Context.AWSProfile
+		in.AWSAuth, in.ExpectedAccount, in.ExpectedRole = p.Context.AWSAuth, p.Context.AWSExpectedAccount, p.Context.AWSExpectedRole
 	}
 	if holder, held := m.Locks.Holder(m.root); held {
 		in.LockHolder = holder
@@ -244,7 +247,7 @@ func (m *Manager) Preflight(ctx context.Context, id string, req PreflightRequest
 	if limit := a.created.Add(m.PlanMaxAge); limit.Before(expires) {
 		expires = limit
 	}
-	a.preflight = &preflightBinding{token: newID() + newID(), expires: expires, checkedAt: now, acknowledge: ack, identity: identity, policy: in.PolicyInfo.Source}
+	a.preflight = &preflightBinding{token: newID() + newID(), expires: expires, checkedAt: now, acknowledge: ack, identity: identity, policy: in.PolicyInfo.Source, epoch: m.authEpoch(a.context)}
 	report.Binding = a.preflight.token
 	report.ExpiresAt = expires.UTC().Format(time.RFC3339)
 	return report, nil
@@ -266,8 +269,19 @@ func (m *Manager) checkBindingLocked(a *artifact, token string) (*preflightBindi
 	case !time.Now().Before(b.expires):
 		a.preflight = nil
 		return nil, reject("preflight_expired", "The preflight checks expired. Run them again.")
+	case b.epoch != m.authEpoch(a.context):
+		a.preflight, a.approval = nil, nil
+		return nil, reject("AUTH_CONTEXT_STALE", "You signed in to AWS, or the verified AWS identity changed, after this preflight. Nothing was applied. Run the preflight checks again and review them.")
 	}
 	return b, nil
+}
+
+// authEpoch is the AWS authentication epoch of c's profile; 0 without a hook or profile.
+func (m *Manager) authEpoch(c *ExecutionContext) uint64 {
+	if m.AuthEpoch == nil || c == nil || c.ProfileID == "" {
+		return 0
+	}
+	return m.AuthEpoch(c.ProjectID, c.ProfileID)
 }
 
 // titles names the checks with the given IDs, for refusal messages.

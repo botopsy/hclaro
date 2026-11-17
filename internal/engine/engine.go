@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"hclaro/internal/awsvault"
 	"hclaro/internal/state"
 )
 
@@ -200,18 +201,43 @@ func (c *CLI) command(ctx context.Context, args ...string) (*exec.Cmd, error) {
 	return c.commandEnv(ctx, c.SelectedWorkspace != "" || c.IgnoreInheritedWorkspace, c.SelectedWorkspace, args...)
 }
 
+// CredentialFree reports whether an engine command never needs cloud or backend credentials:
+// the version query, the selected workspace (a local file or TF_WORKSPACE), format checks
+// and configuration validation. Everything else may read a backend or call a provider.
+func CredentialFree(args []string) bool {
+	switch {
+	case len(args) == 0:
+		return false
+	case args[0] == "version", args[0] == "-version", args[0] == "fmt", args[0] == "validate":
+		return true
+	}
+	return len(args) >= 2 && args[0] == "workspace" && args[1] == "show"
+}
+
 // commandEnv builds the command. dropWorkspace removes an inherited TF_WORKSPACE; a
 // non-empty selected is then passed as the child's TF_WORKSPACE.
 func (c *CLI) commandEnv(ctx context.Context, dropWorkspace bool, selected string, args ...string) (*exec.Cmd, error) {
-	cmd := exec.CommandContext(ctx, c.Executable, args...)
-	cmd.Dir = c.Root
-	cmd.WaitDelay = time.Second
 	// Environment values and CLI diagnostics can contain secrets. Inherited
 	// logging is disabled so Terraform cannot persist raw state via TF_LOG_PATH.
-	environ := c.Environ
+	environ, vault := c.Environ, ""
 	if environ == nil {
-		environ = os.Environ()
+		environ = awsvault.Strip(os.Environ())
+	} else {
+		// Only an environment composed for an execution profile selects aws-vault.
+		vault, environ = awsvault.Split(environ)
 	}
+	exe, argv := c.Executable, args
+	// Commands that never need cloud or backend credentials do not run through aws-vault,
+	// so they never wait on a keychain or MFA prompt.
+	if !CredentialFree(args) {
+		var err error
+		if exe, argv, err = awsvault.Command(vault, c.Executable, args); err != nil {
+			return nil, err
+		}
+	}
+	cmd := exec.CommandContext(ctx, exe, argv...)
+	cmd.Dir = c.Root
+	cmd.WaitDelay = time.Second
 	// The subcommand is every argument before the first flag; extra trailing words such as a
 	// workspace name only make the check stricter.
 	words := args

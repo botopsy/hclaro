@@ -1,5 +1,6 @@
 import { AlertTriangle, CircleHelp, Fingerprint, KeyRound, ShieldAlert } from 'lucide-react';
 import type { ExecutionContext, ExecutionSummary } from '../types';
+import { AuthIndicator } from './AuthPanel';
 
 function engineLabel(name?: string) {
   return name === 'tofu' ? 'OpenTofu' : name === 'terraform' ? 'Terraform' : 'Automatic';
@@ -23,7 +24,7 @@ export function ContextSummary({ summary, title = 'Execution context' }: { summa
   const c = summary.context;
   const vars = c.varFiles;
   return <section className="context-summary" aria-label={title}>
-   <div className="context-summary-heading"><h3>{title}</h3><span className="hub-tag">{c.profileName ? <>Profile <strong>{c.profileName}</strong> · rev {c.profileRevision}</> : 'No profile · inherited environment'}</span><IdentityBadge /></div>
+   <div className="context-summary-heading"><h3>{title}</h3><span className="hub-tag">{c.profileName ? <>Profile <strong>{c.profileName}</strong> · rev {c.profileRevision}</> : 'No profile · inherited environment'}</span>{c.profileId && c.awsProfile ? <AuthIndicator projectId={c.projectId} profileId={c.profileId} /> : <IdentityBadge />}</div>
    <dl className="metadata compact-metadata">
     <div><dt>Engine</dt><dd>{engineLabel(summary.engine)}{summary.engineVersion ? ` ${summary.engineVersion}` : ''}{summary.engine && !summary.engineFound && ' (not found on PATH)'}</dd></div>
     <div><dt>Workspace</dt><dd>{summary.workspace ? <><strong>{summary.workspace}</strong> <span className="muted">({sources[summary.workspaceSource]})</span></> : <span className="muted">CLI default (not listed yet)</span>}</dd></div>
@@ -31,7 +32,8 @@ export function ContextSummary({ summary, title = 'Execution context' }: { summa
     <div><dt>Backend · mode</dt><dd>{summary.backend} · {summary.executionMode}</dd></div>
     <div><dt>Data directory</dt><dd className="mono">{summary.dataDir}</dd></div>
     <div><dt>Variable files</dt><dd>{vars.length ? <ul className="plain-list">{vars.map(f => <li key={f.ref}><code>{f.ref}</code>{f.linked && <span className="muted"> → <code>{f.path}</code></span>}</li>)}</ul> : <span className="muted">Only files the engine loads automatically</span>}</dd></div>
-    <div><dt>AWS profile</dt><dd>{c.awsProfile ? <code>{c.awsProfile}</code> : <span className="muted">Inherited (not set by Hclaro)</span>}</dd></div>
+    <div><dt>AWS profile</dt><dd>{c.awsProfile ? <><code>{c.awsProfile}</code> <span className="muted">via {c.awsAuth === 'aws-vault' ? 'aws-vault' : 'AWS CLI'}</span></> : <span className="muted">Inherited (not set by Hclaro)</span>}</dd></div>
+    {(c.awsExpectedAccount || c.awsExpectedRole) && <div><dt>Expected AWS identity</dt><dd>{c.awsExpectedAccount && <code>{c.awsExpectedAccount}</code>}{c.awsExpectedRole && <> <code>{c.awsExpectedRole}</code></>} <span className="muted">(checked before apply)</span></dd></div>}
     <div><dt>AWS region</dt><dd>{c.awsRegion ? <code>{c.awsRegion}</code> : <span className="muted">Inherited (not set by Hclaro)</span>}</dd></div>
     {(c.options.parallelism || c.options.lock_timeout_seconds) ? <div><dt>Plan and apply options</dt><dd className="mono">{c.options.parallelism ? `-parallelism=${c.options.parallelism} ` : ''}{c.options.lock_timeout_seconds ? `-lock-timeout=${c.options.lock_timeout_seconds}s` : ''}</dd></div> : null}
     {c.env.length > 0 && <div><dt>Expected variables</dt><dd><ul className="plain-list">{c.env.map(e => <li key={e.name}><KeyRound size={11} aria-hidden="true" /> <code>{e.name}</code> <span className={e.present ? 'muted' : 'issue-text'}>{e.present ? 'set (value not shown)' : 'missing'}</span></li>)}</ul></dd></div>}
@@ -46,5 +48,5 @@ export function ContextSummary({ summary, title = 'Execution context' }: { summa
 // RecordedContext shows the context an operation or plan was bound to.
 export function RecordedContext({ context }: { context?: ExecutionContext }) {
   if (!context?.profileId) return <span className="muted">No profile (inherited environment)</span>;
-  return <span>Profile <strong>{context.profileName}</strong> (rev {context.profileRevision}) · workspace <strong>{context.workspace}</strong>{context.awsProfile && <> · AWS profile <code>{context.awsProfile}</code></>}{context.awsRegion && <> · <code>{context.awsRegion}</code></>} <IdentityBadge /></span>;
+  return <span>Profile <strong>{context.profileName}</strong> (rev {context.profileRevision}) · workspace <strong>{context.workspace}</strong>{context.awsProfile && <> · AWS profile <code>{context.awsProfile}</code>{context.awsAuth === 'aws-vault' && ' via aws-vault'}</>}{context.awsExpectedAccount && <> · expects <code>{context.awsExpectedAccount}</code></>}{context.awsRegion && <> · <code>{context.awsRegion}</code></>} <IdentityBadge /></span>;
 }

@@ -104,7 +104,7 @@ func InitCommand(engineName string, json bool) []string {
 // its version is supported and Revalidate passes.
 func (r *Inits) Start(req InitRequest) (Operation, error) {
 	op := Operation{
-		Kind: "init", Command: InitCommand(req.Engine, false), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
+		Kind: "init", Command: req.Context.Display(InitCommand(req.Engine, false)), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 	}
 	return r.begin(op, recordMeta{root: req.Root, engine: req.Engine}, req.Release, nil, func(ctx context.Context, e *initEntry) { r.run(ctx, e, req) })
 }
@@ -242,7 +242,7 @@ func (r *Inits) execute(ctx context.Context, e *initEntry, req InitRequest) (cod
 	}
 	json := engine.InitJSON(req.Engine, version)
 	r.update(e, func(o *Operation) {
-		o.Command = InitCommand(req.Engine, json)
+		o.Command = req.Context.Display(InitCommand(req.Engine, json))
 		e.meta.version = version
 	})
 	r.stage(e, "Checking project")

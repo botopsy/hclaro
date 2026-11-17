@@ -26,7 +26,7 @@ lint:
 	npm --prefix web run typecheck
 	npm --prefix web run lint
 fmt:
-	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fake-infracost scripts/fixture-http scripts/hub-demo scripts/qualify
+	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fake-aws-vault scripts/fake-infracost scripts/fixture-http scripts/hub-demo scripts/qualify
 
 # M27 real-engine harness (internal/qualify, docs/qualification/README.md). Maintainer-run, never
 # in PR or push CI: make qualify TF=/abs/terraform TOFU=/abs/tofu MIRROR=<mirror dir> OUT=<dir>

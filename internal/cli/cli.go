@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"hclaro/internal/api"
+	"hclaro/internal/awsauth"
+	"hclaro/internal/awsvault"
 	"hclaro/internal/cost"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
@@ -155,6 +157,9 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	if o.ExportHistory != "" {
 		return ExportHistory(o.ExportHistory, output, version)
 	}
+	// The aws-vault marker is Hclaro's own and is set only for children of an execution
+	// profile that selects aws-vault; an inherited one must never select a vault profile.
+	_ = os.Unsetenv(awsvault.Marker)
 	// Without --hub, the current directory (or --path) is the launch project, as before.
 	// Outside a project, an implicit current directory falls back to the Hub; an explicit
 	// --path that is not a project still fails.
@@ -250,6 +255,9 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager.IdentityProbe = preflight.AWSIdentity
 	// Hub execution scopes (when enabled) gather the same preflight facts.
 	hub.GitProbe, hub.IdentityProbe = gitProbe, preflight.AWSIdentity
+	// AWS authentication (M20): STS checks and AWS CLI sign-ins only on explicit request.
+	hub.Auth = awsauth.New()
+	manager.AuthEpoch = hub.Auth.Epoch
 	// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
 	manager.Discovery = discovery.New(discovery.Exec{})
 	hub.Discovery = manager.Discovery
@@ -333,6 +341,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	// A running plan or init is interrupted and its private temp files removed before exit.
 	manager.Close(20 * time.Second)
 	manager.Discovery.Close(5 * time.Second)
+	hub.Auth.Close(5 * time.Second)
 	manager.Cost.Close(5 * time.Second)
 	hub.Inits.Close(20 * time.Second)
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)

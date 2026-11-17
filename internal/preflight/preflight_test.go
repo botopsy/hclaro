@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -411,5 +412,66 @@ func TestSourceCheck(t *testing.T) {
 		if tc.status != Pass && c.Remediation == "" {
 			t.Fatalf("%s: no remediation", name)
 		}
+	}
+}
+
+// The execution profile's expected account and role always block, fail closed when the
+// identity is not verified and match roles per segment, never by substring (M20).
+func TestExpectedAccountAndRoleBlock(t *testing.T) {
+	in := base()
+	if slices.ContainsFunc(Evaluate(in), func(c Check) bool { return c.ID == CheckAWSExpected }) {
+		t.Fatal("check without a guard")
+	}
+	in.AWSProfile, in.ExpectedAccount = "prod", "111122223333"
+	if c := get(t, Evaluate(in), CheckAWSExpected); !c.Blocks() || c.Status != Unknown {
+		t.Fatalf("unverified identity: %+v", c)
+	}
+	in.Identity = Identity{State: "failed", Kind: "timeout", Message: "STS did not answer"}
+	if c := get(t, Evaluate(in), CheckAWSExpected); !c.Blocks() || c.Status != Unknown {
+		t.Fatalf("timed out: %+v", c)
+	}
+	in.Identity = Identity{State: "verified", Account: "444455556666", ARN: "arn:aws:sts::444455556666:assumed-role/Deploy/s"}
+	if c := get(t, Evaluate(in), CheckAWSExpected); !c.Blocks() || c.Status != Fail || !strings.Contains(c.Evidence, "AUTH_ACCOUNT_MISMATCH") {
+		t.Fatalf("mismatch: %+v", c)
+	}
+	in.Identity = Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/DeployAdmin/s"}
+	if c := get(t, Evaluate(in), CheckAWSExpected); c.Blocks() {
+		t.Fatalf("account-only guard: %+v", c)
+	}
+	in.ExpectedRole = "arn:aws:sts::111122223333:assumed-role/Deploy/*"
+	if c := get(t, Evaluate(in), CheckAWSExpected); !c.Blocks() {
+		t.Fatalf("role substring matched: %+v", c)
+	}
+	in.Identity.ARN = "arn:aws:sts::111122223333:assumed-role/Deploy/s"
+	if c := get(t, Evaluate(in), CheckAWSExpected); c.Blocks() || c.Status != Pass || !strings.Contains(c.Evidence, "CLI execution identity") {
+		t.Fatalf("match: %+v", c)
+	}
+	// A policy cannot relax it: it is a built-in check.
+	in.Identity.Account = "444455556666"
+	in.Policy.Rules.AWSAccounts = &AccountRule{Severity: Info, Allowed: []string{"444455556666"}}
+	if c := get(t, Evaluate(in), CheckAWSExpected); !c.Blocks() || c.Source != "built-in" {
+		t.Fatalf("%+v", c)
+	}
+}
+
+// L3: a withheld ARN hides the principal, so two of them are never the same identity, and a
+// review with one cannot bind an approval: it blocks instead of failing later at apply.
+func TestWithheldARNFailsClosed(t *testing.T) {
+	ok := Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/a"}
+	withheld := Identity{State: "verified", Account: "111122223333", ARN: "ARN withheld"}
+	if !SameIdentity(ok, Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/b"}) {
+		t.Fatal("same role, new session")
+	}
+	if SameIdentity(withheld, withheld) || SameIdentity(ok, withheld) || SameIdentity(withheld, ok) {
+		t.Fatal("a withheld ARN compared as the same principal")
+	}
+	in := base()
+	in.AWSProfile, in.Identity = "dev", withheld
+	if c := get(t, Evaluate(in), CheckAWSReviewed); !c.Blocks() || c.Status != Fail {
+		t.Fatalf("withheld ARN: %+v", c)
+	}
+	in.Identity = ok
+	if c := get(t, Evaluate(in), CheckAWSReviewed); c.Status != Pass {
+		t.Fatalf("readable ARN: %+v", c)
 	}
 }
