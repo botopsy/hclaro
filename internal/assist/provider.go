@@ -110,6 +110,8 @@ type Adapter struct {
 	VersionArgs       []string
 	// RunArgs is the verified headless argv; nil makes the provider handoff-only.
 	RunArgs []string
+	// Handoff is the feasibility reason a handoff-only provider (nil RunArgs) cannot run.
+	Handoff string
 	// AuthEnv names the auth variables recorded in feasibility; they are passed through.
 	AuthEnv []string
 	// ParseVersion returns the version in `--version` output ("" when unreadable) and whether
@@ -176,6 +178,9 @@ func (c *CLI) Detect(ctx context.Context) ProviderStatus {
 	}
 	if kind != "" {
 		st.Reason, st.Message = kind, Message(kind)
+	}
+	if kind == KindNotEligible && c.Handoff != "" {
+		st.Message += " " + c.Handoff
 	}
 	return st
 }
@@ -312,6 +317,38 @@ func claudeReply(stdout, stderr []byte, exitOK bool) (string, string) {
 		return "", KindMalformed
 	}
 	return *r.Result, ""
+}
+
+// Codex and GitHub Copilot CLI are handoff-only (FEASIBILITY.md, 2026-11-17): both passed the
+// canary check, but without a documented interface to keep their tools off. They are detected
+// only to show their status; with no RunArgs, Run refuses them before starting anything. When a
+// re-probe finds them headless-eligible, adding RunArgs and Reply is the whole change.
+var Codex = Adapter{
+	ID: "codex", Name: "OpenAI Codex", Command: "codex",
+	VersionArgs:  []string{"--version"},
+	ParseVersion: anyVersion(regexp.MustCompile(`^codex-cli ([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6})$`)),
+	Handoff:      "Codex has no documented switch that turns all of its tools off, only per-tool flags that change between versions.",
+}
+
+var Copilot = Adapter{
+	ID: "copilot", Name: "GitHub Copilot CLI", Command: "copilot",
+	VersionArgs:  []string{"--version"},
+	ParseVersion: anyVersion(regexp.MustCompile(`^GitHub Copilot CLI ([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6})\.?$`)),
+	Handoff:      "Copilot CLI documents no stdin prompt input and no switch that turns off user MCP servers.",
+}
+
+// anyVersion reads a handoff-only provider's version from the first output line (Copilot adds
+// an update hint after it). Every version is "supported" so Settings shows the feasibility
+// reason rather than a version warning; it never makes one runnable.
+func anyVersion(re *regexp.Regexp) func([]byte) (string, bool) {
+	return func(out []byte) (string, bool) {
+		first, _, _ := bytes.Cut(bytes.TrimSpace(out), []byte("\n"))
+		m := re.FindSubmatch(bytes.TrimSpace(first))
+		if m == nil {
+			return "", false
+		}
+		return string(m[1]), true
+	}
 }
 
 func classify(text string) string {

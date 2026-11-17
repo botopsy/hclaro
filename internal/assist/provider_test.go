@@ -51,6 +51,10 @@ func fakeCLI(mode string) int {
 			os.Stdout.WriteString("2.0.9 (Claude Code)\n")
 		case "garbage":
 			os.Stdout.WriteString("something else\n")
+		case "codex":
+			os.Stdout.WriteString("codex-cli 0.166.0\n")
+		case "copilot":
+			os.Stdout.WriteString("GitHub Copilot CLI 1.0.112.\nRun 'copilot update' to check for updates.\n")
 		default:
 			os.Stdout.WriteString("2.1.326 (Claude Code)\n")
 		}
@@ -102,7 +106,8 @@ func fake(t *testing.T, mode string) (*CLI, string) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", home)
-	for _, k := range []string{"AWS_SECRET_ACCESS_KEY", "AWS_PROFILE", "TF_VAR_password", "TF_TOKEN_app_terraform_io", "GOOGLE_APPLICATION_CREDENTIALS", "ARM_CLIENT_SECRET", "AZURE_CLIENT_SECRET", "HCLARO_CANARY", "GITHUB_TOKEN", "ANTHROPIC_BASE_URL"} {
+	for _, k := range []string{"AWS_SECRET_ACCESS_KEY", "AWS_PROFILE", "TF_VAR_password", "TF_TOKEN_app_terraform_io", "GOOGLE_APPLICATION_CREDENTIALS", "ARM_CLIENT_SECRET", "AZURE_CLIENT_SECRET", "HCLARO_CANARY", "GITHUB_TOKEN", "ANTHROPIC_BASE_URL",
+		"GH_TOKEN", "COPILOT_GITHUB_TOKEN", "COPILOT_ALLOW_ALL", "OPENAI_API_KEY", "CODEX_HOME"} {
 		t.Setenv(k, "canary-"+k)
 	}
 	t.Setenv("ANTHROPIC_API_KEY", "fake-key")
@@ -165,6 +170,66 @@ func TestDetection(t *testing.T) {
 	handoff.RunArgs = nil
 	if st := handoff.Detect(ctx); st.Mode != ModeHandoff || st.Reason != KindNotEligible {
 		t.Fatalf("%+v", st)
+	}
+}
+
+// Handoff-only adapters (AI-01.05) go through the same fake-CLI checks: detection runs only
+// --version, isolated like a run, and Run refuses before starting the assistant.
+func TestHandoffOnlyAdapters(t *testing.T) {
+	ctx := context.Background()
+	for _, a := range []Adapter{Codex, Copilot} {
+		t.Run(a.ID, func(t *testing.T) {
+			c, home := fake(t, a.ID)
+			c.Adapter = a
+			st := c.Detect(ctx)
+			if st.Mode != ModeHandoff || st.Reason != KindNotEligible || st.Version == "" || st.Path != c.Path || !strings.HasSuffix(st.Message, a.Handoff) {
+				t.Fatalf("%+v", st)
+			}
+			if _, err := c.Run(ctx, []byte("payload")); KindOf(err) != KindNotEligible {
+				t.Fatalf("handoff-only provider ran: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(home, "run.json")); !os.IsNotExist(err) {
+				t.Fatal("handoff-only provider was started with a run argv")
+			}
+			v := record(t, home, "version.json")
+			if !slices.Equal(v.Args, []string{"--version"}) || v.Entries != 0 || !strings.Contains(filepath.Base(v.Dir), "hclaro-ai-") {
+				t.Fatalf("%+v", v)
+			}
+			if env := strings.Join(v.Env, "\n"); strings.Contains(env, "canary-") || strings.Contains(env, "fake-key") {
+				t.Fatalf("environment leaks:\n%s", env)
+			}
+			garbage, _ := fake(t, "garbage")
+			garbage.Adapter = a
+			if st := garbage.Detect(ctx); st.Mode != ModeUnsupported || st.Reason != KindMalformed {
+				t.Fatalf("%+v", st)
+			}
+			missing := &CLI{Adapter: a}
+			missing.Command = "hclaro-no-such-assistant"
+			if st := missing.Detect(ctx); st.Mode != ModeUnsupported || st.Reason != KindMissing {
+				t.Fatalf("%+v", st)
+			}
+		})
+	}
+}
+
+// Version strings recorded by the probe (probe/results-20261117-*/). AWS Copilot, which
+// Homebrew also installs as `copilot`, is not read as GitHub Copilot CLI.
+func TestHandoffVersionParsing(t *testing.T) {
+	for _, tc := range []struct {
+		a        Adapter
+		out, ver string
+	}{
+		{Codex, "codex-cli 0.166.0\n", "0.166.0"},
+		{Codex, "codex 0.166.0", ""},
+		{Copilot, "GitHub Copilot CLI 1.0.112.\n", "1.0.112"},
+		// Real 1.0.112 output on 2026-11-17 (the probe kept only the first line).
+		{Copilot, "GitHub Copilot CLI 1.0.112.\nRun 'copilot update' to check for updates.\n", "1.0.112"},
+		{Copilot, "GitHub Copilot CLI 1.0.113", "1.0.113"},
+		{Copilot, "copilot version: v1.34.0, built for darwin-arm64", ""},
+	} {
+		if v, _ := tc.a.ParseVersion([]byte(tc.out)); v != tc.ver {
+			t.Errorf("%s %q: %q", tc.a.ID, tc.out, v)
+		}
 	}
 }
 

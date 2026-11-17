@@ -2,6 +2,8 @@ package assist
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,10 +21,43 @@ var disclosure = Disclosure{Version: DisclosureVersion, Lines: []string{
 	"Hclaro builds this context on your machine and shares nothing by itself. Only Copy, Download or Send to an assistant hands it over.",
 	"An AI assistant you give it to may send it to a cloud model, and its runs bill your own assistant account.",
 	"Once copied or downloaded, the text is outside Hclaro: its redaction and blocking no longer protect it.",
-	"Send runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials. It sends exactly the previewed text to its cloud model, signed in as you.",
-	"Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
-	"The reply is unverified AI output. Hclaro shows it as text, keeps it in memory for this session only, and never runs, applies or approves anything it suggests.",
+	sendLine + "Send runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials. It sends exactly the previewed text to its cloud model, signed in as you.",
+	claudeLine + "Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
+	sendLine + "The reply is unverified AI output. Hclaro shows it as text, keeps it in memory for this session only, and never runs, applies or approves anything it suggests.",
 }}
+
+// Line markers, stripped before display: sendLine lines apply only when an assistant can be run
+// headless, claudeLine lines only when that assistant is Claude Code. The version stays the
+// same; SetEnabled drops an acceptance when the shown lines change.
+const (
+	sendLine   = "\x00send\x00"
+	claudeLine = "\x00claude\x00"
+)
+
+// shownDisclosure is the disclosure without the lines that do not apply to detected.
+func shownDisclosure(detected []ProviderStatus) Disclosure {
+	send, claude := false, false
+	for _, d := range detected {
+		if d.Mode == ModeHeadless {
+			send, claude = true, claude || d.ID == Claude.ID
+		}
+	}
+	out := Disclosure{Version: disclosure.Version, Lines: []string{}}
+	for _, l := range disclosure.Lines {
+		if line, ok := strings.CutPrefix(l, claudeLine); ok {
+			if claude {
+				out.Lines = append(out.Lines, line)
+			}
+		} else if line, ok := strings.CutPrefix(l, sendLine); ok {
+			if send {
+				out.Lines = append(out.Lines, line)
+			}
+		} else {
+			out.Lines = append(out.Lines, l)
+		}
+	}
+	return out
+}
 
 // Settings is the session's AI state. Strict local-only mode keeps handoff available but
 // never runs an assistant (OD-AI-4), because handoff leaves the data with the user.
@@ -80,7 +115,7 @@ func NewSession(strictLocal bool, providers ...Assistant) *Session {
 func (s *Session) Settings() Settings {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := Settings{Enabled: s.enabled, StrictLocal: s.strict, Handoff: s.enabled, Disclosure: disclosure, Accepted: s.accepted,
+	st := Settings{Enabled: s.enabled, StrictLocal: s.strict, Handoff: s.enabled, Disclosure: shownDisclosure(s.detected), Accepted: s.accepted,
 		Providers: append([]ProviderStatus{}, s.detected...), DefaultProvider: s.preferred}
 	st.Headless = s.enabled && !s.strict && s.eligible(s.preferred)
 	return st
@@ -107,6 +142,11 @@ func (s *Session) SetEnabled(on bool) Settings {
 	s.mu.Lock()
 	s.enabled = on
 	if on {
+		// Acceptance covers the lines that were shown; new ones (e.g. Claude Code installed
+		// since) must be accepted again.
+		if !slices.Equal(shownDisclosure(found).Lines, shownDisclosure(s.detected).Lines) {
+			s.accepted = false
+		}
 		s.detected = found
 		if !s.eligible(s.preferred) {
 			s.preferred = ""

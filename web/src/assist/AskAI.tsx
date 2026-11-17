@@ -66,11 +66,13 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
   });
   const settings = useQuery(assistSettingsQuery).data;
   const eligible = settings?.headless ? (settings.providers ?? []).filter(p => p.mode === 'headless-eligible') : [];
+  // Handoff-only assistants get their own Copy action; Hclaro never runs them (AI-01.05).
+  const handoffs = (settings?.providers ?? []).filter(p => p.mode === 'handoff-only');
   const [picked, setPicked] = useState<string>();
   const provider = eligible.find(p => p.id === (picked ?? settings?.defaultProvider)) ?? eligible[0];
   const [runId, setRunId] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [handed, setHanded] = useState<'copied' | 'downloaded'>();
+  const [handed, setHanded] = useState<{ how: 'copied' | 'downloaded'; to?: string }>();
   const [failed, setFailed] = useState<string>();
   // Send names the previewed hash, the assistant and the disclosure version the user accepted.
   async function send() {
@@ -88,7 +90,7 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
     }
   }
   // Export names the previewed hash; the server returns those exact bytes or refuses.
-  async function handOver(how: 'copy' | 'download') {
+  async function handOver(how: 'copy' | 'download', to?: string) {
     const p = pkg.data;
     if (!p) return;
     setBusy(true);
@@ -104,7 +106,7 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
         }
       }
       else save(e.filename, e.markdown);
-      setHanded(how === 'copy' ? 'copied' : 'downloaded');
+      setHanded({ how: how === 'copy' ? 'copied' : 'downloaded', to });
     } catch (err) {
       setFailed(err instanceof Error ? err.message : 'The package could not be exported.');
     } finally {
@@ -130,14 +132,15 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
         <div><dt>SHA-256</dt><dd className="mono" title={p.sha256}>{p.sha256.slice(0, 16)}…</dd></div>
        </dl>
        <pre className="assist-text" aria-label="Context package text" tabIndex={0}>{p.markdown}</pre>
-       {handed && <p className="info-line" role="status">Context {handed}. Hclaro's protections end here: what happens to this text is now up to you and the assistant you give it to.</p>}
+       {handed && <p className="info-line" role="status">Context {handed.how}{handed.to && <> for {handed.to}. Paste it into {handed.to} yourself: Hclaro did not open or run it</>}. Hclaro's protections end here: what happens to this text is now up to you and the assistant you give it to.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
        {runId && <RunPanel id={runId} />}
       </>}
     <div className="form-actions">
      <Button variant="ghost" onClick={onClose}>Cancel</Button>
      {p && p.sections.length > 0 && <>
-      <Button variant="outline" disabled={busy} onClick={() => void handOver('copy')}><Copy size={14} />Copy</Button>
+      {handoffs.length ? handoffs.map(h => <Button key={h.id} variant="outline" disabled={busy} onClick={() => void handOver('copy', h.name)}><Copy size={14} />Copy for {h.name}</Button>)
+        : <Button variant="outline" disabled={busy} onClick={() => void handOver('copy')}><Copy size={14} />Copy</Button>}
       <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button>
       {provider && settings && <>
        {eligible.length > 1 && <select aria-label="Assistant for this request" value={provider.id} onChange={e => setPicked(e.target.value)}>{eligible.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>}
@@ -145,6 +148,7 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
       </>}
      </>}
     </div>
+    {p && p.sections.length > 0 && handoffs.length > 0 && <p className="muted assist-note">{handoffs.map(h => h.name).join(' and ')} {handoffs.length > 1 ? 'are' : 'is'} handoff-only: copy or download the context and give it to the assistant yourself. Hclaro never runs {handoffs.length > 1 ? 'them' : 'it'}.</p>}
     {p && provider && settings && !settings.disclosureAccepted && <p className="muted assist-note">To send this to {provider.name}, accept the AI disclosure in Settings first.</p>}
    </div>
   </Drawer>;
