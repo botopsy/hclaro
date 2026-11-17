@@ -284,7 +284,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	// AI assistance (AI-01.03, AI-01.04): off until switched on in Settings; packages and
 	// replies stay in memory. Strict local-only mode keeps handoff and never runs an assistant
 	// (OD-AI-4). History keeps request metadata only.
-	manager.Assist = assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath})
+	manager.Assist = assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath},
+		&assist.CLI{Adapter: assist.Codex}, &assist.CLI{Adapter: assist.Copilot})
 	manager.Assist.Record = operationHistory.RecordAssist
 	defer manager.Assist.Close()
 	if launchCLI != nil {

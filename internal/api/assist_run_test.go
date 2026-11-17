@@ -19,15 +19,29 @@ import (
 // environment are tested on the real CLI runner in internal/assist with a fake executable.
 
 type stubAssistant struct {
-	mode, reply string
+	id, mode    string // id defaults to "stub"
+	reply       string
 	block       bool
 	mu          sync.Mutex
 	payloads    []string
 }
 
-func (a *stubAssistant) ID() string { return "stub" }
+func (a *stubAssistant) ID() string {
+	if a.id == "" {
+		return "stub"
+	}
+	return a.id
+}
 func (a *stubAssistant) Detect(context.Context) assist.ProviderStatus {
-	return assist.ProviderStatus{ID: "stub", Name: "Stub", Mode: a.mode, Version: "1.0.0", Path: "/synthetic/bin/stub"}
+	if a.mode == assist.ModeUnsupported {
+		return assist.ProviderStatus{ID: a.ID(), Name: a.ID(), Mode: a.mode, Reason: assist.KindMissing, Message: assist.Message(assist.KindMissing)}
+	}
+	return assist.ProviderStatus{ID: a.ID(), Name: a.ID(), Mode: a.mode, Version: "1.0.0", Path: "/synthetic/bin/" + a.ID()}
+}
+func (a *stubAssistant) ran() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.payloads)
 }
 func (a *stubAssistant) Run(ctx context.Context, payload []byte) (string, error) {
 	a.mu.Lock()
