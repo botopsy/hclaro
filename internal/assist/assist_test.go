@@ -222,7 +222,7 @@ func TestPlanScenarios(t *testing.T) {
 	if strings.Contains(p.Markdown, "no-op aws_vpc.main") {
 		t.Error("no-op change listed")
 	}
-	want := []string{"context", "summary", "changes", "warnings", "attributes", "outputs", "variables", "dependencies", "configuration"}
+	want := []string{"context", "summary", "changes", "warnings", "attributes", "outputs", "variables", "dependencies"}
 	if strings.Join(p.Sections, ",") != strings.Join(want, ",") || len(p.Dropped) != 0 {
 		t.Fatalf("%v %v", p.Sections, p.Dropped)
 	}

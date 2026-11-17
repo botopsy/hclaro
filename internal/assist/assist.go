@@ -260,7 +260,11 @@ func (b *builder) common() {
 		}
 		vars = append(vars, b.str(p, "", v))
 	}
-	b.add("variables", "Variables (names only)", vars...)
+	// Optional context the caller did not supply is left out, never shown as "(none)": an
+	// empty section would tell the assistant the project has no variables or dependencies.
+	if len(vars) > 0 {
+		b.add("variables", "Variables (names only)", vars...)
+	}
 	deps := append([]Dependency{}, b.scope.Dependencies...)
 	sort.Slice(deps, func(i, j int) bool {
 		return deps[i].From < deps[j].From || deps[i].From == deps[j].From && deps[i].To < deps[j].To
@@ -270,7 +274,9 @@ func (b *builder) common() {
 		p := fmt.Sprintf("scope.dependencies[%d]", i)
 		lines = append(lines, b.str(p+".from", "", d.From)+" depends on "+b.str(p+".to", "", d.To))
 	}
-	b.add("dependencies", "Dependencies", lines...)
+	if len(lines) > 0 {
+		b.add("dependencies", "Dependencies", lines...)
+	}
 	b.config()
 }
 
@@ -352,10 +358,9 @@ func (b *builder) config() {
 		}
 		sec.blocks = append(sec.blocks, block)
 	}
-	if len(sec.blocks) == 0 {
-		sec.blocks = [][]string{nil}
+	if len(sec.blocks) > 0 {
+		b.sections = append(b.sections, sec)
 	}
-	b.sections = append(b.sections, sec)
 }
 
 func (b *builder) warnings(list []string) {

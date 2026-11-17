@@ -1,0 +1,42 @@
+/* AI handoff (AI-01.03): entry points and the context preview drawer */
+.assist-entry {
+  display: flex;
+  justify-content: flex-end;
+  margin: 6px 0;
+}
+
+.assist-preview .form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.assist-disclosure {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+  list-style: disc;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.assist-text {
+  max-height: 55vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--inset);
+  font-family: SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.assist-fields {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+  text-align: left;
+}

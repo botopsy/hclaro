@@ -10,6 +10,7 @@ import { actionOrder, clock, engineLabel, meta, reasonLabel, replaceOrder } from
 import { RecordedContext } from '../profiles/ContextSummary';
 import { CostTab } from './CostTab';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from './routes';
+import { AskAI } from '../assist/AskAI';
 
 type Tab = 'changes' | 'outputs' | 'drift' | 'cost';
 const pageSize = 200;
@@ -63,6 +64,8 @@ export function PlanReview({ plan, copy, onApply, busy, onInspectImpact, scope =
     <div><span className="muted">Source</span><strong className="mono" title={plan.source?.commit}><GitBranch size={12} /> {sourceLabel(plan.source)}</strong></div>
     <div><span className="muted">Saved plan SHA-256</span><button className="hash" onClick={() => void copy(plan.artifactSha256, 'Plan digest')} title={plan.artifactSha256} aria-label="Copy saved plan SHA-256"><Fingerprint size={12} />{plan.artifactSha256.slice(0, 12)}<Copy size={11} /></button></div>
    </div>
+   <AskAI scope={scope} request={{ kind: 'plan', planId: plan.id }} label="Ask AI to analyze" />
+   {plan.destructive && <AskAI scope={scope} request={{ kind: 'plan', planId: plan.id }} label="Review with AI" note="This plan destroys or replaces objects. A second opinion can help before you apply." />}
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
    {plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={15} /><div><strong>Ready to apply.</strong> Applying uses exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}. You confirm on the next screen.</div>{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}><Rocket size={14} />Review and apply…</Button>}</div> : plan.apply.code === 'unknown_actions' ? <div className="apply-banner apply-unsupported" role="alert"><Ban size={15} /><div><strong>Apply unavailable: unsupported actions.</strong> {plan.apply.reason} Changes marked <em>Unsupported</em> below use an action combination Hclaro does not recognize, so this plan can be reviewed but never applied here.</div></div> : <div className="apply-banner" role="note"><LockKeyhole size={15} /><div><strong>Review only.</strong> {plan.apply.reason}</div></div>}

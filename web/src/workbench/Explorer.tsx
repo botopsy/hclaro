@@ -4,6 +4,8 @@ import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
 import { SourceLink } from '../git/GitView';
+import { AskAI } from '../assist/AskAI';
+import type { PlanScope } from '../plans/routes';
 import type { EditorName, Module, Resource } from '../types';
 import { ErrorState } from './ErrorState';
 import { moduleName, providerName } from './format';
@@ -64,7 +66,8 @@ export function Inspector({
   copy,
   source,
   editor,
-  notify
+  notify,
+  ai
 }: {
   resource?: Resource;
   loading: boolean;
@@ -74,10 +77,12 @@ export function Inspector({
   source?: { path: string; prefix: string };
   editor: EditorName;
   notify: (text: string) => void;
+  // ai is the scope an "Ask AI" package is built in; the entry point is hidden while AI is off.
+  ai?: PlanScope;
 }) {
   return <Drawer label="Resource inspector" onClose={close}><div className="inspector-header"><span><Braces size={15} />Resource details</span><Button variant="ghost" size="icon" aria-label="Close inspector" onClick={close}><X size={16} /></Button></div>{loading ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading details…</div> : error ? <ErrorState message={error} /> : resource && <div className="inspector-body"><div className="inspector-title"><span className="resource-icon"><Box size={23} /></span><span className={`mode-badge ${resource.mode}`}>{resource.mode}</span></div><h2>{resource.name}</h2><p className="inspector-type mono">{resource.type}</p><div className="address-box"><div className="label-row"><span>RESOURCE ADDRESS</span><Button variant="ghost" size="icon" aria-label="Copy resource address" onClick={() => {
             void copy(resource.address, 'Address');
-          }}><Copy size={13} /></Button></div><code>{resource.address}</code></div><dl className="metadata"><div><dt>Provider</dt><dd className="mono">{resource.provider || 'Not recorded'}</dd></div><div><dt>Module</dt><dd className="mono">{resource.module || 'Root module'}</dd></div><div><dt>Instance key</dt><dd className="mono">{resource.index === undefined ? '—' : JSON.stringify(resource.index)}</dd></div><div><dt>Source</dt><dd>Recorded state</dd></div></dl>{source && <SourceLink prefix={source.prefix} sourcePath={source.path} editor={editor} notify={notify} />}<div className="attributes-header"><h3>Attributes</h3><Button variant="ghost" size="icon" aria-label="Copy redacted JSON" onClick={() => {
+          }}><Copy size={13} /></Button></div><code>{resource.address}</code></div><dl className="metadata"><div><dt>Provider</dt><dd className="mono">{resource.provider || 'Not recorded'}</dd></div><div><dt>Module</dt><dd className="mono">{resource.module || 'Root module'}</dd></div><div><dt>Instance key</dt><dd className="mono">{resource.index === undefined ? '—' : JSON.stringify(resource.index)}</dd></div><div><dt>Source</dt><dd>Recorded state</dd></div></dl>{source && <SourceLink prefix={source.prefix} sourcePath={source.path} editor={editor} notify={notify} />}<AskAI scope={ai} request={{ kind: 'resource', resourceId: resource.id }} label="Ask AI about this resource" /><div className="attributes-header"><h3>Attributes</h3><Button variant="ghost" size="icon" aria-label="Copy redacted JSON" onClick={() => {
           void copy(JSON.stringify(resource.attributes, null, 2), 'Redacted JSON');
         }}><Copy size={14} /></Button></div><div className="redaction-note"><LockKeyhole size={12} />Sensitive, secret-named and credential-like values are hidden.</div><div className="json-viewer"><JsonTree value={resource.attributes} /></div></div>}</Drawer>;
 }

@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/assist"
 	"hclaro/internal/cost"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
@@ -217,6 +218,9 @@ type Manager struct {
 	// Cost estimates the monthly cost impact of reviewed plans on request (M17); nil
 	// disables cost estimation.
 	Cost *cost.Service
+	// Assist holds the session's AI switch and handoff packages (AI-01.03); nil means AI is
+	// unavailable. It has no access to plans, approvals or operations.
+	Assist *assist.Session
 	// Verify, when set, revalidates the execution scope of a Hub workspace (M24.04) with the
 	// project root claim held, immediately before an operation's first engine command; kind
 	// is "plan", "drift", "graph" or "apply", or "import" before an import block is written.
