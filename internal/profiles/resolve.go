@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"hclaro/internal/awsvault"
 	"hclaro/internal/engine"
 )
 
@@ -138,26 +139,31 @@ type Issue struct {
 // Resolved is the immutable, sanitized execution context of one profile at one revision.
 // It is safe to return through the API: it holds names, aliases and paths, never values.
 type Resolved struct {
-	ProjectID   string         `json:"projectId"`
-	ProfileID   string         `json:"profileId,omitempty"`
-	ProfileName string         `json:"profileName,omitempty"`
-	Revision    int            `json:"profileRevision,omitempty"`
-	Engine      string         `json:"enginePreference,omitempty"`
-	Workspace   string         `json:"workspace,omitempty"`
-	VarFiles    []VarFile      `json:"varFiles"`
-	Options     Options        `json:"options"`
-	AWSProfile  string         `json:"awsProfile,omitempty"`
-	AWSRegion   string         `json:"awsRegion,omitempty"`
-	Env         []EnvStatus    `json:"env"`
-	Identity    string         `json:"identity"`
-	Notices     []string       `json:"notices"`
-	Issues      []Issue        `json:"issues"`
-	VarIssues   []VarFileError `json:"varFileIssues"`
-	Fingerprint string         `json:"fingerprint"`
+	ProjectID   string    `json:"projectId"`
+	ProfileID   string    `json:"profileId,omitempty"`
+	ProfileName string    `json:"profileName,omitempty"`
+	Revision    int       `json:"profileRevision,omitempty"`
+	Engine      string    `json:"enginePreference,omitempty"`
+	Workspace   string    `json:"workspace,omitempty"`
+	VarFiles    []VarFile `json:"varFiles"`
+	Options     Options   `json:"options"`
+	AWSProfile  string    `json:"awsProfile,omitempty"`
+	AWSRegion   string    `json:"awsRegion,omitempty"`
+	// AWSAuth is aws-cli or aws-vault when an AWS profile is chosen, "" otherwise.
+	AWSAuth            string         `json:"awsAuth,omitempty"`
+	AWSExpectedAccount string         `json:"awsExpectedAccount,omitempty"`
+	AWSExpectedRole    string         `json:"awsExpectedRole,omitempty"`
+	Env                []EnvStatus    `json:"env"`
+	Identity           string         `json:"identity"`
+	Notices            []string       `json:"notices"`
+	Issues             []Issue        `json:"issues"`
+	VarIssues          []VarFileError `json:"varFileIssues"`
+	Fingerprint        string         `json:"fingerprint"`
 }
 
-// IdentityNotVerified is the only identity status in this release: Hclaro never calls a
-// cloud API to learn which account credentials belong to.
+// IdentityNotVerified is the identity status of a resolved context: resolving never calls a
+// cloud API. The AWS caller identity is verified only when the user asks (internal/awsauth
+// and the apply preflight), and it describes the CLI credentials, not every provider.
 const IdentityNotVerified = "not_verified"
 
 // None is the context of an operation without a profile: the inherited environment.
@@ -178,6 +184,13 @@ func Resolve(p Profile, root string, environ []string) Resolved {
 	r := None(p.ProjectID, environ)
 	r.ProfileID, r.ProfileName, r.Revision = p.ID, p.Name, p.Revision
 	r.Engine, r.Workspace, r.Options, r.AWSProfile, r.AWSRegion = p.Engine, p.Workspace, p.Options, p.AWSProfile, p.AWSRegion
+	r.AWSExpectedAccount, r.AWSExpectedRole = p.AWSExpectedAccount, p.AWSExpectedRole
+	if p.AWSProfile != "" {
+		r.AWSAuth = AWSCLI
+		if p.AWSAuth == AWSVault {
+			r.AWSAuth = AWSVault
+		}
+	}
 	for _, ref := range p.VarFiles {
 		f, err := ResolveVarFile(root, ref)
 		var vf *VarFileError
@@ -227,6 +240,11 @@ func (r Resolved) fingerprint() string {
 	}
 	field(fmt.Sprintf("options:%d:%d", r.Options.Parallelism, r.Options.LockTimeoutSeconds))
 	field("aws:" + r.AWSProfile + ":" + r.AWSRegion)
+	// Only a binding beyond schema 1 is hashed, so profiles without one keep the fingerprint
+	// they had before M20 (the aws-cli method is what schema 1 did).
+	if r.AWSAuth == AWSVault || r.AWSExpectedAccount != "" || r.AWSExpectedRole != "" {
+		field("aws-auth:" + r.AWSAuth + ":" + r.AWSExpectedAccount + ":" + r.AWSExpectedRole)
+	}
 	for _, e := range r.Env {
 		field(fmt.Sprintf("env:%s:%t", e.Name, e.Present))
 	}
@@ -254,10 +272,19 @@ func (r Resolved) VarFilePaths() []string {
 	return out
 }
 
-// awsCredentialNames are inherited values that would take precedence over AWS_PROFILE in the
-// AWS credential chain. They are not passed when a profile names an AWS profile, so the
-// alias the user chose is the one the provider uses.
-var awsCredentialNames = map[string]bool{"AWS_ACCESS_KEY_ID": true, "AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true, "AWS_SECURITY_TOKEN": true, "AWS_PROFILE": true, "AWS_DEFAULT_PROFILE": true}
+// awsCredentialNames are inherited values that would take precedence over, or compete with,
+// the chosen AWS profile in the AWS credential chain: static keys, another profile, web
+// identity and role variables, container credential endpoints and an enclosing aws-vault
+// session. They are not passed when a profile names an AWS profile, so the alias the user
+// chose is the credential source. Values are never read.
+var awsCredentialNames = map[string]bool{
+	"AWS_ACCESS_KEY_ID": true, "AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true, "AWS_SECURITY_TOKEN": true,
+	"AWS_CREDENTIAL_EXPIRATION": true, "AWS_PROFILE": true, "AWS_DEFAULT_PROFILE": true,
+	"AWS_ROLE_ARN": true, "AWS_ROLE_SESSION_NAME": true, "AWS_WEB_IDENTITY_TOKEN_FILE": true,
+	"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": true, "AWS_CONTAINER_CREDENTIALS_FULL_URI": true,
+	"AWS_CONTAINER_AUTHORIZATION_TOKEN": true, "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": true,
+	"AWS_VAULT": true,
+}
 
 func compositionNotices(p Profile, environ []string) []string {
 	notices := []string{}
@@ -285,17 +312,21 @@ func compositionNotices(p Profile, environ []string) []string {
 	if len(creds) > 0 {
 		notices = append(notices, "Inherited "+strings.Join(creds, ", ")+" "+map[bool]string{true: "is", false: "are"}[len(creds) == 1]+" not passed, so AWS profile "+p.AWSProfile+" is the credential source. Values were not read into Hclaro.")
 	}
+	if p.AWSAuth == AWSVault {
+		notices = append(notices, "Engine and AWS CLI commands run through aws-vault exec "+p.AWSProfile+" --. aws-vault passes temporary credentials to that command only; Hclaro never reads them.")
+	}
 	if p.AWSProfile != "" || p.AWSRegion != "" {
-		notices = append(notices, "The AWS profile and region are names passed to the provider. Hclaro does not verify which account they belong to.")
+		notices = append(notices, "The AWS profile and region are names passed to the provider. Verify identity checks the AWS CLI credentials on request; provider aliases, assume_role or a profile set in the configuration can still use another account.")
 	}
 	return notices
 }
 
 // Compose returns the child environment for r: the inherited environment with TF_WORKSPACE,
 // TF_LOG* and TF_CLI_ARGS* removed (unsafe TF_CLI_ARGS* refuse instead), inherited AWS
-// credential overrides removed when an AWS profile is chosen, and only AWS_PROFILE,
-// AWS_REGION and AWS_DEFAULT_REGION added. The workspace is set by the engine adapter.
-// Hclaro's own environment is never changed and nothing is persisted.
+// credential overrides removed when an AWS profile is chosen, and only AWS_PROFILE (aws-cli)
+// or the aws-vault marker (aws-vault, see internal/awsvault), AWS_REGION and
+// AWS_DEFAULT_REGION added. The workspace is set by the engine adapter. Hclaro's own
+// environment is never changed and nothing is persisted.
 func Compose(base []string, r Resolved) ([]string, error) {
 	if engine.UnsafeArgs(base) {
 		return nil, engine.ErrUnsafeArgs
@@ -305,7 +336,7 @@ func Compose(base []string, r Resolved) ([]string, error) {
 		key, _, _ := strings.Cut(item, "=")
 		upper := strings.ToUpper(key)
 		switch {
-		case upper == "TF_WORKSPACE", strings.HasPrefix(upper, "TF_CLI_ARGS"), strings.HasPrefix(upper, "TF_LOG"):
+		case upper == "TF_WORKSPACE", strings.HasPrefix(upper, "TF_CLI_ARGS"), strings.HasPrefix(upper, "TF_LOG"), upper == awsvault.Marker:
 			continue
 		case r.AWSProfile != "" && awsCredentialNames[upper]:
 			continue
@@ -314,7 +345,10 @@ func Compose(base []string, r Resolved) ([]string, error) {
 		}
 		out = append(out, item)
 	}
-	if r.AWSProfile != "" {
+	switch {
+	case r.AWSAuth == AWSVault:
+		out = append(out, awsvault.Marker+"="+r.AWSProfile)
+	case r.AWSProfile != "":
 		out = append(out, "AWS_PROFILE="+r.AWSProfile)
 	}
 	if r.AWSRegion != "" {

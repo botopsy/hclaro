@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +38,7 @@ func mustRead(t *testing.T, path string) []byte {
 	return b
 }
 
-func TestSchema1FixtureLoadsAndStaysSchema1(t *testing.T) {
+func TestSchema1FixtureLoadsAndUpgradesWithBackup(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, fileName)
 	if err := os.WriteFile(path, fixture(t, "v1.json"), 0o600); err != nil {
@@ -55,20 +57,35 @@ func TestSchema1FixtureLoadsAndStaysSchema1(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc document
-	if err := json.Unmarshal(mustRead(t, path), &doc); err != nil || doc.Version != 1 || len(doc.Profiles) != 2 || !reflect.DeepEqual(doc.Profiles[0], want) || doc.Defaults[fixtureProject] != want.ID {
+	if err := json.Unmarshal(mustRead(t, path), &doc); err != nil || doc.Version != 2 || len(doc.Profiles) != 2 || !reflect.DeepEqual(doc.Profiles[0], want) || doc.Defaults[fixtureProject] != want.ID {
 		t.Fatalf("rewritten file: %+v %v", doc, err)
+	}
+	// The schema 1 bytes were kept before the first schema 2 write.
+	backups, _ := filepath.Glob(path + ".schema-1-*")
+	if len(backups) != 1 || string(mustRead(t, backups[0])) != string(fixture(t, "v1.json")) {
+		t.Fatalf("backup %v", backups)
+	}
+	if _, notice := s.Status(); !strings.Contains(notice, "upgraded from schema 1 to schema 2") {
+		t.Fatalf("notice %q", notice)
+	}
+	// Further writes do not add backups.
+	if _, err := s.Create(fixtureProject, Input{Name: "stage"}); err != nil {
+		t.Fatal(err)
+	}
+	if backups, _ := filepath.Glob(path + ".schema-*"); len(backups) != 1 {
+		t.Fatalf("backups %v", backups)
 	}
 }
 
 func TestNewerSchemaFixtureIsNeverChanged(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, fileName)
-	newer := fixture(t, "v2-newer.json")
+	newer := fixture(t, "v3-newer.json")
 	if err := os.WriteFile(path, newer, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	s := Open(dir, compatNow)
-	if status, notice := s.Status(); status != Unavailable || !strings.Contains(notice, "newer Hclaro (schema 2)") {
+	if status, notice := s.Status(); status != Unavailable || !strings.Contains(notice, "newer Hclaro (schema 3)") {
 		t.Fatalf("%s %q", status, notice)
 	}
 	if list, _, _ := s.List(fixtureProject); len(list) != 0 {
@@ -93,7 +110,7 @@ func TestNewerSchemaWrittenDuringSessionIsNotDowngraded(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, fileName)
-	newer := fixture(t, "v2-newer.json")
+	newer := fixture(t, "v3-newer.json")
 	if err := os.WriteFile(path, newer, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -131,5 +148,95 @@ func TestInvalidSchemaVersionsAreKeptAside(t *testing.T) {
 				t.Fatal("original bytes not kept")
 			}
 		})
+	}
+}
+
+func TestSchema2FixtureLoadsTheAuthBinding(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fileName), fixture(t, "v2.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Open(dir, compatNow)
+	list, _, err := s.List(fixtureProject)
+	if err != nil || len(list) != 1 || list[0].AWSAuth != AWSVault || list[0].AWSExpectedAccount != "111122223333" || list[0].AWSExpectedRole != "arn:aws:sts::111122223333:assumed-role/Deploy/*" {
+		t.Fatalf("%+v %v", list, err)
+	}
+}
+
+// A schema 1 file cannot carry schema 2 fields: it is treated as unrecognized.
+func TestSchema1WithAuthFieldsIsUnrecognized(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Replace(string(fixture(t, "v1.json")), `"aws_region": "eu-west-1",`, `"aws_region": "eu-west-1", "aws_expected_account": "111122223333",`, 1)
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, notice := Open(dir, compatNow).Status(); !strings.Contains(notice, "corrupt") {
+		t.Fatalf("notice %q", notice)
+	}
+}
+
+func TestSchemaUpgradeWithoutBackupLeavesFileUnchanged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, fileName)
+	if err := os.WriteFile(path, fixture(t, "v1.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Open(dir, compatNow)
+	// A read-only folder refuses the backup copy (and any new file).
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o700)
+	if _, err := s.Create(fixtureProject, Input{Name: "prod"}); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("write allowed without backup: %v", err)
+	}
+	if string(mustRead(t, path)) != string(fixture(t, "v1.json")) {
+		t.Fatal("file changed")
+	}
+	if status, notice := s.Status(); status != Unavailable || !strings.Contains(notice, "backup copy could not be written") {
+		t.Fatalf("%s %q", status, notice)
+	}
+}
+
+// A second upgrade backup in the same second (for example after an older Hclaro wrote schema
+// 1 again) gets its own name instead of making profiles read-only.
+func TestSchemaUpgradeBackupsNeverCollide(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, fileName)
+	if err := os.WriteFile(path, fixture(t, "v1.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Open(dir, compatNow)
+	s.Now = func() time.Time { return compatNow }
+	if _, err := s.Create(fixtureProject, Input{Name: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, fixture(t, "v1.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(fixtureProject, Input{Name: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	backups, _ := filepath.Glob(path + ".schema-1-*")
+	if len(backups) != 2 || !slices.Contains(backups, path+".schema-1-20261105T100000Z-2") {
+		t.Fatalf("%v", backups)
+	}
+	if status, _ := s.Status(); status != Ready {
+		t.Fatal(status)
+	}
+}
+
+// A hand-edited schema 2 file that spells out the default method stays readable.
+func TestSchema2AcceptsExplicitAWSCLI(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Replace(string(fixture(t, "v2.json")), `"aws_auth": "aws-vault"`, `"aws_auth": "aws-cli"`, 1)
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if list, _, err := Open(dir, compatNow).List(fixtureProject); err != nil || len(list) != 1 {
+		t.Fatalf("%+v %v", list, err)
 	}
 }

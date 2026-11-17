@@ -3,6 +3,7 @@ package operations
 import (
 	"slices"
 
+	"hclaro/internal/awsvault"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/preflight"
@@ -26,6 +27,10 @@ type ExecutionContext struct {
 	LockTimeoutSeconds int      `json:"lockTimeoutSeconds,omitempty"`
 	AWSProfile         string   `json:"awsProfile,omitempty"`
 	AWSRegion          string   `json:"awsRegion,omitempty"`
+	// AWSAuth is aws-cli or aws-vault when an AWS profile is chosen (M20).
+	AWSAuth            string   `json:"awsAuth,omitempty"`
+	AWSExpectedAccount string   `json:"awsExpectedAccount,omitempty"`
+	AWSExpectedRole    string   `json:"awsExpectedRole,omitempty"`
 	EnvNames           []string `json:"envNames"`
 	Identity           string   `json:"identity"`
 	Notices            []string `json:"notices"`
@@ -48,6 +53,15 @@ func (c *ExecutionContext) Clone() *ExecutionContext {
 		out.approved[k] = v
 	}
 	return &out
+}
+
+// Display is the reviewed form of command in this context: prefixed with
+// "aws-vault exec <profile> --" when the context runs through aws-vault, as it is run.
+func (c *ExecutionContext) Display(command []string) []string {
+	if c == nil || c.AWSAuth != profiles.AWSVault {
+		return command
+	}
+	return awsvault.Display(c.AWSProfile, command)
 }
 
 // Approve records the canonical path of an approved variable file reference.
@@ -210,6 +224,7 @@ func FromResolved(r profiles.Resolved) ExecutionContext {
 		ProjectID: r.ProjectID, ProfileID: r.ProfileID, ProfileName: r.ProfileName, Revision: r.Revision,
 		EnginePreference: r.Engine, Workspace: r.Workspace, VarFiles: []string{}, Parallelism: r.Options.Parallelism,
 		LockTimeoutSeconds: r.Options.LockTimeoutSeconds, AWSProfile: r.AWSProfile, AWSRegion: r.AWSRegion,
+		AWSAuth: r.AWSAuth, AWSExpectedAccount: r.AWSExpectedAccount, AWSExpectedRole: r.AWSExpectedRole,
 		EnvNames: []string{}, Identity: r.Identity, Notices: slices.Clone(r.Notices), Fingerprint: r.Fingerprint,
 	}
 	for _, f := range r.VarFiles {

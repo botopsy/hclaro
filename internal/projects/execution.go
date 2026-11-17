@@ -2,6 +2,8 @@ package projects
 
 import (
 	"errors"
+
+	"hclaro/internal/awsauth"
 	"os"
 
 	"hclaro/internal/engine"
@@ -135,8 +137,12 @@ func (h *Hub) ProfileBusy(projectID, profileID string) error {
 }
 
 // ProfileChanged closes read contexts opened with a profile that was edited or removed, so
-// no tab keeps reading or running tools with an outdated context.
+// no tab keeps reading or running tools with an outdated context. The profile's AWS identity
+// check is dropped and a running sign-in is cancelled: the binding must be verified again.
 func (h *Hub) ProfileChanged(projectID, profileID, reason string) {
+	if h.Auth != nil {
+		h.Auth.Forget(projectID, profileID)
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for cid, c := range h.contexts {
@@ -148,3 +154,19 @@ func (h *Hub) ProfileChanged(projectID, profileID, reason string) {
 
 // Summarize returns the filesystem summary of a record (no engine command).
 func (h *Hub) Summarize(p Record) Summary { return h.summary(p) }
+
+// AuthTarget resolves a stored execution profile of a registered project for AWS
+// authentication: its value-free context and the child environment composed from it, the
+// same environment its operations run with. Missing variable files do not matter here, but
+// unsafe inherited TF_CLI_ARGS still refuse.
+func (h *Hub) AuthTarget(projectID, profileID string) (awsauth.Target, error) {
+	resolved, p, err := h.Resolve(projectID, profileID)
+	if err != nil {
+		return awsauth.Target{}, err
+	}
+	environ, err := profiles.Compose(os.Environ(), resolved)
+	if err != nil {
+		return awsauth.Target{}, &ProfileRefusal{"unsafe_cli_args", "Inherited TF_CLI_ARGS settings add flags other than -no-color. " + engine.UnsafeArgsHelp(os.Environ())}
+	}
+	return awsauth.Target{ProjectID: p.ID, Context: resolved, Environ: environ}, nil
+}

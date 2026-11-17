@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/awsauth"
+	"hclaro/internal/awsvault"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
@@ -185,6 +187,9 @@ type Hub struct {
 	// reports them as unavailable.
 	GitProbe      preflight.GitProbe
 	IdentityProbe preflight.IdentityProbe
+	// Auth is the AWS authentication manager (M20): identity checks and sign-ins per
+	// execution profile. Its epochs invalidate apply preflights after a sign-in.
+	Auth *awsauth.Manager
 	// Discovery is the session's AWS discovery service. A scope's verifications, scans and
 	// prepared imports are dropped (running scans cancelled) when the scope closes.
 	Discovery *discovery.Service
@@ -451,6 +456,13 @@ func (h *Hub) Remove(id string) error {
 	// The project's execution profiles are Hclaro settings, not project files; they go too.
 	// A failure leaves orphaned entries that no project can reach.
 	if h.Profiles != nil {
+		if h.Auth != nil {
+			// Running sign-ins of the project's profiles are cancelled and checks dropped.
+			list, _, _ := h.Profiles.List(id)
+			for _, p := range list {
+				h.Auth.Forget(id, p.ID)
+			}
+		}
 		_ = h.Profiles.RemoveProject(id)
 	}
 	return nil
@@ -624,7 +636,21 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 		}
 		execution.Workspace = ws
 	}
-	name, executable, adapter, err := h.Engines(p.RootPath, preference, ws, environ)
+	// With aws-vault, opening a workspace must not trigger a keychain or MFA prompt (M20). A
+	// local backend's reads need no credentials, so they run without aws-vault. A remote or
+	// unrecognized backend needs credentials: its automatic read is deferred until the user
+	// chooses Read again (reload), which runs it through aws-vault as selected. Nothing
+	// falls back to other credentials.
+	info := workspace.Inspect(p.RootPath)
+	readEnviron, deferRead := environ, false
+	if execution != nil && execution.AWSAuth == profiles.AWSVault {
+		if info.Backend == "local" {
+			readEnviron = awsvault.Strip(environ)
+		} else {
+			deferRead = !reload
+		}
+	}
+	name, executable, adapter, err := h.Engines(p.RootPath, preference, ws, readEnviron)
 	if err != nil {
 		name, executable, adapter = preference, "", nil
 	}
@@ -666,11 +692,13 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 	}
 	rootInfo, statErr := statIdentity(p.RootPath)
 	ctx, cancel := context.WithCancel(h.base)
-	info := workspace.Inspect(p.RootPath)
 	info.Project = p.Alias
 	c := &Context{ID: NewID(), ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Engine: name, Executable: executable, Workspace: ws, DataDir: data, CreatedAt: h.Now().UTC().Format(time.RFC3339), Execution: execution, cancel: cancel, key: key, profileID: profileID}
 	scope := workspace.Scope{Workspace: ws, ReadOnlyReason: ReadOnlyReason, Executable: h.ScopedExecution}
 	scope.Check = func(ctx context.Context) *workspace.Diagnostic {
+		if deferRead {
+			return diag(AWSVaultDeferred, "Profile "+execution.ProfileName+" uses aws-vault and this workspace's state is in a "+info.Backend+" backend. Reading it runs aws-vault exec "+execution.AWSProfile+", which may ask for a keychain password or an MFA code, so Hclaro does not read it automatically. Choose Read again to read it now.")
+		}
 		list, err := adapter.ListWorkspaces(ctx)
 		if err != nil {
 			if errors.Is(err, engine.ErrUnsafeArgs) {
@@ -719,6 +747,10 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 	}()
 	return c, false, nil
 }
+
+// AWSVaultDeferred is the diagnostic of a Hub workspace whose automatic read was deferred
+// because it would run aws-vault against a remote backend (M20).
+const AWSVaultDeferred = "aws_vault_read_deferred"
 
 // readOnly hides every engine method except the three state reads, so a Hub context can
 // never be type-asserted into a planner or applier.

@@ -5,6 +5,7 @@ import type { Approval, Operation, Plan, PreflightCheck, PreflightReport, Prefli
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { RecordedContext } from '../profiles/ContextSummary';
+import { AuthPanel } from '../profiles/AuthPanel';
 import { actionOrder, engineLabel, meta } from './labels';
 import { launchScope, planRoute, type PlanScope } from './routes';
 import { productionLike } from '../router';
@@ -113,6 +114,13 @@ export function ApplyDialog({ plan, scope, project, onStarted, onClose }: { plan
   const warnings = report?.checks.filter(c => report.acknowledge.includes(c.id)) ?? [];
   const others = report?.checks.filter(c => !blockers.includes(c) && !warnings.includes(c)) ?? [];
   const identity = report?.checks.find(c => c.id === 'cloud.aws.identity');
+  // The execution profile's expected account (M20): a mismatch is not a sign-in problem.
+  const expected = report?.checks.find(c => c.id === 'cloud.aws.expected');
+  // A profile that names an AWS profile binds the approval to the verified identity.
+  const reviewed = report?.checks.find(c => c.id === 'cloud.aws.reviewed');
+  const mismatch = expected?.status === 'fail';
+  const exec = report?.context.executionContext;
+  const [signIn, setSignIn] = useState(false);
   const allAcked = warnings.every(w => acked.has(w.id));
   const matches = !report?.phrase || typed === report.phrase;
   const ready = !!report && !report.blocked && !!report.binding && allAcked && matches && !checking;
@@ -154,6 +162,7 @@ export function ApplyDialog({ plan, scope, project, onStarted, onClose }: { plan
       <div><dt>Context fingerprint</dt><dd><code>{ctx.fingerprint}</code></dd></div>
      </dl>
      <p className="context-line"><strong>Execution context:</strong> <RecordedContext context={ctx.executionContext} /></p>
+     {(exec?.awsProfile || report?.identity.state === 'verified') && <p className="context-line"><strong>AWS identity:</strong> {exec?.awsProfile ? <>{exec.awsAuth === 'aws-vault' ? 'aws-vault' : 'AWS CLI'} profile <code>{exec.awsProfile}</code>{exec.awsRegion && <> · <code>{exec.awsRegion}</code></>}</> : 'inherited credentials'}{exec?.awsExpectedAccount && <> · expects <code>{exec.awsExpectedAccount}</code></>} · {report?.identity.state === 'verified' ? <>STS reports <code>{report.identity.account}</code> <code className="auth-arn">{report.identity.arn}</code>{report.identity.verifiedAt && <span className="muted"> at {new Date(report.identity.verifiedAt).toLocaleTimeString()}</span>}</> : <span className="muted">not verified</span>}</p>}
     </section>}
 
     {checking && <p role="status"><LoaderCircle className="spin" size={13} /> {verifying ? 'Verifying the AWS caller identity…' : 'Running preflight checks…'}</p>}
@@ -173,10 +182,13 @@ export function ApplyDialog({ plan, scope, project, onStarted, onClose }: { plan
       })} /> I reviewed this: {c.title.toLowerCase()}</label>
      </CheckRow>)}</ul></section>}
 
-     {identity && identity.status !== 'pass' && report.identity.state !== 'verified' && <div className="identity-probe">
-      <Button variant="outline" onClick={() => rerun(true)} disabled={checking}><UserCheck size={14} />Verify AWS identity</Button>
-      <span className="muted">Calls STS GetCallerIdentity with this plan’s credentials. Read-only, but it contacts AWS.</span>
+     {mismatch && <p className="plan-warning" role="alert"><CircleX size={15} /><span><strong>AWS account mismatch.</strong> The verified identity is not the account this profile expects. Signing in again with the same profile will not fix this: change the AWS profile or sign in to the expected account. Nothing will be applied.</span></p>}
+     {[identity, expected, reviewed].some(c => c && c.status !== 'pass') && <div className="identity-probe">
+      <Button variant="outline" onClick={() => rerun(true)} disabled={checking}><UserCheck size={14} />{report.identity.state === 'verified' ? 'Verify again' : 'Verify AWS identity'}</Button>
+      {exec?.profileId && exec.projectId && exec.awsProfile && <Button variant="ghost" aria-expanded={signIn} onClick={() => setSignIn(v => !v)}>Sign in</Button>}
+      <span className="muted">Calls STS GetCallerIdentity with this plan’s credentials. Read-only, but it contacts AWS. To change profile, cancel and choose another profile, then plan again.</span>
      </div>}
+     {signIn && exec?.profileId && exec.projectId && <div className="profile-auth"><AuthPanel projectId={exec.projectId} profileId={exec.profileId} /><p className="muted">A sign-in does not resume this apply. When it completes, run the checks again; the earlier checks no longer count.</p></div>}
 
      <details className="preflight-passed"><summary>Passed and informational checks ({others.length})</summary><ul className="preflight-checks">{others.map(c => <CheckRow key={c.id} check={c} />)}</ul></details>
 

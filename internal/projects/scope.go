@@ -605,6 +605,9 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot, hash bool) (*Scope, 
 	// Apply preflight facts, as for the launch project. The identity probe contacts AWS only
 	// when the user asks for it in the preflight.
 	m.GitProbe, m.IdentityProbe = h.GitProbe, h.IdentityProbe
+	if h.Auth != nil {
+		m.AuthEpoch = h.Auth.Epoch
+	}
 	// After an apply, only this workspace's snapshot is read again, with the root claim
 	// still held; other contexts and the launch project are not touched.
 	m.Reload = func(ctx context.Context) { c.store.Load(ctx, readOnly{read}, name) }

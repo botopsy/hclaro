@@ -6,6 +6,15 @@
 // (every call fails like an expired SSO session), "denied" (RDS reads are denied),
 // "throttle" (every list call is throttled) and "slow" (list calls wait 3 seconds).
 // HCLARO_FAKE_AWS_ACCOUNT replaces the account STS reports.
+//
+// Authentication (M20): `configure list-profiles` lists dev, prod and sso-dev (plus lines
+// that are not profile names); `configure get sso_session|sso_start_url --profile sso-dev`
+// succeeds, other settings and profiles exit 1. `sso login` and `login` honour
+// HCLARO_FAKE_AWS_LOGIN: unset or "ok" (prints a canary device code and succeeds), "fail"
+// and "hang" (waits 30 seconds). `login help` succeeds only with HCLARO_FAKE_AWS_LOGIN_CMD=1.
+// HCLARO_FAKE_AWS_SPY, when set, receives each argv as one NUL-separated line, prefixed
+// with AWS_PROFILE=<value>, KEYS=<whether AWS_ACCESS_KEY_ID is set> and SET=<the names in
+// credentialVars that are set, comma-separated> so tests can check the composed environment.
 package main
 
 import (
@@ -38,8 +47,75 @@ func page(name string) {
 	os.Stdout.Write(b)
 }
 
+// canary is planted in every output Hclaro must never pass on.
+const canary = "DO_NOT_LEAK_HCLARO_TEST_SECRET AKIA_TEST_CANARY SESSION_TOKEN_TEST_CANARY"
+
+// credentialVars are inherited credential sources the spy reports by name (never value).
+var credentialVars = []string{"AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_DEFAULT_PROFILE", "AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE",
+	"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN",
+	"AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "AWS_VAULT"}
+
+func spy(args []string) {
+	path := os.Getenv("HCLARO_FAKE_AWS_SPY")
+	if path == "" {
+		return
+	}
+	if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+		_, keys := os.LookupEnv("AWS_ACCESS_KEY_ID")
+		set := []string{}
+		for _, name := range credentialVars {
+			if _, ok := os.LookupEnv(name); ok {
+				set = append(set, name)
+			}
+		}
+		fmt.Fprintf(f, "AWS_PROFILE=%s\x00KEYS=%t\x00SET=%s\x00%s\n", os.Getenv("AWS_PROFILE"), keys, strings.Join(set, ","), strings.Join(args, "\x00"))
+		f.Close()
+	}
+}
+
+// auth answers the M20 authentication commands; it reports false for other commands.
+func auth(args []string) bool {
+	op := strings.Join(args[:min(2, len(args))], " ")
+	login := os.Getenv("HCLARO_FAKE_AWS_LOGIN")
+	switch {
+	case op == "configure list-profiles":
+		fmt.Print("dev\nprod\nsso-dev\n" + canary + "\n--endpoint-url\n")
+	case op == "configure get":
+		if len(args) == 5 && (args[2] == "sso_session" || args[2] == "sso_start_url") && args[3] == "--profile" && args[4] == "sso-dev" {
+			fmt.Println("https://synthetic.awsapps.example/start " + canary)
+			return true
+		}
+		os.Exit(1)
+	case op == "login help":
+		if os.Getenv("HCLARO_FAKE_AWS_LOGIN_CMD") != "1" {
+			fail("aws: error: argument command: Invalid choice, valid choices are: ...", 252)
+		}
+		fmt.Println("LOGIN()")
+	case op == "sso login", len(args) >= 1 && args[0] == "login":
+		if args[0] == "login" && os.Getenv("HCLARO_FAKE_AWS_LOGIN_CMD") != "1" {
+			fail("aws: error: argument command: Invalid choice", 252)
+		}
+		fmt.Println("Attempting to automatically open the SSO authorization page in your default browser.")
+		fmt.Println("https://device.sso.example/?user_code=" + canary)
+		switch login {
+		case "fail":
+			fail("Failed to open browser "+canary, 255)
+		case "hang":
+			time.Sleep(30 * time.Second)
+		}
+		fmt.Println("Successfully logged into Start URL")
+	default:
+		return false
+	}
+	return true
+}
+
 func main() {
 	args := os.Args[1:]
+	spy(args)
+	if auth(args) {
+		return
+	}
 	mode := os.Getenv("HCLARO_FAKE_AWS")
 	if len(args) == 1 && args[0] == "--version" {
 		if mode == "v1" {
@@ -52,8 +128,11 @@ func main() {
 	if len(args) < 2 {
 		fail("usage: aws <service> <operation>", 252)
 	}
+	if mode == "v1" && slices.Contains(args, "--no-cli-pager") {
+		fail("Unknown options: --no-cli-pager", 252)
+	}
 	if mode == "expired" {
-		fail("Error when retrieving token from sso: Token has expired and refresh failed", 255)
+		fail("Error when retrieving token from sso: Token has expired and refresh failed "+canary, 255)
 	}
 	region := value(args, "--region")
 	op := args[0] + " " + args[1]
@@ -68,7 +147,11 @@ func main() {
 	switch op {
 	case "sts get-caller-identity":
 		if account := os.Getenv("HCLARO_FAKE_AWS_ACCOUNT"); account != "" {
-			fmt.Printf(`{"UserId":"AROASYNTHETIC:demo","Account":%q,"Arn":"arn:aws:sts::%s:assumed-role/Other/demo"}`+"\n", account, account)
+			role := os.Getenv("HCLARO_FAKE_AWS_ROLE")
+			if role == "" {
+				role = "Other"
+			}
+			fmt.Printf(`{"UserId":"AROASYNTHETIC:%s","Account":%q,"Arn":"arn:aws:sts::%s:assumed-role/%s/demo"}`+"\n", canary, account, account, role)
 			return
 		}
 		page("sts-identity.json")

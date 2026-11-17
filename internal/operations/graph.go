@@ -187,7 +187,7 @@ func (m *Manager) StartGraph(req GraphStart) (Operation, GraphRun, error) {
 	now := time.Now()
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
 	command := append([]string{snap.Info.Engine}, engine.GraphArgs()...)
-	op := Operation{ID: m.NewID(), Kind: "graph", Status: Running, Stage: "Starting", StartedAt: now.UTC().Format(time.RFC3339), Command: command, VarFiles: []string{}, Replace: []string{}, Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: bound}
+	op := Operation{ID: m.NewID(), Kind: "graph", Status: Running, Stage: "Starting", StartedAt: now.UTC().Format(time.RFC3339), Command: bound.Display(command), VarFiles: []string{}, Replace: []string{}, Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: bound}
 	run := &GraphRun{
 		ID: m.NewID(), OperationID: op.ID, Status: GraphRunning, StartedAt: op.StartedAt, Engine: snap.Info.Engine,
 		EngineVersion: snap.Info.Version, Workspace: snap.Info.Workspace, Context: bound.Clone(), Warnings: []string{}, started: now,

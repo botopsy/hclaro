@@ -2,14 +2,14 @@
 
 Hclaro keeps a few JSON files in its configuration folder: your OS user configuration directory plus `hclaro` (`~/Library/Application Support/hclaro` on macOS, `~/.config/hclaro` or `$XDG_CONFIG_HOME/hclaro` on Linux, `%AppData%\hclaro` on Windows; `HCLARO_CONFIG_DIR` overrides it). This page is the contract for how any Hclaro version treats those files, so that switching versions, including going back to an older one, never silently corrupts or downgrades them.
 
-**During the beta there is no automatic migration promise.** All files are at schema 1, and no release has needed an upgrade yet. If a future release changes a format, it will follow the rules below, and its changelog will say so.
+**During the beta there is no automatic migration promise.** `profiles.json` is at schema 2 (M20 added the AWS authentication binding); the other files are at schema 1. Format changes follow the rules below, and the changelog says so.
 
 ## Files
 
 | File | Holds | Schema written by this build |
 | --- | --- | --- |
 | `projects.json` | Workspace Hub projects: ID, absolute folder path, name, engine choice, pin, last opened time and workspace | 1 |
-| `profiles.json` | Execution profiles: names, engine, workspace, variable-file paths, AWS profile and region names, names (never values) of environment variables | 1 |
+| `profiles.json` | Execution profiles: names, engine, workspace, variable-file paths, AWS profile and region names, AWS authentication method, expected AWS account ID and role ARN pattern, names (never values) of environment variables | 2 |
 | `history.json` | Operation history: redacted commands, outcomes, plan counts and addresses, sanitized log excerpts, Git commit and branch | 1 |
 | `cost-estimates.json` | The last 50 cost-estimate totals (no addresses or line items) | 1 |
 
@@ -51,6 +51,7 @@ Every write goes to a private temporary file in the same folder, is synced, and 
 ## For maintainers
 
 - A format change increments the `SchemaVersion` of that package (`internal/projects`, `internal/profiles`, `internal/history`, `internal/cost`), adds a fixture to its `testdata/compat`, and keeps the previous fixture loading.
-- Migrations are registered by the version they upgrade from (`history.DefaultMigrations`); the registry and profiles have no migration hook yet and would need one with the same backup-first rule. No migration may drop data silently or write a downgraded schema.
+- Migrations are registered by the version they upgrade from (`history.DefaultMigrations`); the registry has no migration hook yet and would need one with the same backup-first rule. No migration may drop data silently or write a downgraded schema.
+- `profiles.json` 1 → 2 (M20) adds only optional fields, so a schema 1 file is read as it is and upgraded automatically on the first change: the file is first copied byte for byte to `profiles.json.schema-1-<UTC time>` (`0600`, never replacing an existing file), then schema 2 is written. If the copy cannot be written, nothing is changed and profiles become read-only with a notice. A schema 1 file that carries schema 2 fields is unrecognized. Releases before M20 open a schema 2 file read-only.
 - Whether a release migrates automatically, asks first, or ships a separate tool is a product decision to make before the first format change; until then this page promises only the rules above.
-- Tests: `TestSchema1FixtureLoadsAndStaysSchema1`, `TestNewerSchemaFixtureIsNeverChanged`, `TestNewerSchemaWrittenDuringSessionIsNotDowngraded` and `TestInvalidSchemaVersionsAreKeptAside` in each package, `TestSchemaUpgradeKeepsABackupFirst` and `TestSchemaUpgradeWithoutBackupLeavesFileUnchanged` for history, `TestStoreNeverReplacesANewerFile` for cost estimates.
+- Tests: `TestSchema1FixtureLoadsAndStaysSchema1` (profiles: `TestSchema1FixtureLoadsAndUpgradesWithBackup`, `TestSchemaUpgradeWithoutBackupLeavesFileUnchanged`, `TestSchema2FixtureLoadsTheAuthBinding`), `TestNewerSchemaFixtureIsNeverChanged`, `TestNewerSchemaWrittenDuringSessionIsNotDowngraded` and `TestInvalidSchemaVersionsAreKeptAside` in each package, `TestSchemaUpgradeKeepsABackupFirst` and `TestSchemaUpgradeWithoutBackupLeavesFileUnchanged` for history, `TestStoreNeverReplacesANewerFile` for cost estimates.

@@ -323,7 +323,7 @@ func applyCommand(a *artifact) []string {
 			command = append(command, fmt.Sprintf("-lock-timeout=%ds", c.LockTimeoutSeconds))
 		}
 	}
-	return append(command, "<reviewed saved plan "+a.digest[:12]+">")
+	return a.context.Display(append(command, "<reviewed saved plan "+a.digest[:12]+">"))
 }
 
 // applyRequest gives apply the profile options its plan ran with, from the bound context.
@@ -387,10 +387,12 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	}
 	m.mu.Unlock()
 	in := m.facts(m.base, p, identity)
-	// An account policy is checked against the account now, not the one verified at preflight
-	// (up to PreflightTTL ago): credentials may have changed since. Only an identity the user
-	// chose to verify is probed again, so apply never contacts AWS unasked.
-	if in.Policy.Rules.AWSAccounts != nil && identity.State == "verified" {
+	// A verified identity is part of the reviewed context (M20): it is checked against the
+	// credentials now, not up to PreflightTTL ago, so a sign-in elsewhere (a terminal, another
+	// tool) or an account switch refuses the apply. Policy and profile guards are evaluated
+	// with the answer. Only an identity the user chose to verify is probed again, so apply
+	// never contacts AWS unasked.
+	if identity.State == "verified" {
 		identity = preflight.Identity{State: "unavailable", Message: "Identity verification is not available."}
 		if m.IdentityProbe != nil {
 			identity = m.IdentityProbe(m.base, environ)
@@ -420,6 +422,14 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	b, err := m.checkBindingLocked(a, granted.binding)
 	if err != nil {
 		return Operation{}, err
+	}
+	if b.identity.State == "verified" && !preflight.SameIdentity(b.identity, identity) {
+		a.preflight = nil
+		now := "STS could not verify the identity again"
+		if identity.State == "verified" {
+			now = "STS now reports account " + identity.Account + " (" + preflight.Principal(identity.ARN) + ")"
+		}
+		return Operation{}, reject("AUTH_CONTEXT_STALE", "The AWS identity changed after review: you reviewed account "+b.identity.Account+" ("+preflight.Principal(b.identity.ARN)+"), and "+now+". Nothing was applied. Verify the identity and run the checks again.")
 	}
 	if blockers > 0 {
 		names := []string{}

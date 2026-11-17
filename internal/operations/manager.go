@@ -204,7 +204,10 @@ type Manager struct {
 	// PreflightTTL bounds how long a passed preflight can be used for an approval.
 	GitProbe      preflight.GitProbe
 	IdentityProbe preflight.IdentityProbe
-	PreflightTTL  time.Duration
+	// AuthEpoch returns the AWS authentication epoch of a project's execution profile
+	// (awsauth.Manager.Epoch). A sign-in or identity change after a preflight refuses it.
+	AuthEpoch    func(projectID, profileID string) uint64
+	PreflightTTL time.Duration
 	// Git reads the launch project's Git context and records each plan's source
 	// fingerprint; nil disables source tracking (tests that do not need it).
 	Git *gitctx.Service
@@ -379,7 +382,7 @@ func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation, release
 	}
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
 	op.ID, op.Kind, op.Status, op.Stage = m.NewID(), "plan", Running, "Starting"
-	op.StartedAt, op.Command, op.Diagnostics, op.LogRetained = time.Now().UTC().Format(time.RFC3339), command, []EngineDiagnostic{}, true
+	op.StartedAt, op.Command, op.Diagnostics, op.LogRetained = time.Now().UTC().Format(time.RFC3339), op.Context.Display(command), []EngineDiagnostic{}, true
 	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release, environ: environ, meta: recordMeta{m.root, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}}
 	m.entries = append(m.entries, e)
 	m.trim()

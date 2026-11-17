@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"hclaro/internal/plan"
+	"hclaro/internal/profiles"
 )
 
 // Status of a check. Unknown is never treated as passed.
@@ -55,6 +56,12 @@ const (
 	CheckDestructive = "plan.destructive"
 	CheckScope       = "plan.scope"
 	CheckAWS         = "cloud.aws.identity"
+	// CheckAWSExpected compares the verified identity with the execution profile's expected
+	// account and role (M20). It always blocks and fails closed when unverified.
+	CheckAWSExpected = "cloud.aws.expected"
+	// CheckAWSReviewed requires a verified identity when the execution profile names an AWS
+	// profile, so the approval is bound to it and the apply can compare it (M20).
+	CheckAWSReviewed = "cloud.aws.reviewed"
 )
 
 // GitState is the result of a Git working tree probe.
@@ -85,6 +92,8 @@ type Identity struct {
 	State   string `json:"state"`
 	Account string `json:"account,omitempty"`
 	ARN     string `json:"arn,omitempty"`
+	// Kind classifies a failed probe (discovery error kinds such as credentials_expired).
+	Kind string `json:"kind,omitempty"`
 	// Message explains unavailable or failed probes; it never contains CLI output.
 	Message string `json:"message,omitempty"`
 	At      string `json:"verifiedAt,omitempty"`
@@ -147,6 +156,11 @@ type Input struct {
 	// Labels.
 	ProfileName string
 	AWSProfile  string
+	// AWSAuth is the profile's credential adapter (aws-cli or aws-vault, "" without one).
+	AWSAuth string
+	// ExpectedAccount and ExpectedRole are the profile's guard; the identity must match.
+	ExpectedAccount string
+	ExpectedRole    string
 	// Source compares the plan's recorded source fingerprint with the files now; nil when
 	// none was recorded (the check is then omitted).
 	Source *SourceFacts
@@ -361,6 +375,39 @@ func Evaluate(in Input) []Check {
 				fmt.Sprintf("Besides the %d requested %s, the plan also changes %d other resource instance(s). They are listed under Planned changes and will be applied too.", asked, noun(in.Kind), impact.Extra), "Review every listed change, or adjust configuration and plan again."))
 		} else {
 			out = append(out, check(CheckScope, "Plan changes only what was requested", Warn, Pass, "Every resource change in the plan was requested.", ""))
+		}
+	}
+
+	// An execution profile that names an AWS profile binds the approval to the identity the
+	// user verified: apply asks STS again and refuses another principal.
+	if in.AWSProfile != "" {
+		id := in.Identity
+		title := "AWS identity verified for this review"
+		switch {
+		case id.State == "verified" && !arnRE.MatchString(id.ARN):
+			// Without a usable ARN the apply could not tell whether the principal changed.
+			out = append(out, check(CheckAWSReviewed, title, Block, Fail, "STS reported account "+id.Account+", but its caller ARN could not be read safely, so Hclaro cannot bind the approval to a principal.", "Check the AWS profile with aws sts get-caller-identity in a terminal, or choose another profile."))
+		case id.State == "verified":
+			out = append(out, check(CheckAWSReviewed, title, Block, Pass, "The approval is bound to account "+id.Account+" ("+id.ARN+"). STS is asked again immediately before the apply; another account or principal, or a failed check, refuses it.", ""))
+		default:
+			out = append(out, check(CheckAWSReviewed, title, Block, Unknown, "Profile "+in.ProfileName+" names AWS profile "+in.AWSProfile+". An apply with it is bound to the AWS identity you verify here, so it must be verified first.", "Choose Verify AWS identity (read-only, contacts AWS). If it fails, sign in and verify again."))
+		}
+	}
+
+	// Expected account and role of the execution profile: a hard guard, not a policy rule.
+	if in.ExpectedAccount != "" || in.ExpectedRole != "" {
+		id := in.Identity
+		want := strings.TrimSpace(strings.Join([]string{in.ExpectedAccount, in.ExpectedRole}, " "))
+		title := "AWS identity matches the profile's expected account"
+		switch {
+		case id.State != "verified":
+			out = append(out, check(CheckAWSExpected, title, Block, Unknown, "This profile expects "+want+", and the identity is not verified. Hclaro does not apply to an account it has not checked.", "Choose Verify AWS identity (read-only, contacts AWS). If it fails, sign in and verify again."))
+		case in.ExpectedAccount != "" && id.Account != in.ExpectedAccount:
+			out = append(out, check(CheckAWSExpected, title, Block, Fail, "AUTH_ACCOUNT_MISMATCH: STS reports account "+id.Account+", but this profile expects "+in.ExpectedAccount+".", "Sign in to the expected account, or change the execution profile, then plan again."))
+		case in.ExpectedRole != "" && !profiles.RoleMatches(in.ExpectedRole, id.ARN):
+			out = append(out, check(CheckAWSExpected, title, Block, Fail, "AUTH_ACCOUNT_MISMATCH: STS reports "+id.ARN+", which does not match the expected role "+in.ExpectedRole+".", "Sign in with the expected role, or change the execution profile, then plan again."))
+		default:
+			out = append(out, check(CheckAWSExpected, title, Block, Pass, "STS reports account "+id.Account+" ("+id.ARN+"), as the profile expects. This is the CLI execution identity; provider-level assume_role or aliases are not verified.", ""))
 		}
 	}
 

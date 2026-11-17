@@ -210,7 +210,7 @@ func (h *Hub) ReviewWorkspaceWith(ctx context.Context, id string, action engine.
 	if name == "" {
 		name = "terraform"
 	}
-	r.Command = operations.WorkspaceCommand(name, action, target)
+	r.Command = r.Execution.Display(operations.WorkspaceCommand(name, action, target))
 	refuse := func(code, message string) (WorkspaceReview, error) {
 		r.Code, r.Reason = code, message
 		return r, nil
@@ -248,7 +248,7 @@ func (h *Hub) ReviewWorkspaceWith(ctx context.Context, id string, action engine.
 	if err != nil {
 		return refuse("missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine.")
 	}
-	r.Engine, r.Command = name, operations.WorkspaceCommand(name, action, target)
+	r.Engine, r.Command = name, r.Execution.Display(operations.WorkspaceCommand(name, action, target))
 	r.EngineVersion, err = manager.Version(ctx)
 	if err != nil {
 		if errors.Is(err, engine.ErrUnsafeArgs) {

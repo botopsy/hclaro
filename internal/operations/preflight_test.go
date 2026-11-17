@@ -466,12 +466,17 @@ func TestApplyRechecksTheAccountPolicy(t *testing.T) {
 		code    string
 		probes  int
 	}{
-		"account switched":         {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, verifiedAs(other), "preflight_blocked", 2},
-		"probe fails at apply":     {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, preflight.Identity{State: "failed", Message: "expired"}, "preflight_blocked", 2},
-		"warn rule, switched":      {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, true, verifiedAs(other), "preflight_changed", 2},
-		"same account":             {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, verifiedAs(allowed), "", 2},
-		"no account rule":          {`{"version":1}`, true, verifiedAs(other), "", 1},
-		"warn rule, never checked": {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, false, verifiedAs(other), "", 0},
+		// M20: a verified identity binds the approval, so any switch or failed check refuses
+		// the apply as stale, with or without an account rule.
+		"account switched":           {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, verifiedAs(other), "AUTH_CONTEXT_STALE", 2},
+		"probe fails at apply":       {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, preflight.Identity{State: "failed", Message: "expired"}, "AUTH_CONTEXT_STALE", 2},
+		"warn rule, switched":        {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, true, verifiedAs(other), "AUTH_CONTEXT_STALE", 2},
+		"same account":               {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, verifiedAs(allowed), "", 2},
+		"no account rule, switched":  {`{"version":1}`, true, verifiedAs(other), "AUTH_CONTEXT_STALE", 2},
+		"no account rule, failed":    {`{"version":1}`, true, preflight.Identity{State: "failed", Kind: "credentials_expired"}, "AUTH_CONTEXT_STALE", 2},
+		"same role, new session":     {`{"version":1}`, true, preflight.Identity{State: "verified", Account: allowed, ARN: "arn:aws:sts::" + allowed + ":assumed-role/deployer/1794860000000000000"}, "", 2},
+		"another role, same account": {`{"version":1}`, true, preflight.Identity{State: "verified", Account: allowed, ARN: "arn:aws:sts::" + allowed + ":assumed-role/admin/session"}, "AUTH_CONTEXT_STALE", 2},
+		"warn rule, never checked":   {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, false, verifiedAs(other), "", 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}

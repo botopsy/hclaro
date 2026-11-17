@@ -11,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"hclaro/internal/awsauth"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
+	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 )
 
@@ -867,5 +869,117 @@ func TestCloseLaterIsTrackedAndStopsWithTheHub(t *testing.T) {
 	hub.wg.Wait()
 	if _, _, err := hub.Context(c.ID); err != nil {
 		t.Fatal("closeLater ran after Close")
+	}
+}
+
+// M20: the Hub scope's operation manager reads the real awsauth epoch, so a sign-in or a
+// changed identity after a scope's preflight refuses its approval.
+func TestScopePreflightIsStaleAfterAuthChange(t *testing.T) {
+	hub, ids, _ := scopedHub(t)
+	hub.Profiles = profiles.Open(t.TempDir(), time.Now())
+	auth := awsauth.New()
+	identity := "111122223333"
+	auth.Probe = func(context.Context, []string) preflight.Identity {
+		return preflight.Identity{State: "verified", Account: identity, ARN: "arn:aws:sts::" + identity + ":assumed-role/Deploy/s"}
+	}
+	auth.Run = func(context.Context, []string, string, ...string) ([]byte, []byte, error) {
+		return []byte("aws-cli/2.17.0 Python/3.12 (synthetic)"), nil, nil
+	}
+	hub.Auth = auth
+	hub.IdentityProbe = func(ctx context.Context, environ []string) preflight.Identity { return auth.Probe(ctx, environ) }
+	network := ids["network"]
+	p, err := hub.Profiles.Create(network, profiles.Input{Name: "dev", AWSProfile: "dev-sso"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, s := openScope(t, hub, network, "dev", p.ID)
+	op, err := s.startPlan(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := waitDone(t, s, op.ID)
+	target, err := hub.AuthTarget(network, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.Verify(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Preflight(context.Background(), done.PlanID, operations.PreflightRequest{VerifyIdentity: true})
+	if err != nil || r.Blocked {
+		t.Fatalf("%v %+v", err, r.Checks)
+	}
+	// The credentials now belong to another principal.
+	identity = "444455556666"
+	if _, err := auth.Verify(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Approve(context.Background(), done.PlanID, operations.ApprovalRequest{Binding: r.Binding, Acknowledged: r.Acknowledge})
+	var rej *operations.RejectError
+	if !errors.As(err, &rej) || rej.Code != "AUTH_CONTEXT_STALE" {
+		t.Fatalf("%v", err)
+	}
+}
+
+// L1: through the production wiring (Hub.Auth → scope manager AuthEpoch), a real
+// awsauth sign-in after the preflight and approval refuses the apply as stale, even though
+// STS still reports the same principal, and the engine's apply never starts.
+func TestSignInAfterApprovalRefusesTheScopeApply(t *testing.T) {
+	hub, ids, spy := scopedHub(t)
+	hub.Profiles = profiles.Open(t.TempDir(), time.Now())
+	auth := awsauth.New()
+	auth.Probe = func(context.Context, []string) preflight.Identity {
+		return preflight.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/s"}
+	}
+	auth.Run = func(_ context.Context, _ []string, _ string, args ...string) ([]byte, []byte, error) {
+		switch strings.Join(args, " ") {
+		case "--version":
+			return []byte("aws-cli/2.17.0 Python/3.12 (synthetic)"), nil, nil
+		case "configure get sso_session --profile dev-sso":
+			return []byte("corp"), nil, nil
+		case "sso login --profile dev-sso":
+			return nil, nil, nil
+		}
+		return nil, nil, errors.New("exit status 1")
+	}
+	hub.Auth = auth
+	hub.IdentityProbe = func(ctx context.Context, environ []string) preflight.Identity { return auth.Probe(ctx, environ) }
+	network := ids["network"]
+	p, err := hub.Profiles.Create(network, profiles.Input{Name: "dev", AWSProfile: "dev-sso"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, s := openScope(t, hub, network, "dev", p.ID)
+	op, err := s.startPlan(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := waitDone(t, s, op.ID)
+	r, err := s.Preflight(context.Background(), done.PlanID, operations.PreflightRequest{VerifyIdentity: true})
+	if err != nil || r.Blocked {
+		t.Fatalf("%v %+v", err, r.Checks)
+	}
+	approval, err := s.Approve(context.Background(), done.PlanID, operations.ApprovalRequest{Binding: r.Binding, Acknowledged: r.Acknowledge})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := hub.AuthTarget(network, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.StartLogin(context.Background(), target, awsauth.ModeSSO); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "sign-in did not finish", func() bool {
+		l := auth.Status(context.Background(), target).Login
+		return l != nil && l.State == awsauth.LoginDone
+	})
+	_, err = s.StartApply(context.Background(), done.PlanID, approval.Token, approval.Phrase)
+	var rej *operations.RejectError
+	if !errors.As(err, &rej) || rej.Code != "AUTH_CONTEXT_STALE" {
+		t.Fatalf("%v", err)
+	}
+	if calls := spyCalls(t, spy, "apply"); len(calls) != 0 {
+		t.Fatalf("the engine applied: %q", calls)
 	}
 }

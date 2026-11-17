@@ -234,3 +234,116 @@
 .context-summary dd svg {
   vertical-align: -1px;
 }
+
+/* M20 AWS authentication. Status always has a text label and an icon, never color alone. */
+.auth-badge {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.auth-ok {
+  color: var(--create);
+}
+
+.auth-warn {
+  color: var(--warn);
+}
+
+.auth-bad {
+  color: var(--destroy);
+}
+
+.auth-indicator {
+  gap: 6px;
+}
+
+.auth-indicator code {
+  font-size: 12px;
+}
+
+.auth-panel {
+  border: 1px solid var(--border);
+  background: var(--inset);
+  border-radius: 8px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  display: flex;
+}
+
+.auth-heading {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+
+.auth-heading h3 {
+  margin: 0 auto 0 0;
+  font-size: 14px;
+}
+
+.auth-message {
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  display: flex;
+}
+
+.auth-actions {
+  flex-wrap: wrap;
+  gap: 6px;
+  display: flex;
+}
+
+.auth-arn {
+  overflow-wrap: anywhere;
+}
+
+.auth-commands li, .profile-list .auth-commands li {
+  border: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0;
+  font-size: 12px;
+  display: flex;
+}
+
+.auth-command {
+  align-items: center;
+  gap: 6px;
+  display: flex;
+}
+
+.auth-command code {
+  overflow-wrap: anywhere;
+}
+
+.auth-disclosure {
+  margin: 0;
+  font-size: 12px;
+}
+
+.profile-auth {
+  flex-basis: 100%;
+  margin-top: 8px;
+}
+
+.field-row {
+  align-items: center;
+  gap: 6px;
+  display: flex;
+}
+
+.field-row input {
+  flex: 1;
+}

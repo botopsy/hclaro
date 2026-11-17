@@ -98,7 +98,7 @@ func workspaceSuccess(action engine.WorkspaceAction, name string) string {
 // StartWorkspace records the operation and runs it in the background.
 func (r *Inits) StartWorkspace(req WorkspaceRequest) (Operation, error) {
 	op := Operation{
-		Kind: "workspace", Command: WorkspaceCommand(req.Engine, req.Action, req.Name), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
+		Kind: "workspace", Command: req.Context.Display(WorkspaceCommand(req.Engine, req.Action, req.Name)), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 		Workspace: &WorkspaceResult{Action: req.Action, Name: req.Name, CLIDefaultBefore: req.Reviewed.Current},
 	}
 	return r.begin(op, recordMeta{req.Root, req.Engine, req.EngineVersion, req.Name}, req.Release, nil, func(ctx context.Context, e *initEntry) { r.runWorkspace(ctx, e, req) })

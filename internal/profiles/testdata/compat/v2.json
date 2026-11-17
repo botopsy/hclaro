@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "profiles": [
+    {
+      "id": "fedcba9876543210fedcba9876543210",
+      "project_id": "0123456789abcdef0123456789abcdef",
+      "name": "prod",
+      "engine": "tofu",
+      "workspace": "prod",
+      "var_files": [],
+      "options": {},
+      "aws_profile": "prod",
+      "aws_region": "eu-west-1",
+      "aws_auth": "aws-vault",
+      "aws_expected_account": "111122223333",
+      "aws_expected_role": "arn:aws:sts::111122223333:assumed-role/Deploy/*",
+      "env_names": [],
+      "revision": 2,
+      "created_at": "2026-11-01T09:00:00Z",
+      "updated_at": "2026-11-04T12:00:00Z"
+    }
+  ],
+  "defaults": {}
+}
