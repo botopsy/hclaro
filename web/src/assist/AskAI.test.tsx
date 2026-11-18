@@ -18,7 +18,9 @@ const plan = {
 const hash = 'f'.repeat(64);
 const markdown = '# Hclaro context: plan\n\n## Changes\n\n```text\ndelete aws_instance.old\n```\n';
 const disclosure = { version: '1', lines: ['Data may reach a cloud model and bills your own account.'] };
-const pkg = { kind: 'plan', markdown, sha256: hash, sections: ['context', 'changes'], dropped: ['configuration'], disclosure };
+// The review is the first turn: the review prompt and the package. Copy and Download hand it over.
+const reviewText = '# Hclaro review request (review-plan@1)\n\n' + markdown + '\n## Review request\n\nReview this plan.\n';
+const pkg = { kind: 'plan', markdown, sha256: hash, sections: ['context', 'changes'], dropped: ['configuration'], disclosure, prompt: 'review-plan@1', review: reviewText };
 const settings = (enabled: boolean) => ({ enabled, strictLocal: false, handoff: enabled, headless: false, disclosure });
 
 type Route = (url: string) => Response | Promise<Response> | undefined;
@@ -34,7 +36,7 @@ function serve(enabled: boolean, ...routes: Route[]) {
     if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64) });
     if (url.endsWith('/ai/settings')) return Response.json(settings(enabled));
     if (url.endsWith('/ai/packages')) return Response.json(pkg);
-    if (url.endsWith(`/ai/packages/${hash}/export`)) return Response.json({ kind: 'plan', sha256: hash, markdown, filename: `hclaro-plan-${hash.slice(0, 12)}.md` });
+    if (url.endsWith(`/ai/packages/${hash}/export`)) return Response.json({ kind: 'plan', sha256: hash, markdown, prompt: 'review-plan@1', review: reviewText, filename: `hclaro-plan-${hash.slice(0, 12)}.md` });
     if (url.includes('/cost/')) return Response.json({ error: 'cost_unavailable' }, { status: 409 });
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
@@ -69,19 +71,22 @@ describe('AI handoff', () => {
     const user = userEvent.setup();
     const write = vi.spyOn(navigator.clipboard, 'writeText');
     show();
-    expect(await screen.findByRole('button', { name: /Review with AI/ })).toBeInTheDocument();
-    await user.click(await screen.findByRole('button', { name: /Ask AI to analyze/ }));
+    // A destructive plan has one entry point, on its warning line.
+    expect(await screen.findByText(/destroys or replaces objects/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Review with AI/ })).toHaveLength(1);
+    await user.click(await screen.findByRole('button', { name: /Review with AI/ }));
     expect(await screen.findByText(/Building the context package/)).toBeInTheDocument();
     release();
-    const text = await screen.findByLabelText('Context package text');
-    expect(text.textContent).toBe(markdown);
+    const text = await screen.findByLabelText('Text to share: review prompt and context package');
+    expect(text.textContent).toBe(reviewText);
+    expect(screen.getByText('review-plan@1')).toBeInTheDocument();
     expect(screen.getByText('Data may reach a cloud model and bills your own account.')).toBeInTheDocument();
     expect(screen.getByText('configuration')).toBeInTheDocument();
     expect(write).not.toHaveBeenCalled();
     expect(exports()).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: 'Copy' }));
     expect(await screen.findByText(/protections end here/)).toBeInTheDocument();
-    expect(write).toHaveBeenCalledWith(markdown);
+    expect(write).toHaveBeenCalledWith(reviewText);
     expect(exports()).toEqual([`/api/v1/ai/packages/${hash}/export`]);
   });
 
@@ -92,13 +97,13 @@ describe('AI handoff', () => {
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn((b: Blob) => { blobs.push(b); return 'blob:x'; }), revokeObjectURL: vi.fn() }));
     const clicked = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     show({ kind: 'context', contextId: '1'.repeat(32) });
-    await user.click(await screen.findByRole('button', { name: /Ask AI to analyze/ }));
-    await screen.findByLabelText('Context package text');
+    await user.click(await screen.findByRole('button', { name: /Review with AI/ }));
+    await screen.findByLabelText('Text to share: review prompt and context package');
     expect(blobs).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: 'Download .md' }));
     await screen.findByText(/protections end here/);
     expect(clicked).toHaveBeenCalledTimes(1);
-    expect(await blobs[0].text()).toBe(markdown);
+    expect(await blobs[0].text()).toBe(reviewText);
     expect(posts).toEqual([`/api/v1/contexts/${'1'.repeat(32)}/ai/packages`, `/api/v1/contexts/${'1'.repeat(32)}/ai/packages/${hash}/export`]);
   });
 
@@ -108,9 +113,9 @@ describe('AI handoff', () => {
     const write = vi.spyOn(navigator.clipboard, 'writeText');
     show();
     await user.click(await screen.findByRole('button', { name: /Review with AI/ }));
-    await screen.findByLabelText('Context package text');
+    await screen.findByLabelText('Text to share: review prompt and context package');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByLabelText('Context package text')).toBeNull();
+    expect(screen.queryByLabelText('Text to share: review prompt and context package')).toBeNull();
     expect(exports()).toHaveLength(0);
     expect(write).not.toHaveBeenCalled();
   });
@@ -120,8 +125,8 @@ describe('AI handoff', () => {
     const user = userEvent.setup();
     vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new DOMException('Write permission denied.', 'NotAllowedError'));
     show();
-    await user.click(await screen.findByRole('button', { name: /Ask AI to analyze/ }));
-    await screen.findByLabelText('Context package text');
+    await user.click(await screen.findByRole('button', { name: /Review with AI/ }));
+    await screen.findByLabelText('Text to share: review prompt and context package');
     await user.click(screen.getByRole('button', { name: 'Copy' }));
     expect(await screen.findByText(/did not allow copying.*Download \.md/)).toBeInTheDocument();
     expect(screen.queryByText(/protections end here/)).toBeNull();
@@ -131,7 +136,7 @@ describe('AI handoff', () => {
     serve(true, url => url.endsWith('/ai/packages') ? Response.json({ error: 'package_blocked', reason: 'Some values still look secret.', blockedFields: ['changes[0].attributes[1].after'] }, { status: 422 }) : undefined);
     const user = userEvent.setup();
     show();
-    await user.click(await screen.findByRole('button', { name: /Ask AI to analyze/ }));
+    await user.click(await screen.findByRole('button', { name: /Review with AI/ }));
     expect(await screen.findByText('Sharing blocked')).toBeInTheDocument();
     expect(screen.getByText('changes[0].attributes[1].after')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
@@ -142,14 +147,14 @@ describe('AI handoff', () => {
     serve(true, url => url.endsWith('/ai/packages') ? Response.json({ error: 'context_changed', reason: 'The project context changed since this plan was made.' }, { status: 409 }) : undefined);
     const user = userEvent.setup();
     show();
-    await user.click(await screen.findByRole('button', { name: /Ask AI to analyze/ }));
+    await user.click(await screen.findByRole('button', { name: /Review with AI/ }));
     expect(await screen.findByText('The project context changed since this plan was made.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
     cleanup();
 
     serve(true, url => url.endsWith('/ai/packages') ? Response.json({ ...pkg, sections: [] }) : undefined);
     show();
-    await user.click(await screen.findByRole('button', { name: /Ask AI to analyze/ }));
+    await user.click(await screen.findByRole('button', { name: /Review with AI/ }));
     expect(await screen.findByText('Nothing to share')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
   });
@@ -206,17 +211,17 @@ describe.each([['single project', { kind: 'launch' }, '/api/v1'], ['Hub', { kind
       for (const r of requests) expect(await screen.findByRole('button', { name: `Ask AI ${r.kind}` })).toBeInTheDocument();
       expect(posts).toHaveLength(0);
       await user.click(screen.getByRole('button', { name: `Ask AI ${kind}` }));
-      expect((await screen.findByLabelText('Context package text')).textContent).toBe(markdown);
+      expect((await screen.findByLabelText('Text to share: review prompt and context package')).textContent).toBe(reviewText);
       const body = JSON.parse(String(vi.mocked(fetch).mock.calls.find(([u]) => String(u) === `${prefix}/ai/packages`)?.[1]?.body));
       expect(body.kind).toBe(request.kind);
       expect(screen.queryByRole('button', { name: /Send/ })).toBeNull();
       expect(screen.queryByText(/Anthropic|Claude/)).toBeNull();
       await user.click(screen.getByRole('button', { name: 'Copy' }));
       await screen.findByText(/protections end here/);
-      expect(write).toHaveBeenCalledWith(markdown);
+      expect(write).toHaveBeenCalledWith(reviewText);
       await user.click(screen.getByRole('button', { name: 'Download .md' }));
       await vi.waitFor(() => expect(blobs).toHaveLength(1));
-      expect(await blobs[0].text()).toBe(markdown);
+      expect(await blobs[0].text()).toBe(reviewText);
       expect(posts.filter(u => u.endsWith('/run'))).toHaveLength(0);
       expect(posts.every(u => u.startsWith(prefix + '/ai/packages'))).toBe(true);
     });

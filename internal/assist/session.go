@@ -9,7 +9,7 @@ import (
 )
 
 // DisclosureVersion changes whenever the disclosure text changes.
-const DisclosureVersion = "4"
+const DisclosureVersion = "5"
 
 // Disclosure is shown next to every package and in Settings (R10).
 type Disclosure struct {
@@ -18,10 +18,10 @@ type Disclosure struct {
 }
 
 var disclosure = Disclosure{Version: DisclosureVersion, Lines: []string{
-	"Hclaro builds this context on your machine and shares nothing by itself. Only Copy, Download or Send to an assistant hands it over.",
+	"Hclaro builds this context on your machine and shares nothing by itself. Only Copy, Download or Review with an assistant hands it over.",
 	"An AI assistant you give it to may send it to a cloud model, and its runs bill your own assistant account.",
 	"Once copied or downloaded, the text is outside Hclaro: its redaction and blocking no longer protect it.",
-	sendLine + "Send starts a conversation. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the previewed text to its cloud model, signed in as you.",
+	sendLine + "Review with an assistant starts a conversation: Hclaro sends the previewed text, the context followed by a fixed review request. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the conversation to its cloud model, signed in as you.",
 	sendLine + "Every follow-up resends the whole conversation (the context, your messages and the replies), so usage and cost grow with each message. A conversation stops at a size limit; Hclaro then asks you to start a new one and never drops messages silently.",
 	claudeLine + "Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
 	sendLine + "The reply is unverified AI output. Hclaro shows it as text, keeps the conversation in memory for this session only, and never runs, applies or approves anything it suggests.",

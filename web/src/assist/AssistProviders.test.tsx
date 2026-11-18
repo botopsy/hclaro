@@ -11,7 +11,8 @@ import type { PlanScope } from '../plans/routes';
 const hash = 'f'.repeat(64);
 const markdown = '# Hclaro context: plan\n';
 const disclosure = { version: '3', lines: ['Nothing is shared without your click.'] };
-const pkg = { kind: 'plan', markdown, sha256: hash, sections: ['context'], dropped: [], disclosure };
+const review = '# Hclaro review request (review-plan@1)\n\n' + markdown + '\n## Review request\n\nReview this plan.\n';
+const pkg = { kind: 'plan', markdown, sha256: hash, sections: ['context'], dropped: [], disclosure, prompt: 'review-plan@1', review };
 const claudeMissing: AssistProvider = { id: 'claude', name: 'Claude Code', mode: 'unsupported', reason: 'cli_missing', message: 'The assistant\'s executable was not found on PATH.' };
 const claude: AssistProvider = { id: 'claude', name: 'Claude Code', mode: 'headless-eligible', version: '2.1.326', path: '/synthetic/bin/claude' };
 const codex: AssistProvider = { id: 'codex', name: 'OpenAI Codex', mode: 'handoff-only', version: '0.166.0', path: '/synthetic/bin/codex', reason: 'not_headless', message: 'This assistant is handoff-only.' };
@@ -26,7 +27,7 @@ function serve(providers: AssistProvider[]) {
     if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64) });
     if (url.endsWith('/ai/settings')) return Response.json({ enabled: true, strictLocal: false, handoff: true, headless, disclosure, disclosureAccepted: true, providers, defaultProvider: headless ? 'claude' : undefined });
     if (url.endsWith('/ai/packages')) return Response.json(pkg);
-    if (url.endsWith(`/ai/packages/${hash}/export`)) return Response.json({ kind: 'plan', sha256: hash, markdown, filename: `hclaro-plan-${hash.slice(0, 12)}.md` });
+    if (url.endsWith(`/ai/packages/${hash}/export`)) return Response.json({ kind: 'plan', sha256: hash, markdown, prompt: 'review-plan@1', review, filename: `hclaro-plan-${hash.slice(0, 12)}.md` });
     if (url.endsWith('/ai/conversations')) return Response.json({ id: '1'.repeat(32), state: 'running', turns: [] }, { status: 202 });
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
@@ -56,13 +57,14 @@ describe.each(scopes)('AI handoff without Claude Code (%s)', (_, scope, prefix) 
     const user = userEvent.setup();
     const write = vi.spyOn(navigator.clipboard, 'writeText');
     show(scope);
-    await screen.findByLabelText('Context package text');
+    await screen.findByLabelText('Text to share: review prompt and context package');
     expect(actions()).toEqual(['Close AI context preview', 'Cancel', ...copies, 'Download .md']);
     expect(screen.queryByText(/Claude/)).toBeNull();
     expect(posts).toEqual([`${prefix}/ai/packages`]);
     await user.click(screen.getByRole('button', { name: copies[copies.length - 1] }));
     expect(await screen.findByText(/protections end here/)).toBeInTheDocument();
-    expect(write).toHaveBeenCalledWith(markdown);
+    // The handoff carries the review prompt too, so the user gets the same review elsewhere.
+    expect(write).toHaveBeenCalledWith(review);
     // Handoff is an export of the previewed hash only: no run request starts an assistant.
     expect(posts).toEqual([`${prefix}/ai/packages`, `${prefix}/ai/packages/${hash}/export`]);
     if (providers.length) {
@@ -72,13 +74,13 @@ describe.each(scopes)('AI handoff without Claude Code (%s)', (_, scope, prefix) 
     }
   });
 
-  it('Claude installed: Send to Claude Code stays, next to Copy for Codex', async () => {
+  it('Claude installed: Review with Claude Code stays, next to Copy for Codex', async () => {
     serve([claude, codex]);
     const user = userEvent.setup();
     show(scope);
-    await screen.findByLabelText('Context package text');
-    expect(actions()).toEqual(['Close AI context preview', 'Cancel', 'Copy for OpenAI Codex', 'Download .md', 'Send to Claude Code']);
-    await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
+    await screen.findByLabelText('Text to share: review prompt and context package');
+    expect(actions()).toEqual(['Close AI context preview', 'Cancel', 'Copy for OpenAI Codex', 'Download .md', 'Review with Claude Code']);
+    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
     expect(posts).toEqual([`${prefix}/ai/packages`, `${prefix}/ai/conversations`]);
   });
 });

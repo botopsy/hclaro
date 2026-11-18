@@ -9,8 +9,9 @@ import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 import type { ImportRequest } from '../types';
 
 // AI handoff (AI-01.03) and conversations (AI-01.04, AI-01.07): the server builds a sanitized
-// context package; the user previews it and only Copy, Download or Send hands it over.
-// Nothing is shared by opening the preview. Send starts a conversation; every message is one
+// context package; the user previews it and only Copy, Download or Review with an assistant hands it over.
+// Nothing is shared by opening the preview. "Review with <assistant>" starts a conversation whose
+// first turn is the previewed text (review prompt + package, AI-01.08); every message is one
 // headless run of the whole conversation. Replies are untrusted text: rendered as plain text
 // only, with no links, command buttons or actions.
 
@@ -20,16 +21,18 @@ export type AssistSettings = {
   enabled: boolean; strictLocal: boolean; handoff: boolean; headless: boolean; disclosure: AssistDisclosure;
   disclosureAccepted?: boolean; providers?: AssistProvider[]; defaultProvider?: string;
 };
-type Turn = { role: 'user' | 'assistant'; text: string; at: string };
+type Turn = { role: 'user' | 'assistant'; text: string; at: string; prompt?: string };
 type Conversation = {
-  id: string; provider: string; kind: string; packageSha256: string; state: 'ready' | 'running' | 'failed' | 'cancelled';
+  id: string; provider: string; kind: string; packageSha256: string; state: 'ready' | 'running' | 'failed' | 'cancelled'; stale?: boolean;
   turns: Turn[]; draft?: string; error?: { code: string; message: string }; usedBytes: number; limitBytes: number; startedAt: string;
 };
 // Mirrors assist.MaxMessage; the server enforces it.
 const maxMessage = 8000;
 export type AssistRequest = { kind: 'plan'; planId: string } | { kind: 'drift'; scanId: string } | { kind: 'resource'; resourceId: string } | { kind: 'import'; import: ImportRequest };
-type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure };
-type Exported = { kind: string; sha256: string; markdown: string; filename: string };
+// review is the first turn (AI-01.08): the review prompt and the package, byte for byte what
+// Send submits and what Copy and Download hand over.
+type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure; prompt: string; review: string };
+type Exported = { kind: string; sha256: string; markdown: string; filename: string; prompt: string; review: string };
 
 export const assistSettingsQuery = { queryKey: ['ai-settings'], queryFn: () => api<AssistSettings>('ai/settings') };
 
@@ -88,7 +91,7 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
     setBusy(true);
     setFailed(undefined);
     try {
-      const chat = await post<Conversation>(scopedPath(scope, 'ai/conversations'), { packageSha256: p.sha256, provider: provider.id, disclosureVersion: settings.disclosure.version, message: '' });
+      const chat = await post<Conversation>(scopedPath(scope, 'ai/conversations'), { packageSha256: p.sha256, provider: provider.id, disclosureVersion: settings.disclosure.version, prompt: p.prompt });
       setChatId(chat.id);
     } catch (err) {
       setFailed(err instanceof Error ? err.message : 'The request could not be sent.');
@@ -104,15 +107,15 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
     setFailed(undefined);
     try {
       const e = await post<Exported>(scopedPath(scope, `ai/packages/${p.sha256}/export`), {});
-      if (e.sha256 !== p.sha256 || e.markdown !== p.markdown) throw new Error('The package changed since the preview. Open the preview again.');
+      if (e.sha256 !== p.sha256 || e.review !== p.review || e.prompt !== p.prompt) throw new Error('The package changed since the preview. Open the preview again.');
       if (how === 'copy') {
         try {
-          await navigator.clipboard.writeText(e.markdown);
+          await navigator.clipboard.writeText(e.review);
         } catch {
           throw new Error('The browser did not allow copying to the clipboard. Use Download .md instead.');
         }
       }
-      else save(e.filename, e.markdown);
+      else save(e.filename, e.review);
       setHanded({ how: how === 'copy' ? 'copied' : 'downloaded', to });
     } catch (err) {
       setFailed(err instanceof Error ? err.message : 'The package could not be exported.');
@@ -136,9 +139,10 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
         <div><dt>Included</dt><dd>{p.sections.join(', ')}</dd></div>
         <div><dt>Removed for size</dt><dd>{p.dropped.length ? p.dropped.join(', ') : 'Nothing'}</dd></div>
         <div><dt>Never included</dt><dd>State values, .tfvars values, saved plans, plan JSON, environment, credentials, backend settings and local paths. Values that look secret are shown as [redacted].</dd></div>
-        <div><dt>SHA-256</dt><dd className="mono" title={p.sha256}>{p.sha256.slice(0, 16)}…</dd></div>
+        <div><dt>Review prompt</dt><dd className="mono">{p.prompt}</dd></div>
+        <div><dt>Package SHA-256</dt><dd className="mono" title={p.sha256}>{p.sha256.slice(0, 16)}…</dd></div>
        </dl>
-       <pre className="assist-text" aria-label="Context package text" tabIndex={0}>{p.markdown}</pre>
+       <pre className="assist-text" aria-label="Text to share: review prompt and context package" tabIndex={0}>{p.review}</pre>
        {handed && <p className="info-line" role="status">Context {handed.how}{handed.to && <> for {handed.to}. Paste it into {handed.to} yourself: Hclaro did not open or run it</>}. Hclaro's protections end here: what happens to this text is now up to you and the assistant you give it to.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
        {chatId && <ConversationPanel scope={scope} id={chatId} name={provider?.name ?? 'the assistant'} onClosed={() => setChatId(undefined)} />}
@@ -151,7 +155,7 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
       <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button>
       {provider && settings && <>
        {eligible.length > 1 && <select aria-label="Assistant for this request" value={provider.id} onChange={e => setPicked(e.target.value)}>{eligible.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>}
-       <Button disabled={busy || !settings.disclosureAccepted || !!chatId} title={settings.disclosureAccepted ? undefined : 'Accept the AI disclosure in Settings first.'} onClick={() => void send()}><Send size={14} />Send to {provider.name}</Button>
+       <Button disabled={busy || !settings.disclosureAccepted || !!chatId} title={settings.disclosureAccepted ? undefined : 'Accept the AI disclosure in Settings first.'} onClick={() => void send()}><Send size={14} />Review with {provider.name}</Button>
       </>}
      </>}
     </div>
@@ -191,12 +195,13 @@ function ConversationPanel({ scope, id, name, onClosed }: { scope: PlanScope; id
       await post(`${path}/${action}`, action === 'messages' ? { text } : {});
       if (action === 'close') return onClosed();
       if (action === 'messages') setText('');
-      await chat.refetch();
     } catch (err) {
       setRefused(err instanceof Error ? err.message : 'The request was refused.');
     } finally {
       setBusy(false);
     }
+    // Also after a refusal: a context_changed refusal must show the stale banner and lock the input.
+    await chat.refetch();
   }
   const tooLong = new TextEncoder().encode(text).length > maxMessage;
   const running = c?.state === 'running';
@@ -207,18 +212,20 @@ function ConversationPanel({ scope, id, name, onClosed }: { scope: PlanScope; id
     <ol className="assist-turns" aria-label="Messages">
      {c.turns.map((t, i) => <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
       {t.role === 'assistant' ? <pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{t.text || '(empty reply)'}</pre>
+        : t.prompt ? <p>Asked for a review of the context package (<code>{t.prompt}</code>).</p>
         : <p>{t.text || 'Shared the context package.'}</p>}</li>)}
     </ol>
     {running && <div className="assist-running" role="status"><LoaderCircle className="spin" size={14} /><span>Waiting for {name}…</span><Button variant="outline" size="small" disabled={busy} onClick={() => void act('cancel')}><Square size={12} />Cancel</Button></div>}
+    {c.stale && <p className="plan-warning" role="alert"><TriangleAlert size={14} /><span>Context is stale: the workspace or the reviewed result changed since this conversation started, so no more messages can be sent. Close it and start a new review.</span></p>}
     {c.error && !running && <p className={c.state === 'cancelled' ? 'muted' : 'dialog-error'} role="alert">{c.error.message}{c.draft !== undefined && ' Your message is back in the box below.'}</p>}
     <label className="assist-compose">Follow-up message
-     <textarea value={text} rows={3} disabled={running} onChange={e => setText(e.target.value)} />
+     <textarea value={text} rows={3} disabled={running || c.stale} onChange={e => setText(e.target.value)} />
     </label>
     {tooLong && <p className="dialog-error" role="alert">This message is longer than {maxMessage} bytes. Shorten it to send it.</p>}
     {refused && <p className="dialog-error" role="alert">{refused}</p>}
     <div className="form-actions">
      <Button variant="ghost" disabled={busy} onClick={() => void act('close')}><MessageSquareX size={14} />Close conversation</Button>
-     <Button disabled={busy || running || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />Send message</Button>
+     <Button disabled={busy || running || c.stale || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />Send message</Button>
     </div>
    </>}
   </section>;
