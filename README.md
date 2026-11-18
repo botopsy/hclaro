@@ -420,6 +420,23 @@ The **Cost estimate** tab of a reviewed plan shows a clearly labelled estimate o
 
 `make demo` puts a synthetic `infracost` first on `PATH`; it prices the demo plan from a fixture and contacts nothing.
 
+## AI assistance (optional)
+
+Ask the AI coding assistant you already use about a plan, a drift scan, an import or a resource. Hclaro builds the context on your machine; the assistant only explains and recommends. Hclaro has no model, account, API key storage or billing of its own, and works exactly the same with no assistant installed.
+
+- **Off at every launch.** Turn it on in **Settings → AI assistance**. While it is off, no AI button appears anywhere, and Hclaro builds, exports and sends no context package.
+- **No assistant required.** With AI on, every entry point, the preview, **Copy** and **Download** work even when no assistant is installed. Each detected handoff-only assistant (Codex, Copilot CLI) gets its own **Copy for …** action. **Send** appears only for a detected Claude Code that Hclaro has verified.
+- **Entry points.** *Ask AI to analyze* and, for plans that destroy or replace objects, *Review with AI* on a plan review; *Investigate with AI* on a finished drift scan; *Ask AI for import guidance* in the Import wizard; *Ask AI about this resource* in the Explorer. Each works for the launch project and for any open Hub workspace, and a context package belongs to the workspace it was built in.
+- **Preview first.** Every entry point opens a preview of the exact Markdown that would be shared, with its SHA-256. Opening the preview shares nothing. If a value still looks secret or local after redaction, Hclaro blocks the package and lists only the field paths. A package goes stale when the plan, scan or workspace changes.
+- **Two modes.**
+  - *Handoff:* **Copy** or **Download** (`.md`) hands exactly the previewed bytes to whichever assistant you choose. From that moment the text is outside Hclaro and its redaction no longer protects it.
+  - *Send to an assistant (headless):* only for an assistant Hclaro has verified for its version (see the [support matrix](docs/support-matrix.md#ai-assistants)). Hclaro runs it once with its tools off, the package on stdin, an empty temporary folder as its working directory, and no cloud, Terraform, backend or Hclaro environment variables. You can cancel; a run times out after five minutes.
+- **Disclosure.** Before the first send in a session you accept a versioned disclosure: the assistant may send the context to its cloud model, signed in as you, and its runs bill your own assistant account. Hclaro does not cap or guarantee the cost. Acceptance ends when you turn AI off or when the disclosure text changes.
+- **Never shared:** state or raw state contents, `.tfvars` values, saved-plan files, full plan JSON, the process environment, credentials, backend configuration values or local paths.
+- **Replies are unverified AI output.** They are shown as plain text: no links, no command buttons, no apply or approve action. Hclaro never runs, applies or writes anything an assistant suggests, and AI code cannot read or change approvals, saved-plan bindings, preflight, workspace selection or Git state. Replies stay in memory for the session; history records only the assistant, context kind, package hash, outcome and duration.
+- **Strict local-only mode.** `hclaro --strict-local` disables sending; Copy and Download stay available because you hand the text over yourself.
+- **Choosing the executable.** Hclaro finds `claude`, `codex` and `copilot` on `PATH`. `--claude-path /abs/path/to/claude` points it at another Claude Code executable. The path is never set from the browser; Settings shows it read-only.
+
 ## Import
 
 **Import & discovery → Import existing** brings an object that already exists outside Terraform/OpenTofu into state. Enter the resource instance address (managed resources only, with its count index or for_each key if the block uses one), the provider's import ID, an optional provider reference such as `aws.west`, and the name of a **new** file in the root module. **Check and preview** writes nothing and runs nothing. It reports:

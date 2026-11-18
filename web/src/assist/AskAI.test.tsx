@@ -4,8 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import planGolden from '../../../fixtures/plan/all-actions.golden.json';
 import { PlanReview } from '../plans/PlanReview';
+import { AskAI, type AssistRequest } from './AskAI';
 import type { PlanScope } from '../plans/routes';
-import type { Plan } from '../types';
+import type { ImportRequest, Plan } from '../types';
 
 const planId = 'a'.repeat(32);
 const review = Object.fromEntries(Object.entries(planGolden).filter(([key]) => key !== 'details'));
@@ -153,3 +154,70 @@ describe('AI handoff', () => {
     expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
   });
 });
+
+// AI-01.06 no-AI baseline. AI off: every entry point (plan, drift, import, resource) goes
+// through AskAI, which renders nothing and sends nothing, whether or not any assistant is
+// installed. AI on with no assistant installed: every entry point stays available for handoff
+// (AI-01.05); only Send and the Anthropic line depend on a detected Claude Code.
+const requests: AssistRequest[] = [
+  { kind: 'plan', planId }, { kind: 'drift', scanId: 'a'.repeat(32) }, { kind: 'resource', resourceId: 'a'.repeat(32) },
+  { kind: 'import', import: { address: 'aws_s3_bucket.x', id: 'x', file: 'imports.tf' } as ImportRequest }
+];
+function entryPoints(scope: PlanScope) {
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {requests.map(r => <AskAI key={r.kind} scope={scope} request={r} label={`Ask AI ${r.kind}`} />)}
+  </QueryClientProvider>);
+}
+
+describe('No-AI baseline: AI off', () => {
+  // What the server sends with no assistant session at all (assist.Settings{}).
+  const absent = { enabled: false, strictLocal: false, handoff: false, headless: false, disclosure: { version: '', lines: null }, disclosureAccepted: false, providers: null };
+  const offWithAssistants = { ...settings(false), providers: [{ id: 'codex', name: 'OpenAI Codex', mode: 'handoff-only' }] };
+  const baselines: [string, Route][] = [
+    ['no assistant session', u => (u.endsWith('/ai/settings') ? Response.json(absent) : undefined)],
+    ['switched off', () => undefined],
+    ['switched off with an assistant installed', u => (u.endsWith('/ai/settings') ? Response.json(offWithAssistants) : undefined)],
+    ['no AI routes', u => (u.endsWith('/ai/settings') ? Response.json({ error: 'route_not_found' }, { status: 404 }) : undefined)]
+  ];
+  for (const [name, route] of baselines) {
+    it(`renders no AI element for any entry point: ${name}`, async () => {
+      serve(false, route);
+      const { container } = entryPoints({ kind: 'launch' });
+      await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).endsWith('/ai/settings'))).toBe(true));
+      await new Promise(r => setTimeout(r, 50));
+      expect(container.innerHTML).toBe('');
+      expect(screen.queryByText(/AI/)).toBeNull();
+      expect(posts).toHaveLength(0);
+    });
+  }
+});
+
+describe.each([['single project', { kind: 'launch' }, '/api/v1'], ['Hub', { kind: 'context', contextId: '1'.repeat(32) }, `/api/v1/contexts/${'1'.repeat(32)}`]] as [string, PlanScope, string][])(
+  'AI on, no assistant installed (%s)', (_, scope, prefix) => {
+    const none = { enabled: true, strictLocal: false, handoff: true, headless: false, disclosure: { version: '3', lines: ['Hclaro builds this context on your machine and shares nothing by itself.'] }, disclosureAccepted: false, providers: [] };
+    it.each(requests.map(r => [r.kind, r] as [string, AssistRequest]))('%s: preview, Copy and Download; no Send, no Anthropic line', async (kind, request) => {
+      serve(true, u => (u.endsWith('/ai/settings') ? Response.json(none) : undefined));
+      const user = userEvent.setup();
+      const write = vi.spyOn(navigator.clipboard, 'writeText');
+      const blobs: Blob[] = [];
+      vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn((b: Blob) => { blobs.push(b); return 'blob:x'; }), revokeObjectURL: vi.fn() }));
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      entryPoints(scope);
+      for (const r of requests) expect(await screen.findByRole('button', { name: `Ask AI ${r.kind}` })).toBeInTheDocument();
+      expect(posts).toHaveLength(0);
+      await user.click(screen.getByRole('button', { name: `Ask AI ${kind}` }));
+      expect((await screen.findByLabelText('Context package text')).textContent).toBe(markdown);
+      const body = JSON.parse(String(vi.mocked(fetch).mock.calls.find(([u]) => String(u) === `${prefix}/ai/packages`)?.[1]?.body));
+      expect(body.kind).toBe(request.kind);
+      expect(screen.queryByRole('button', { name: /Send/ })).toBeNull();
+      expect(screen.queryByText(/Anthropic|Claude/)).toBeNull();
+      await user.click(screen.getByRole('button', { name: 'Copy' }));
+      await screen.findByText(/protections end here/);
+      expect(write).toHaveBeenCalledWith(markdown);
+      await user.click(screen.getByRole('button', { name: 'Download .md' }));
+      await vi.waitFor(() => expect(blobs).toHaveLength(1));
+      expect(await blobs[0].text()).toBe(markdown);
+      expect(posts.filter(u => u.endsWith('/run'))).toHaveLength(0);
+      expect(posts.every(u => u.startsWith(prefix + '/ai/packages'))).toBe(true);
+    });
+  });
