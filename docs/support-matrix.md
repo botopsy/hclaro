@@ -91,6 +91,20 @@ The version check (`engine.Supported`) accepts stable **Terraform 1.5–1.17** a
 | HUB-16 | Terraform + OpenTofu | 1.17.2 + 1.13.9 | windows/amd64 | local | local-cli | `--experimental-hub-execution`: Hub execution (h1-register-open, h4-parallel-engines, h2-a1, h2-a2, h2-a3, h2-r1, h2-i1, h2-d1, h2-g1-m2616, h2-g1-modules, h3-workspaces, h5a-path-identity, h5b-path-identity, h5c-path-identity, h5d-windows-forms, h6-config, h6-profile, h6-engine-preference, h7-busy-edits, h8-capacity, h9-close-context, h11-import-no-stall) | Real engine, disposable projects, local backend, providers from a local mirror, isolation weak-proxy (firewall), offline not verified | 2026-11-16 | PASS | [2026-11-16 fu-win-hold dispatch10 windows-amd64 (offline not verified)](qualification/real-engine-20261116.md#2026-11-16-fu-win-hold-dispatch10-windows-amd64-offline-not-verified) |
 | HUB-17 | Terraform + OpenTofu | 1.17.2 + 1.13.9 | windows/amd64 | local | local-cli | `--experimental-hub-execution`: Hub execution (h5c-prime-distinct-case, h6-binary, h12-remote-backend, h10-shutdown-applies) | Real engine, disposable projects, local backend, providers from a local mirror, isolation weak-proxy (firewall), offline not verified | 2026-11-16 | NOT_TESTED | [2026-11-16 fu-win-hold dispatch10 windows-amd64 (offline not verified)](qualification/real-engine-20261116.md#2026-11-16-fu-win-hold-dispatch10-windows-amd64-offline-not-verified) |
 
+## AI assistants
+
+Optional AI assistance (PRD FR-09) is qualified per assistant and version, separately from the engines. *Headless* means Hclaro may run the assistant itself with its tools off; *handoff* means Hclaro only builds the context for you to copy or download, and never starts the assistant. Automated tests use fake assistant CLIs only; the real runs below were made by the owner with a synthetic prompt and no project data.
+
+| ID | Assistant | Version tested | Platform | Mode | What was run for real | Date | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| AI-P1 | Claude Code | 2.1.326 (Hclaro accepts 2.1.x from 2.1.326) | darwin/amd64 | headless | Feasibility probe: tools-off argv, stdin prompt, version detection; canary file not read, no file written, no shell or network tool run. Headless run from the UI with a synthetic plan | 2026-11-17 | PASS |
+| AI-P2 | OpenAI Codex | codex-cli 0.166.0 | darwin/amd64 | handoff | Feasibility probe passed its canary check, but Codex documents no switch that turns all tools off, so Hclaro never runs it. Detection and Copy/Download | 2026-11-17 | PASS (handoff only) |
+| AI-P3 | GitHub Copilot CLI | 1.0.112 | darwin/amd64 | handoff | Feasibility probe passed its canary check, but stdin prompts and a global MCP off switch are undocumented, so Hclaro never runs it. Detection and Copy/Download | 2026-11-17 | PASS (handoff only) |
+| AI-P4 | Claude Code | other than 2.1.x ≥ 2.1.326 | any | handoff | Not run. Hclaro shows the version as not verified and offers Copy/Download only | — | NOT_TESTED |
+| AI-P5 | Any assistant | any | linux, windows, darwin/arm64 | headless | Not run for real; fake assistant CLIs in CI on Linux, macOS and Windows | — | NOT_TESTED |
+
+A generic or custom-command assistant is not supported.
+
 ## Test tiers
 
 CI step names say which tier ran. They never stand for each other.
