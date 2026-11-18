@@ -98,19 +98,19 @@ func TestAIConversationOverHTTP(t *testing.T) {
 
 	s.enableAI()
 	st := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", ""))
-	if !st.Headless || st.DefaultProvider != "stub" || st.Accepted || st.Disclosure.Version != "4" {
+	if !st.Headless || st.DefaultProvider != "stub" || st.Accepted || st.Disclosure.Version != "5" {
 		t.Fatalf("%+v", st)
 	}
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+planID+`"}`))
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 409, "disclosure_required")
 	// The browser cannot set an executable path.
 	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"path":"/bin/sh"}`), 400, "invalid_request")
-	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"4"}`)
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"3"}`), 409, "disclosure_required")
+	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"5"}`)
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"4"}`), 409, "disclosure_required")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "other", "")), 409, "provider_unavailable")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "stub", "")), 404, "package_not_found")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256+"x", "stub", "")), 404, "package_not_found")
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"4","payload":"x"}`), 400, "invalid_request")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"5","payload":"x"}`), 400, "invalid_request")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "key AKIAIOSFODNN7EXAMPLE")), 422, "message_blocked")
 	if stub.ran() != 0 {
 		t.Fatal("a refused request reached the assistant")
@@ -152,6 +152,9 @@ func TestAIConversationOverHTTP(t *testing.T) {
 	wantError(t, s.do("POST", "/api/v1/ai/conversations/x/messages", `{"text":"hi"}`), 404, "conversation_not_found")
 	if err := os.WriteFile(filepath.Join(root, "main.tf"), []byte("resource \"aws_instance\" \"web\" { ami = \"y\" }\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if !decode[assist.Conversation](t, s.do("GET", "/api/v1/ai/conversations/"+id, "")).Stale {
+		t.Fatal("a changed context is not reported as stale")
 	}
 	wantError(t, s.do("POST", "/api/v1/ai/conversations/"+id+"/messages", `{"text":"still?"}`), 409, "context_changed")
 	if stub.ran() != 3 {
@@ -257,9 +260,9 @@ func TestAIHubConversationStaysInItsContext(t *testing.T) {
 	}
 }
 
-// Disclosure v4: a v3 acceptance does not count; turning AI off revokes acceptance.
+// Disclosure v5: a v4 acceptance does not count; turning AI off revokes acceptance.
 func TestAIDisclosureVersionGatesConversations(t *testing.T) {
-	if assist.DisclosureVersion != "4" {
+	if assist.DisclosureVersion != "5" {
 		t.Fatalf("disclosure version %s", assist.DisclosureVersion)
 	}
 	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
@@ -268,19 +271,19 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 	s.enableAI()
 	st := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", ""))
 	if !strings.Contains(strings.Join(st.Disclosure.Lines, "\n"), "resends the whole conversation") {
-		t.Fatalf("v4 lacks the replay cost line: %q", st.Disclosure.Lines)
+		t.Fatalf("v5 lacks the replay cost line: %q", st.Disclosure.Lines)
 	}
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+s.plan()+`"}`))
-	v3 := `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"3"}`
+	old := `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"4"}`
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 409, "disclosure_required")
-	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"3"}`), 409, "disclosure_required")
+	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"4"}`), 409, "disclosure_required")
 	if decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", "")).Accepted {
-		t.Fatal("a v3 acceptance was recorded")
+		t.Fatal("a v4 acceptance was recorded")
 	}
-	if !decode[assist.Settings](t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"4"}`)).Accepted {
-		t.Fatal("v4 not accepted")
+	if !decode[assist.Settings](t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"5"}`)).Accepted {
+		t.Fatal("v5 not accepted")
 	}
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", v3), 409, "disclosure_required")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", old), 409, "disclosure_required")
 	if w := s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")); w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}

@@ -229,7 +229,7 @@ function HistoryDetails({ id, copy, writable, onClose, onDeleted }: { id: string
      {e.context?.profileName && <div><dt>Profile</dt><dd>{e.context.profileName} <span className="muted">revision {e.context.profileRevision}</span></dd></div>}
      {(e.context?.fingerprint || e.plan?.fingerprint) && <div><dt>Context</dt><dd className="mono" title="Equal fingerprints mean the same engine, workspace, variable files, configuration and environment names.">{e.plan?.fingerprint || e.context?.fingerprint}</dd></div>}
      {e.git && <div><dt>Git</dt><dd className="history-git"><GitBranch size={12} aria-hidden="true" /><span className="mono">{e.git.commit.slice(0, 12)}</span>{e.git.branch && <span className="muted"> · {e.git.branch}</span>} <Button variant="ghost" size="icon" aria-label="Copy commit" onClick={() => void copy(e.git!.commit, 'Commit')}><Copy size={12} /></Button></dd></div>}
-     {e.assist && <div><dt>AI message</dt><dd>{e.assist.provider} · {e.assist.contextKind} <span className="mono" title={`SHA-256 of the text sent: ${e.assist.packageSha256}`}>{e.assist.packageSha256.slice(0, 12)}</span> <span className="muted">(sent text and reply not kept)</span></dd></div>}
+     {e.assist && <div><dt>AI message</dt><dd>{e.assist.provider} · {e.assist.contextKind}{e.assist.prompt && <> · <span className="mono">{e.assist.prompt}</span></>} <span className="mono" title={`SHA-256 of the text sent: ${e.assist.packageSha256}`}>{e.assist.packageSha256.slice(0, 12)}</span> <span className="muted">(sent text and reply not kept)</span></dd></div>}
      <div><dt>ID</dt><dd className="mono">{e.id}</dd></div>
     </dl>
     {e.command.length > 0 && <p className="mono history-command">{e.command.join(' ')}</p>}

@@ -3,3 +3,5 @@ fixtures/** text eol=lf
 # Shell scripts and workflows run under bash/YAML parsers on Windows too (M27.07); keep LF.
 *.sh text eol=lf
 .github/** text eol=lf
+# Prompts are pinned by SHA-256 and sent byte for byte (AI-01.08); keep LF on every platform.
+internal/assist/prompts/** text eol=lf

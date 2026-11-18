@@ -243,7 +243,7 @@ Users may consult the AI coding assistant they already use (for example Claude C
 
 **Acceptance:** with planted sentinel secrets in state, `.tfvars`, environment and HCL, no sentinel reaches a preview, export, provider input, API response, log or history entry; plan approval and apply gating behave identically with AI enabled, disabled or running.
 
-**Status (2026-11-18):** the one-shot phase is implemented, and headless requests are conversations (AI-01.07): handoff for every detected assistant, headless for Claude Code 2.1.x from 2.1.326. The executable path is a CLI flag only (`--claude-path`); there is no config file entry. User documentation: README, *AI assistance (optional)*. Assistants and versions tested: [support matrix](support-matrix.md#ai-assistants). The acceptance above is enforced by `TestAICanaryNeverLeaves`, `TestAIDoesNotChangeTheLaunchApprovalFlow` and `TestAIDoesNotChangeTheHubApprovalFlow` in `internal/api`.
+**Status (2026-11-18):** the one-shot phase is implemented, headless requests are conversations (AI-01.07), and every entry point is *Review with AI* with a versioned review prompt from `internal/assist/prompts` (AI-01.08): handoff for every detected assistant, headless for Claude Code 2.1.x from 2.1.326. The executable path is a CLI flag only (`--claude-path`); there is no config file entry. User documentation: README, *AI assistance (optional)*. Assistants and versions tested: [support matrix](support-matrix.md#ai-assistants). The acceptance above is enforced by `TestAICanaryNeverLeaves`, `TestAIDoesNotChangeTheLaunchApprovalFlow` and `TestAIDoesNotChangeTheHubApprovalFlow` in `internal/api`.
 
 ## 9. Primary user flows
 

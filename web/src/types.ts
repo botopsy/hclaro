@@ -1092,7 +1092,7 @@ export type HistoryEntry = {
   command: string[];
   diagnostic?: { code: string; message: string };
   plan?: HistoryPlan;
-  assist?: { provider: string; contextKind: string; packageSha256: string };
+  assist?: { provider: string; contextKind: string; packageSha256: string; prompt?: string };
   outcome: {
     result: string;
     summary: string;

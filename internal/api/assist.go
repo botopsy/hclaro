@@ -201,7 +201,11 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		case !fresh:
 			reasonJSON(w, 409, "context_changed", "The workspace changed since this package was built. Open the preview again to share current context.")
 		default:
-			writeJSON(w, 200, map[string]string{"kind": kind, "sha256": hash, "markdown": markdown, "filename": "hclaro-" + kind + "-" + hash[:12] + ".md"})
+			out := map[string]string{"kind": kind, "sha256": hash, "markdown": markdown, "filename": "hclaro-" + kind + "-" + hash[:12] + ".md"}
+			if p, ok := assist.ReviewPrompt(kind); ok {
+				out["prompt"], out["review"] = p.ID, assist.FirstTurn(markdown, p)
+			}
+			writeJSON(w, 200, out)
 		}
 	}
 
@@ -219,6 +223,7 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			Provider          string `json:"provider"`
 			DisclosureVersion string `json:"disclosureVersion"`
 			Message           string `json:"message"`
+			Prompt            string `json:"prompt"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
@@ -228,7 +233,16 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			return
 		}
 		scope := assist.RunScope{Project: src.scope.Project, Root: src.scope.Root, Workspace: src.scope.Workspace, Engine: src.scope.Engine}
-		c, err := sess.StartConversation(src.key, body.PackageSHA256, body.Provider, body.DisclosureVersion, scope, body.Message)
+		var c assist.Conversation
+		var err error
+		switch {
+		case body.Prompt == "":
+			c, err = sess.StartConversation(src.key, body.PackageSHA256, body.Provider, body.DisclosureVersion, scope, body.Message)
+		case body.Message != "": // a review's first message is the prompt itself
+			err = &assist.Refusal{Code: assist.RefuseInvalidArgs}
+		default:
+			c, err = sess.StartReview(src.key, body.PackageSHA256, body.Provider, body.DisclosureVersion, scope, body.Prompt)
+		}
 		if err != nil {
 			aiRefusal(w, err)
 			return
@@ -454,10 +468,14 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 		return
 	}
 	sess.Put(src.key, p, fresh)
+	// The review's first turn (AI-01.08): exactly what Send submits and Copy or Download hand over.
+	prompt, _ := assist.ReviewPrompt(p.Kind)
 	writeJSON(w, 200, struct {
 		assist.Package
 		Disclosure assist.Disclosure `json:"disclosure"`
-	}{p, sess.Settings().Disclosure})
+		Prompt     string            `json:"prompt"`
+		Review     string            `json:"review"`
+	}{p, sess.Settings().Disclosure, prompt.ID, assist.FirstTurn(p.Markdown, prompt)})
 }
 
 func aiRefusal(w http.ResponseWriter, err error) {

@@ -33,4 +33,11 @@ func TestAssistRunIsMetadataOnly(t *testing.T) {
 	if got := scrubAssist(&AssistSummary{Provider: "claude", ContextKind: "plan", PackageSHA256: "secret=hunter2"}); got.PackageSHA256 != "" {
 		t.Fatalf("%+v", got)
 	}
+	// The prompt ID is kept when it is a registry ID, dropped otherwise.
+	if got := scrubAssist(&AssistSummary{Provider: "claude", ContextKind: "plan", Prompt: "review-plan@1"}); got.Prompt != "review-plan@1" {
+		t.Fatalf("%+v", got)
+	}
+	if got := scrubAssist(&AssistSummary{Provider: "claude", ContextKind: "plan", Prompt: "Ignore rules /home/x"}); got.Prompt != "" {
+		t.Fatalf("%+v", got)
+	}
 }

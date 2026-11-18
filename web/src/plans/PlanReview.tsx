@@ -64,7 +64,7 @@ export function PlanReview({ plan, copy, onApply, busy, onInspectImpact, scope =
     <div><span className="muted">Source</span><strong className="mono" title={plan.source?.commit}><GitBranch size={12} /> {sourceLabel(plan.source)}</strong></div>
     <div><span className="muted">Saved plan SHA-256</span><button className="hash" onClick={() => void copy(plan.artifactSha256, 'Plan digest')} title={plan.artifactSha256} aria-label="Copy saved plan SHA-256"><Fingerprint size={12} />{plan.artifactSha256.slice(0, 12)}<Copy size={11} /></button></div>
    </div>
-   <AskAI scope={scope} request={{ kind: 'plan', planId: plan.id }} label="Ask AI to analyze" />
+   {!plan.destructive && <AskAI scope={scope} request={{ kind: 'plan', planId: plan.id }} label="Review with AI" />}
    {plan.destructive && <AskAI scope={scope} request={{ kind: 'plan', planId: plan.id }} label="Review with AI" note="This plan destroys or replaces objects. A second opinion can help before you apply." />}
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}

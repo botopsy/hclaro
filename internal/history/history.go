@@ -164,6 +164,8 @@ type AssistSummary struct {
 	Provider      string `json:"provider"`
 	ContextKind   string `json:"contextKind"`
 	PackageSHA256 string `json:"packageSha256"`
+	// Prompt is the registry prompt ID of the turn ("review-plan@1"), when Hclaro wrote it.
+	Prompt string `json:"prompt,omitempty"`
 }
 
 // PlanSummary is what a reviewed plan proposed: counts and the addresses with their actions.
@@ -858,7 +860,7 @@ func (s *Store) RecordAssist(r assist.RunRecord) {
 	}
 	e := HistoryEntry{ID: r.ID, Kind: "assist", Action: word(r.Provider), Status: status, StartedAt: r.StartedAt.UTC().Format(time.RFC3339),
 		FinishedAt: r.StartedAt.Add(r.Duration).UTC().Format(time.RFC3339), DurationMs: r.Duration.Milliseconds(), Engine: word(r.Engine),
-		Command: []string{}, Excerpt: []Line{}, Assist: scrubAssist(&AssistSummary{Provider: r.Provider, ContextKind: r.Kind, PackageSHA256: r.SHA256})}
+		Command: []string{}, Excerpt: []Line{}, Assist: scrubAssist(&AssistSummary{Provider: r.Provider, ContextKind: r.Kind, PackageSHA256: r.SHA256, Prompt: r.Prompt})}
 	e.ProjectID, e.ProjectName, e.Registered = s.project(operations.Record{Root: r.Root})
 	if r.Project != "" {
 		e.ProjectName = clean(r.Project, 120)
@@ -877,6 +879,8 @@ func (s *Store) RecordAssist(r assist.RunRecord) {
 	})
 }
 
+var promptID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}@[1-9][0-9]{0,5}$`)
+
 func scrubAssist(a *AssistSummary) *AssistSummary {
 	if a == nil {
 		return nil
@@ -884,6 +888,9 @@ func scrubAssist(a *AssistSummary) *AssistSummary {
 	out := &AssistSummary{Provider: word(a.Provider), ContextKind: word(a.ContextKind)}
 	if len(a.PackageSHA256) == 64 && hexPattern.MatchString(a.PackageSHA256) {
 		out.PackageSHA256 = a.PackageSHA256
+	}
+	if promptID.MatchString(a.Prompt) {
+		out.Prompt = a.Prompt
 	}
 	return out
 }
