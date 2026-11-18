@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 // since M24.09;
 // they act only on that
 // workspace's own context.
-export type ExplorerView = 'Resources' | 'Overview' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Plans' | 'Operations' | 'Import' | 'Discovery' | 'Drift' | 'Graph';
+export type ExplorerView = 'Resources' | 'Overview' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Plans' | 'Operations' | 'Import' | 'Discovery' | 'Drift' | 'Graph' | 'Assistant';
 export type Route = {
   kind: 'launch';
 } | {
@@ -38,7 +38,8 @@ const views: Record<string, ExplorerView> = {
   import: 'Import',
   discovery: 'Discovery',
   drift: 'Drift',
-  graph: 'Graph'
+  graph: 'Graph',
+  assistant: 'Assistant'
 };
 const projectId = /^[0-9a-f]{32}$/;
 const workspaceName = /^[A-Za-z0-9_-]{1,90}$/;

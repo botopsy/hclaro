@@ -31,6 +31,8 @@ import { Inspector, ModuleTree, ResourceRow } from './workbench/Explorer';
 import { Overview } from './workbench/Overview';
 import { SettingsPanel } from './workbench/SettingsPanel';
 import { PageHeading } from './workbench/PageHeading';
+import { useAssistEnabled } from './assist/AskAI';
+import { AssistantPage } from './assist/AssistantPage';
 import { moduleName, providerName, timeLabel } from './workbench/format';
 // Each project workspace gets its own Workbench instance (keyed below), so filters,
 // selections and cached queries can never carry over from another context.
@@ -117,7 +119,8 @@ function Workbench({
   const pageProject = route.kind === 'project' ? projects.data?.projects?.find(p => p.id === route.projectId) : undefined;
   const pageProjectWorkspace = pageProject?.status === 'ready' ? pageProject.lastWorkspace || pageProject.inspection?.cliDefault : undefined;
   const navMode: NavMode = scoped ? 'hub-workspace' : route.kind === 'project' ? 'hub-project' : noLaunch ? 'none' : 'launch';
-  const navContext: NavContext = { route, mode: navMode, view, projectWorkspace: pageProjectWorkspace, scopedExecution: hubExecution };
+  const aiEnabled = useAssistEnabled();
+  const navContext: NavContext = { route, mode: navMode, view, projectWorkspace: pageProjectWorkspace, scopedExecution: hubExecution, ai: aiEnabled };
   const sidebarProject: SidebarProject = scoped ? project ? { name: project.alias, detail: 'Hub project', status: 'ready' } : projects.isPending ? { name: opened.data?.alias || 'Hub project', detail: 'Loading…', status: 'loading' } : { name: opened.data?.alias || 'Unknown project', detail: 'Not found in the Hub', status: 'missing' } : route.kind === 'project' ? pageProject ? { name: pageProject.alias, detail: 'Choose a workspace', status: 'ready' } : projects.isPending ? { name: 'Hub project', detail: 'Loading…', status: 'loading' } : { name: 'Unknown project', detail: 'Not found in the Hub', status: 'missing' } : noLaunch ? { name: 'No project open', detail: 'Choose one in Projects', status: 'none' } : w ? { name: w.info.project || 'Local workspace', detail: 'Opened from terminal', status: 'ready' } : { name: 'Local workspace', detail: 'Opened from terminal', status: workspace.isPending ? 'loading' : 'ready' };
   const registry = projects.data?.projects || [];
   const launchRoot = projects.data?.launchRoot;
@@ -304,7 +307,7 @@ function Workbench({
    <main id="main-content" tabIndex={-1} className="main-content">
     <PageHeading route={route} view={view} />
     {!onHub && (!scoped || hubExecution) && (view === 'Import' || view === 'Discovery') && <ImportDiscoveryTabs view={view} onChange={setView} />}
-    {historyPage ? <HistoryView copy={copy} /> : comparing ? <CompareView copy={copy} /> : route.kind === 'hub' ? <HubView notify={setNotice} /> : route.kind === 'project' ? <ProjectView id={route.projectId} /> : view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : scoped && (view === 'Plans' || view === 'Operations' || view === 'Import' || view === 'Discovery' || view === 'Drift' || view === 'Graph') ? !hubExecution ? session.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /></div> : <ErrorState title="Hub workspaces are read-only in this session" message="Plans and applies run only for the project opened from the terminal. Nothing ran." /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
+    {historyPage ? <HistoryView copy={copy} /> : comparing ? <CompareView copy={copy} /> : route.kind === 'hub' ? <HubView notify={setNotice} /> : route.kind === 'project' ? <ProjectView id={route.projectId} /> : view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : view === 'Assistant' ? <AssistantPage scope={readScope} project={scoped ? opened.data?.alias || 'this project' : w?.info.project || 'this project'} workspace={scoped ? scoped.workspace : w?.info.workspace || 'default'} /> : scoped && (view === 'Plans' || view === 'Operations' || view === 'Import' || view === 'Discovery' || view === 'Drift' || view === 'Graph') ? !hubExecution ? session.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /></div> : <ErrorState title="Hub workspaces are read-only in this session" message="Plans and applies run only for the project opened from the terminal. Nothing ran." /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
           void opened.refetch();
         }} retryLabel="Try again" /> : workspace.error ? <ErrorState message={workspace.error.message} retry={closed ? reread : () => {
           void workspace.refetch();

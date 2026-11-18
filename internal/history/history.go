@@ -871,8 +871,11 @@ func (s *Store) RecordAssist(r assist.RunRecord) {
 	if r.Code != "" && codePattern.MatchString(r.Code) {
 		e.Diagnostic = &Diagnostic{Code: r.Code, Message: clean(assist.Message(r.Code), maxMessage)}
 	}
-	e.Outcome = Outcome{Result: map[bool]string{true: "answered", false: "not_answered"}[status == StatusSucceeded],
-		Summary: "A sanitized context package was sent to an AI assistant. The package and the reply are not kept. Nothing was run, applied or approved."}
+	summary := "A sanitized context package was sent to an AI assistant. The package and the reply are not kept. Nothing was run, applied or approved."
+	if r.Kind == assist.KindChat {
+		summary = "A conversation without project data was sent to an AI assistant. The messages and the reply are not kept. Nothing was run, applied or approved."
+	}
+	e.Outcome = Outcome{Result: map[bool]string{true: "answered", false: "not_answered"}[status == StatusSucceeded], Summary: summary}
 	_ = s.mutate(func(d *document) error {
 		d.Entries = append(d.Entries, e)
 		return nil

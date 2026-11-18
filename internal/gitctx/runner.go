@@ -42,6 +42,7 @@ var readOnly = map[string]map[string]bool{
 	"for-each-ref": {branchFormat: true, "refs/heads/": true},
 	"diff-tree":    {"-r": true, "-z": true, "--name-only": true, "--no-renames": true},
 	"cat-file":     {"-t": true},
+	"ls-files":     {}, // exact shape checked in Allowed
 	"diff":         {"--no-ext-diff": true, "--no-textconv": true, "--no-color": true, "--no-renames": true, fullContext: true, "HEAD": true, "--": true},
 }
 
@@ -61,6 +62,8 @@ func Allowed(args []string) bool {
 	case "diff-tree":
 		// diff-tree -r -z --name-only --no-renames <commit> <commit>
 		return len(args) == 7 && slices.Equal(args[:5], []string{"diff-tree", "-r", "-z", "--name-only", "--no-renames"}) && commitPattern.MatchString(args[5]) && commitPattern.MatchString(args[6])
+	case "ls-files":
+		return slices.Equal(args, ConfigFilesArgs)
 	case "cat-file":
 		// cat-file -t <commit>:<path>
 		if len(args) != 3 || args[1] != "-t" {

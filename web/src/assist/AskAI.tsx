@@ -21,17 +21,17 @@ export type AssistSettings = {
   enabled: boolean; strictLocal: boolean; handoff: boolean; headless: boolean; disclosure: AssistDisclosure;
   disclosureAccepted?: boolean; providers?: AssistProvider[]; defaultProvider?: string;
 };
-type Turn = { role: 'user' | 'assistant'; text: string; at: string; prompt?: string };
-type Conversation = {
+type Turn = { role: 'user' | 'assistant' | 'context'; text: string; at: string; prompt?: string; sha256?: string };
+export type Conversation = {
   id: string; provider: string; kind: string; packageSha256: string; state: 'ready' | 'running' | 'failed' | 'cancelled'; stale?: boolean;
   turns: Turn[]; draft?: string; error?: { code: string; message: string }; usedBytes: number; limitBytes: number; startedAt: string;
 };
 // Mirrors assist.MaxMessage; the server enforces it.
 const maxMessage = 8000;
-export type AssistRequest = { kind: 'plan'; planId: string } | { kind: 'drift'; scanId: string } | { kind: 'resource'; resourceId: string } | { kind: 'import'; import: ImportRequest };
+export type AssistRequest = { kind: 'project' } | { kind: 'plan'; planId: string } | { kind: 'drift'; scanId: string } | { kind: 'resource'; resourceId: string } | { kind: 'import'; import: ImportRequest };
 // review is the first turn (AI-01.08): the review prompt and the package, byte for byte what
 // Send submits and what Copy and Download hand over.
-type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure; prompt: string; review: string };
+export type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure; prompt: string; review: string };
 type Exported = { kind: string; sha256: string; markdown: string; filename: string; prompt: string; review: string };
 
 export const assistSettingsQuery = { queryKey: ['ai-settings'], queryFn: () => api<AssistSettings>('ai/settings') };
@@ -66,7 +66,11 @@ function save(filename: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanScope; request: AssistRequest; title: string; onClose: () => void }) {
+// approve replaces "Review with <assistant>" (AI-01.09): the previewed package is attached to a
+// new or open conversation only when the user presses it.
+export type Approve = { label: string; run: (p: AssistPackage, provider: AssistProvider) => Promise<void> };
+
+export function AssistDrawer({ scope, request, title, onClose, approve }: { scope: PlanScope; request: AssistRequest; title: string; onClose: () => void; approve?: Approve }) {
   const pkg = useQuery({
     queryKey: ['ai-package', scopeKey(scope), JSON.stringify(request)],
     queryFn: () => post<AssistPackage>(scopedPath(scope, 'ai/packages'), request),
@@ -91,6 +95,10 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
     setBusy(true);
     setFailed(undefined);
     try {
+      if (approve) {
+        await approve.run(p, provider);
+        return;
+      }
       const chat = await post<Conversation>(scopedPath(scope, 'ai/conversations'), { packageSha256: p.sha256, provider: provider.id, disclosureVersion: settings.disclosure.version, prompt: p.prompt });
       setChatId(chat.id);
     } catch (err) {
@@ -138,11 +146,12 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
        <dl className="metadata">
         <div><dt>Included</dt><dd>{p.sections.join(', ')}</dd></div>
         <div><dt>Removed for size</dt><dd>{p.dropped.length ? p.dropped.join(', ') : 'Nothing'}</dd></div>
-        <div><dt>Never included</dt><dd>State values, .tfvars values, saved plans, plan JSON, environment, credentials, backend settings and local paths. Values that look secret are shown as [redacted].</dd></div>
-        <div><dt>Review prompt</dt><dd className="mono">{p.prompt}</dd></div>
+        <div><dt>Never included</dt><dd>State values, .tfvars values, saved plans, plan JSON, environment, backend settings and local paths. Values that look secret are shown as [redacted] or their file is left out; detection is heuristic, so read the text below before you share it.</dd></div>
+        {p.prompt && <div><dt>Review prompt</dt><dd className="mono">{p.prompt}</dd></div>}
         <div><dt>Package SHA-256</dt><dd className="mono" title={p.sha256}>{p.sha256.slice(0, 16)}…</dd></div>
        </dl>
-       <pre className="assist-text" aria-label="Text to share: review prompt and context package" tabIndex={0}>{p.review}</pre>
+       {approve ? <pre className="assist-text" aria-label="Text to share: context package" tabIndex={0}>{p.markdown}</pre>
+         : <pre className="assist-text" aria-label="Text to share: review prompt and context package" tabIndex={0}>{p.review}</pre>}
        {handed && <p className="info-line" role="status">Context {handed.how}{handed.to && <> for {handed.to}. Paste it into {handed.to} yourself: Hclaro did not open or run it</>}. Hclaro's protections end here: what happens to this text is now up to you and the assistant you give it to.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
        {chatId && <ConversationPanel scope={scope} id={chatId} name={provider?.name ?? 'the assistant'} onClosed={() => setChatId(undefined)} />}
@@ -154,8 +163,8 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
         : <Button variant="outline" disabled={busy} onClick={() => void handOver('copy')}><Copy size={14} />Copy</Button>}
       <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button>
       {provider && settings && <>
-       {eligible.length > 1 && <select aria-label="Assistant for this request" value={provider.id} onChange={e => setPicked(e.target.value)}>{eligible.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>}
-       <Button disabled={busy || !settings.disclosureAccepted || !!chatId} title={settings.disclosureAccepted ? undefined : 'Accept the AI disclosure in Settings first.'} onClick={() => void send()}><Send size={14} />Review with {provider.name}</Button>
+       {eligible.length > 1 && !approve && <select aria-label="Assistant for this request" value={provider.id} onChange={e => setPicked(e.target.value)}>{eligible.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>}
+       <Button disabled={busy || !settings.disclosureAccepted || !!chatId} title={settings.disclosureAccepted ? undefined : 'Accept the AI disclosure in Settings first.'} onClick={() => void send()}><Send size={14} />{approve ? approve.label : `Review with ${provider.name}`}</Button>
       </>}
      </>}
     </div>
@@ -168,7 +177,8 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
 // ConversationPanel polls one conversation while a turn runs. Replies are shown in <pre>: React
 // escapes them, so HTML, links and commands stay inert. A failed or cancelled message comes
 // back as the server's draft and is put back into the input; nothing is dropped silently.
-function ConversationPanel({ scope, id, name, onClosed }: { scope: PlanScope; id: string; name: string; onClosed: () => void }) {
+// actions are extra buttons (Attach project context); staleHint replaces the stale banner's advice.
+export function ConversationPanel({ scope, id, name, onClosed, actions, staleHint }: { scope: PlanScope; id: string; name: string; onClosed: () => void; actions?: ReactNode; staleHint?: string }) {
   const path = scopedPath(scope, `ai/conversations/${id}`);
   const chat = useQuery({
     queryKey: ['ai-conversation', scopeKey(scope), id],
@@ -210,13 +220,13 @@ function ConversationPanel({ scope, id, name, onClosed }: { scope: PlanScope; id
    {chat.error ? <p className="dialog-error" role="alert">{chat.error.message}</p> : !c ? <p className="muted" role="status"><LoaderCircle className="spin" size={14} /> Starting…</p> : <>
     <p className="muted assist-usage">{name} · {running ? 'waiting for a reply' : c.state} · {Math.ceil(c.usedBytes / 1024)} of {c.limitBytes / 1024} KiB used. Every message resends the whole conversation.</p>
     <ol className="assist-turns" aria-label="Messages">
-     {c.turns.map((t, i) => <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
+     {c.turns.map((t, i) => t.role === 'context' ? <li key={i} className="assist-turn context" role="note">Project context attached (hash <code title={t.sha256}>{t.sha256?.slice(0, 12)}…</code>)</li> : <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
       {t.role === 'assistant' ? <pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{t.text || '(empty reply)'}</pre>
         : t.prompt ? <p>Asked for a review of the context package (<code>{t.prompt}</code>).</p>
         : <p>{t.text || 'Shared the context package.'}</p>}</li>)}
     </ol>
     {running && <div className="assist-running" role="status"><LoaderCircle className="spin" size={14} /><span>Waiting for {name}…</span><Button variant="outline" size="small" disabled={busy} onClick={() => void act('cancel')}><Square size={12} />Cancel</Button></div>}
-    {c.stale && <p className="plan-warning" role="alert"><TriangleAlert size={14} /><span>Context is stale: the workspace or the reviewed result changed since this conversation started, so no more messages can be sent. Close it and start a new review.</span></p>}
+    {c.stale && <p className="plan-warning" role="alert"><TriangleAlert size={14} /><span>Context is stale: the workspace or the shared context changed since this conversation started, so no more messages can be sent. {staleHint ?? 'Close it and start a new conversation.'}</span></p>}
     {c.error && !running && <p className={c.state === 'cancelled' ? 'muted' : 'dialog-error'} role="alert">{c.error.message}{c.draft !== undefined && ' Your message is back in the box below.'}</p>}
     <label className="assist-compose">Follow-up message
      <textarea value={text} rows={3} disabled={running || c.stale} onChange={e => setText(e.target.value)} />
@@ -225,6 +235,7 @@ function ConversationPanel({ scope, id, name, onClosed }: { scope: PlanScope; id
     {refused && <p className="dialog-error" role="alert">{refused}</p>}
     <div className="form-actions">
      <Button variant="ghost" disabled={busy} onClick={() => void act('close')}><MessageSquareX size={14} />Close conversation</Button>
+     {!running && actions}
      <Button disabled={busy || running || c.stale || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />Send message</Button>
     </div>
    </>}

@@ -9,7 +9,7 @@ import (
 )
 
 // DisclosureVersion changes whenever the disclosure text changes.
-const DisclosureVersion = "5"
+const DisclosureVersion = "6"
 
 // Disclosure is shown next to every package and in Settings (R10).
 type Disclosure struct {
@@ -18,10 +18,12 @@ type Disclosure struct {
 }
 
 var disclosure = Disclosure{Version: DisclosureVersion, Lines: []string{
-	"Hclaro builds this context on your machine and shares nothing by itself. Only Copy, Download or Review with an assistant hands it over.",
+	"Hclaro builds this context on your machine and shares nothing by itself. Only Copy, Download, Review with an assistant or a message you send from the AI Assistant hands anything over.",
+	"Project context holds the text of this project's .tf, .tofu and JSON configuration files: the root module and local modules inside the project folder. It never holds state, .tfvars files, .terraform, saved plans, untracked files Git ignores, files in nested repositories or submodules, symbolic links or anything outside the project folder. A file already tracked by Git is included even if it matches a .gitignore pattern; backend blocks and variable defaults that may be secret are removed.",
+	"Secret detection is heuristic. Hclaro redacts values that look like credentials, random keys or local paths and leaves out files that contain them, but a secret written as ordinary text, or in a comment, can pass. Read the preview before you share it.",
 	"An AI assistant you give it to may send it to a cloud model, and its runs bill your own assistant account.",
 	"Once copied or downloaded, the text is outside Hclaro: its redaction and blocking no longer protect it.",
-	sendLine + "Review with an assistant starts a conversation: Hclaro sends the previewed text, the context followed by a fixed review request. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the conversation to its cloud model, signed in as you.",
+	sendLine + "Review with an assistant starts a conversation: Hclaro sends the previewed text, the context followed by a fixed review request. The AI Assistant sends your message, with no project data unless you preview and attach the project context. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the conversation to its cloud model, signed in as you.",
 	sendLine + "Every follow-up resends the whole conversation (the context, your messages and the replies), so usage and cost grow with each message. A conversation stops at a size limit; Hclaro then asks you to start a new one and never drops messages silently.",
 	claudeLine + "Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
 	sendLine + "The reply is unverified AI output. Hclaro shows it as text, keeps the conversation in memory for this session only, and never runs, applies or approves anything it suggests.",
