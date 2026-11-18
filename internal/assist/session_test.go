@@ -73,7 +73,7 @@ func TestDisclosureFollowsDetectedProviders(t *testing.T) {
 			if d.Version != DisclosureVersion || len(d.Lines) < 3 || strings.Contains(text, "\x00") {
 				t.Fatalf("%+v", d)
 			}
-			if strings.Contains(text, "Anthropic") != tc.anthropic || strings.Contains(text, "Review with an assistant starts a conversation") != tc.send || strings.Contains(text, "resends the whole conversation") != tc.send || strings.Contains(text, "unverified AI output") != tc.send {
+			if strings.Contains(text, "Anthropic") != tc.anthropic || strings.Contains(text, "quick actions start a conversation") != tc.send || strings.Contains(text, CostLine) != tc.send || strings.Contains(text, "resends the whole conversation") != tc.send || strings.Contains(text, "unverified AI output") != tc.send {
 				t.Fatalf("lines %q", d.Lines)
 			}
 			if tc.anthropic && len(d.Lines) != len(disclosure.Lines) {

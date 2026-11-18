@@ -9,6 +9,12 @@ import (
 // Released prompt files never change. Editing one fails here: add "<name>@<next>.md" instead and
 // pin its hash.
 var releasedPrompts = map[string]string{
+	"qa-architecture@1": "fe8cadbe1b6a6dfcd49ba9f4df55318d8220f66a5adcbdad4f484909a23479c7",
+	"qa-cost@1":         "537617c3fb51de76e6b276c42ea386e267e2ae7537fe7122dbb51869e041b7c2",
+	"qa-describe@1":     "7eca5b8b890a66227c8ad6af77bf3dcab9a469e18ce9dccb125c45a9355acf24",
+	"qa-improve@1":      "59d5ad2c1015f9a9c4646448acc6a1a5844b88d94e7a809533267887963df3d8",
+	"qa-issues@1":       "c18e632d3c81a454d57deec22756fc62c2bfe5b7669520f58d1d01cd496e3bb9",
+	"qa-security@1":     "9f920e76cb97fc9cfe6cf14de786b14e279b504ad6f9a1aee3b0f1c95c7db8eb",
 	"review-drift@1":    "cf15bc4989a00302b17ffffc67276c2fc0f15ae12cfce99ed07a238d3167c69e",
 	"review-import@1":   "0d90fb0b17e78c2f2a18c8b470b6a65dae7f70f73f786186cb92c17b92c4a1c2",
 	"review-plan@1":     "830e64db1e56d3e8a336f75c774d794b54d792725b65a10b7d0c633ab3bbd396",
@@ -48,6 +54,21 @@ func TestPromptRegistry(t *testing.T) {
 		if !strings.Contains(strings.ToLower(plan), strings.ToLower(topic)) {
 			t.Fatalf("plan prompt lacks %q", topic)
 		}
+	}
+	// Quick actions (AI-01.10) fit project packages only, and say what the package lacks.
+	for id, p := range prompts {
+		if !strings.HasPrefix(id, "qa-") {
+			continue
+		}
+		if !p.Fits(KindProject) || p.Fits(KindPlan) || !strings.Contains(p.Text, "no state, no plan, no live cloud data and no pricing data") {
+			t.Fatalf("%s: scope or fit", id)
+		}
+	}
+	if p := prompts["review-plan@1"]; p.Fits(KindProject) || !p.Fits(KindPlan) {
+		t.Fatal("review prompt fits another kind")
+	}
+	if cost := prompts["qa-cost@1"].Text; !strings.Contains(cost, "relative terms") || !strings.Contains(cost, "Label every number as an estimate") || !strings.Contains(cost, "no pricing data is attached") {
+		t.Fatal("cost prompt lacks its estimate rules")
 	}
 	if _, ok := LookupPrompt("review-plan@9"); ok {
 		t.Fatal("unknown version resolved")

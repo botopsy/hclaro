@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileCode2, LoaderCircle, MessageSquarePlus, Send, Sparkles } from 'lucide-react';
+import { FileCode2, LoaderCircle, MessageSquarePlus, Send, Sparkles, Zap } from 'lucide-react';
 import { api, post } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
@@ -18,8 +18,18 @@ type Listed = { id: string; provider: string; kind: string; state: string; title
 type Mode = 'chat' | 'project';
 // Mirrors assist.MaxMessage; the server enforces it.
 const maxMessage = 8000;
+// Quick actions (AI-01.10): a project package plus a fixed, versioned prompt from the server's
+// registry. Each goes through the same preview drawer; the IDs are what turn metadata records.
+const quickActions = [
+  { id: 'qa-describe@1', label: 'Describe project' },
+  { id: 'qa-architecture@1', label: 'Architecture review' },
+  { id: 'qa-security@1', label: 'Security review' },
+  { id: 'qa-cost@1', label: 'Cost analysis' },
+  { id: 'qa-issues@1', label: 'Find issues' },
+  { id: 'qa-improve@1', label: 'Suggest improvements' }
+];
 
-export function AssistantPage({ scope, project, workspace }: { scope?: PlanScope; project: string; workspace: string }) {
+export function AssistantPage({ scope, project, workspace, noProject }: { scope?: PlanScope; project: string; workspace: string; noProject?: boolean }) {
   const settings = useQuery(assistSettingsQuery).data;
   const client = useQueryClient();
   const list = useQuery({
@@ -35,7 +45,8 @@ export function AssistantPage({ scope, project, workspace }: { scope?: PlanScope
   const [mode, setMode] = useState<Mode>('chat');
   const [text, setText] = useState('');
   const [selected, setSelected] = useState<string>();
-  const [preview, setPreview] = useState<'start' | 'attach'>();
+  const [preview, setPreview] = useState<'start' | 'attach' | 'action'>();
+  const [action, setAction] = useState<{ id: string; label: string; cost: boolean }>();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string>();
   if (!settings) return <div className="empty-state" role="status"><LoaderCircle className="spin" /></div>;
@@ -45,10 +56,11 @@ export function AssistantPage({ scope, project, workspace }: { scope?: PlanScope
   const current = conversations.find(c => c.id === selected);
   const nameOf = (id: string) => providers.find(p => p.id === id)?.name ?? id;
 
-  async function start(packageSha256?: string) {
+  async function start(packageSha256?: string, prompt?: string) {
     if (!provider || !settings) return;
-    const c = await post<Conversation>(scopedPath(scope!, 'ai/conversations'), { provider: provider.id, disclosureVersion: settings.disclosure.version, message: text, ...(packageSha256 ? { packageSha256 } : {}) });
-    setText('');
+    // A quick action's first message is its prompt; the typed text stays in the box.
+    const c = await post<Conversation>(scopedPath(scope!, 'ai/conversations'), { provider: provider.id, disclosureVersion: settings.disclosure.version, ...(prompt ? { prompt } : { message: text }), ...(packageSha256 ? { packageSha256 } : {}) });
+    if (!prompt) setText('');
     setSelected(c.id);
     setPreview(undefined);
     await list.refetch();
@@ -67,6 +79,7 @@ export function AssistantPage({ scope, project, workspace }: { scope?: PlanScope
   // Only the drawer's approve button attaches a package: to a new conversation, or as the next
   // turn of the open one.
   const approve: Approve | undefined = preview === 'start' ? { label: 'Start conversation with this context', run: p => start(p.sha256) }
+    : preview === 'action' && action ? { label: `Start ${action.label.toLowerCase()}`, run: p => start(p.sha256, p.prompt) }
     : preview === 'attach' && selected ? {
       label: 'Attach to conversation', run: async p => {
         await post(scopedPath(scope, `ai/conversations/${selected}/context`), { packageSha256: p.sha256 });
@@ -78,6 +91,9 @@ export function AssistantPage({ scope, project, workspace }: { scope?: PlanScope
     } : undefined;
   const tooLong = new TextEncoder().encode(text).length > maxMessage;
   const blocked = providers.filter(p => p.mode !== 'headless-eligible' || !settings.headless);
+  const actionsOff = noProject ? 'Open a project to use quick actions: they share its configuration.'
+    : !provider ? 'Quick actions need an assistant Hclaro can run. A handoff-only assistant can use Preview project context, then Copy or Download.'
+    : !settings.disclosureAccepted ? 'Accept the AI disclosure in Settings to use quick actions.' : undefined;
 
   return <div className="assistant-page">
    <nav className="assistant-list" aria-label="Conversations in this session">
@@ -104,6 +120,15 @@ export function AssistantPage({ scope, project, workspace }: { scope?: PlanScope
          {eligible.length === 0 && blocked.length === 0 && <option value="">No assistant detected</option>}
         </select>
        </label>
+       <section className="assistant-actions" aria-label="Quick actions">
+        <h2>Quick actions</h2>
+        <p className="muted assist-note">Each one previews the project context and a fixed prompt first. It uses only the configuration Hclaro reads: no state, live cloud data or pricing.</p>
+        <div className="assistant-action-grid">{quickActions.map(a => <Button key={a.id} variant="outline" disabled={busy || !!actionsOff} title={actionsOff} onClick={() => {
+          setAction({ ...a, cost: false });
+          setPreview('action');
+        }}><Zap size={14} />{a.label}</Button>)}</div>
+        {actionsOff && <p className="muted assist-note" role="note">{actionsOff}</p>}
+       </section>
        <p className="muted assist-note">The assistant is fixed for each conversation. Changing it here affects only new conversations; open conversations keep theirs.</p>
        <fieldset className="assistant-mode">
         <legend>Context</legend>
@@ -123,6 +148,8 @@ export function AssistantPage({ scope, project, workspace }: { scope?: PlanScope
        </div>
       </div>}
    </section>
-   {preview && createPortal(<AssistDrawer scope={scope} request={{ kind: 'project' }} title={preview === 'attach' ? 'Attach project context' : 'Project context'} approve={approve} onClose={() => setPreview(undefined)} />, document.body)}
+   {preview && createPortal(<AssistDrawer scope={scope} request={preview === 'action' && action ? { kind: 'project', action: action.id, ...(action.cost ? { cost: true } : {}) } : { kind: 'project' }}
+     title={preview === 'attach' ? 'Attach project context' : preview === 'action' && action ? action.label : 'Project context'} approve={approve}
+     onCost={action?.id === 'qa-cost@1' && preview === 'action' ? cost => setAction({ ...action, cost }) : undefined} onClose={() => setPreview(undefined)} />, document.body)}
   </div>;
 }

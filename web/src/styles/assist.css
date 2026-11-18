@@ -81,6 +81,10 @@
 .assistant-item.elsewhere { opacity: 0.75; }
 .assistant-new { display: grid; gap: 10px; }
 .assistant-new select { max-width: 360px; }
+.assistant-actions { display: grid; gap: 6px; }
+.assistant-actions h2 { margin: 0; font-size: 14px; }
+.assistant-action-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+.assist-cost { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; }
 .assistant-mode { display: grid; gap: 4px; border: 0; padding: 0; margin: 0; }
 .assist-turn.context { font-size: 0.85em; color: var(--muted); }
 @media (width <= 900px) { .assistant-page { grid-template-columns: 1fr; } }

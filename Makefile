@@ -66,10 +66,11 @@ dev: binary bin/mock/terraform$(EXE)
 brand-assets:
 	node scripts/brand-assets.mjs
 
-browser-test: binary bin/mock/terraform$(EXE) bin/mock/tofu$(EXE)
+browser-test: binary bin/mock/terraform$(EXE) bin/mock/tofu$(EXE) bin/mock/infracost$(EXE)
 	go build -trimpath -o bin/fixture-http$(EXE) ./scripts/fixture-http
 	node scripts/browser-smoke.mjs
 	node scripts/browser-hub.mjs
+	node tests/e2e/quick-actions.mjs
 
 cross:
 	mkdir -p dist
