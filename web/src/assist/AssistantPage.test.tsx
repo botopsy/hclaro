@@ -22,6 +22,7 @@ let posts: { url: string; body: unknown }[] = [];
 let blockedPackage = false;
 let costRefused = false;
 let gets: string[] = [];
+let savedList: object[] | undefined;
 function serve(settings: object = {}, conversations: object[] = [], current: () => object = () => chat([])) {
   posts = [];
   gets = [];
@@ -37,6 +38,8 @@ function serve(settings: object = {}, conversations: object[] = [], current: () 
       // A quick action's preview is its first turn: the prompt and the package (AI-01.10).
       return Response.json(req.action ? { ...pkg, prompt: req.action, review: `FIRST TURN ${req.action}${req.cost ? ' + cost' : ''}`, costAvailable: req.action === 'qa-cost@1', costHidden: req.cost ? 1 : undefined } : pkg);
     }
+    if (url.includes('/ai/saved/') && init?.method === 'POST') return Response.json(url.endsWith('/open') ? chat([{ role: 'user', text: 'saved question', at }], { id: other, saved: true }) : { deleted: 1 });
+    if (url.endsWith('/ai/saved') && savedList) return Response.json({ conversations: savedList, available: true, retentionDays: 30 });
     if (url.endsWith('/ai/conversations') && init?.method === 'POST') return Response.json(chat([{ role: 'user', text: 'hi', at }], { state: 'running' }), { status: 202 });
     if (url.endsWith('/ai/conversations')) return Response.json({ conversations });
     if (url.endsWith(`/ai/conversations/${id}/context`)) return Response.json(chat([]));
@@ -50,6 +53,7 @@ function show(scope: PlanScope = { kind: 'launch' }, noProject = false) {
 const started = () => posts.filter(p => p.url.endsWith('/ai/conversations'));
 
 afterEach(() => {
+  savedList = undefined;
   blockedPackage = false;
   costRefused = false;
   cleanup();
@@ -234,5 +238,33 @@ describe('AI Assistant page', () => {
     await user.click(screen.getByRole('button', { name: 'Cost analysis' }));
     expect(await screen.findByLabelText(/latest Infracost estimate/)).not.toBeChecked();
     expect(posts.filter(p => p.url.endsWith('/ai/packages')).map(p => p.body).at(-1)).toEqual({ kind: 'project', action: 'qa-cost@1' });
+  });
+
+  // AI-01.11: saved conversations of this project are listed; Open reopens one by ID, Delete
+  // removes its file, and Delete all asks first.
+  it('lists, reopens and deletes saved conversations', async () => {
+    savedList = [{ id: other, title: 'saved question', provider: 'claude', providerVersion: '2.1.327', kind: 'conversation', workspace: 'default', createdAt: at, lastActivity: at, open: false }];
+    serve({}, [], () => chat([{ role: 'user', text: 'saved question', at }], { id: other, saved: true }));
+    const user = userEvent.setup();
+    show();
+    const section = await screen.findByRole('region', { name: 'Saved conversations of this project' });
+    expect(within(section).getByText('saved question')).toBeInTheDocument();
+    expect(within(section).getByText(/Claude Code 2\.1\.327 · workspace default/)).toBeInTheDocument();
+    await user.click(within(section).getByRole('button', { name: 'Open' }));
+    expect(posts.map(p => p.url)).toContain(`/api/v1/ai/saved/${other}/open`);
+    await user.click(within(section).getByRole('button', { name: 'Delete saved conversation saved question' }));
+    expect(posts.map(p => p.url)).toContain(`/api/v1/ai/saved/${other}/delete`);
+    await user.click(within(section).getByRole('button', { name: /Delete all saved for this project/ }));
+    expect(posts.filter(p => p.url.endsWith('/delete-all'))).toHaveLength(0);
+    await user.click(within(section).getByRole('button', { name: 'Delete all' }));
+    expect(posts.filter(p => p.url.endsWith('/ai/saved/delete-all'))).toHaveLength(1);
+  });
+
+  it('lists Hub saved conversations under the context scope', async () => {
+    savedList = [];
+    serve();
+    show({ kind: 'context', contextId: '3'.repeat(32) });
+    expect(await screen.findByText(/No other saved conversations/)).toBeInTheDocument();
+    expect(gets).toContain(`/api/v1/contexts/${'3'.repeat(32)}/ai/saved`);
   });
 });

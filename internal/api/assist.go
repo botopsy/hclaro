@@ -311,7 +311,7 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		scope := assist.RunScope{Project: src.scope.Project, Root: src.scope.Root, Workspace: src.scope.Workspace, Engine: src.scope.Engine}
+		scope := runScope(src)
 		var c assist.Conversation
 		var err error
 		switch {
@@ -441,6 +441,107 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			writeJSON(w, 200, map[string]bool{"closed": true})
 		}
 	}
+	// Saved conversations (AI-01.11): the toggle, the project's list, reopen and delete. Every
+	// file route names the project of the scope it is asked in; another project's file is refused.
+	save := func(w http.ResponseWriter, r *http.Request, key string) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct {
+			Saved *bool `json:"saved"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if body.Saved == nil {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		if id, ok := conversationID(w, r); ok {
+			c, err := sess.Save(key, id, *body.Saved)
+			if err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 200, c)
+		}
+	}
+	savedList := func(w http.ResponseWriter, src assistSource) {
+		if sess, ok := on(w); ok {
+			out := map[string]any{"conversations": sess.SavedList(src.key, assist.ProjectKey(src.scope.Root)), "available": sess.Store != nil}
+			if sess.Store != nil {
+				out["retentionDays"] = sess.Store.RetentionDays()
+			}
+			writeJSON(w, 200, out)
+		}
+	}
+	reopen := func(w http.ResponseWriter, r *http.Request, src assistSource) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if id, ok := conversationID(w, r); ok {
+			c, err := sess.Reopen(src.key, id, assist.Resume{Scope: runScope(src), Bound: src.bound, Fingerprint: func() (string, bool) { return projectFingerprint(src) }})
+			if err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 200, c)
+		}
+	}
+	deleteSaved := func(w http.ResponseWriter, r *http.Request, src assistSource) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if id, ok := conversationID(w, r); ok {
+			if err := sess.DeleteSaved(assist.ProjectKey(src.scope.Root), id); err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 200, map[string]bool{"deleted": true})
+		}
+	}
+	deleteAll := func(w http.ResponseWriter, r *http.Request, src assistSource) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		n, err := sess.DeleteAllSaved(assist.ProjectKey(src.scope.Root))
+		if err != nil {
+			aiRefusal(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]int{"deleted": n})
+	}
+	withLaunch := func(handle func(http.ResponseWriter, *http.Request, assistSource)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := on(w); ok {
+				if src, ok := launch(w); ok {
+					handle(w, r, src)
+				}
+			}
+		}
+	}
+	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/save", func(w http.ResponseWriter, r *http.Request) { save(w, r, "launch") })
+	mux.HandleFunc("GET /api/v1/ai/saved", withLaunch(func(w http.ResponseWriter, _ *http.Request, src assistSource) { savedList(w, src) }))
+	mux.HandleFunc("POST /api/v1/ai/saved/{id}/open", withLaunch(reopen))
+	mux.HandleFunc("POST /api/v1/ai/saved/{id}/delete", withLaunch(deleteSaved))
+	mux.HandleFunc("POST /api/v1/ai/saved/delete-all", withLaunch(deleteAll))
+
 	mux.HandleFunc("POST /api/v1/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		if src, ok := launch(w); ok {
 			start(w, r, src)
@@ -493,6 +594,20 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/messages", hubConversation(message))
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/cancel", hubConversation(cancelTurn))
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/close", hubConversation(closeConversation))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/save", hubConversation(save))
+	withHub := func(handle func(http.ResponseWriter, *http.Request, assistSource)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := on(w); ok {
+				if src, ok := hubSource(w, r, assist.KindResource); ok {
+					handle(w, r, src)
+				}
+			}
+		}
+	}
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/ai/saved", withHub(func(w http.ResponseWriter, _ *http.Request, src assistSource) { savedList(w, src) }))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/saved/{id}/open", withHub(reopen))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/saved/{id}/delete", withHub(deleteSaved))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/saved/delete-all", withHub(deleteAll))
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/packages/{hash}/export", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := on(w); ok && openContext(w, r, hub) != nil {
 			export(w, r, r.PathValue("cid"))
@@ -606,15 +721,14 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 		// Before every turn: same project and workspace, and the files (and what Git ignores)
 		// still give the fingerprint of the bytes this package was built from. A snapshot
 		// re-read or a change outside the package scope does not make it stale.
-		root, svc, built := src.scope.Root, src.git, p.Fingerprint
+		built := p.Fingerprint
 		fresh = func() bool {
-			if !src.bound() {
-				return false
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			fp, err := assist.ProjectFingerprint(root, gitFiles(ctx, svc, root))
-			return err == nil && fp == built && (!body.Cost || costFresh())
+			fp, ok := projectFingerprint(src)
+			return ok && fp == built && (!body.Cost || costFresh())
+		}
+		if body.Cost {
+			// It depends on this session's estimate: a saved copy never continues after a restart.
+			p.Fingerprint = ""
 		}
 	default:
 		reasonJSON(w, 400, "invalid_kind", "Choose a plan, drift scan, import, resource or project.")
@@ -645,6 +759,22 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 	}{p, sess.Settings().Disclosure, prompt.ID, assist.FirstTurn(p.Markdown, prompt), costLines != nil})
 }
 
+func runScope(src assistSource) assist.RunScope {
+	return assist.RunScope{Project: src.scope.Project, Root: src.scope.Root, Workspace: src.scope.Workspace, Engine: src.scope.Engine, ProjectKey: assist.ProjectKey(src.scope.Root)}
+}
+
+// projectFingerprint is the current fingerprint of src's project files, false once the user
+// left its project and workspace or the files cannot be read.
+func projectFingerprint(src assistSource) (string, bool) {
+	if !src.bound() {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fp, err := assist.ProjectFingerprint(src.scope.Root, gitFiles(ctx, src.git, src.scope.Root))
+	return fp, err == nil
+}
+
 func aiRefusal(w http.ResponseWriter, err error) {
 	var r *assist.Refusal
 	if !errors.As(err, &r) {
@@ -657,9 +787,11 @@ func aiRefusal(w http.ResponseWriter, err error) {
 		status = 404
 	case assist.RefuseInvalidArgs, assist.RefuseMessageEmpty:
 		status = 400
+	case assist.RefuseSaveFailed:
+		status = 500
 	case assist.RefuseTooLong, assist.RefuseMessageLong:
 		status = 413
-	case assist.RefuseMessageUnsafe:
+	case assist.RefuseMessageUnsafe, assist.RefuseSaveUnsafe:
 		status = 422
 	}
 	reasonJSON(w, status, r.Code, r.Error())

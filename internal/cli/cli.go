@@ -282,11 +282,16 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}
 	cost.SweepStale("", time.Now())
 	// AI assistance (AI-01.03, AI-01.04): off until switched on in Settings; packages and
-	// replies stay in memory. Strict local-only mode keeps handoff and never runs an assistant
+	// replies stay in memory unless the user saves a conversation. Strict local-only mode keeps handoff and never runs an assistant
 	// (OD-AI-4). History keeps request metadata only.
 	manager.Assist = assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath},
 		&assist.CLI{Adapter: assist.Codex}, &assist.CLI{Adapter: assist.Copilot})
 	manager.Assist.Record = operationHistory.RecordAssist
+	// Saved conversations (AI-01.11): opt-in per conversation, in the configuration folder;
+	// expired ones are deleted now.
+	if dir, err := projects.ConfigDir(); err == nil {
+		manager.Assist.Store = assist.OpenStore(dir, time.Now())
+	}
 	// A closed, reloaded or evicted Hub context takes its AI packages and conversations with it.
 	hub.ContextClosed = manager.Assist.DropScope
 	defer manager.Assist.Close()

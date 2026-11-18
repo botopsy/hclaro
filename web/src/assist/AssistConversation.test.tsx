@@ -32,6 +32,7 @@ function serve(settings: object, current: () => object, answers: Record<string, 
     if (url.endsWith(`/ai/conversations/${id}/messages`)) return Response.json(chat('running', first), { status: 202 });
     if (url.endsWith(`/ai/conversations/${id}/cancel`)) return Response.json({ cancelled: true });
     if (url.endsWith(`/ai/conversations/${id}/close`)) return Response.json({ closed: true });
+    if (url.endsWith(`/ai/conversations/${id}/save`)) return Response.json(current());
     if (url.endsWith(`/ai/conversations/${id}`)) return Response.json(current());
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
@@ -202,6 +203,38 @@ describe('AI conversation', () => {
     await user.click(screen.getByRole('button', { name: 'Send message' }));
     expect(await screen.findByText(/Context is stale/)).toBeInTheDocument();
     expect(screen.getByText('The workspace changed since this conversation started.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Follow-up message')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  });
+
+  // AI-01.11: Save is opt-in per conversation; a reopened read-only conversation says why and
+  // sends nothing; a hidden turn shows no text.
+  it('saves only on request', async () => {
+    let saved = false;
+    serve({}, () => chat('ready', first, { saved }));
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Text to share: review prompt and context package');
+    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    const box = await screen.findByRole('checkbox', { name: /Save conversation/ });
+    expect(box).not.toBeChecked();
+    expect(posts.filter(p => p.url.endsWith('/save'))).toHaveLength(0);
+    saved = true;
+    await user.click(box);
+    expect(posts.filter(p => p.url.endsWith('/save')).map(p => p.body)).toEqual([{ saved: true }]);
+    expect(await screen.findByRole('checkbox', { name: /Save conversation/ })).toBeChecked();
+  });
+
+  it('shows a read-only reopened conversation and hides flagged turns', async () => {
+    const turns = [{ role: 'user', text: 'hello', at }, { role: 'assistant', text: '', at, hidden: true }];
+    serve({}, () => chat('ready', turns, { saved: true, needsReview: true, readOnly: 'Some saved text now looks like a secret.' }));
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Text to share: review prompt and context package');
+    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    expect(await screen.findByText(/Read-only: Some saved text now looks like a secret/)).toBeInTheDocument();
+    expect(screen.getByText(/Hidden: this saved message now looks like/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Assistant reply text')).toBeNull();
     expect(screen.getByLabelText('Follow-up message')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   });

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileCode2, LoaderCircle, MessageSquarePlus, Send, Sparkles, Zap } from 'lucide-react';
+import { FileCode2, FolderOpen, LoaderCircle, MessageSquarePlus, Send, Sparkles, Trash2, Zap } from 'lucide-react';
 import { api, post } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
@@ -12,9 +12,11 @@ import { AssistDrawer, ConversationPanel, assistSettingsQuery, type Approve, typ
 // A conversation starts with no project data, or with a project package the user previewed in
 // the existing drawer. The project and workspace are the ones the context selector shows; the
 // assistant is fixed per conversation. Conversations of another project or workspace stay
-// listed, read-only.
+// listed, read-only. Saved conversations (AI-01.11) of this project are listed below them and
+// can be reopened or deleted.
 
-type Listed = { id: string; provider: string; kind: string; state: string; title: string; project: string; workspace: string; here: boolean; startedAt: string };
+type Listed = { id: string; provider: string; kind: string; state: string; title: string; project: string; workspace: string; here: boolean; saved: boolean; startedAt: string };
+type Saved = { id: string; title: string; provider: string; providerVersion: string; kind: string; workspace: string; createdAt: string; lastActivity: string; open: boolean };
 type Mode = 'chat' | 'project';
 // Mirrors assist.MaxMessage; the server enforces it.
 const maxMessage = 8000;
@@ -38,6 +40,12 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
     enabled: !!scope && settings?.enabled === true,
     refetchInterval: q => q.state.data?.conversations.some(c => c.state === 'running') ? 2000 : false
   });
+  const saved = useQuery({
+    queryKey: ['ai-saved', scope ? scopeKey(scope) : 'none'],
+    queryFn: () => api<{ conversations: Saved[]; available: boolean; retentionDays?: number }>(scopedPath(scope!, 'ai/saved')),
+    enabled: !!scope && settings?.enabled === true && !noProject
+  });
+  const [confirmAll, setConfirmAll] = useState(false);
   const providers = settings?.providers ?? [];
   const eligible = settings?.headless ? providers.filter(p => p.mode === 'headless-eligible') : [];
   const [picked, setPicked] = useState<string>();
@@ -55,6 +63,18 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   const conversations = list.data?.conversations ?? [];
   const current = conversations.find(c => c.id === selected);
   const nameOf = (id: string) => providers.find(p => p.id === id)?.name ?? id;
+  async function onSaved(action: string, id?: string) {
+    setFailed(undefined);
+    try {
+      const c = await post<{ id?: string }>(scopedPath(scope!, id ? `ai/saved/${id}/${action}` : `ai/saved/${action}`), {});
+      if (action === 'open' && c.id) setSelected(c.id);
+      setConfirmAll(false);
+    } catch (err) {
+      setFailed(err instanceof Error ? err.message : 'The saved conversation could not be changed.');
+    }
+    await Promise.all([list.refetch(), saved.refetch(), client.invalidateQueries({ queryKey: ['ai-conversation'] })]);
+  }
+  const closed = (saved.data?.conversations ?? []).filter(c => !c.open);
 
   async function start(packageSha256?: string, prompt?: string) {
     if (!provider || !settings) return;
@@ -98,18 +118,31 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   return <div className="assistant-page">
    <nav className="assistant-list" aria-label="Conversations in this session">
     <Button variant={selected ? 'outline' : 'default'} onClick={() => setSelected(undefined)}><MessageSquarePlus size={14} />New conversation</Button>
-    {conversations.length === 0 ? <p className="muted">No conversations in this session yet. They are kept in memory until Hclaro exits or AI is turned off.</p>
+    {conversations.length === 0 ? <p className="muted">No conversations in this session yet. They are kept in memory until Hclaro exits or AI is turned off, unless you save them.</p>
       : <ul>{conversations.map(c => <li key={c.id}><button type="button" className={`assistant-item ${c.id === selected ? 'active' : ''} ${c.here ? '' : 'elsewhere'}`} aria-current={c.id === selected ? 'true' : undefined} onClick={() => setSelected(c.id)}>
         <strong>{c.title || 'Conversation'}</strong>
-        <span>{nameOf(c.provider)} · {c.kind === 'conversation' ? 'no project data' : 'project context'} · {c.state}</span>
+        <span>{nameOf(c.provider)} · {c.kind === 'conversation' ? 'no project data' : 'project context'} · {c.state}{c.saved ? ' · saved' : ''}</span>
         {!c.here && <span className="muted">Belongs to {c.project} / {c.workspace}</span>}
        </button></li>)}</ul>}
+    {saved.data?.available && <section aria-label="Saved conversations of this project">
+     <h2>Saved</h2>
+     {closed.length === 0 ? <p className="muted">No other saved conversations. Tick Save conversation in one to keep it for {saved.data.retentionDays ?? 30} days after its last use.</p>
+       : <ul>{closed.map(c => <li key={c.id} className="assistant-item elsewhere">
+        <strong>{c.title || 'Conversation'}</strong>
+        <span>{nameOf(c.provider)} {c.providerVersion} · workspace {c.workspace} · last used {new Date(c.lastActivity).toLocaleString()}</span>
+        <span><Button variant="outline" size="small" onClick={() => void onSaved('open', c.id)}><FolderOpen size={12} />Open</Button> <Button variant="ghost" size="small" aria-label={`Delete saved conversation ${c.title}`} onClick={() => void onSaved('delete', c.id)}><Trash2 size={12} />Delete</Button></span>
+       </li>)}</ul>}
+     {(saved.data.conversations.length > 0) && (confirmAll
+       ? <p role="alert">Delete every saved conversation of this project from disk? <Button variant="outline" size="small" onClick={() => void onSaved('delete-all')}>Delete all</Button> <Button variant="ghost" size="small" onClick={() => setConfirmAll(false)}>Keep</Button></p>
+       : <Button variant="ghost" size="small" onClick={() => setConfirmAll(true)}><Trash2 size={12} />Delete all saved for this project</Button>)}
+    </section>}
    </nav>
    <section className="assistant-main" aria-label={selected ? 'Selected conversation' : 'New conversation'}>
     {current && !current.here ? <div className="empty-state" role="note"><h2>Read-only here</h2><p>This conversation belongs to {current.project} / {current.workspace}. Open that project and workspace to continue it; nothing is sent from here.</p></div>
       : selected ? <ConversationPanel key={selected} scope={scope} id={selected} name={nameOf(current?.provider ?? provider?.id ?? '')} onClosed={() => {
         setSelected(undefined);
         void list.refetch();
+        void saved.refetch();
       }} staleHint="If the project files changed, attach the current project context to continue; otherwise close it and start a new conversation." actions={<Button variant="outline" onClick={() => setPreview('attach')}><FileCode2 size={14} />Attach project context</Button>} />
       : <div className="assistant-new">
        <p className="muted">Project <strong>{project}</strong> · workspace <strong>{workspace}</strong>, from the context selector.</p>

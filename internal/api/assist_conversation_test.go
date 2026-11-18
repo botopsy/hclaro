@@ -98,15 +98,15 @@ func TestAIConversationOverHTTP(t *testing.T) {
 
 	s.enableAI()
 	st := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", ""))
-	if !st.Headless || st.DefaultProvider != "stub" || st.Accepted || st.Disclosure.Version != "7" {
+	if !st.Headless || st.DefaultProvider != "stub" || st.Accepted || st.Disclosure.Version != "8" {
 		t.Fatalf("%+v", st)
 	}
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+planID+`"}`))
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 409, "disclosure_required")
 	// The browser cannot set an executable path.
 	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"path":"/bin/sh"}`), 400, "invalid_request")
-	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"7"}`)
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"6"}`), 409, "disclosure_required")
+	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"8"}`)
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"7"}`), 409, "disclosure_required")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "other", "")), 409, "provider_unavailable")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "stub", "")), 404, "package_not_found")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256+"x", "stub", "")), 404, "package_not_found")
@@ -260,9 +260,9 @@ func TestAIHubConversationStaysInItsContext(t *testing.T) {
 	}
 }
 
-// Disclosure v7: a v6 acceptance does not count; turning AI off revokes acceptance.
+// Disclosure v8: a v7 acceptance does not count; turning AI off revokes acceptance.
 func TestAIDisclosureVersionGatesConversations(t *testing.T) {
-	if assist.DisclosureVersion != "7" {
+	if assist.DisclosureVersion != "8" {
 		t.Fatalf("disclosure version %s", assist.DisclosureVersion)
 	}
 	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
@@ -271,17 +271,20 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 	s.enableAI()
 	st := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", ""))
 	if !strings.Contains(strings.Join(st.Disclosure.Lines, "\n"), "resends the whole conversation") {
-		t.Fatalf("v7 lacks the replay cost line: %q", st.Disclosure.Lines)
+		t.Fatalf("v8 lacks the replay cost line: %q", st.Disclosure.Lines)
+	}
+	if !strings.Contains(strings.Join(st.Disclosure.Lines, "\n"), "unless you tick Save conversation") {
+		t.Fatalf("v8 lacks the saved conversations line: %q", st.Disclosure.Lines)
 	}
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+s.plan()+`"}`))
-	old := `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"6"}`
+	old := `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"7"}`
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 409, "disclosure_required")
-	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"6"}`), 409, "disclosure_required")
+	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"7"}`), 409, "disclosure_required")
 	if decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", "")).Accepted {
-		t.Fatal("a v6 acceptance was recorded")
+		t.Fatal("a v7 acceptance was recorded")
 	}
-	if !decode[assist.Settings](t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"7"}`)).Accepted {
-		t.Fatal("v7 not accepted")
+	if !decode[assist.Settings](t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"8"}`)).Accepted {
+		t.Fatal("v8 not accepted")
 	}
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", old), 409, "disclosure_required")
 	if w := s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")); w.Code != 202 {
