@@ -3,12 +3,14 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"sort"
 	"time"
 
 	"hclaro/internal/assist"
+	"hclaro/internal/cost"
 	"hclaro/internal/drift"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/imports"
@@ -32,6 +34,10 @@ type packageRequest struct {
 	ScanID     string           `json:"scanId,omitempty"`
 	ResourceID string           `json:"resourceId,omitempty"`
 	Import     *imports.Request `json:"import,omitempty"`
+	// Action is a quick action prompt ID (AI-01.10) for a project package; Cost attaches the
+	// session's existing cost estimate to a qa-cost package.
+	Action string `json:"action,omitempty"`
+	Cost   bool   `json:"cost,omitempty"`
 }
 
 // assistSource is where a package's record comes from: the launch manager or a Hub scope.
@@ -53,6 +59,39 @@ type assistSource struct {
 	// resolved: the launch workspace was not switched, or the Hub read context is still open.
 	// Unlike current, re-reading the same workspace does not change it.
 	bound func() bool
+	// cost returns the summary of the launch project's latest usable cost estimate and a check
+	// that it still applies; nil lines when there is none. Nil for Hub sources (M17 is launch-only).
+	cost func() ([]string, func() bool)
+}
+
+// costSummary is the minimized cost section of a project package: aggregates of an existing
+// estimate only, no line items or addresses.
+func costSummary(e cost.CostEstimate) []string {
+	b, t := e.Breakdown, e.Breakdown.Totals
+	c := b.Coverage
+	pct := "n/a"
+	if c.Percent != nil {
+		pct = fmt.Sprintf("%d%%", *c.Percent)
+	}
+	out := []string{
+		// The pricing endpoint is not shared: a self-hosted one names an internal host.
+		fmt.Sprintf("estimate of one reviewed plan of workspace %s by %s %s, basis %s, finished %s", e.Workspace, e.Provider, e.ProviderVersion, e.Basis, e.FinishedAt),
+		"these figures are estimates, not a bill or verified pricing",
+		fmt.Sprintf("currency %s; monthly change of the plan %s (added %s, removed %s, changed %s)", t.Currency, t.MonthlyDelta, t.AddedMonthly, t.RemovedMonthly, t.ChangedDelta),
+		fmt.Sprintf("monthly cost of priced resources before the plan %s, after %s", t.PastMonthly, t.ProjectedMonthly),
+		fmt.Sprintf("coverage %s: %d of %d cost-bearing changed instances estimated, %d partial, %d usage unknown, %d unsupported, %d free, %d not estimated", pct, c.Estimated, c.CostBearing, c.Partial, c.UsageUnknown, c.Unsupported, c.Free, c.NotEstimated),
+	}
+	for _, ts := range b.Types {
+		delta := "n/a"
+		if ts.Delta != nil {
+			delta = *ts.Delta
+		}
+		out = append(out, fmt.Sprintf("type %s: %d changed, %d estimated, %d not estimated, monthly change %s", ts.ResourceType, ts.Count, ts.Estimated, ts.NotEstimated, delta))
+	}
+	for _, cv := range b.Caveats {
+		out = append(out, "caveat: "+cv.Message)
+	}
+	return out
 }
 
 // gitFiles asks Git which configuration files under root it does not ignore.
@@ -145,6 +184,26 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			},
 			git:   manager.Git,
 			bound: func() bool { return store.Get().Info.Workspace == snap.Info.Workspace },
+			cost: func() ([]string, func() bool) {
+				if manager.Cost == nil {
+					return nil, nil
+				}
+				// usable: still the session's newest estimate, completed, opted in, and current for
+				// the launch workspace and its plan context.
+				usable := func(id string) (cost.CostEstimate, bool) {
+					e, b, ok := manager.Cost.LatestCompleted()
+					if !ok || id != "" && e.ID != id {
+						return e, false
+					}
+					stale, _ := costStale(manager, store, b)
+					return e, !stale
+				}
+				e, ok := usable("")
+				if !ok {
+					return nil, nil
+				}
+				return costSummary(e), func() bool { _, ok := usable(e.ID); return ok }
+			},
 		}, true
 	}
 	// hubSource resolves an open Hub context. Plans, drift scans and import previews live in
@@ -445,6 +504,28 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 	var p assist.Package
 	var err error
 	fresh := src.current
+	prompt, _ := assist.ReviewPrompt(body.Kind)
+	if body.Action != "" || body.Cost {
+		action, ok := assist.LookupPrompt(body.Action)
+		if !ok || body.Kind != assist.KindProject || !action.Fits(body.Kind) || body.Cost && action.Name != "qa-cost" {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		prompt = action
+	}
+	// A cost analysis offers the session's existing estimate; it is attached only on request.
+	var costLines []string
+	var costFresh func() bool
+	if prompt.Name == "qa-cost" && src.cost != nil {
+		costLines, costFresh = src.cost()
+	}
+	if body.Cost {
+		if costLines == nil {
+			reasonJSON(w, 409, "cost_unavailable", "There is no current cost estimate in this session to attach. Estimate a plan first, or start without cost data.")
+			return
+		}
+		src.scope.Cost = costLines
+	}
 	switch body.Kind {
 	case assist.KindPlan:
 		var pl *operations.Plan
@@ -533,7 +614,7 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			fp, err := assist.ProjectFingerprint(root, gitFiles(ctx, svc, root))
-			return err == nil && fp == built
+			return err == nil && fp == built && (!body.Cost || costFresh())
 		}
 	default:
 		reasonJSON(w, 400, "invalid_kind", "Choose a plan, drift scan, import, resource or project.")
@@ -553,14 +634,15 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 		return
 	}
 	sess.Put(src.key, p, fresh)
-	// The review's first turn (AI-01.08): exactly what Send submits and Copy or Download hand over.
-	prompt, _ := assist.ReviewPrompt(p.Kind)
+	// The review's or quick action's first turn (AI-01.08, AI-01.10): exactly what Send submits
+	// and Copy or Download hand over.
 	writeJSON(w, 200, struct {
 		assist.Package
-		Disclosure assist.Disclosure `json:"disclosure"`
-		Prompt     string            `json:"prompt"`
-		Review     string            `json:"review"`
-	}{p, sess.Settings().Disclosure, prompt.ID, assist.FirstTurn(p.Markdown, prompt)})
+		Disclosure    assist.Disclosure `json:"disclosure"`
+		Prompt        string            `json:"prompt"`
+		Review        string            `json:"review"`
+		CostAvailable bool              `json:"costAvailable,omitempty"`
+	}{p, sess.Settings().Disclosure, prompt.ID, assist.FirstTurn(p.Markdown, prompt), costLines != nil})
 }
 
 func aiRefusal(w http.ResponseWriter, err error) {

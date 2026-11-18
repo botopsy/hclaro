@@ -9,7 +9,7 @@ import (
 )
 
 // DisclosureVersion changes whenever the disclosure text changes.
-const DisclosureVersion = "6"
+const DisclosureVersion = "7"
 
 // Disclosure is shown next to every package and in Settings (R10).
 type Disclosure struct {
@@ -23,11 +23,19 @@ var disclosure = Disclosure{Version: DisclosureVersion, Lines: []string{
 	"Secret detection is heuristic. Hclaro redacts values that look like credentials, random keys or local paths and leaves out files that contain them, but a secret written as ordinary text, or in a comment, can pass. Read the preview before you share it.",
 	"An AI assistant you give it to may send it to a cloud model, and its runs bill your own assistant account.",
 	"Once copied or downloaded, the text is outside Hclaro: its redaction and blocking no longer protect it.",
-	sendLine + "Review with an assistant starts a conversation: Hclaro sends the previewed text, the context followed by a fixed review request. The AI Assistant sends your message, with no project data unless you preview and attach the project context. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the conversation to its cloud model, signed in as you.",
+	sendLine + "Review with an assistant and the AI Assistant's quick actions start a conversation: Hclaro sends the previewed text, the context followed by a fixed review request or quick action prompt. The AI Assistant sends your message, with no project data unless you preview and attach the project context. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the conversation to its cloud model, signed in as you.",
+	sendLine + CostLine,
 	sendLine + "Every follow-up resends the whole conversation (the context, your messages and the replies), so usage and cost grow with each message. A conversation stops at a size limit; Hclaro then asks you to start a new one and never drops messages silently.",
 	claudeLine + "Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
 	sendLine + "The reply is unverified AI output. Hclaro shows it as text, keeps the conversation in memory for this session only, and never runs, applies or approves anything it suggests.",
 }}
+
+// CostLine is the disclosure of the optional cost section (AI-01.10); the preview's checkbox
+// repeats it.
+const CostLine = "Cost analysis can attach this session's existing Infracost estimate, only if you tick it in the preview. " +
+	"It shares the estimate's workspace, Infracost version, pricing basis and finish time, its totals, coverage, per-type counts and monthly change, and its caveats. " +
+	"Individual cost line items are never shared. Hclaro reuses the latest completed estimate of the launch project and never starts a new Infracost run for it. " +
+	"A line that looks secret is hidden and the summary is marked incomplete."
 
 // Line markers, stripped before display: sendLine lines apply only when an assistant can be run
 // headless, claudeLine lines only when that assistant is Claude Code. The version stays the

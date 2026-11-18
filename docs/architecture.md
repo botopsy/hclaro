@@ -39,6 +39,7 @@ The HTTP layer has no direct reference to an engine or filesystem root. It reads
 | `web/src` | React UI, TanStack Query reads, accessible native disclosures, shadcn-style Radix Button, local appearance preferences |
 | `fixtures`, `scripts/fake-engine` | Explicit synthetic state, plans, plan logs and executable; `scripts/fixtures/generate-plans.py` regenerates plan fixtures; `fixtures/engines` holds output recorded once from real engines by `scripts/fixtures/record-engine.sh` (synthetic project and state, built-in resources only). `fixtures.WriteHubProjects` writes synthetic Hub projects with per-workspace state; `scripts/hub-demo` seeds them into a throwaway registry |
 | `scripts/fixture-http`, `scripts/browser-smoke.mjs` | Browser requests bridged to the real Go handler without a real engine or TCP backend |
+| `tests/e2e/quick-actions.mjs` | AI quick actions end to end: the real binary on 127.0.0.1 with a fake `claude`, codex and Infracost; isolated HOME, config and PATH; requests outside 127.0.0.1 fail the run. Skipped on Windows (POSIX shell fakes) |
 
 ## Discovery and compatibility
 

@@ -107,11 +107,16 @@ type projectScan struct {
 	outs      []projectOut
 }
 
+const notShown = "[not shown]"
+
+// CostHiddenLine replaces a cost summary line that failed the secret scan.
+const CostHiddenLine = "[line hidden: it looked secret or local]"
+
 // label returns v for display, or a marker when it fails the scan. Names and descriptions are
 // labels: one that looks secret is hidden, it never blocks the package.
 func (b *builder) label(v string) string {
 	if !b.safe("", v, 0) || len(v) > 512 {
-		return "[not shown]"
+		return notShown
 	}
 	return display(v, false)
 }
@@ -677,6 +682,24 @@ func (p *projectScan) render() (Package, error) {
 		fmt.Sprintf("resources, data and ephemeral blocks: %d", addrCount),
 		fmt.Sprintf("variables: %d, outputs: %d", len(p.vars), len(p.outs)),
 		neverIncluded)
+	if len(b.scope.Cost) > 0 {
+		// Aggregates Hclaro wrote around provider type names: a line that looks secret
+		// ("random_password: ...") is hidden like a label, it does not block the package. The
+		// whole line goes, so its name appears nowhere else in the section.
+		lines := make([]string, 0, len(b.scope.Cost)+1)
+		for _, l := range b.scope.Cost {
+			if v := b.label(l); v != notShown {
+				lines = append(lines, v)
+			} else {
+				lines = append(lines, CostHiddenLine)
+				b.costHidden++
+			}
+		}
+		if b.costHidden > 0 {
+			lines = append(lines, fmt.Sprintf("incomplete: %d of %d lines above were hidden by the secret scan; the totals and coverage still count what they described", b.costHidden, len(b.scope.Cost)))
+		}
+		b.add("cost", "Cost estimate (Infracost, from this session)", lines...)
+	}
 
 	dirs := make([]string, 0, len(p.dirs))
 	for d := range p.dirs {

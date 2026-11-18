@@ -81,6 +81,9 @@ type Scope struct {
 	Dependencies []Dependency
 	// Config holds configuration excerpts; they are redacted like generated configuration.
 	Config []Snippet
+	// Cost is the summary of an existing cost estimate the user chose to attach to a project
+	// package (AI-01.10); a line that fails the scan is hidden, like a label.
+	Cost []string
 	// Root is the absolute project root. It is never written; a value containing it blocks.
 	Root string
 }
@@ -98,6 +101,8 @@ type Package struct {
 	SHA256   string   `json:"sha256"`
 	Sections []string `json:"sections"`
 	Dropped  []string `json:"dropped"`
+	// CostHidden counts cost summary lines hidden by the secret scan (AI-01.10).
+	CostHidden int `json:"costHidden,omitempty"`
 	// Fingerprint identifies the files a project package was built from (ProjectFingerprint).
 	Fingerprint string `json:"-"`
 }
@@ -113,6 +118,8 @@ type builder struct {
 	local    []string
 	blocked  map[string]bool
 	sections []section
+	// costHidden counts hidden cost summary lines (Scope.Cost).
+	costHidden int
 }
 
 func newBuilder(kind string, s Scope) *builder {
@@ -446,7 +453,7 @@ func (b *builder) finish() (Package, error) {
 					names = append(names, id)
 				}
 			}
-			return Package{Kind: b.kind, Markdown: md, SHA256: hex.EncodeToString(sum[:]), Sections: included, Dropped: names}, nil
+			return Package{Kind: b.kind, Markdown: md, SHA256: hex.EncodeToString(sum[:]), Sections: included, Dropped: names, CostHidden: b.costHidden}, nil
 		}
 		for next < len(dropOrder) && !present[dropOrder[next]] {
 			next++

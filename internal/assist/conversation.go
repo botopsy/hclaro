@@ -337,8 +337,8 @@ func (s *Session) StartConversation(key, hash, provider, disclosureVersion strin
 	return s.start(key, hash, provider, disclosureVersion, scope, message, Prompt{})
 }
 
-// StartReview starts a conversation whose first turn is registry prompt promptID, which must be
-// a review prompt for the package's kind. Its stdin is FirstTurn of the package and the prompt.
+// StartReview starts a conversation whose first turn is registry prompt promptID, which must fit
+// the package's kind (Prompt.Fits). Its stdin is FirstTurn of the package and the prompt.
 func (s *Session) StartReview(key, hash, provider, disclosureVersion string, scope RunScope, promptID string) (Conversation, error) {
 	p, ok := LookupPrompt(promptID)
 	if !ok {
@@ -361,7 +361,7 @@ func (s *Session) start(key, hash, provider, disclosureVersion string, scope Run
 		return Conversation{}, refuse(RefuseNotFound)
 	case !fresh:
 		return Conversation{}, refuse(RefuseStale)
-	case prompt.ID != "" && prompt.Name != "review-"+kind:
+	case prompt.ID != "" && !prompt.Fits(kind):
 		return Conversation{}, refuse(RefuseInvalidArgs)
 	}
 	if err := checkMessage(message, scope.Root, true); err != nil {

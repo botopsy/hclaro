@@ -62,6 +62,12 @@ func ReviewPrompt(kind string) (Prompt, bool) {
 	return best, best.ID != ""
 }
 
+// Fits reports whether p may open a conversation about a package of kind: a review prompt for
+// its own kind, or a quick action (AI-01.10, "qa-*") for a project package.
+func (p Prompt) Fits(kind string) bool {
+	return p.Name == "review-"+kind || kind == KindProject && strings.HasPrefix(p.Name, "qa-")
+}
+
 // FirstTurn is the exact stdin of a conversation's first turn when it starts with prompt p: what
 // the preview shows, what Copy and Download hand over and what Send submits.
 func FirstTurn(pkg string, p Prompt) string {

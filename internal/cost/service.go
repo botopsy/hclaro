@@ -445,6 +445,20 @@ func (s *Service) Latest(planID string) (CostEstimate, Binding, error) {
 	return CostEstimate{}, Binding{}, ErrNotFound
 }
 
+// LatestCompleted returns the session's most recent estimate if it completed, while estimation is
+// opted in (AI-01.10). A newer running, failed or cancelled estimate replaces an older result, and
+// after opt-out no result is offered for reuse.
+func (s *Service) LatestCompleted() (CostEstimate, Binding, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n := len(s.estimates); s.opted != nil && n > 0 {
+		if r := s.estimates[n-1]; r.est.Status == Completed && r.est.Breakdown != nil {
+			return r.est, r.binding, true
+		}
+	}
+	return CostEstimate{}, Binding{}, false
+}
+
 // Close cancels a running estimate and waits (bounded) for its cleanup.
 func (s *Service) Close(timeout time.Duration) {
 	s.mu.Lock()

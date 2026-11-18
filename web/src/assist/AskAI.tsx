@@ -28,10 +28,11 @@ export type Conversation = {
 };
 // Mirrors assist.MaxMessage; the server enforces it.
 const maxMessage = 8000;
-export type AssistRequest = { kind: 'project' } | { kind: 'plan'; planId: string } | { kind: 'drift'; scanId: string } | { kind: 'resource'; resourceId: string } | { kind: 'import'; import: ImportRequest };
+// action is a quick action prompt (AI-01.10); cost attaches the session's existing cost estimate.
+export type AssistRequest = { kind: 'project'; action?: string; cost?: boolean } | { kind: 'plan'; planId: string } | { kind: 'drift'; scanId: string } | { kind: 'resource'; resourceId: string } | { kind: 'import'; import: ImportRequest };
 // review is the first turn (AI-01.08): the review prompt and the package, byte for byte what
 // Send submits and what Copy and Download hand over.
-export type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure; prompt: string; review: string };
+export type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure; prompt: string; review: string; costAvailable?: boolean; costHidden?: number };
 type Exported = { kind: string; sha256: string; markdown: string; filename: string; prompt: string; review: string };
 
 export const assistSettingsQuery = { queryKey: ['ai-settings'], queryFn: () => api<AssistSettings>('ai/settings') };
@@ -70,7 +71,8 @@ function save(filename: string, text: string) {
 // new or open conversation only when the user presses it.
 export type Approve = { label: string; run: (p: AssistPackage, provider: AssistProvider) => Promise<void> };
 
-export function AssistDrawer({ scope, request, title, onClose, approve }: { scope: PlanScope; request: AssistRequest; title: string; onClose: () => void; approve?: Approve }) {
+// onCost (quick actions) shows the opt-in to attach an existing cost estimate when the server offers one.
+export function AssistDrawer({ scope, request, title, onClose, approve, onCost }: { scope: PlanScope; request: AssistRequest; title: string; onClose: () => void; approve?: Approve; onCost?: (attach: boolean) => void }) {
   const pkg = useQuery({
     queryKey: ['ai-package', scopeKey(scope), JSON.stringify(request)],
     queryFn: () => post<AssistPackage>(scopedPath(scope, 'ai/packages'), request),
@@ -134,12 +136,15 @@ export function AssistDrawer({ scope, request, title, onClose, approve }: { scop
   const error = pkg.error instanceof ApiError ? pkg.error : undefined;
   const p = pkg.data;
   const disclosure = p?.disclosure;
+  // A quick action's first turn exists only in the preview; export returns plain packages and reviews.
+  const quick = 'action' in request && !!request.action;
+  const attached = 'cost' in request && !!request.cost;
   return <Drawer label="AI context preview" onClose={onClose}>
    <div className="inspector-header"><span><Sparkles size={15} />{title}</span><Button variant="ghost" size="icon" aria-label="Close AI context preview" onClick={onClose}><X size={16} /></Button></div>
    <div className="inspector-body assist-preview">
     {pkg.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Building the context package on this machine…</p></div>
       : error?.code === 'package_blocked' ? <div className="empty-state error-state" role="alert"><Ban size={26} /><h2>Sharing blocked</h2><p>{error.message}</p>{error.fields.length > 0 && <><p>Fields that still look secret or local (values are not shown):</p><ul className="assist-fields">{error.fields.map(f => <li key={f}><code>{f}</code></li>)}</ul></>}</div>
-      : pkg.error ? <div className="empty-state error-state" role="alert"><p>{pkg.error.message}</p></div>
+      : pkg.error ? <div className="empty-state error-state" role="alert"><p>{pkg.error.message}</p>{onCost && attached && <Button variant="outline" onClick={() => onCost(false)}>Continue without cost data</Button>}</div>
       : p && p.sections.length === 0 ? <div className="empty-state"><h2>Nothing to share</h2><p>This context package has no content.</p></div>
       : p && <>
        {disclosure && <ul className="assist-disclosure" aria-label="Before you share">{disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
@@ -147,10 +152,14 @@ export function AssistDrawer({ scope, request, title, onClose, approve }: { scop
         <div><dt>Included</dt><dd>{p.sections.join(', ')}</dd></div>
         <div><dt>Removed for size</dt><dd>{p.dropped.length ? p.dropped.join(', ') : 'Nothing'}</dd></div>
         <div><dt>Never included</dt><dd>State values, .tfvars values, saved plans, plan JSON, environment, backend settings and local paths. Values that look secret are shown as [redacted] or their file is left out; detection is heuristic, so read the text below before you share it.</dd></div>
-        {p.prompt && <div><dt>Review prompt</dt><dd className="mono">{p.prompt}</dd></div>}
+        {p.prompt && <div><dt>{quick ? 'Quick action prompt' : 'Review prompt'}</dt><dd className="mono">{p.prompt}</dd></div>}
         <div><dt>Package SHA-256</dt><dd className="mono" title={p.sha256}>{p.sha256.slice(0, 16)}…</dd></div>
        </dl>
-       {approve ? <pre className="assist-text" aria-label="Text to share: context package" tabIndex={0}>{p.markdown}</pre>
+       {onCost && (p.costAvailable || attached) && <label className="assist-cost"><input type="checkbox" checked={attached} onChange={e => onCost(e.target.checked)} />
+        <span>Attach this session's latest Infracost estimate: workspace, Infracost version, pricing basis and finish time, totals, coverage, per-type counts and monthly change, and caveats. Individual cost line items are never shared. Hclaro reuses this completed estimate and does not start a new Infracost run.</span></label>}
+       {attached && !!p.costHidden && <p className="plan-warning" role="alert"><TriangleAlert size={14} /><span>{p.costHidden} cost {p.costHidden === 1 ? 'line was' : 'lines were'} hidden because {p.costHidden === 1 ? 'it looked' : 'they looked'} secret or local. The attached cost summary is incomplete; the package says so too.</span></p>}
+       {onCost && !p.costAvailable && !attached && <p className="muted assist-note">No cost estimate from this session is attached, so the assistant gets no pricing data.</p>}
+       {approve && !p.prompt ? <pre className="assist-text" aria-label="Text to share: context package" tabIndex={0}>{p.markdown}</pre>
          : <pre className="assist-text" aria-label="Text to share: review prompt and context package" tabIndex={0}>{p.review}</pre>}
        {handed && <p className="info-line" role="status">Context {handed.how}{handed.to && <> for {handed.to}. Paste it into {handed.to} yourself: Hclaro did not open or run it</>}. Hclaro's protections end here: what happens to this text is now up to you and the assistant you give it to.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
@@ -159,16 +168,16 @@ export function AssistDrawer({ scope, request, title, onClose, approve }: { scop
     <div className="form-actions">
      <Button variant="ghost" onClick={onClose}>Cancel</Button>
      {p && p.sections.length > 0 && <>
-      {handoffs.length ? handoffs.map(h => <Button key={h.id} variant="outline" disabled={busy} onClick={() => void handOver('copy', h.name)}><Copy size={14} />Copy for {h.name}</Button>)
+      {!quick && <>{handoffs.length ? handoffs.map(h => <Button key={h.id} variant="outline" disabled={busy} onClick={() => void handOver('copy', h.name)}><Copy size={14} />Copy for {h.name}</Button>)
         : <Button variant="outline" disabled={busy} onClick={() => void handOver('copy')}><Copy size={14} />Copy</Button>}
-      <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button>
+      <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button></>}
       {provider && settings && <>
        {eligible.length > 1 && !approve && <select aria-label="Assistant for this request" value={provider.id} onChange={e => setPicked(e.target.value)}>{eligible.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>}
        <Button disabled={busy || !settings.disclosureAccepted || !!chatId} title={settings.disclosureAccepted ? undefined : 'Accept the AI disclosure in Settings first.'} onClick={() => void send()}><Send size={14} />{approve ? approve.label : `Review with ${provider.name}`}</Button>
       </>}
      </>}
     </div>
-    {p && p.sections.length > 0 && handoffs.length > 0 && <p className="muted assist-note">{handoffs.map(h => h.name).join(' and ')} {handoffs.length > 1 ? 'are' : 'is'} handoff-only: copy or download the context and give it to the assistant yourself. Hclaro never runs {handoffs.length > 1 ? 'them' : 'it'}.</p>}
+    {p && p.sections.length > 0 && handoffs.length > 0 && !quick && <p className="muted assist-note">{handoffs.map(h => h.name).join(' and ')} {handoffs.length > 1 ? 'are' : 'is'} handoff-only: copy or download the context and give it to the assistant yourself. Hclaro never runs {handoffs.length > 1 ? 'them' : 'it'}.</p>}
     {p && provider && settings && !settings.disclosureAccepted && <p className="muted assist-note">To send this to {provider.name}, accept the AI disclosure in Settings first.</p>}
    </div>
   </Drawer>;
@@ -222,7 +231,7 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
     <ol className="assist-turns" aria-label="Messages">
      {c.turns.map((t, i) => t.role === 'context' ? <li key={i} className="assist-turn context" role="note">Project context attached (hash <code title={t.sha256}>{t.sha256?.slice(0, 12)}…</code>)</li> : <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
       {t.role === 'assistant' ? <pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{t.text || '(empty reply)'}</pre>
-        : t.prompt ? <p>Asked for a review of the context package (<code>{t.prompt}</code>).</p>
+        : t.prompt ? <p>{t.prompt.startsWith('qa-') ? 'Ran a quick action on the context package' : 'Asked for a review of the context package'} (<code>{t.prompt}</code>).</p>
         : <p>{t.text || 'Shared the context package.'}</p>}</li>)}
     </ol>
     {running && <div className="assist-running" role="status"><LoaderCircle className="spin" size={14} /><span>Waiting for {name}…</span><Button variant="outline" size="small" disabled={busy} onClick={() => void act('cancel')}><Square size={12} />Cancel</Button></div>}

@@ -19,6 +19,8 @@ const chat = (turns: object[], extra = {}) => ({ id, provider: 'claude', kind: '
 const listed = (extra = {}) => ({ id, provider: 'claude', kind: 'conversation', state: 'ready', title: 'What is a moved block?', project: 'net', workspace: 'default', here: true, startedAt: at, ...extra });
 
 let posts: { url: string; body: unknown }[] = [];
+let blockedPackage = false;
+let costRefused = false;
 let gets: string[] = [];
 function serve(settings: object = {}, conversations: object[] = [], current: () => object = () => chat([])) {
   posts = [];
@@ -28,7 +30,13 @@ function serve(settings: object = {}, conversations: object[] = [], current: () 
     else gets.push(url);
     if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64) });
     if (url.endsWith('/ai/settings')) return Response.json({ enabled: true, strictLocal: false, handoff: true, headless: true, disclosure, disclosureAccepted: true, providers: [claude, codex], defaultProvider: 'claude', ...settings });
-    if (url.endsWith('/ai/packages')) return Response.json(pkg);
+    if (url.endsWith('/ai/packages')) {
+      const req = JSON.parse(String(init?.body)) as { action?: string; cost?: boolean };
+      if (costRefused && req.cost) return Response.json({ error: 'cost_unavailable', reason: 'There is no current cost estimate in this session to attach.' }, { status: 409 });
+      if (blockedPackage) return Response.json({ error: 'package_blocked', reason: 'Some values still look secret.', blockedFields: ['files[0]'] }, { status: 422 });
+      // A quick action's preview is its first turn: the prompt and the package (AI-01.10).
+      return Response.json(req.action ? { ...pkg, prompt: req.action, review: `FIRST TURN ${req.action}${req.cost ? ' + cost' : ''}`, costAvailable: req.action === 'qa-cost@1', costHidden: req.cost ? 1 : undefined } : pkg);
+    }
     if (url.endsWith('/ai/conversations') && init?.method === 'POST') return Response.json(chat([{ role: 'user', text: 'hi', at }], { state: 'running' }), { status: 202 });
     if (url.endsWith('/ai/conversations')) return Response.json({ conversations });
     if (url.endsWith(`/ai/conversations/${id}/context`)) return Response.json(chat([]));
@@ -36,12 +44,14 @@ function serve(settings: object = {}, conversations: object[] = [], current: () 
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
 }
-function show(scope: PlanScope = { kind: 'launch' }) {
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AssistantPage scope={scope} project="net" workspace="default" /></QueryClientProvider>);
+function show(scope: PlanScope = { kind: 'launch' }, noProject = false) {
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AssistantPage scope={scope} project="net" workspace="default" noProject={noProject} /></QueryClientProvider>);
 }
 const started = () => posts.filter(p => p.url.endsWith('/ai/conversations'));
 
 afterEach(() => {
+  blockedPackage = false;
+  costRefused = false;
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -130,5 +140,99 @@ describe('AI Assistant page', () => {
     expect(screen.getByText(/This conversation belongs to app \/ prod/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Follow-up message')).toBeNull();
     expect(gets.some(u => u.endsWith(`/ai/conversations/${other}`))).toBe(false);
+  });
+
+  const actions = [['Describe project', 'qa-describe@1'], ['Architecture review', 'qa-architecture@1'], ['Security review', 'qa-security@1'], ['Cost analysis', 'qa-cost@1'], ['Find issues', 'qa-issues@1'], ['Suggest improvements', 'qa-improve@1']];
+
+  it.each(actions)('%s previews prompt and package, then starts with that prompt', async (label, prompt) => {
+    serve();
+    const user = userEvent.setup();
+    show();
+    await user.type(await screen.findByLabelText('Message'), 'typed text stays');
+    await user.click(screen.getByRole('button', { name: label }));
+    // The preview shows the first turn (prompt + package); nothing is sent yet.
+    expect((await screen.findByLabelText('Text to share: review prompt and context package')).textContent).toBe(`FIRST TURN ${prompt}`);
+    expect(screen.getByText('Quick action prompt')).toBeInTheDocument();
+    expect(posts).toEqual([{ url: '/api/v1/ai/packages', body: { kind: 'project', action: prompt } }]);
+    expect(started()).toEqual([]);
+    // The prompt is only in the preview, so no Copy or Download of it.
+    expect(screen.queryByRole('button', { name: /Copy/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: `Start ${label.toLowerCase()}` }));
+    expect(started()).toEqual([{ url: '/api/v1/ai/conversations', body: { provider: 'claude', disclosureVersion: '5', prompt, packageSha256: hash } }]);
+    expect(await screen.findByLabelText('Follow-up message')).toBeInTheDocument();
+  });
+
+  it('attaches the existing cost estimate only when the user ticks it', async () => {
+    serve();
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole('button', { name: 'Cost analysis' }));
+    const attach = await screen.findByLabelText(/Attach this session's latest Infracost estimate/);
+    expect(attach).not.toBeChecked();
+    expect(attach.closest('label')).toHaveTextContent(/totals, coverage, per-type counts and monthly change, and caveats\. Individual cost line items are never shared\. .*does not start a new Infracost run/);
+    expect(screen.queryByText(/cost summary is incomplete/)).toBeNull();
+    await user.click(attach);
+    expect((await screen.findByLabelText('Text to share: review prompt and context package')).textContent).toBe('FIRST TURN qa-cost@1 + cost');
+    // A hidden line is called out: the attached summary is incomplete.
+    expect(screen.getByRole('alert')).toHaveTextContent('1 cost line was hidden because it looked secret or local. The attached cost summary is incomplete');
+    expect(posts.filter(p => p.url.endsWith('/ai/packages')).map(p => p.body)).toEqual([{ kind: 'project', action: 'qa-cost@1' }, { kind: 'project', action: 'qa-cost@1', cost: true }]);
+    await user.click(screen.getByRole('button', { name: 'Start cost analysis' }));
+    expect(started()[0].body).toEqual({ provider: 'claude', disclosureVersion: '5', prompt: 'qa-cost@1', packageSha256: hash });
+    // Other actions never offer cost data.
+    await user.click(screen.getByRole('button', { name: 'New conversation' }));
+    await user.click(screen.getByRole('button', { name: 'Security review' }));
+    await screen.findByLabelText('Text to share: review prompt and context package');
+    expect(screen.queryByLabelText(/existing cost estimate/)).toBeNull();
+  });
+
+  it.each([
+    ['no project', {}, true, /Open a project to use quick actions/],
+    ['handoff-only assistant', { providers: [codex] }, false, /need an assistant Hclaro can run/],
+    ['strict local-only', { headless: false }, false, /need an assistant Hclaro can run/],
+    ['disclosure not accepted', { disclosureAccepted: false }, false, /Accept the AI disclosure in Settings to use quick actions/]
+  ])('disables quick actions with a reason: %s', async (_, settings, noProject, reason) => {
+    serve(settings);
+    show({ kind: 'launch' }, noProject);
+    expect(await screen.findByText(reason)).toBeInTheDocument();
+    for (const [label] of actions) expect(screen.getByRole('button', { name: label })).toBeDisabled();
+  });
+
+  it('shows a blocked package and offers no start', async () => {
+    serve();
+    blockedPackage = true;
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole('button', { name: 'Find issues' }));
+    expect(await screen.findByText('Sharing blocked')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start find issues' })).toBeNull();
+    expect(started()).toEqual([]);
+  });
+
+  it('lets the user continue without cost data when attaching is refused', async () => {
+    serve();
+    costRefused = true;
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole('button', { name: 'Cost analysis' }));
+    await user.click(await screen.findByLabelText(/Attach this session's latest Infracost estimate/));
+    expect(await screen.findByText(/no current cost estimate/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start cost analysis' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Continue without cost data' }));
+    expect((await screen.findByLabelText('Text to share: review prompt and context package')).textContent).toBe('FIRST TURN qa-cost@1');
+    expect(screen.getByLabelText(/Attach this session's latest Infracost estimate/)).not.toBeChecked();
+    expect(started()).toEqual([]);
+  });
+
+  it('resets the cost checkbox when the action is opened again', async () => {
+    serve();
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole('button', { name: 'Cost analysis' }));
+    await user.click(await screen.findByLabelText(/latest Infracost estimate/));
+    await screen.findByText(/cost summary is incomplete/);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Cost analysis' }));
+    expect(await screen.findByLabelText(/latest Infracost estimate/)).not.toBeChecked();
+    expect(posts.filter(p => p.url.endsWith('/ai/packages')).map(p => p.body).at(-1)).toEqual({ kind: 'project', action: 'qa-cost@1' });
   });
 });
