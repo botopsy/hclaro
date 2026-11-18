@@ -1,11 +1,11 @@
 // Typed navigation model (M21). The sidebar renders these items; availability and the active
 // state are derived from the parsed route and the current view, never from URL substrings.
-import { FolderTree, GitBranch, GitCompareArrows, History, Import, Layers3, LayoutDashboard, Network, ScanSearch, Settings2, Terminal, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
+import { FolderTree, GitBranch, GitCompareArrows, History, Import, Layers3, LayoutDashboard, Network, ScanSearch, Settings2, Sparkles, Terminal, Waypoints, Workflow, Wrench, type LucideIcon } from 'lucide-react';
 import type { Route } from '../router';
 
 // Every page the workbench can show for a project. Explorer views also live in Hub
 // workspace URLs (see router.ts); the others are kept in memory for the launch project.
-export type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Settings' | 'Plans' | 'Drift' | 'Graph' | 'Discovery' | 'Import' | 'Operations';
+export type View = 'Overview' | 'Resources' | 'Modules' | 'Providers' | 'Tools' | 'Git' | 'Settings' | 'Plans' | 'Drift' | 'Graph' | 'Discovery' | 'Import' | 'Operations' | 'Assistant';
 
 export type NavGroup = 'project' | 'analyze' | 'manage' | 'utility';
 
@@ -67,6 +67,11 @@ export const navItems: readonly NavItem[] = [
   { id: 'settings', label: 'Settings', icon: Settings2, group: 'utility', scope: 'app', target: { kind: 'view', view: 'Settings' } }
 ];
 
+// Items shown only while AI assistance is on for this session (AI-01.09): hidden, not disabled.
+export const aiNavItems: readonly NavItem[] = [
+  { id: 'assistant', label: 'AI Assistant', icon: Sparkles, group: 'analyze', scope: 'project', target: { kind: 'view', view: 'Assistant' }, description: 'Ask an AI assistant, with or without previewed project context' }
+];
+
 // The two workflows behind the Import & discovery entry. They stay separate pages.
 export const importDiscoveryTabs: readonly { view: View; label: string }[] = [
   { view: 'Import', label: 'Import existing' },
@@ -88,6 +93,8 @@ export type NavContext = {
   projectWorkspace?: string;
   // The server runs plans and applies in Hub workspaces (session capability).
   scopedExecution?: boolean;
+  // AI assistance is on for this session: aiNavItems are shown.
+  ai?: boolean;
 };
 
 export type NavState = {
@@ -121,8 +128,8 @@ export function navState(item: NavItem, context: NavContext): NavState {
   return { enabled: true, active };
 }
 
-export function itemsIn(group: NavGroup) {
-  return navItems.filter(item => item.group === group);
+export function itemsIn(group: NavGroup, ai = false) {
+  return (ai ? [...navItems, ...aiNavItems] : navItems).filter(item => item.group === group);
 }
 
 export function navItem(id: string) {
@@ -135,6 +142,6 @@ export function navItem(id: string) {
 export function viewTrail(view: View): string[] {
   const tab = importDiscoveryTabs.find(t => t.view === view);
   if (tab) return ['Import & discovery', tab.label];
-  const item = navItems.find(i => i.target.kind === 'view' && i.target.view === view);
+  const item = [...navItems, ...aiNavItems].find(i => i.target.kind === 'view' && i.target.view === view);
   return [item?.label || view];
 }

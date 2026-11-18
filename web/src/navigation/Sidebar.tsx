@@ -78,7 +78,7 @@ export function Sidebar({ id, context, compact, onToggleCompact, onCloseDrawer, 
     const headingId = `${id}-${name}`;
     return <div className={`nav-group nav-group-${name}`} role="group" aria-labelledby={label ? headingId : undefined} aria-label={label ? undefined : name === 'project' ? 'Project' : 'Project utilities'}>
      {label && <div className="nav-label" id={headingId}>{label}</div>}
-     <ul>{itemsIn(name).map(item)}</ul>
+     <ul>{itemsIn(name, context.ai).map(item)}</ul>
     </div>;
   }
 

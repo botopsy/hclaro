@@ -70,3 +70,17 @@
 .assist-turn > p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assist-compose { display: grid; gap: 4px; }
 .assist-compose textarea { width: 100%; resize: vertical; font: inherit; }
+
+/* AI Assistant page (AI-01.09): conversation list beside the open conversation. */
+.assistant-page { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.assistant-list { display: grid; gap: 8px; }
+.assistant-list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.assistant-item { display: grid; gap: 2px; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.assistant-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-item.active { border-color: var(--accent); }
+.assistant-item.elsewhere { opacity: 0.75; }
+.assistant-new { display: grid; gap: 10px; }
+.assistant-new select { max-width: 360px; }
+.assistant-mode { display: grid; gap: 4px; border: 0; padding: 0; margin: 0; }
+.assist-turn.context { font-size: 0.85em; color: var(--muted); }
+@media (width <= 900px) { .assistant-page { grid-template-columns: 1fr; } }

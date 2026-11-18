@@ -56,7 +56,7 @@ const MaxBytes = 128 << 10
 const maxValue = 1024
 
 // dropOrder lists the optional sections, lowest priority first.
-var dropOrder = []string{"configuration", "dependencies", "variables", "outputs", "attributes"}
+var dropOrder = []string{"configuration", "dependencies", "variables", "outputs", "resources", "attributes"}
 
 // ErrTooLarge means the required sections alone exceed MaxBytes.
 var ErrTooLarge = errors.New("context package exceeds the size budget even without optional sections")
@@ -98,6 +98,8 @@ type Package struct {
 	SHA256   string   `json:"sha256"`
 	Sections []string `json:"sections"`
 	Dropped  []string `json:"dropped"`
+	// Fingerprint identifies the files a project package was built from (ProjectFingerprint).
+	Fingerprint string `json:"-"`
 }
 
 type section struct {

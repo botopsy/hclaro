@@ -41,3 +41,15 @@ func TestAssistRunIsMetadataOnly(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// A conversation without a package (AI-01.09) says so; nothing else changes.
+func TestAssistChatSummary(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	s.RecordAssist(assist.RunRecord{RunScope: assist.RunScope{Project: "network", Workspace: "default"}, ID: id(8), Provider: "claude", Kind: assist.KindChat,
+		SHA256: strings.Repeat("cd", 32), Status: assist.RunCompleted, StartedAt: t0})
+	e, ok := open(t, dir).Get(id(8))
+	if !ok || e.Assist.ContextKind != "conversation" || !strings.Contains(e.Outcome.Summary, "without project data") {
+		t.Fatalf("%+v", e)
+	}
+}

@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"time"
 
 	"hclaro/internal/assist"
 	"hclaro/internal/drift"
+	"hclaro/internal/gitctx"
 	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
@@ -45,6 +47,21 @@ type assistSource struct {
 	detail  func(string, string) (drift.Detail, error)
 	preview func(context.Context, imports.Request) (imports.Preview, error)
 	fail    func(http.ResponseWriter, error)
+	// git lists the configuration files Git does not ignore (AI-01.09).
+	git *gitctx.Service
+	// bound reports whether the user is still in the project and workspace this source
+	// resolved: the launch workspace was not switched, or the Hub read context is still open.
+	// Unlike current, re-reading the same workspace does not change it.
+	bound func() bool
+}
+
+// gitFiles asks Git which configuration files under root it does not ignore.
+func gitFiles(ctx context.Context, svc *gitctx.Service, root string) assist.GitFiles {
+	if svc == nil {
+		svc = gitctx.New()
+	}
+	listed, repo, ok := svc.ConfigFiles(ctx, root)
+	return assist.GitFiles{Repo: repo, Listed: listed, Known: ok}
 }
 
 func providerNames(snap workspace.Snapshot) []string {
@@ -126,6 +143,8 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			preview: func(_ context.Context, req imports.Request) (imports.Preview, error) {
 				return manager.PreviewImport(req), nil
 			},
+			git:   manager.Git,
+			bound: func() bool { return store.Get().Info.Workspace == snap.Info.Workspace },
 		}, true
 	}
 	// hubSource resolves an open Hub context. Plans, drift scans and import previews live in
@@ -145,6 +164,11 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 				return err == nil && now.Snapshot().CapturedAt == snap.CapturedAt
 			},
 			fail: func(w http.ResponseWriter, err error) { scopeError(w, r, hub, err) },
+			git:  hub.Git,
+			bound: func() bool {
+				_, _, err := hub.Context(cid)
+				return err == nil
+			},
 		}
 		if kind != assist.KindPlan && kind != assist.KindDrift && kind != assist.KindImport {
 			return src, true
@@ -228,14 +252,16 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		if !packageHash.MatchString(body.PackageSHA256) {
-			aiRefusal(w, &assist.Refusal{Code: assist.RefuseNotFound})
-			return
-		}
 		scope := assist.RunScope{Project: src.scope.Project, Root: src.scope.Root, Workspace: src.scope.Workspace, Engine: src.scope.Engine}
 		var c assist.Conversation
 		var err error
 		switch {
+		case body.PackageSHA256 == "" && body.Prompt == "":
+			// Conversation only (AI-01.09): no package. A Hub conversation is bound to its read
+			// context; a launch one to the workspace it started in.
+			c, err = sess.StartChat(src.key, body.Provider, body.DisclosureVersion, scope, body.Message, src.bound)
+		case !packageHash.MatchString(body.PackageSHA256):
+			err = &assist.Refusal{Code: assist.RefuseNotFound}
 		case body.Prompt == "":
 			c, err = sess.StartConversation(src.key, body.PackageSHA256, body.Provider, body.DisclosureVersion, scope, body.Message)
 		case body.Message != "": // a review's first message is the prompt itself
@@ -291,6 +317,36 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			writeJSON(w, 202, c)
 		}
 	}
+	// attach adds a previewed project package to an open conversation as its next turn.
+	attach := func(w http.ResponseWriter, r *http.Request, key string) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct {
+			PackageSHA256 string `json:"packageSha256"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if id, ok := conversationID(w, r); ok {
+			if !packageHash.MatchString(body.PackageSHA256) {
+				aiRefusal(w, &assist.Refusal{Code: assist.RefuseNotFound})
+				return
+			}
+			c, err := sess.Attach(key, id, body.PackageSHA256)
+			if err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 200, c)
+		}
+	}
+	list := func(w http.ResponseWriter, key, workspace string) {
+		if sess, ok := on(w); ok {
+			writeJSON(w, 200, map[string]any{"conversations": sess.List(key, workspace)})
+		}
+	}
 	cancelTurn := func(w http.ResponseWriter, r *http.Request, key string) {
 		sess, ok := on(w)
 		if !ok {
@@ -331,6 +387,10 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			start(w, r, src)
 		}
 	})
+	mux.HandleFunc("GET /api/v1/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
+		list(w, "launch", store.Get().Info.Workspace)
+	})
+	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/context", func(w http.ResponseWriter, r *http.Request) { attach(w, r, "launch") })
 	mux.HandleFunc("GET /api/v1/ai/conversations/{id}", func(w http.ResponseWriter, r *http.Request) { get(w, r, "launch") })
 	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/messages", func(w http.ResponseWriter, r *http.Request) { message(w, r, "launch") })
 	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/cancel", func(w http.ResponseWriter, r *http.Request) { cancelTurn(w, r, "launch") })
@@ -362,6 +422,14 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			}
 		}
 	}
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := on(w); ok {
+			if c := openContext(w, r, hub); c != nil {
+				list(w, r.PathValue("cid"), c.Workspace)
+			}
+		}
+	})
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/context", hubConversation(attach))
 	mux.HandleFunc("GET /api/v1/contexts/{cid}/ai/conversations/{id}", hubConversation(get))
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/messages", hubConversation(message))
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/cancel", hubConversation(cancelTurn))
@@ -450,8 +518,25 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 			return
 		}
 		p, err = assist.Resource(src.scope, res)
+	case assist.KindProject:
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
+		defer cancel()
+		p, err = assist.Project(src.scope, gitFiles(ctx, src.git, src.scope.Root))
+		// Before every turn: same project and workspace, and the files (and what Git ignores)
+		// still give the fingerprint of the bytes this package was built from. A snapshot
+		// re-read or a change outside the package scope does not make it stale.
+		root, svc, built := src.scope.Root, src.git, p.Fingerprint
+		fresh = func() bool {
+			if !src.bound() {
+				return false
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			fp, err := assist.ProjectFingerprint(root, gitFiles(ctx, svc, root))
+			return err == nil && fp == built
+		}
 	default:
-		reasonJSON(w, 400, "invalid_kind", "Choose a plan, drift scan, import or resource.")
+		reasonJSON(w, 400, "invalid_kind", "Choose a plan, drift scan, import, resource or project.")
 		return
 	}
 	var blocked *assist.Blocked
