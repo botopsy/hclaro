@@ -71,6 +71,7 @@ browser-test: binary bin/mock/terraform$(EXE) bin/mock/tofu$(EXE) bin/mock/infra
 	node scripts/browser-smoke.mjs
 	node scripts/browser-hub.mjs
 	node tests/e2e/quick-actions.mjs
+	node tests/e2e/saved-conversations.mjs
 
 cross:
 	mkdir -p dist

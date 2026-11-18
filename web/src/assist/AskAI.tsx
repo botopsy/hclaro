@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, Copy, Download, LoaderCircle, MessageSquareX, Send, Sparkles, Square, TriangleAlert, X } from 'lucide-react';
 import { api, ApiError, post } from '../api';
 import { Button } from '../components/ui/button';
@@ -21,10 +21,12 @@ export type AssistSettings = {
   enabled: boolean; strictLocal: boolean; handoff: boolean; headless: boolean; disclosure: AssistDisclosure;
   disclosureAccepted?: boolean; providers?: AssistProvider[]; defaultProvider?: string;
 };
-type Turn = { role: 'user' | 'assistant' | 'context'; text: string; at: string; prompt?: string; sha256?: string };
+type Turn = { role: 'user' | 'assistant' | 'context'; text: string; at: string; prompt?: string; sha256?: string; hidden?: boolean };
 export type Conversation = {
   id: string; provider: string; kind: string; packageSha256: string; state: 'ready' | 'running' | 'failed' | 'cancelled'; stale?: boolean;
   turns: Turn[]; draft?: string; error?: { code: string; message: string }; usedBytes: number; limitBytes: number; startedAt: string;
+  // Saved conversations (AI-01.11): the file is kept; readOnly says why a reopened one cannot continue.
+  saved: boolean; saveError?: string; readOnly?: string; needsReview?: boolean;
 };
 // Mirrors assist.MaxMessage; the server enforces it.
 const maxMessage = 8000;
@@ -200,6 +202,7 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string>();
   const [seen, setSeen] = useState(0);
+  const client = useQueryClient();
   const c = chat.data;
   // A failed or cancelled message comes back as the draft: put it into an empty box, once per
   // server answer. It stays the draft until the next message is sent.
@@ -207,13 +210,14 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
     setSeen(chat.dataUpdatedAt);
     if (!text) setText(c.draft);
   }
-  async function act(action: 'messages' | 'cancel' | 'close') {
+  async function act(action: 'messages' | 'cancel' | 'close' | 'save', saved?: boolean) {
     setBusy(true);
     setRefused(undefined);
     try {
-      await post(`${path}/${action}`, action === 'messages' ? { text } : {});
+      await post(`${path}/${action}`, action === 'messages' ? { text } : action === 'save' ? { saved } : {});
       if (action === 'close') return onClosed();
       if (action === 'messages') setText('');
+      if (action === 'save') void Promise.all([client.invalidateQueries({ queryKey: ['ai-saved'] }), client.invalidateQueries({ queryKey: ['ai-conversations'] })]);
     } catch (err) {
       setRefused(err instanceof Error ? err.message : 'The request was refused.');
     } finally {
@@ -224,28 +228,34 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
   }
   const tooLong = new TextEncoder().encode(text).length > maxMessage;
   const running = c?.state === 'running';
+  const locked = running || c?.stale || !!c?.readOnly;
   return <section className="assist-run" aria-label="Conversation">
    <p className="plan-warning" role="note"><TriangleAlert size={14} /><span>AI output is unverified. Hclaro never runs, applies or approves anything it suggests; check every claim and command yourself.</span></p>
    {chat.error ? <p className="dialog-error" role="alert">{chat.error.message}</p> : !c ? <p className="muted" role="status"><LoaderCircle className="spin" size={14} /> Starting…</p> : <>
     <p className="muted assist-usage">{name} · {running ? 'waiting for a reply' : c.state} · {Math.ceil(c.usedBytes / 1024)} of {c.limitBytes / 1024} KiB used. Every message resends the whole conversation.</p>
     <ol className="assist-turns" aria-label="Messages">
-     {c.turns.map((t, i) => t.role === 'context' ? <li key={i} className="assist-turn context" role="note">Project context attached (hash <code title={t.sha256}>{t.sha256?.slice(0, 12)}…</code>)</li> : <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
+     {c.turns.map((t, i) => t.hidden ? <li key={i} className="assist-turn context" role="note">Hidden: this saved {t.role === 'context' ? 'project context' : 'message'} now looks like it contains a secret, a credential or a local path.</li>
+       : t.role === 'context' ? <li key={i} className="assist-turn context" role="note">Project context attached (hash <code title={t.sha256}>{t.sha256?.slice(0, 12)}…</code>)</li> : <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
       {t.role === 'assistant' ? <pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{t.text || '(empty reply)'}</pre>
         : t.prompt ? <p>{t.prompt.startsWith('qa-') ? 'Ran a quick action on the context package' : 'Asked for a review of the context package'} (<code>{t.prompt}</code>).</p>
         : <p>{t.text || 'Shared the context package.'}</p>}</li>)}
     </ol>
     {running && <div className="assist-running" role="status"><LoaderCircle className="spin" size={14} /><span>Waiting for {name}…</span><Button variant="outline" size="small" disabled={busy} onClick={() => void act('cancel')}><Square size={12} />Cancel</Button></div>}
-    {c.stale && <p className="plan-warning" role="alert"><TriangleAlert size={14} /><span>Context is stale: the workspace or the shared context changed since this conversation started, so no more messages can be sent. {staleHint ?? 'Close it and start a new conversation.'}</span></p>}
+    {c.readOnly && <p className="plan-warning" role="alert"><TriangleAlert size={14} /><span>Read-only: {c.readOnly}</span></p>}
+    {c.saveError && <p className="dialog-error" role="alert">{c.saveError}</p>}
+    {c.stale && !c.readOnly && <p className="plan-warning" role="alert"><TriangleAlert size={14} /><span>Context is stale: the workspace or the shared context changed since this conversation started, so no more messages can be sent. {staleHint ?? 'Close it and start a new conversation.'}</span></p>}
     {c.error && !running && <p className={c.state === 'cancelled' ? 'muted' : 'dialog-error'} role="alert">{c.error.message}{c.draft !== undefined && ' Your message is back in the box below.'}</p>}
     <label className="assist-compose">Follow-up message
-     <textarea value={text} rows={3} disabled={running || c.stale} onChange={e => setText(e.target.value)} />
+     <textarea value={text} rows={3} disabled={locked} onChange={e => setText(e.target.value)} />
     </label>
+    <label className="assist-cost"><input type="checkbox" checked={c.saved} disabled={busy || (!c.saved && c.needsReview)} onChange={e => void act('save', e.target.checked)} />
+     <span>Save conversation: keep its context, messages and replies as plain text in Hclaro's configuration folder on this machine, to reopen after Hclaro restarts. Unticking deletes the saved copy.</span></label>
     {tooLong && <p className="dialog-error" role="alert">This message is longer than {maxMessage} bytes. Shorten it to send it.</p>}
     {refused && <p className="dialog-error" role="alert">{refused}</p>}
     <div className="form-actions">
      <Button variant="ghost" disabled={busy} onClick={() => void act('close')}><MessageSquareX size={14} />Close conversation</Button>
-     {!running && actions}
-     <Button disabled={busy || running || c.stale || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />Send message</Button>
+     {!running && !c.readOnly && actions}
+     <Button disabled={busy || locked || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />Send message</Button>
     </div>
    </>}
   </section>;

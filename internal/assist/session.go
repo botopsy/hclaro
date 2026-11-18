@@ -9,7 +9,7 @@ import (
 )
 
 // DisclosureVersion changes whenever the disclosure text changes.
-const DisclosureVersion = "7"
+const DisclosureVersion = "8"
 
 // Disclosure is shown next to every package and in Settings (R10).
 type Disclosure struct {
@@ -27,7 +27,7 @@ var disclosure = Disclosure{Version: DisclosureVersion, Lines: []string{
 	sendLine + CostLine,
 	sendLine + "Every follow-up resends the whole conversation (the context, your messages and the replies), so usage and cost grow with each message. A conversation stops at a size limit; Hclaro then asks you to start a new one and never drops messages silently.",
 	claudeLine + "Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
-	sendLine + "The reply is unverified AI output. Hclaro shows it as text, keeps the conversation in memory for this session only, and never runs, applies or approves anything it suggests.",
+	sendLine + "The reply is unverified AI output. Hclaro shows it as text and never runs, applies or approves anything it suggests. It keeps the conversation in memory for this session only, unless you tick Save conversation: then the context, your messages and the replies are stored as plain text in your Hclaro configuration folder on this machine until you delete them or they are unused for 30 days (set retentionDays in ai-conversations/settings.json there).",
 }}
 
 // CostLine is the disclosure of the optional cost section (AI-01.10); the preview's checkbox
@@ -92,12 +92,13 @@ const (
 
 type stored struct {
 	scope, kind, markdown string
+	fingerprint           string // of a project package that can be re-checked after a restart
 	at                    time.Time
 	fresh                 func() bool
 }
 
-// Session holds the master switch and the built packages, in memory only. Nothing is
-// written to disk; disabling AI or closing Hclaro drops every package.
+// Session holds the master switch and the built packages, in memory only. Only conversations
+// the user saves are written (Store, AI-01.11); disabling AI or closing Hclaro drops the rest.
 type Session struct {
 	mu        sync.Mutex
 	strict    bool
@@ -115,6 +116,8 @@ type Session struct {
 	wg            sync.WaitGroup
 	// Record receives metadata of each finished turn (never transcript or reply), e.g. history.
 	Record func(RunRecord)
+	// Store keeps saved conversations; nil when the configuration folder is unavailable.
+	Store *Store
 }
 
 // NewSession returns a session with AI off. providers are detected only once AI is on.
@@ -192,7 +195,7 @@ func (s *Session) Put(scope string, p Package, fresh func() bool) {
 		}
 		delete(s.packages, oldest)
 	}
-	s.packages[key] = stored{scope: scope, kind: p.Kind, markdown: p.Markdown, at: s.Now(), fresh: fresh}
+	s.packages[key] = stored{scope: scope, kind: p.Kind, markdown: p.Markdown, fingerprint: p.Fingerprint, at: s.Now(), fresh: fresh}
 }
 
 // Get returns the package with this hash built in scope. found is false for an unknown,

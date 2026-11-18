@@ -16,7 +16,8 @@ import (
 // Conversations (AI-01.07, OD-AI-8). Every turn is a fresh headless run with the verified argv;
 // Hclaro owns the transcript and replays it on stdin: a fixed preamble, the starting package,
 // every earlier turn and the new message. Nothing persists in the provider. Conversations are
-// held in memory only and dropped when AI is turned off or Hclaro exits.
+// held in memory and dropped when AI is turned off or Hclaro exits; one the user saves is also
+// written to the Store (AI-01.11) and can be reopened later.
 
 // Conversation states. "closed" conversations are removed and answer conversation_not_found.
 const (
@@ -48,6 +49,8 @@ type Turn struct {
 	// sent to the assistant but never returned to the browser again; the preview showed it.
 	SHA256  string `json:"sha256,omitempty"`
 	Context string `json:"-"`
+	// Hidden is a reopened saved turn that failed the scan again (AI-01.11); its text is not shown.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // Listed is one conversation in the session list (AI-01.09). Here is false for a conversation
@@ -61,6 +64,7 @@ type Listed struct {
 	Project   string `json:"project"`
 	Workspace string `json:"workspace"`
 	Here      bool   `json:"here"`
+	Saved     bool   `json:"saved"`
 	StartedAt string `json:"startedAt"`
 }
 
@@ -80,6 +84,12 @@ type Conversation struct {
 	UsedBytes  int      `json:"usedBytes"`
 	LimitBytes int      `json:"limitBytes"`
 	StartedAt  string   `json:"startedAt"`
+	// Saved conversations (AI-01.11): Saved means its file is kept; SaveError is a failed write.
+	// ReadOnly is why a reopened conversation cannot continue; NeedsReview means turns were hidden.
+	Saved       bool   `json:"saved"`
+	SaveError   string `json:"saveError,omitempty"`
+	ReadOnly    string `json:"readOnly,omitempty"`
+	NeedsReview bool   `json:"needsReview,omitempty"`
 }
 
 // Problem is a sanitized turn failure.
@@ -91,6 +101,8 @@ type Problem struct {
 // RunScope identifies the project a conversation is about, for metadata records only.
 type RunScope struct {
 	Project, Root, Workspace, Engine string
+	// ProjectKey (ProjectKey of Root) names the project's saved conversations.
+	ProjectKey string
 }
 
 // RunRecord is the metadata kept about one finished turn: never the transcript or the reply.
@@ -126,6 +138,10 @@ const (
 	RefuseMessageEmpty  = "message_required"
 	RefuseMessageUnsafe = "message_blocked"
 	RefuseInvalidArgs   = "invalid_request"
+	RefuseReadOnly      = "conversation_read_only"
+	RefuseSaveOff       = "saving_unavailable"
+	RefuseSaveFailed    = "save_failed"
+	RefuseSaveUnsafe    = "save_blocked"
 )
 
 var refusalMessages = map[string]string{
@@ -143,6 +159,10 @@ var refusalMessages = map[string]string{
 	RefuseMessageEmpty:  "Type a message first.",
 	RefuseMessageUnsafe: "This message looks like it contains a secret, a credential or a local path, so Hclaro will not send it. Remove it and send again.",
 	RefuseInvalidArgs:   "The request was refused. Reload the page and try again.",
+	RefuseReadOnly:      "This saved conversation is read-only. Nothing was sent.",
+	RefuseSaveOff:       "Conversations cannot be saved here: the per-user configuration folder is unavailable.",
+	RefuseSaveFailed:    "Hclaro could not save this conversation to disk. It stays open in this session, unsaved.",
+	RefuseSaveUnsafe:    "This conversation was not saved: a message or reply looks like it contains a secret, a credential or a local path. It stays open in this session, unsaved.",
 }
 
 // Refusal is a request Hclaro will not start.
@@ -204,6 +224,9 @@ type conversation struct {
 	assist   Assistant
 	cancel   context.CancelFunc
 	lastUsed time.Time
+	// Saved conversations (AI-01.11): how a reopened copy re-checks its context, the fingerprint
+	// of its latest project package and the assistant version it ran with.
+	resume, fingerprint, version string
 }
 
 // The intro is provider-neutral: the same first message goes to Claude Code (headless) and is
@@ -374,11 +397,14 @@ func (s *Session) start(key, hash, provider, disclosureVersion string, scope Run
 	if !ok { // expired between Get and here
 		return Conversation{}, refuse(RefuseNotFound)
 	}
-	c := &conversation{key: key, scope: scope, pkg: markdown, fresh: stored.fresh, assist: p,
+	c := &conversation{key: key, scope: scope, pkg: markdown, fresh: stored.fresh, assist: p, resume: resumeNone, version: s.versionOf(provider),
 		view: Conversation{ID: randomID(), Provider: provider, Kind: kind, SHA256: hash, Turns: []Turn{}, LimitBytes: MaxTranscript, StartedAt: s.Now().UTC().Format(time.RFC3339)}}
 	if kind == KindProject {
 		// A project package can be superseded by attaching current project context.
 		c.fresh, c.attached = nil, stored.fresh
+		if stored.fingerprint != "" {
+			c.resume, c.fingerprint = resumeProject, stored.fingerprint
+		}
 	}
 	if err := s.send(c, message, prompt.ID); err != nil {
 		return Conversation{}, err
@@ -424,7 +450,7 @@ func (s *Session) StartChat(key, provider, disclosureVersion string, scope RunSc
 	if err := s.evict(); err != nil {
 		return Conversation{}, err
 	}
-	c := &conversation{key: key, scope: scope, fresh: fresh, assist: p,
+	c := &conversation{key: key, scope: scope, fresh: fresh, assist: p, resume: resumeWorkspace, version: s.versionOf(provider),
 		view: Conversation{ID: randomID(), Provider: provider, Kind: KindChat, Turns: []Turn{}, LimitBytes: MaxTranscript, StartedAt: s.Now().UTC().Format(time.RFC3339)}}
 	if err := s.send(c, message, ""); err != nil {
 		return Conversation{}, err
@@ -461,6 +487,8 @@ func (s *Session) Attach(key, id, hash string) (Conversation, error) {
 		return Conversation{}, refuse(RefuseNotFound)
 	case kind != KindProject:
 		return Conversation{}, refuse(RefuseInvalidArgs)
+	case c.view.ReadOnly != "":
+		return Conversation{}, refuse(RefuseReadOnly)
 	case c.view.State == StateRunning:
 		return Conversation{}, refuse(RefuseBusy)
 	case !fresh || !pkgFresh:
@@ -477,7 +505,15 @@ func (s *Session) Attach(key, id, hash string) (Conversation, error) {
 	if c.view.SHA256 == "" {
 		c.view.SHA256 = hash
 	}
+	// A package without a fingerprint (a cost estimate attached) cannot be re-checked later.
+	if c.resume != resumeNone {
+		c.resume, c.fingerprint = resumeProject, stored.fingerprint
+		if stored.fingerprint == "" {
+			c.resume, c.fingerprint = resumeNone, ""
+		}
+	}
 	c.lastUsed = s.Now()
+	s.persist(c)
 	return s.snapshot(c), nil
 }
 
@@ -488,21 +524,8 @@ func (s *Session) List(key, workspace string) []Listed {
 	out := []Listed{}
 	if s.enabled {
 		for _, c := range s.conversations {
-			title := ""
-			for _, t := range c.view.Turns {
-				if t.Role == "user" {
-					title = t.Text
-					if t.Prompt != "" {
-						title = "Review (" + t.Prompt + ")"
-					}
-					break
-				}
-			}
-			if r := []rune(title); len(r) > 80 {
-				title = string(r[:80]) + "…"
-			}
-			out = append(out, Listed{ID: c.view.ID, Provider: c.view.Provider, Kind: c.view.Kind, State: c.view.State, Title: title,
-				Project: c.scope.Project, Workspace: c.scope.Workspace, Here: c.key == key && c.scope.Workspace == workspace, StartedAt: c.view.StartedAt})
+			out = append(out, Listed{ID: c.view.ID, Provider: c.view.Provider, Kind: c.view.Kind, State: c.view.State, Title: titleOf(c.view.Turns),
+				Project: c.scope.Project, Workspace: c.scope.Workspace, Here: c.key == key && c.scope.Workspace == workspace, Saved: c.view.Saved, StartedAt: c.view.StartedAt})
 		}
 	}
 	s.mu.Unlock()
@@ -535,10 +558,13 @@ func (s *Session) Send(key, id, message string) (Conversation, error) {
 	if c.gen != gen { // context was attached meanwhile: what was checked is not what is sent
 		fresh = false
 	}
-	if _, err := s.gate(c.view.Provider); err != nil {
+	a, err := s.gate(c.view.Provider)
+	if err != nil {
 		return Conversation{}, err
 	}
 	switch {
+	case c.view.ReadOnly != "":
+		return Conversation{}, refuse(RefuseReadOnly)
 	case c.view.State == StateRunning:
 		return Conversation{}, refuse(RefuseBusy)
 	case !fresh:
@@ -547,6 +573,9 @@ func (s *Session) Send(key, id, message string) (Conversation, error) {
 	if err := checkMessage(message, c.scope.Root, len(c.view.Turns) == 0); err != nil {
 		return Conversation{}, err
 	}
+	// Only now, with no turn running: a reopened saved conversation gets its adapter here, and
+	// the file records the version that ran.
+	c.assist, c.version = a, s.versionOf(c.view.Provider)
 	if err := s.send(c, message, ""); err != nil {
 		return Conversation{}, err
 	}
@@ -591,6 +620,8 @@ func (s *Session) send(c *conversation, message, promptID string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		c.cancel, c.lastUsed = nil, s.Now()
+		// Written with the outcome; a running turn's message is never on disk alone.
+		defer s.persist(c)
 		if code == "" {
 			c.view.Turns = append(c.view.Turns, Turn{Role: "assistant", Text: reply, At: s.Now().UTC().Format(time.RFC3339)})
 			c.view.State = StateReady
