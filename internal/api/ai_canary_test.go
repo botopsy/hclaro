@@ -73,7 +73,8 @@ func captureOutput(t *testing.T) func() string {
 	stdout, stderr, logOut := os.Stdout, os.Stderr, log.Writer()
 	os.Stdout, os.Stderr = f, f
 	log.SetOutput(f)
-	restore := func() { os.Stdout, os.Stderr = stdout, stderr; log.SetOutput(logOut) }
+	// Closed on restore: Windows cannot remove the temp dir while the file is open.
+	restore := func() { os.Stdout, os.Stderr = stdout, stderr; log.SetOutput(logOut); _ = f.Close() }
 	t.Cleanup(restore)
 	return func() string {
 		restore()
