@@ -844,7 +844,8 @@ func (s *Store) Record(r operations.Record) {
 	})
 }
 
-// RecordAssist keeps the metadata of a finished AI assistant request.
+// RecordAssist keeps the metadata of one finished AI conversation turn. Since AI-01.07 the
+// hash (stored as packageSha256 for format compatibility) is that of the turn's exact stdin.
 func (s *Store) RecordAssist(r assist.RunRecord) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

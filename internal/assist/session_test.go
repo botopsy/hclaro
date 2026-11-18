@@ -73,7 +73,7 @@ func TestDisclosureFollowsDetectedProviders(t *testing.T) {
 			if d.Version != DisclosureVersion || len(d.Lines) < 3 || strings.Contains(text, "\x00") {
 				t.Fatalf("%+v", d)
 			}
-			if strings.Contains(text, "Anthropic") != tc.anthropic || strings.Contains(text, "Send runs") != tc.send || strings.Contains(text, "unverified AI output") != tc.send {
+			if strings.Contains(text, "Anthropic") != tc.anthropic || strings.Contains(text, "Send starts a conversation") != tc.send || strings.Contains(text, "resends the whole conversation") != tc.send || strings.Contains(text, "unverified AI output") != tc.send {
 				t.Fatalf("lines %q", d.Lines)
 			}
 			if tc.anthropic && len(d.Lines) != len(disclosure.Lines) {
@@ -100,6 +100,6 @@ func TestAcceptanceResetsWhenDisclosureGrows(t *testing.T) {
 		t.Fatalf("acceptance carried over to new lines: %+v", st)
 	}
 	s.Put("k", Package{Kind: KindPlan, Markdown: "plan", SHA256: "h"}, nil)
-	_, err := s.Start("k", "h", "claude", DisclosureVersion, RunScope{})
+	_, err := s.StartConversation("k", "h", "claude", DisclosureVersion, RunScope{}, "")
 	refused(t, err, RefuseDisclosure)
 }

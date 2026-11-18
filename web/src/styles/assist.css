@@ -64,3 +64,9 @@
   list-style: disc;
   font-size: 13px;
 }
+
+.assist-turns { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2, 8px); }
+.assist-turn > strong { display: block; font-size: 0.85em; }
+.assist-turn > p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assist-compose { display: grid; gap: 4px; }
+.assist-compose textarea { width: 100%; resize: vertical; font: inherit; }

@@ -93,6 +93,12 @@ func newScopedServer(t *testing.T) *scopedServer {
 	launch := operations.NewManager(store, fake, t.TempDir())
 	launch.TempDir = t.TempDir()
 	launch.Locks = hub.Locks
+	// As in cli.go: a closed context drops its AI packages and conversations.
+	hub.ContextClosed = func(cid string) {
+		if launch.Assist != nil {
+			launch.Assist.DropScope(cid)
+		}
+	}
 	t.Cleanup(func() { launch.Close(5 * time.Second) })
 
 	h := Handler(store, launch, hub, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")

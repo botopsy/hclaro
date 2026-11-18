@@ -1,0 +1,175 @@
+import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AssistDrawer } from './AskAI';
+import type { PlanScope } from '../plans/routes';
+
+// AI-01.04 / AI-01.07: Send starts a conversation; replies are untrusted and inert; follow-ups,
+// cancel, failure and close. Fake server only.
+const hash = 'f'.repeat(64);
+const id = '1'.repeat(32);
+const markdown = '# Hclaro context: plan\n';
+const disclosure = { version: '4', lines: ['Every follow-up resends the whole conversation.'] };
+const pkg = { kind: 'plan', markdown, sha256: hash, sections: ['context'], dropped: [], disclosure };
+const provider = { id: 'claude', name: 'Claude Code', mode: 'headless-eligible', version: '2.1.326', path: '/synthetic/bin/claude' };
+const reply = 'Run `terraform apply -auto-approve` and rm -rf / <a href="javascript:alert(1)">click</a> <script>window.pwned=1</script> [x](javascript:alert(1))\nresource "aws_s3_bucket" "b" {}';
+type Turn = { role: string; text: string; at: string };
+const at = '2026-11-18T09:00:00Z';
+const chat = (state: string, turns: Turn[], extra = {}) => ({ id, provider: 'claude', kind: 'plan', packageSha256: hash, state, turns, usedBytes: 2048, limitBytes: 262144, startedAt: at, ...extra });
+const first = [{ role: 'user', text: '', at }, { role: 'assistant', text: reply, at }];
+
+let posts: { url: string; body: unknown }[] = [];
+function serve(settings: object, current: () => object, answers: Record<string, () => Response> = {}) {
+  posts = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') posts.push({ url, body: JSON.parse(String(init.body)) });
+    for (const [suffix, answer] of Object.entries(answers)) if (url.endsWith(suffix)) return answer();
+    if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64) });
+    if (url.endsWith('/ai/settings')) return Response.json({ enabled: true, strictLocal: false, handoff: true, headless: true, disclosure, disclosureAccepted: true, providers: [provider], defaultProvider: 'claude', ...settings });
+    if (url.endsWith('/ai/packages')) return Response.json(pkg);
+    if (url.endsWith('/ai/conversations')) return Response.json(chat('running', [{ role: 'user', text: '', at }]), { status: 202 });
+    if (url.endsWith(`/ai/conversations/${id}/messages`)) return Response.json(chat('running', first), { status: 202 });
+    if (url.endsWith(`/ai/conversations/${id}/cancel`)) return Response.json({ cancelled: true });
+    if (url.endsWith(`/ai/conversations/${id}/close`)) return Response.json({ closed: true });
+    if (url.endsWith(`/ai/conversations/${id}`)) return Response.json(current());
+    return Response.json({ error: 'route_not_found' }, { status: 404 });
+  }));
+}
+function show(scope: PlanScope = { kind: 'launch' }) {
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AssistDrawer scope={scope} request={{ kind: 'plan', planId: 'a'.repeat(32) }} title="Ask AI" onClose={() => {}} /></QueryClientProvider>);
+}
+const started = () => posts.filter(p => p.url.endsWith('/ai/conversations'));
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe('AI conversation', () => {
+  it('starts only on click with the previewed hash and renders replies inert', async () => {
+    serve({}, () => chat('ready', first));
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Context package text');
+    expect(started()).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
+    const text = await screen.findByLabelText('Assistant reply text');
+    expect(started()).toEqual([{ url: '/api/v1/ai/conversations', body: { packageSha256: hash, provider: 'claude', disclosureVersion: '4', message: '' } }]);
+    expect(text.textContent).toBe(reply);
+    const panel = screen.getByRole('region', { name: 'Conversation' });
+    expect(within(panel).queryAllByRole('link')).toHaveLength(0);
+    expect(panel.querySelector('script, a, iframe')).toBeNull();
+    expect((window as unknown as { pwned?: number }).pwned).toBeUndefined();
+    expect(within(panel).getByText(/AI output is unverified/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Every message resends the whole conversation/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /apply|approve/i })).toBeNull();
+    // Only conversation controls: no command buttons derived from the reply.
+    expect(within(panel).getAllByRole('button').map(b => b.textContent)).toEqual(['Close conversation', 'Send message']);
+    expect(screen.getByRole('button', { name: 'Send to Claude Code' })).toBeDisabled();
+  });
+
+  it.each([['single project', { kind: 'launch' }, '/api/v1'], ['Hub', { kind: 'context', contextId: '2'.repeat(32) }, `/api/v1/contexts/${'2'.repeat(32)}`]] as [string, PlanScope, string][])(
+    'sends a follow-up in its own scope (%s)', async (_, scope, prefix) => {
+      let turns = first;
+      serve({}, () => chat('ready', turns));
+      const user = userEvent.setup();
+      show(scope);
+      await screen.findByLabelText('Context package text');
+      await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
+      await screen.findByLabelText('Assistant reply text');
+      turns = [...first, { role: 'user', text: 'Which change is riskiest?', at }, { role: 'assistant', text: 'The replacement.', at }];
+      await user.type(screen.getByLabelText('Follow-up message'), 'Which change is riskiest?');
+      await user.click(screen.getByRole('button', { name: 'Send message' }));
+      expect(await screen.findByText('The replacement.')).toBeInTheDocument();
+      expect(posts.find(p => p.url.endsWith('/messages'))).toEqual({ url: `${prefix}/ai/conversations/${id}/messages`, body: { text: 'Which change is riskiest?' } });
+      expect(screen.getByText('Which change is riskiest?')).toBeInTheDocument();
+      expect(screen.getByLabelText('Follow-up message')).toHaveValue('');
+    });
+
+  it('cancels a running turn and puts the message back', async () => {
+    let state = chat('running', [...first, { role: 'user', text: 'slow one', at }]);
+    serve({}, () => state);
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Context package text');
+    await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
+    const panel = await screen.findByRole('region', { name: 'Conversation' });
+    // The drawer's own Cancel closes the preview; the turn's Cancel is in the panel.
+    state = chat('cancelled', first, { draft: 'slow one', error: { code: 'cancelled', message: 'The request was cancelled.' } });
+    await user.click(await within(panel).findByRole('button', { name: 'Cancel' }));
+    expect(posts.some(p => p.url.endsWith(`/ai/conversations/${id}/cancel`))).toBe(true);
+    expect(await screen.findByText(/The request was cancelled\. Your message is back/)).toBeInTheDocument();
+    expect(screen.getByText('slow one', { selector: 'textarea' })).toBeInTheDocument();
+  });
+
+  it('keeps earlier turns on a failure and returns the refused message', async () => {
+    let state: object = chat('ready', first);
+    serve({}, () => state, { [`/ai/conversations/${id}/messages`]: () => Response.json({ error: 'message_blocked', reason: 'This message looks like it contains a secret.' }, { status: 422 }) });
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Context package text');
+    await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
+    await screen.findByLabelText('Assistant reply text');
+    await user.type(screen.getByLabelText('Follow-up message'), 'password=hunter2');
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    expect(await screen.findByText('This message looks like it contains a secret.')).toBeInTheDocument();
+    // Refused before sending: the text stays for the user to fix.
+    expect(screen.getByLabelText('Follow-up message')).toHaveValue('password=hunter2');
+    expect(screen.getByLabelText('Assistant reply text')).toBeInTheDocument();
+    state = chat('failed', first, { draft: '', error: { code: 'auth_required', message: 'The assistant is not signed in.' } });
+    cleanup();
+    serve({}, () => state);
+    show();
+    await screen.findByLabelText('Context package text');
+    await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
+    expect(await screen.findByText(/The assistant is not signed in\./)).toBeInTheDocument();
+    expect(screen.getByLabelText('Assistant reply text')).toBeInTheDocument();
+  });
+
+  it('refuses an over-long message in the browser and explains the size limit', async () => {
+    serve({}, () => chat('ready', first), { [`/ai/conversations/${id}/messages`]: () => Response.json({ error: 'conversation_too_long', reason: 'This conversation reached its size limit (256 KiB, resent in full every turn). Nothing was sent. Start a new conversation from the preview.' }, { status: 413 }) });
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Context package text');
+    await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
+    const box = await screen.findByLabelText('Follow-up message');
+    await user.click(box);
+    await user.paste('x'.repeat(8001));
+    expect(screen.getByText(/longer than 8000 bytes/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+    await user.clear(box);
+    await user.type(box, 'one more');
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    expect(await screen.findByText(/reached its size limit/)).toBeInTheDocument();
+    expect(box).toHaveValue('one more');
+  });
+
+  it('closes the conversation and allows a new one', async () => {
+    serve({}, () => chat('ready', first));
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Context package text');
+    await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
+    await screen.findByLabelText('Assistant reply text');
+    await user.click(screen.getByRole('button', { name: 'Close conversation' }));
+    expect(posts.some(p => p.url.endsWith(`/ai/conversations/${id}/close`))).toBe(true);
+    expect(screen.queryByRole('region', { name: 'Conversation' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Send to Claude Code' })).toBeEnabled();
+  });
+
+  it('needs the disclosure accepted, and offers no Send in strict local-only mode', async () => {
+    serve({ disclosureAccepted: false }, () => chat('ready', first));
+    show();
+    await screen.findByLabelText('Context package text');
+    expect(screen.getByRole('button', { name: 'Send to Claude Code' })).toBeDisabled();
+    expect(screen.getByText(/accept the AI disclosure in Settings/)).toBeInTheDocument();
+    cleanup();
+
+    serve({ strictLocal: true, headless: false }, () => chat('ready', first));
+    show();
+    await screen.findByLabelText('Context package text');
+    expect(screen.queryByRole('button', { name: /Send to/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+  });
+});

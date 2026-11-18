@@ -4,6 +4,7 @@
 
 Added:
 
+- AI conversations (AI-01.07): **Send** now starts a conversation with follow-up questions, cancel and close. Hclaro replays the whole conversation to the assistant on every message (nothing persists in the assistant), so usage grows with each message; disclosure v4 says so and must be accepted again. Messages are scanned for secrets like the context; a message is at most 8,000 bytes and a conversation 256 KiB, and Hclaro refuses rather than drops anything over a limit. Codex and Copilot CLI stay handoff-only.
 - Optional AI assistance (AI-01): off at every launch. Preview a sanitized context package for a plan, drift scan, import or resource, then copy or download it for any assistant, or send it to Claude Code (2.1.x from 2.1.326), which Hclaro runs once with its tools off. Codex and Copilot CLI are handoff only. See *AI assistance (optional)* in the README and the AI rows of `docs/support-matrix.md`.
 - Changed: when STS returns a caller ARN Hclaro cannot read safely (*ARN withheld*), the apply preflight now blocks instead of binding the approval to the account alone, and two withheld ARNs never count as the same principal; an identity check that answers after a sign-in started or its profile was removed is discarded instead of marking the profile verified (M20).
 - Changed: an apply whose preflight identity was verified is now always checked against STS again before it starts, not only with an account policy rule; a different identity refuses it (M20).

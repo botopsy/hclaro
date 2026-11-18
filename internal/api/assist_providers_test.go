@@ -45,7 +45,7 @@ func (ps providerSet) session() *assist.Session {
 type doFunc func(method, path, body string) *httptest.ResponseRecorder
 
 // checkProviderSet builds and exports each kind under prefix, checks Settings and that Send
-// reaches only a headless-eligible Claude.
+// (a conversation) reaches only a headless-eligible Claude.
 func checkProviderSet(t *testing.T, ps providerSet, do doFunc, prefix string, requests map[string]string) {
 	t.Helper()
 	do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
@@ -75,9 +75,9 @@ func checkProviderSet(t *testing.T, ps providerSet, do doFunc, prefix string, re
 		last = p
 	}
 	for _, h := range ps.handoffs {
-		wantError(t, do("POST", prefix+"/ai/packages/"+last.SHA256+"/run", `{"provider":"`+h.id+`","disclosureVersion":"`+assist.DisclosureVersion+`"}`), 409, "provider_unavailable")
+		wantError(t, do("POST", prefix+"/ai/conversations", startBody(last.SHA256, h.id, "")), 409, "provider_unavailable")
 	}
-	claudeRun := do("POST", prefix+"/ai/packages/"+last.SHA256+"/run", `{"provider":"claude","disclosureVersion":"`+assist.DisclosureVersion+`"}`)
+	claudeRun := do("POST", prefix+"/ai/conversations", startBody(last.SHA256, "claude", ""))
 	if headless {
 		if claudeRun.Code != 202 {
 			t.Fatalf("claude run: %d %s", claudeRun.Code, claudeRun.Body)
