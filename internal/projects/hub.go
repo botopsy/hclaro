@@ -193,8 +193,13 @@ type Hub struct {
 	// Discovery is the session's AWS discovery service. A scope's verifications, scans and
 	// prepared imports are dropped (running scans cancelled) when the scope closes.
 	Discovery *discovery.Service
-	MaxScopes int
-	TempDir   string
+	// ContextClosed, when set, is told the ID of every read context that closes for any reason
+	// (closed, reloaded, evicted, project or workspace removed, scope changed), so state bound
+	// to it, such as AI packages and conversations, is dropped. Called with the Hub lock held:
+	// it must not call back into the Hub.
+	ContextClosed func(cid string)
+	MaxScopes     int
+	TempDir       string
 	// Terminal receives the folder of a scope's saved plan file that could not be deleted.
 	Terminal io.Writer
 	base     context.Context
@@ -519,6 +524,9 @@ func (h *Hub) closeLocked(cid, reason string) {
 	}
 	c.cancel()
 	h.closeScopeLocked(cid)
+	if h.ContextClosed != nil {
+		h.ContextClosed(cid)
+	}
 	delete(h.contexts, cid)
 	h.order = slices.DeleteFunc(h.order, func(id string) bool { return id == cid })
 	if len(h.closed) >= 256 {

@@ -41,6 +41,7 @@ type aiSide struct {
 	base  string // "/api/v1" or "/api/v1/contexts/{cid}"
 	kind  string
 	field string // the record field naming what a package is about
+	chat  string // the last conversation started
 }
 
 func newAISide(mode string, set func(*assist.Session)) *aiSide {
@@ -71,7 +72,7 @@ func (a *aiSide) enable(t *testing.T) {
 	}
 }
 
-// ask builds a package about value and starts a headless run on it. In mid-run mode the run
+// ask builds a package about value and starts a conversation on it. In mid-run mode the turn
 // blocks until cancelled; in enabled mode it completes and its reply is read back.
 func (a *aiSide) ask(t *testing.T, value string) {
 	t.Helper()
@@ -91,23 +92,25 @@ func (a *aiSide) ask(t *testing.T, value string) {
 	if code, out := a.do("POST", a.base+"/ai/packages/"+hash+"/export", `{}`); code != 200 {
 		t.Fatalf("export %d %s", code, out)
 	}
-	if code, out := a.do("POST", a.base+"/ai/packages/"+hash+"/run", runBody); code != 202 {
-		t.Fatalf("run %d %s", code, out)
+	code, out = a.do("POST", a.base+"/ai/conversations", startBody(hash, "stub", "Is it safe to approve?"))
+	if code != 202 {
+		t.Fatalf("conversation %d %s", code, out)
 	}
+	a.chat = between(out, `"id":"`, `"`)
 	if a.mode == aiEnabled {
 		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-			_, out := a.do("GET", "/api/v1/ai/run", "")
-			if strings.Contains(out, `"status":"completed"`) {
+			_, out := a.do("GET", a.base+"/ai/conversations/"+a.chat, "")
+			if strings.Contains(out, `"state":"ready"`) {
 				break
 			}
 			if time.Now().After(deadline) {
-				t.Fatalf("run did not finish: %s", out)
+				t.Fatalf("turn did not finish: %s", out)
 			}
 		}
 	}
 }
 
-// finish checks the in-flight run outlived the whole flow, then cancels it.
+// finish checks the in-flight turn outlived the whole flow, then cancels it.
 func (a *aiSide) finish(t *testing.T, secrets ...string) {
 	t.Helper()
 	if a.mode == aiAbsent || a.mode == aiDisabled {
@@ -116,8 +119,8 @@ func (a *aiSide) finish(t *testing.T, secrets ...string) {
 		}
 		return
 	}
-	_, out := a.do("GET", "/api/v1/ai/run", "")
-	if a.mode == aiMidRun && !strings.Contains(out, `"status":"running"`) {
+	_, out := a.do("GET", a.base+"/ai/conversations/"+a.chat, "")
+	if a.mode == aiMidRun && !strings.Contains(out, `"state":"running"`) {
 		t.Fatalf("the AI request did not stay in flight: %s", out)
 	}
 	a.stub.mu.Lock()
@@ -128,7 +131,7 @@ func (a *aiSide) finish(t *testing.T, secrets ...string) {
 			t.Fatalf("an approval token, binding or canary reached the assistant: %q", s)
 		}
 	}
-	if code, _ := a.do("POST", "/api/v1/ai/run/cancel", `{}`); code != 200 {
+	if code, _ := a.do("POST", a.base+"/ai/conversations/"+a.chat+"/cancel", `{}`); code != 200 {
 		t.Fatal("cancel failed")
 	}
 }
@@ -217,7 +220,7 @@ func launchFlow(t *testing.T, mode string) []string {
 					return
 				default:
 				}
-				for _, r := range [][3]string{{"GET", "/api/v1/ai/run", ""}, {"GET", "/api/v1/ai/settings", ""}, {"POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"` + p1 + `"}`}} {
+				for _, r := range [][3]string{{"GET", "/api/v1/ai/conversations/" + ai.chat, ""}, {"GET", "/api/v1/ai/settings", ""}, {"POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"` + p1 + `"}`}} {
 					w := doWith(s.handler, r[0], r[1], r[2])
 					if b := w.Body.String(); strings.Contains(b, approval.Token) || strings.Contains(b, fixtures.Canary) {
 						select {

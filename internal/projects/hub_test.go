@@ -421,3 +421,54 @@ func TestMissingOrUnsupportedEngineIsReportedHonestly(t *testing.T) {
 		t.Fatalf("%+v", snap.Diagnostic)
 	}
 }
+
+// ContextClosed hears every way a read context closes, so AI state bound to it is dropped
+// (AI-01.07): closed, reloaded, evicted, project changed and project removed.
+func TestContextClosedHookSeesEveryClose(t *testing.T) {
+	t.Setenv("TF_DATA_DIR", "")
+	hub := NewHub(Open(t.TempDir(), now), "")
+	hub.MaxContexts = 2
+	t.Cleanup(hub.Close)
+	var mu sync.Mutex
+	closed := map[string]bool{}
+	hub.ContextClosed = func(cid string) { mu.Lock(); closed[cid] = true; mu.Unlock() }
+	saw := func(cid, why string) {
+		t.Helper()
+		mu.Lock()
+		defer mu.Unlock()
+		if !closed[cid] {
+			t.Fatalf("hook not called for %s", why)
+		}
+	}
+	hub.Engines = func(_, _, selected string, _ []string) (string, string, Adapter, error) {
+		return "terraform", "/fake", &listing{&ignoring{blocking{workspace: selected}}, []string{"a", "b", "c"}}, nil
+	}
+	s, _ := hub.Add(initialized(t, "hooked"), "", "")
+	a, _, _ := hub.Open(s.ID, "a", false)
+	waitLoaded(t, a)
+	if err := hub.CloseContext(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	saw(a.ID, "close")
+	b, _, _ := hub.Open(s.ID, "b", false)
+	waitLoaded(t, b)
+	b2, _, _ := hub.Open(s.ID, "b", true)
+	if b2.ID == b.ID {
+		t.Fatal("reload kept the context ID")
+	}
+	saw(b.ID, "reload")
+	c, _, _ := hub.Open(s.ID, "c", false)
+	d, _, _ := hub.Open(s.ID, "a", false)
+	saw(b2.ID, "eviction")
+	tofu := "tofu"
+	if _, err := hub.Update(s.ID, Change{EnginePreference: &tofu}); err != nil {
+		t.Fatal(err)
+	}
+	saw(c.ID, "project change")
+	saw(d.ID, "project change")
+	e, _, _ := hub.Open(s.ID, "a", false)
+	if err := hub.Remove(s.ID); err != nil {
+		t.Fatal(err)
+	}
+	saw(e.ID, "project removal")
+}

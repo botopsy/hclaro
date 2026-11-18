@@ -27,7 +27,7 @@ function serve(providers: AssistProvider[]) {
     if (url.endsWith('/ai/settings')) return Response.json({ enabled: true, strictLocal: false, handoff: true, headless, disclosure, disclosureAccepted: true, providers, defaultProvider: headless ? 'claude' : undefined });
     if (url.endsWith('/ai/packages')) return Response.json(pkg);
     if (url.endsWith(`/ai/packages/${hash}/export`)) return Response.json({ kind: 'plan', sha256: hash, markdown, filename: `hclaro-plan-${hash.slice(0, 12)}.md` });
-    if (url.endsWith(`/ai/packages/${hash}/run`)) return Response.json({ id: '1'.repeat(32), status: 'running' }, { status: 202 });
+    if (url.endsWith('/ai/conversations')) return Response.json({ id: '1'.repeat(32), state: 'running', turns: [] }, { status: 202 });
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
 }
@@ -79,7 +79,7 @@ describe.each(scopes)('AI handoff without Claude Code (%s)', (_, scope, prefix) 
     await screen.findByLabelText('Context package text');
     expect(actions()).toEqual(['Close AI context preview', 'Cancel', 'Copy for OpenAI Codex', 'Download .md', 'Send to Claude Code']);
     await user.click(screen.getByRole('button', { name: 'Send to Claude Code' }));
-    expect(posts).toEqual([`${prefix}/ai/packages`, `${prefix}/ai/packages/${hash}/run`]);
+    expect(posts).toEqual([`${prefix}/ai/packages`, `${prefix}/ai/conversations`]);
   });
 });
 

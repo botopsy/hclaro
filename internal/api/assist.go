@@ -108,31 +108,6 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 		writeJSON(w, 200, manager.Assist.Settings())
 	})
-	// The session's one headless request: poll it, or cancel it.
-	mux.HandleFunc("GET /api/v1/ai/run", func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := on(w)
-		if !ok {
-			return
-		}
-		run, found := sess.Current()
-		if !found {
-			aiRefusal(w, &assist.Refusal{Code: assist.RefuseNoRun})
-			return
-		}
-		writeJSON(w, 200, run)
-	})
-	mux.HandleFunc("POST /api/v1/ai/run/cancel", func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := on(w)
-		if !ok {
-			return
-		}
-		var body struct{}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		writeJSON(w, 200, map[string]bool{"cancelled": sess.Cancel()})
-	})
-
 	launch := func(w http.ResponseWriter) (assistSource, bool) {
 		if manager.Root() == "" {
 			reasonJSON(w, 409, "no_launch_project", "Open a Hub workspace to ask about it. This session has no project opened from the terminal.")
@@ -230,38 +205,122 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 	}
 
-	// run sends a previewed package to an assistant. The browser names only the hash, the
-	// provider and the disclosure version it accepted; the bytes are the stored package.
-	run := func(w http.ResponseWriter, r *http.Request, src assistSource) {
+	// Conversations (AI-01.07). Start names a previewed package hash, the assistant and the
+	// disclosure version the user accepted; the bytes are the stored package. Every other route
+	// names the conversation ID under the scope it started in; another scope answers
+	// conversation_not_found.
+	start := func(w http.ResponseWriter, r *http.Request, src assistSource) {
 		sess, ok := on(w)
 		if !ok {
 			return
 		}
 		var body struct {
+			PackageSHA256     string `json:"packageSha256"`
 			Provider          string `json:"provider"`
 			DisclosureVersion string `json:"disclosureVersion"`
+			Message           string `json:"message"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		hash := r.PathValue("hash")
-		if !packageHash.MatchString(hash) {
+		if !packageHash.MatchString(body.PackageSHA256) {
 			aiRefusal(w, &assist.Refusal{Code: assist.RefuseNotFound})
 			return
 		}
 		scope := assist.RunScope{Project: src.scope.Project, Root: src.scope.Root, Workspace: src.scope.Workspace, Engine: src.scope.Engine}
-		started, err := sess.Start(src.key, hash, body.Provider, body.DisclosureVersion, scope)
+		c, err := sess.StartConversation(src.key, body.PackageSHA256, body.Provider, body.DisclosureVersion, scope, body.Message)
 		if err != nil {
 			aiRefusal(w, err)
 			return
 		}
-		writeJSON(w, 202, started)
+		writeJSON(w, 202, c)
 	}
-	mux.HandleFunc("POST /api/v1/ai/packages/{hash}/run", func(w http.ResponseWriter, r *http.Request) {
+	conversationID := func(w http.ResponseWriter, r *http.Request) (string, bool) {
+		id := r.PathValue("id")
+		if !idPattern.MatchString(id) {
+			aiRefusal(w, &assist.Refusal{Code: assist.RefuseNoChat})
+			return "", false
+		}
+		return id, true
+	}
+	get := func(w http.ResponseWriter, r *http.Request, key string) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		if id, ok := conversationID(w, r); ok {
+			c, err := sess.Conversation(key, id)
+			if err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 200, c)
+		}
+	}
+	message := func(w http.ResponseWriter, r *http.Request, key string) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct {
+			Text string `json:"text"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if id, ok := conversationID(w, r); ok {
+			c, err := sess.Send(key, id, body.Text)
+			if err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 202, c)
+		}
+	}
+	cancelTurn := func(w http.ResponseWriter, r *http.Request, key string) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if id, ok := conversationID(w, r); ok {
+			cancelled, err := sess.CancelTurn(key, id)
+			if err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 200, map[string]bool{"cancelled": cancelled})
+		}
+	}
+	closeConversation := func(w http.ResponseWriter, r *http.Request, key string) {
+		sess, ok := on(w)
+		if !ok {
+			return
+		}
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if id, ok := conversationID(w, r); ok {
+			if err := sess.CloseConversation(key, id); err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 200, map[string]bool{"closed": true})
+		}
+	}
+	mux.HandleFunc("POST /api/v1/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		if src, ok := launch(w); ok {
-			run(w, r, src)
+			start(w, r, src)
 		}
 	})
+	mux.HandleFunc("GET /api/v1/ai/conversations/{id}", func(w http.ResponseWriter, r *http.Request) { get(w, r, "launch") })
+	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/messages", func(w http.ResponseWriter, r *http.Request) { message(w, r, "launch") })
+	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/cancel", func(w http.ResponseWriter, r *http.Request) { cancelTurn(w, r, "launch") })
+	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/close", func(w http.ResponseWriter, r *http.Request) { closeConversation(w, r, "launch") })
 
 	mux.HandleFunc("POST /api/v1/ai/packages", func(w http.ResponseWriter, r *http.Request) {
 		build(w, r, func(string) (assistSource, bool) { return launch(w) })
@@ -275,11 +334,24 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/packages", func(w http.ResponseWriter, r *http.Request) {
 		build(w, r, func(kind string) (assistSource, bool) { return hubSource(w, r, kind) })
 	})
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/packages/{hash}/run", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		if src, ok := hubSource(w, r, assist.KindResource); ok {
-			run(w, r, src)
+			start(w, r, src)
 		}
 	})
+	// The other Hub conversation routes need only the open read context: the conversation
+	// re-checks its own freshness before every turn.
+	hubConversation := func(handle func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := on(w); ok && openContext(w, r, hub) != nil {
+				handle(w, r, r.PathValue("cid"))
+			}
+		}
+	}
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/ai/conversations/{id}", hubConversation(get))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/messages", hubConversation(message))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/cancel", hubConversation(cancelTurn))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/close", hubConversation(closeConversation))
 	mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/packages/{hash}/export", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := on(w); ok && openContext(w, r, hub) != nil {
 			export(w, r, r.PathValue("cid"))
@@ -396,10 +468,14 @@ func aiRefusal(w http.ResponseWriter, err error) {
 	}
 	status := 409
 	switch r.Code {
-	case assist.RefuseNotFound, assist.RefuseNoRun:
+	case assist.RefuseNotFound, assist.RefuseNoChat:
 		status = 404
-	case assist.RefuseInvalidArgs:
+	case assist.RefuseInvalidArgs, assist.RefuseMessageEmpty:
 		status = 400
+	case assist.RefuseTooLong, assist.RefuseMessageLong:
+		status = 413
+	case assist.RefuseMessageUnsafe:
+		status = 422
 	}
 	reasonJSON(w, status, r.Code, r.Error())
 }

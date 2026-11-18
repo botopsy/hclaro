@@ -1,17 +1,18 @@
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Ban, Copy, Download, LoaderCircle, Send, Sparkles, Square, TriangleAlert, X } from 'lucide-react';
+import { Ban, Copy, Download, LoaderCircle, MessageSquareX, Send, Sparkles, Square, TriangleAlert, X } from 'lucide-react';
 import { api, ApiError, post } from '../api';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 import type { ImportRequest } from '../types';
 
-// AI handoff (AI-01.03) and headless requests (AI-01.04): the server builds a sanitized
+// AI handoff (AI-01.03) and conversations (AI-01.04, AI-01.07): the server builds a sanitized
 // context package; the user previews it and only Copy, Download or Send hands it over.
-// Nothing is shared by opening the preview. A reply is untrusted text: it is rendered as
-// plain text only, with no links, command buttons or actions.
+// Nothing is shared by opening the preview. Send starts a conversation; every message is one
+// headless run of the whole conversation. Replies are untrusted text: rendered as plain text
+// only, with no links, command buttons or actions.
 
 export type AssistDisclosure = { version: string; lines: string[] };
 export type AssistProvider = { id: string; name: string; mode: 'headless-eligible' | 'handoff-only' | 'unsupported'; version?: string; path?: string; reason?: string; message?: string };
@@ -19,7 +20,13 @@ export type AssistSettings = {
   enabled: boolean; strictLocal: boolean; handoff: boolean; headless: boolean; disclosure: AssistDisclosure;
   disclosureAccepted?: boolean; providers?: AssistProvider[]; defaultProvider?: string;
 };
-type AssistRun = { id: string; provider: string; kind: string; sha256: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; reply?: string; error?: { code: string; message: string }; durationMs: number };
+type Turn = { role: 'user' | 'assistant'; text: string; at: string };
+type Conversation = {
+  id: string; provider: string; kind: string; packageSha256: string; state: 'ready' | 'running' | 'failed' | 'cancelled';
+  turns: Turn[]; draft?: string; error?: { code: string; message: string }; usedBytes: number; limitBytes: number; startedAt: string;
+};
+// Mirrors assist.MaxMessage; the server enforces it.
+const maxMessage = 8000;
 export type AssistRequest = { kind: 'plan'; planId: string } | { kind: 'drift'; scanId: string } | { kind: 'resource'; resourceId: string } | { kind: 'import'; import: ImportRequest };
 type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure };
 type Exported = { kind: string; sha256: string; markdown: string; filename: string };
@@ -70,7 +77,7 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
   const handoffs = (settings?.providers ?? []).filter(p => p.mode === 'handoff-only');
   const [picked, setPicked] = useState<string>();
   const provider = eligible.find(p => p.id === (picked ?? settings?.defaultProvider)) ?? eligible[0];
-  const [runId, setRunId] = useState<string>();
+  const [chatId, setChatId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [handed, setHanded] = useState<{ how: 'copied' | 'downloaded'; to?: string }>();
   const [failed, setFailed] = useState<string>();
@@ -81,8 +88,8 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
     setBusy(true);
     setFailed(undefined);
     try {
-      const run = await post<AssistRun>(scopedPath(scope, `ai/packages/${p.sha256}/run`), { provider: provider.id, disclosureVersion: settings.disclosure.version });
-      setRunId(run.id);
+      const chat = await post<Conversation>(scopedPath(scope, 'ai/conversations'), { packageSha256: p.sha256, provider: provider.id, disclosureVersion: settings.disclosure.version, message: '' });
+      setChatId(chat.id);
     } catch (err) {
       setFailed(err instanceof Error ? err.message : 'The request could not be sent.');
     } finally {
@@ -134,7 +141,7 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
        <pre className="assist-text" aria-label="Context package text" tabIndex={0}>{p.markdown}</pre>
        {handed && <p className="info-line" role="status">Context {handed.how}{handed.to && <> for {handed.to}. Paste it into {handed.to} yourself: Hclaro did not open or run it</>}. Hclaro's protections end here: what happens to this text is now up to you and the assistant you give it to.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
-       {runId && <RunPanel id={runId} />}
+       {chatId && <ConversationPanel scope={scope} id={chatId} name={provider?.name ?? 'the assistant'} onClosed={() => setChatId(undefined)} />}
       </>}
     <div className="form-actions">
      <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -144,7 +151,7 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
       <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button>
       {provider && settings && <>
        {eligible.length > 1 && <select aria-label="Assistant for this request" value={provider.id} onChange={e => setPicked(e.target.value)}>{eligible.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>}
-       <Button disabled={busy || !settings.disclosureAccepted || !!runId} title={settings.disclosureAccepted ? undefined : 'Accept the AI disclosure in Settings first.'} onClick={() => void send()}><Send size={14} />Send to {provider.name}</Button>
+       <Button disabled={busy || !settings.disclosureAccepted || !!chatId} title={settings.disclosureAccepted ? undefined : 'Accept the AI disclosure in Settings first.'} onClick={() => void send()}><Send size={14} />Send to {provider.name}</Button>
       </>}
      </>}
     </div>
@@ -154,32 +161,65 @@ export function AssistDrawer({ scope, request, title, onClose }: { scope: PlanSc
   </Drawer>;
 }
 
-// RunPanel polls the session's request until it ends. The reply is shown as plain text in a
-// <pre>: React escapes it, so HTML, links and commands in it stay inert.
-function RunPanel({ id }: { id: string }) {
-  const run = useQuery({
-    queryKey: ['ai-run', id],
-    queryFn: () => api<AssistRun>('ai/run'),
-    refetchInterval: q => q.state.data?.status === 'running' ? 1000 : false,
+// ConversationPanel polls one conversation while a turn runs. Replies are shown in <pre>: React
+// escapes them, so HTML, links and commands stay inert. A failed or cancelled message comes
+// back as the server's draft and is put back into the input; nothing is dropped silently.
+function ConversationPanel({ scope, id, name, onClosed }: { scope: PlanScope; id: string; name: string; onClosed: () => void }) {
+  const path = scopedPath(scope, `ai/conversations/${id}`);
+  const chat = useQuery({
+    queryKey: ['ai-conversation', scopeKey(scope), id],
+    queryFn: () => api<Conversation>(path),
+    refetchInterval: q => q.state.data?.state === 'running' ? 1000 : false,
     retry: false,
     gcTime: 0
   });
-  const [cancelling, setCancelling] = useState(false);
-  const r = run.data?.id === id ? run.data : undefined;
-  async function cancel() {
-    setCancelling(true);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [refused, setRefused] = useState<string>();
+  const [seen, setSeen] = useState(0);
+  const c = chat.data;
+  // A failed or cancelled message comes back as the draft: put it into an empty box, once per
+  // server answer. It stays the draft until the next message is sent.
+  if (c && c.state !== 'running' && c.draft && seen !== chat.dataUpdatedAt) {
+    setSeen(chat.dataUpdatedAt);
+    if (!text) setText(c.draft);
+  }
+  async function act(action: 'messages' | 'cancel' | 'close') {
+    setBusy(true);
+    setRefused(undefined);
     try {
-      await post('ai/run/cancel', {});
+      await post(`${path}/${action}`, action === 'messages' ? { text } : {});
+      if (action === 'close') return onClosed();
+      if (action === 'messages') setText('');
+      await chat.refetch();
+    } catch (err) {
+      setRefused(err instanceof Error ? err.message : 'The request was refused.');
     } finally {
-      setCancelling(false);
+      setBusy(false);
     }
   }
-  return <section className="assist-run" aria-label="Assistant reply">
+  const tooLong = new TextEncoder().encode(text).length > maxMessage;
+  const running = c?.state === 'running';
+  return <section className="assist-run" aria-label="Conversation">
    <p className="plan-warning" role="note"><TriangleAlert size={14} /><span>AI output is unverified. Hclaro never runs, applies or approves anything it suggests; check every claim and command yourself.</span></p>
-   {run.error ? <p className="dialog-error" role="alert">{run.error.message}</p>
-     : !r ? (run.data ? <p className="muted">Another request replaced this one.</p> : <p className="muted" role="status"><LoaderCircle className="spin" size={14} /> Starting…</p>)
-     : r.status === 'running' ? <div className="assist-running" role="status"><LoaderCircle className="spin" size={14} /><span>Waiting for the assistant…</span><Button variant="outline" size="small" disabled={cancelling} onClick={() => void cancel()}><Square size={12} />Cancel</Button></div>
-     : r.status === 'completed' ? <pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{r.reply || '(empty reply)'}</pre>
-     : <p className={r.status === 'cancelled' ? 'muted' : 'dialog-error'} role="alert">{r.error?.message ?? 'The request did not finish.'}</p>}
+   {chat.error ? <p className="dialog-error" role="alert">{chat.error.message}</p> : !c ? <p className="muted" role="status"><LoaderCircle className="spin" size={14} /> Starting…</p> : <>
+    <p className="muted assist-usage">{name} · {running ? 'waiting for a reply' : c.state} · {Math.ceil(c.usedBytes / 1024)} of {c.limitBytes / 1024} KiB used. Every message resends the whole conversation.</p>
+    <ol className="assist-turns" aria-label="Messages">
+     {c.turns.map((t, i) => <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
+      {t.role === 'assistant' ? <pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{t.text || '(empty reply)'}</pre>
+        : <p>{t.text || 'Shared the context package.'}</p>}</li>)}
+    </ol>
+    {running && <div className="assist-running" role="status"><LoaderCircle className="spin" size={14} /><span>Waiting for {name}…</span><Button variant="outline" size="small" disabled={busy} onClick={() => void act('cancel')}><Square size={12} />Cancel</Button></div>}
+    {c.error && !running && <p className={c.state === 'cancelled' ? 'muted' : 'dialog-error'} role="alert">{c.error.message}{c.draft !== undefined && ' Your message is back in the box below.'}</p>}
+    <label className="assist-compose">Follow-up message
+     <textarea value={text} rows={3} disabled={running} onChange={e => setText(e.target.value)} />
+    </label>
+    {tooLong && <p className="dialog-error" role="alert">This message is longer than {maxMessage} bytes. Shorten it to send it.</p>}
+    {refused && <p className="dialog-error" role="alert">{refused}</p>}
+    <div className="form-actions">
+     <Button variant="ghost" disabled={busy} onClick={() => void act('close')}><MessageSquareX size={14} />Close conversation</Button>
+     <Button disabled={busy || running || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />Send message</Button>
+    </div>
+   </>}
   </section>;
 }

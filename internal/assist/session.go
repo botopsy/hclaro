@@ -9,7 +9,7 @@ import (
 )
 
 // DisclosureVersion changes whenever the disclosure text changes.
-const DisclosureVersion = "3"
+const DisclosureVersion = "4"
 
 // Disclosure is shown next to every package and in Settings (R10).
 type Disclosure struct {
@@ -21,9 +21,10 @@ var disclosure = Disclosure{Version: DisclosureVersion, Lines: []string{
 	"Hclaro builds this context on your machine and shares nothing by itself. Only Copy, Download or Send to an assistant hands it over.",
 	"An AI assistant you give it to may send it to a cloud model, and its runs bill your own assistant account.",
 	"Once copied or downloaded, the text is outside Hclaro: its redaction and blocking no longer protect it.",
-	sendLine + "Send runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials. It sends exactly the previewed text to its cloud model, signed in as you.",
+	sendLine + "Send starts a conversation. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the previewed text to its cloud model, signed in as you.",
+	sendLine + "Every follow-up resends the whole conversation (the context, your messages and the replies), so usage and cost grow with each message. A conversation stops at a size limit; Hclaro then asks you to start a new one and never drops messages silently.",
 	claudeLine + "Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
-	sendLine + "The reply is unverified AI output. Hclaro shows it as text, keeps it in memory for this session only, and never runs, applies or approves anything it suggests.",
+	sendLine + "The reply is unverified AI output. Hclaro shows it as text, keeps the conversation in memory for this session only, and never runs, applies or approves anything it suggests.",
 }}
 
 // Line markers, stripped before display: sendLine lines apply only when an assistant can be run
@@ -97,19 +98,19 @@ type Session struct {
 	detected  []ProviderStatus
 	preferred string
 	accepted  bool
-	run       *Run
-	cancel    context.CancelFunc
-	base      context.Context
-	stop      context.CancelFunc
-	wg        sync.WaitGroup
-	// Record receives metadata of each finished run (never payload or reply), e.g. history.
+	// conversations are the open conversations by ID (AI-01.07).
+	conversations map[string]*conversation
+	base          context.Context
+	stop          context.CancelFunc
+	wg            sync.WaitGroup
+	// Record receives metadata of each finished turn (never transcript or reply), e.g. history.
 	Record func(RunRecord)
 }
 
 // NewSession returns a session with AI off. providers are detected only once AI is on.
 func NewSession(strictLocal bool, providers ...Assistant) *Session {
 	base, stop := context.WithCancel(context.Background())
-	return &Session{strict: strictLocal, packages: map[string]stored{}, Now: time.Now, providers: providers, base: base, stop: stop}
+	return &Session{strict: strictLocal, packages: map[string]stored{}, conversations: map[string]*conversation{}, Now: time.Now, providers: providers, base: base, stop: stop}
 }
 
 func (s *Session) Settings() Settings {
@@ -128,8 +129,8 @@ func (s *Session) Enabled() bool {
 }
 
 // SetEnabled turns AI on or off for this session. Turning it on detects the providers (unless
-// strict local-only). Turning it off drops every package, the reply and the acceptance, and
-// cancels a running request.
+// strict local-only). Turning it off drops every package, conversation and the acceptance, and
+// cancels running turns.
 func (s *Session) SetEnabled(on bool) Settings {
 	var found []ProviderStatus
 	if on && !s.strict {
@@ -158,11 +159,8 @@ func (s *Session) SetEnabled(on bool) Settings {
 			}
 		}
 	} else {
-		s.packages, s.accepted, s.run, s.detected = map[string]stored{}, false, nil, nil
-		if s.cancel != nil {
-			s.cancel()
-			s.cancel = nil
-		}
+		s.packages, s.accepted, s.detected = map[string]stored{}, false, nil
+		s.dropConversations()
 	}
 	s.mu.Unlock()
 	return s.Settings()

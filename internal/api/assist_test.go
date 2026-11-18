@@ -123,12 +123,15 @@ func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	s.enableAI()
 	planID := s.plan()
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+planID+`"}`))
+	chat := strings.Repeat("a", 32)
 	routes := map[string]string{
-		"/api/v1/ai/settings":                         `{"enabled":false}`,
-		"/api/v1/ai/packages":                         `{"kind":"plan","planId":"` + planID + `"}`,
-		"/api/v1/ai/packages/" + p.SHA256 + "/export": `{}`,
-		"/api/v1/ai/packages/" + p.SHA256 + "/run":    `{"provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
-		"/api/v1/ai/run/cancel":                       `{}`,
+		"/api/v1/ai/settings":                            `{"enabled":false}`,
+		"/api/v1/ai/packages":                            `{"kind":"plan","planId":"` + planID + `"}`,
+		"/api/v1/ai/packages/" + p.SHA256 + "/export":    `{}`,
+		"/api/v1/ai/conversations":                       `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
+		"/api/v1/ai/conversations/" + chat + "/messages": `{"text":"hi"}`,
+		"/api/v1/ai/conversations/" + chat + "/cancel":   `{}`,
+		"/api/v1/ai/conversations/" + chat + "/close":    `{}`,
 	}
 	for path, body := range routes {
 		for _, tc := range []struct {
@@ -158,8 +161,8 @@ func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	if !s.manager.Assist.Enabled() {
 		t.Fatal("a refused request turned AI off")
 	}
-	if _, ran := s.manager.Assist.Current(); ran {
-		t.Fatal("a refused request started an assistant")
+	if w := doWith(s.handler, "GET", "/api/v1/ai/conversations/"+chat, "", without("Authorization")); w.Code != 401 {
+		t.Fatalf("GET conversation without session: %d", w.Code)
 	}
 	exportSame(t, s.do("POST", "/api/v1/ai/packages/"+p.SHA256+"/export", `{}`), p)
 }
@@ -355,7 +358,9 @@ func TestAIHubRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	body := `{"kind":"resource","resourceId":"` + page.Resources[0].ID + `"}`
 	p := build(t, s.do("POST", "/api/v1/contexts/"+cid+"/ai/packages", body))
 	routes := map[string]string{"/api/v1/contexts/" + cid + "/ai/packages": body, "/api/v1/contexts/" + cid + "/ai/packages/" + p.SHA256 + "/export": `{}`,
-		"/api/v1/contexts/" + cid + "/ai/packages/" + p.SHA256 + "/run": `{"provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`}
+		"/api/v1/contexts/" + cid + "/ai/conversations":                                          `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
+		"/api/v1/contexts/" + cid + "/ai/conversations/" + strings.Repeat("a", 32) + "/messages": `{"text":"hi"}`,
+		"/api/v1/contexts/" + cid + "/ai/conversations/" + strings.Repeat("a", 32) + "/close":    `{}`}
 	for path, b := range routes {
 		for _, tc := range []struct {
 			name string

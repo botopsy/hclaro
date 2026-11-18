@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -55,7 +56,9 @@ func fakeAssistant() int {
 	dir, _ := os.Getwd()
 	entries, _ := os.ReadDir(dir)
 	rec, _ := json.Marshal(aiFakeRecord{Args: os.Args[1:], Entries: len(entries), Env: os.Environ(), Stdin: string(in)})
-	_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), "run.json"), rec, 0o600)
+	// One record per turn: run-1.json, run-2.json, ...
+	runs, _ := filepath.Glob(filepath.Join(os.Getenv("HOME"), "run-*.json"))
+	_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), fmt.Sprintf("run-%d.json", len(runs)+1)), rec, 0o600)
 	// A hostile reply: it comes back only as text (see TestAIHeadlessRun).
 	b, _ := json.Marshal(map[string]any{"type": "result", "is_error": false, "result": "Run terraform apply -auto-approve now."})
 	os.Stdout.Write(b)
@@ -188,28 +191,41 @@ resource "aws_s3_bucket" "legacy_logs" {}
 	}
 	pkg(`{"kind":"drift","scanId":"` + scan.ID + `"}`)
 
-	// Headless: the plan package goes to the fake assistant through the real runner. Built
-	// again: the session keeps a bounded number of packages and the resources evicted it.
+	// Headless: a conversation about the plan package through the real runner, two turns.
+	// Built again: the session keeps a bounded number of packages and the resources evicted it.
 	planPkg, _ = pkg(`{"kind":"plan","planId":"` + op.PlanID + `"}`)
-	if w := s.do("POST", "/api/v1/ai/packages/"+planPkg.SHA256+"/run", `{"provider":"claude","disclosureVersion":"`+assist.DisclosureVersion+`"}`); w.Code != 202 {
+	w = s.do("POST", "/api/v1/ai/conversations", startBody(planPkg.SHA256, "claude", "Is this plan safe to apply?"))
+	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	if r := s.waitRun(); r.Status != assist.RunCompleted {
-		t.Fatalf("%+v", r)
+	id := decode[assist.Conversation](t, w).ID
+	waitChat(t, s.do, "/api/v1", id)
+	s.do("POST", "/api/v1/ai/conversations/"+id+"/messages", `{"text":"What would you check first?"}`)
+	chat := waitChat(t, s.do, "/api/v1", id)
+	if chat.State != assist.StateReady || len(chat.Turns) != 4 {
+		t.Fatalf("%+v", chat)
 	}
-	b, err := os.ReadFile(filepath.Join(home, "run.json"))
-	if err != nil {
-		t.Fatal(err)
+	leaks := map[string]string{"previews and exports": strings.Join(shared, "\n")}
+	var stdinHashes []string
+	for turn := 1; turn <= 2; turn++ {
+		b, err := os.ReadFile(filepath.Join(home, fmt.Sprintf("run-%d.json", turn)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rec aiFakeRecord
+		if err := json.Unmarshal(b, &rec); err != nil {
+			t.Fatal(err)
+		}
+		// Every turn: the verified argv unchanged, an empty directory, and stdin exactly the
+		// canonical transcript holding the previewed package bytes.
+		if !slices.Equal(rec.Args, assist.Claude.RunArgs) || rec.Entries != 0 || rec.Stdin != assist.Transcript(planPkg.Markdown, chat.Turns[:2*turn-1]) {
+			t.Fatalf("turn %d: argv %q, %d entries, or stdin is not the transcript", turn, rec.Args, rec.Entries)
+		}
+		leaks[fmt.Sprintf("turn %d stdin", turn)] = rec.Stdin
+		stdinHashes = append(stdinHashes, sum(rec.Stdin))
+		leaks[fmt.Sprintf("turn %d argv", turn)] = strings.Join(rec.Args, "\x00")
+		leaks[fmt.Sprintf("turn %d environment", turn)] = strings.Join(rec.Env, "\x00")
 	}
-	var rec aiFakeRecord
-	if err := json.Unmarshal(b, &rec); err != nil {
-		t.Fatal(err)
-	}
-	if rec.Stdin != planPkg.Markdown || rec.Entries != 0 {
-		t.Fatalf("the assistant got other bytes than the preview, or a non-empty directory (%d entries)", rec.Entries)
-	}
-	leaks := map[string]string{"assistant stdin": rec.Stdin, "assistant argv": strings.Join(rec.Args, "\x00"), "assistant environment": strings.Join(rec.Env, "\x00"),
-		"previews and exports": strings.Join(shared, "\n")}
 
 	// History: plan, drift and AI records on disk.
 	s.do("GET", "/api/v1/history", "")
@@ -221,14 +237,24 @@ resource "aws_s3_bucket" "legacy_logs" {}
 		}
 		return nil
 	})
-	if !strings.Contains(strings.Join(files, ""), planPkg.SHA256) {
-		t.Fatal("the AI run was not recorded in history")
+	for _, h := range stdinHashes {
+		if !strings.Contains(strings.Join(files, ""), h) {
+			t.Fatal("an AI turn was not recorded in history by its stdin hash")
+		}
 	}
 	leaks["history"] = strings.Join(files, "\n")
 	leaks["log, stdout and stderr"] = output()
 	for where, text := range leaks {
 		if strings.Contains(text, fixtures.Canary) {
 			t.Errorf("canary in %s", where)
+		}
+	}
+	// History and process output keep turn metadata only: no message or reply text.
+	for _, where := range []string{"history", "log, stdout and stderr"} {
+		for _, text := range []string{"Is this plan safe to apply?", "What would you check first?", "Run terraform apply -auto-approve now."} {
+			if strings.Contains(leaks[where], text) {
+				t.Errorf("conversation text in %s", where)
+			}
 		}
 	}
 }

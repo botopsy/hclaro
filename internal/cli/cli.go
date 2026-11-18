@@ -287,6 +287,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	manager.Assist = assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath},
 		&assist.CLI{Adapter: assist.Codex}, &assist.CLI{Adapter: assist.Copilot})
 	manager.Assist.Record = operationHistory.RecordAssist
+	// A closed, reloaded or evicted Hub context takes its AI packages and conversations with it.
+	hub.ContextClosed = manager.Assist.DropScope
 	defer manager.Assist.Close()
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
