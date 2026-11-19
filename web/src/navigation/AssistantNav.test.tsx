@@ -15,11 +15,13 @@ const ws: Workspace = {
   managed: 0, data: 0, modules: [], providers: {}, types: {}
 };
 let ai = false;
+let aiRoutes = true; // false: a server built without AI routes (AI-01.13 baseline)
 beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({ matches: !query.includes('width'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     const path = url.replace('/api/v1/', '').split('?')[0];
     if (path === 'session') return Response.json({ csrfToken: 'c'.repeat(64) });
+    if (path.startsWith('ai/') && !aiRoutes) return Response.json({ error: 'route_not_found' }, { status: 404 });
     if (path === 'ai/settings') return Response.json({ enabled: ai, strictLocal: false, handoff: ai, headless: false, disclosure: { version: '5', lines: [] }, providers: [] });
     if (path === 'ai/conversations') return Response.json({ conversations: [] });
     if (path === 'workspace') return Response.json(ws);
@@ -30,6 +32,7 @@ beforeEach(() => {
   }));
 });
 afterEach(() => {
+  aiRoutes = true;
   cleanup();
   vi.unstubAllGlobals();
   window.history.pushState(null, '', '/');
@@ -53,6 +56,29 @@ describe('AI Assistant navigation', () => {
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     await screen.findByRole('button', { name: 'Plans' });
     expect(within(nav).queryByRole('button', { name: 'AI Assistant' })).toBeNull();
+  });
+
+  it('hides the rail entry on a server without AI routes', async () => {
+    ai = true;
+    aiRoutes = false;
+    app();
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    await screen.findByRole('button', { name: 'Plans' });
+    expect(within(nav).queryByRole('button', { name: 'AI Assistant' })).toBeNull();
+  });
+
+  // AI on, no assistant installed (the AI-01.06 decision): the page stays for preview and
+  // handoff, and nothing offers to run an assistant.
+  it('with AI on and no assistant installed the page offers no conversation', async () => {
+    ai = true;
+    app();
+    const user = userEvent.setup();
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    await user.click(await within(nav).findByRole('button', { name: 'AI Assistant' }));
+    expect(await screen.findByRole('button', { name: /Start conversation/ })).toBeDisabled();
+    expect(screen.getByText(/Quick actions need an assistant Hclaro can run/)).toBeInTheDocument();
+    const posts = vi.mocked(fetch).mock.calls.filter(c => (c[1] as RequestInit | undefined)?.method === 'POST').map(c => String(c[0]));
+    expect(posts.filter(u => u.includes('/ai/'))).toEqual([]);
   });
 
   it('opens the AI Assistant page from the rail while AI is on', async () => {

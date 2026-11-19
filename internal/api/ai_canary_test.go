@@ -23,7 +23,7 @@ import (
 	"hclaro/internal/workspace"
 )
 
-// AI-01.06 end-to-end canary. Canaries are planted in the synthetic project's state, .tfvars,
+// AI-01.06 end-to-end canary, extended for the interactive phase in AI-01.13. Canaries are planted in the synthetic project's state, .tfvars,
 // environment and HCL; every package kind is built, exported and (for a plan) sent through the
 // real CLI runner to a fake assistant. The canary must not appear in any API response or SSE
 // event (planServer.do fails on it), any preview, copy or download, the assistant's stdin, argv
@@ -59,8 +59,9 @@ func fakeAssistant() int {
 	// One record per turn: run-1.json, run-2.json, ...
 	runs, _ := filepath.Glob(filepath.Join(os.Getenv("HOME"), "run-*.json"))
 	_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), fmt.Sprintf("run-%d.json", len(runs)+1)), rec, 0o600)
-	// A hostile reply: it comes back only as text (see TestAIHeadlessRun).
-	b, _ := json.Marshal(map[string]any{"type": "result", "is_error": false, "result": "Run terraform apply -auto-approve now."})
+	// A hostile reply: it comes back only as text (see TestAIHeadlessRun), plus a proposed
+	// rewrite of main.tf, the file holding HCL canaries (AI-01.12).
+	b, _ := json.Marshal(map[string]any{"type": "result", "is_error": false, "result": "Run terraform apply -auto-approve now.\n\n" + proposalReply("main.tf", strings.Repeat("0", 64), "resource \"aws_s3_bucket\" \"legacy_logs\" {}\n")})
 	os.Stdout.Write(b)
 	return 0
 }
@@ -124,6 +125,11 @@ variable "db_password" {
 
 resource "aws_s3_bucket" "legacy_logs" {}
 `)
+	// One hit hides a whole file from the project package, so each HCL canary has a file of
+	// its own; network.tf is clean and is shared.
+	put(t, filepath.Join(root, "app.tf"), "locals {\n  db_password = \""+fixtures.Canary+"_HCL_LOCAL\"\n  region      = \"eu-west-1\"\n}\n")
+	put(t, filepath.Join(root, "policy.tf"), "resource \"aws_iam_policy\" \"app\" {\n  policy = <<EOT\n{\"Statement\":[{\"Sid\":\""+fixtures.Canary+"_HCL_HEREDOC\",\"Effect\":\"Allow\"}]}\nEOT\n}\n")
+	put(t, filepath.Join(root, "network.tf"), "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n")
 	put(t, filepath.Join(root, "terraform.tfvars"), `db_password = "`+fixtures.Canary+`_TFVARS"`+"\n")
 	put(t, filepath.Join(root, "prod.auto.tfvars"), `api_token = "`+fixtures.Canary+`_AUTO_TFVARS"`+"\n")
 
@@ -137,6 +143,8 @@ resource "aws_s3_bucket" "legacy_logs" {}
 	manager.Recorder = hist
 	manager.Assist = assist.NewSession(false, &assist.CLI{Adapter: assist.Claude, Path: exe})
 	manager.Assist.Record = hist.RecordAssist
+	config := t.TempDir() // saved conversations
+	manager.Assist.Store = assist.OpenStore(config, time.Now())
 	t.Cleanup(func() { manager.Assist.Close(); manager.Close(5 * time.Second) })
 	s := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}
 
@@ -207,7 +215,8 @@ resource "aws_s3_bucket" "legacy_logs" {}
 	}
 	leaks := map[string]string{"previews and exports": strings.Join(shared, "\n")}
 	var stdinHashes []string
-	for turn := 1; turn <= 2; turn++ {
+	record := func(turn int) aiFakeRecord {
+		t.Helper()
 		b, err := os.ReadFile(filepath.Join(home, fmt.Sprintf("run-%d.json", turn)))
 		if err != nil {
 			t.Fatal(err)
@@ -216,16 +225,95 @@ resource "aws_s3_bucket" "legacy_logs" {}
 		if err := json.Unmarshal(b, &rec); err != nil {
 			t.Fatal(err)
 		}
+		leaks[fmt.Sprintf("turn %d stdin", turn)] = rec.Stdin
+		stdinHashes = append(stdinHashes, sum(rec.Stdin))
+		leaks[fmt.Sprintf("turn %d argv", turn)] = strings.Join(rec.Args, "\x00")
+		leaks[fmt.Sprintf("turn %d environment", turn)] = strings.Join(rec.Env, "\x00")
+		return rec
+	}
+	for turn := 1; turn <= 2; turn++ {
+		rec := record(turn)
 		// Every turn: the verified argv unchanged, an empty directory, and stdin exactly the
 		// canonical transcript holding the previewed package bytes.
 		if !slices.Equal(rec.Args, assist.Claude.RunArgs) || rec.Entries != 0 || rec.Stdin != assist.Transcript(planPkg.Markdown, chat.Turns[:2*turn-1]) {
 			t.Fatalf("turn %d: argv %q, %d entries, or stdin is not the transcript", turn, rec.Args, rec.Entries)
 		}
-		leaks[fmt.Sprintf("turn %d stdin", turn)] = rec.Stdin
-		stdinHashes = append(stdinHashes, sum(rec.Stdin))
-		leaks[fmt.Sprintf("turn %d argv", turn)] = strings.Join(rec.Args, "\x00")
-		leaks[fmt.Sprintf("turn %d environment", turn)] = strings.Join(rec.Env, "\x00")
 	}
+
+	// A follow-up carrying a secret is refused before any assistant runs.
+	w = s.do("POST", "/api/v1/ai/conversations/"+id+"/messages", `{"text":"the db_password = \"`+fixtures.Canary+`_FOLLOWUP\""}`)
+	if w.Code == 202 || !strings.Contains(w.Body.String(), assist.RefuseMessageUnsafe) {
+		t.Fatalf("follow-up with a secret: %d %s", w.Code, w.Body)
+	}
+	// The proposal on main.tf is listed without the file's text (its shared copy hid values).
+	if w = s.do("GET", "/api/v1/ai/conversations/"+id+"/changes", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"path":"main.tf"`) {
+		t.Fatalf("changes: %d %s", w.Code, w.Body)
+	}
+	shared = append(shared, w.Body.String())
+
+	// Project context (AI-01.09): conversation only, then the previewed project package
+	// attached, then a quick action (AI-01.10). Saved (AI-01.11) and continued after a restart.
+	w = s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"provider":"claude","disclosureVersion":%q,"message":"Describe this project."}`, assist.DisclosureVersion))
+	if w.Code != 202 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	pid := decode[assist.Conversation](t, w).ID
+	waitChat(t, s.do, "/api/v1", pid)
+	project, ok := pkg(`{"kind":"project"}`)
+	if !ok || strings.Contains(project.Markdown, "_HCL_") || !strings.Contains(project.Markdown, `resource "aws_vpc" "main"`) ||
+		!strings.Contains(project.Markdown, "app.tf: may contain") || !strings.Contains(project.Markdown, "policy.tf: may contain") {
+		t.Fatalf("project package:\n%s", project.Markdown)
+	}
+	if w = s.do("POST", "/api/v1/ai/conversations/"+pid+"/context", `{"packageSha256":"`+project.SHA256+`"}`); w.Code != 200 {
+		t.Fatalf("attach: %d %s", w.Code, w.Body)
+	}
+	s.do("POST", "/api/v1/ai/conversations/"+pid+"/messages", `{"text":"Which buckets exist?"}`)
+	waitChat(t, s.do, "/api/v1", pid)
+	quick, ok := pkg(`{"kind":"project","action":"qa-describe@1"}`)
+	if !ok {
+		t.Fatal("quick action package blocked")
+	}
+	w = s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"provider":"claude","disclosureVersion":%q,"prompt":"qa-describe@1"}`, quick.SHA256, assist.DisclosureVersion))
+	if w.Code != 202 {
+		t.Fatalf("quick action: %d %s", w.Code, w.Body)
+	}
+	waitChat(t, s.do, "/api/v1", decode[assist.Conversation](t, w).ID)
+	for _, c := range []string{id, pid} {
+		if w = s.do("POST", "/api/v1/ai/conversations/"+c+"/save", `{"saved":true}`); w.Code != 200 {
+			t.Fatalf("save: %d %s", w.Code, w.Body)
+		}
+	}
+	// Restart: a new session on the same folder reopens the project conversation and replays it.
+	manager.Assist.Close()
+	restart(s, config, &assist.CLI{Adapter: assist.Claude, Path: exe})
+	manager.Assist.Record = hist.RecordAssist
+	if w = s.do("POST", "/api/v1/ai/saved/"+pid+"/open", `{}`); w.Code != 200 || decode[assist.Conversation](t, w).ReadOnly != "" {
+		t.Fatalf("reopen: %d %s", w.Code, w.Body)
+	}
+	s.do("POST", "/api/v1/ai/conversations/"+pid+"/messages", `{"text":"And after the restart?"}`)
+	if c := waitChat(t, s.do, "/api/v1", pid); c.State != assist.StateReady {
+		t.Fatalf("%+v", c)
+	}
+	// Turns 3 to 6: chat, attached-context follow-up, quick action, replay after restart.
+	for turn := 3; turn <= 6; turn++ {
+		record(turn)
+	}
+	if _, err := os.Stat(filepath.Join(home, "run-7.json")); err == nil {
+		t.Fatal("an unexpected assistant run (the refused follow-up?)")
+	}
+	if !strings.Contains(leaks["turn 6 stdin"], project.Markdown) {
+		t.Fatal("the replay after restart did not carry the previewed project package")
+	}
+	var saved []string
+	for _, f := range savedFiles(t, config) {
+		b, _ := os.ReadFile(f)
+		saved = append(saved, string(b))
+	}
+	if len(saved) != 2 {
+		t.Fatalf("saved files: %d", len(saved))
+	}
+	leaks["saved conversation files"] = strings.Join(saved, "\n")
+	leaks["previews and exports"] = strings.Join(shared, "\n")
 
 	// History: plan, drift and AI records on disk.
 	s.do("GET", "/api/v1/history", "")
