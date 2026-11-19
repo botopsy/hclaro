@@ -11,6 +11,7 @@ import { clock, engineLabel } from '../plans/labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
 import { ScopeSummary } from '../plans/PreflightDialog';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import { activeOperation, operationsQuery } from '../plans/operations';
 import { internalKinds, layout, moduleAncestors, NODE_H, NODE_W, nodeForAddress, project, typePrefix, type Point, type Projection, type VisEdge, type VisNode } from './layout';
 
 const kindLabels: Record<string, string> = {
@@ -72,12 +73,8 @@ export function GraphView({
   const options = useQuery({ queryKey: ['graph-options', key, workspaceStatus, profileId], queryFn: () => api<GraphOptions>(scoped ? scopedPath(scope, 'graphs/options') : `graphs/options${profileId ? `?profileId=${profileId}` : ''}`) });
   const graphs = useQuery({ queryKey: ['graphs', key, workspaceStatus], queryFn: () => api<{ graphs: DependencyGraph[] }>(scopedPath(scope, 'graphs')) });
   const plans = useQuery({ queryKey: ['plans', key], queryFn: () => api<{ plans: PlanSummary[] }>(scopedPath(scope, 'plans')) });
-  const operations = useQuery({
-    queryKey: ['operations', key],
-    queryFn: () => api<{ operations: Operation[] }>(scopedPath(scope, 'operations')),
-    refetchInterval: q => q.state.data?.operations.some(o => o.status === 'running') ? 2000 : false
-  });
-  const running = operations.data?.operations.find(o => o.status === 'running');
+  const operations = useQuery(operationsQuery(scope));
+  const running = activeOperation(operations.data?.operations);
   const shownId = graphId ?? graphs.data?.graphs[0]?.id;
   const graph = useQuery({
     queryKey: ['graph', key, shownId, planId, workspaceStatus],

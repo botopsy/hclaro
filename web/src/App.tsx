@@ -9,6 +9,7 @@ import { Button } from './components/ui/button';
 import { PlansView } from './plans/PlansView';
 import { OperationsView } from './plans/OperationsView';
 import { scopeKey, scopedPath } from './plans/routes';
+import { activeOperation } from './plans/operations';
 import { ImportView } from './imports/ImportView';
 import { DriftView } from './drift/DriftView';
 import { DiscoveryView } from './discovery/DiscoveryView';
@@ -205,7 +206,7 @@ function Workbench({
       setRereading(false);
     }
   }
-  const runningOperation = operations.data?.operations?.find(o => o.status === 'running');
+  const runningOperation = activeOperation(operations.data?.operations);
   const ready = w?.status === 'ready' || w?.status === 'empty';
   const parameters = new URLSearchParams({
     query,

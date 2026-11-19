@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { api, post, sessionQuery } from '../api';
-import type { ContextInfo, Operation, Workspace } from '../types';
+import type { ContextInfo, Workspace } from '../types';
 import type { Route } from '../router';
 import { projectsQuery } from '../hub/HubView';
 import { useProfileSelection } from '../profiles/selection';
-import { launchScope, scopeKey, scopedPath, snapshotPath, type PlanScope } from '../plans/routes';
+import { launchScope, scopeKey, snapshotPath, type PlanScope } from '../plans/routes';
+import { operationsQuery } from '../plans/operations';
 
 // The selected context of one workbench: which project and profile it reads, the Hub context
 // it opened, and where its reads, plans and operations go. A Hub workspace reads only through
@@ -48,11 +49,6 @@ export function useWorkbenchContext(route: Route, generation: number) {
   // Where this tab's plans and operations live: the launch project, or only this Hub
   // workspace's own open context.
   const planScope: PlanScope | undefined = scoped ? hubExecution ? readScope : undefined : launchScope;
-  const operations = useQuery({
-    queryKey: ['operations', planScope ? scopeKey(planScope) : 'none'],
-    queryFn: () => api<{ operations: Operation[] }>(scopedPath(planScope!, 'operations')),
-    enabled: !!planScope,
-    refetchInterval: q => q.state.data?.operations?.some(o => o.status === 'running') ? 2000 : false
-  });
+  const operations = useQuery(operationsQuery(planScope));
   return { projects, project, launchProject, profileProject, profile, opened, readScope, workspace, session, hubExecution, planScope, operations };
 }
