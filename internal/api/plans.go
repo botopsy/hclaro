@@ -128,165 +128,6 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			ProfileError string            `json:"profileError,omitempty"`
 		}{caps.CanPlan, caps.PlanReason, caps.CanApply, caps.ApplyReason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles(), projectID, context, profileError})
 	})
-	mux.HandleFunc("POST /api/v1/plans", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Acknowledge *bool    `json:"acknowledgeBackendAccess"`
-			VarFiles    []string `json:"varFiles"`
-			// Replace holds opaque resource IDs from the snapshot, never addresses.
-			Replace []string `json:"replace"`
-			// ProfileID binds the plan to an execution profile; ContextFingerprint is the
-			// fingerprint of the context summary the user reviewed.
-			ProfileID          string `json:"profileId"`
-			ContextFingerprint string `json:"contextFingerprint"`
-		}
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		if dec.Decode(&body) != nil || dec.More() {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		// The preflight must have been shown: planning contacts providers and the backend.
-		if body.Acknowledge == nil || !*body.Acknowledge {
-			errorJSON(w, 400, "acknowledgement_required")
-			return
-		}
-		if !validProfileParam(body.ProfileID) {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		op, err := manager.StartPlanWith(operations.PlanStart{VarFiles: body.VarFiles, Replace: body.Replace, ProfileID: body.ProfileID, ContextFingerprint: body.ContextFingerprint})
-		var rejected *operations.RejectError
-		switch {
-		case errors.As(err, &rejected):
-			writeJSON(w, 409, map[string]string{"error": rejected.Code, "reason": rejected.Reason})
-		case errors.Is(err, operations.ErrBusy):
-			errorJSON(w, 409, "operation_running")
-		case errors.Is(err, operations.ErrLoading):
-			errorJSON(w, 409, "workspace_loading")
-		case errors.Is(err, operations.ErrStateLocked):
-			writeJSON(w, 409, map[string]string{"error": "state_locked", "reason": "Another process holds the state lock, so the state could not be read and nothing was planned. Hclaro never unlocks state. It reads the state again for about two minutes; after that, read the project again once the other process has finished."})
-		case errors.Is(err, operations.ErrUnavailable):
-			errorJSON(w, 409, "planning_unavailable")
-		case errors.Is(err, operations.ErrVarFiles):
-			errorJSON(w, 400, "invalid_var_files")
-		case errors.Is(err, operations.ErrReplace):
-			errorJSON(w, 400, "invalid_replace")
-		case errors.Is(err, operations.ErrClosed):
-			errorJSON(w, 503, "shutting_down")
-		case err != nil:
-			errorJSON(w, 500, "plan_not_started")
-		default:
-			writeJSON(w, 202, op)
-		}
-	})
-	mux.HandleFunc("GET /api/v1/plans", func(w http.ResponseWriter, r *http.Request) {
-		plans := manager.Plans()
-		out := make([]planSummary, 0, len(plans))
-		for _, p := range plans {
-			out = append(out, summarize(p))
-		}
-		writeJSON(w, 200, map[string]any{"plans": out})
-	})
-	mux.HandleFunc("GET /api/v1/plans/{id}", func(w http.ResponseWriter, r *http.Request) {
-		p, ok := lookupPlan(r, manager)
-		if !ok {
-			errorJSON(w, 404, "plan_not_found")
-			return
-		}
-		snap := store.Get()
-		changed, status := manager.ContextStatus(p)
-		writeJSON(w, 200, struct {
-			*operations.Plan
-			EngineVersionLabel string                 `json:"currentEngineVersion"`
-			ContextChanged     bool                   `json:"contextChanged"`
-			Apply              operations.ApplyStatus `json:"apply"`
-			SourceStatus       gitctx.SourceStatus    `json:"sourceStatus"`
-		}{p, snap.Info.Version, changed, status, manager.SourceStatus(p)})
-	})
-	// Preflight evaluates every apply check on the server. verifyIdentity runs the read-only
-	// AWS STS caller identity probe, which contacts AWS, and is false unless the user asks.
-	mux.HandleFunc("POST /api/v1/plans/{id}/preflight", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			VerifyIdentity bool `json:"verifyIdentity"`
-		}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		if !idPattern.MatchString(r.PathValue("id")) {
-			errorJSON(w, 404, "plan_not_found")
-			return
-		}
-		ctx, cancel := withDeadline(w, r, preflightTimeout)
-		defer cancel()
-		report, err := manager.Preflight(ctx, r.PathValue("id"), operations.PreflightRequest{VerifyIdentity: body.VerifyIdentity})
-		if err != nil {
-			applyError(w, err)
-			return
-		}
-		writeJSON(w, 200, report)
-	})
-	mux.HandleFunc("POST /api/v1/plans/{id}/approval", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Binding      string   `json:"preflightBinding"`
-			Acknowledged []string `json:"acknowledged"`
-		}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		if !idPattern.MatchString(r.PathValue("id")) {
-			errorJSON(w, 404, "plan_not_found")
-			return
-		}
-		if len(body.Binding) > 128 || len(body.Acknowledged) > 32 {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		for _, a := range body.Acknowledged {
-			if len(a) > 64 {
-				errorJSON(w, 400, "invalid_request")
-				return
-			}
-		}
-		approval, err := manager.Approve(r.PathValue("id"), operations.ApprovalRequest{Binding: body.Binding, Acknowledged: body.Acknowledged})
-		if err != nil {
-			applyError(w, err)
-			return
-		}
-		writeJSON(w, 200, approval)
-	})
-	mux.HandleFunc("POST /api/v1/plans/{id}/apply", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Token        string `json:"confirmationToken"`
-			Confirmation string `json:"confirmation"`
-		}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		if !idPattern.MatchString(r.PathValue("id")) {
-			errorJSON(w, 404, "plan_not_found")
-			return
-		}
-		// Under an AWS account policy StartApply asks STS again (up to 20 s), so the response
-		// gets the preflight's write deadline.
-		_, cancel := withDeadline(w, r, preflightTimeout)
-		defer cancel()
-		op, err := manager.StartApply(r.PathValue("id"), body.Token, body.Confirmation)
-		if err != nil {
-			applyError(w, err)
-			return
-		}
-		writeJSON(w, 202, op)
-	})
-	mux.HandleFunc("GET /api/v1/plans/{id}/changes/{change}", func(w http.ResponseWriter, r *http.Request) {
-		p, ok := lookupPlan(r, manager)
-		change := r.PathValue("change")
-		detail, found := p.Details[change]
-		if !ok || !idPattern.MatchString(change) || !found {
-			errorJSON(w, 404, "change_not_found")
-			return
-		}
-		writeJSON(w, 200, detail)
-	})
 	// Reload inspects the launch project again and rereads its state, as at startup.
 	mux.HandleFunc("POST /api/v1/workspace/reload", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{}
@@ -306,58 +147,7 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 			writeJSON(w, 202, map[string]string{"status": "loading"})
 		}
 	})
-	mux.HandleFunc("GET /api/v1/operations", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"operations": manager.Operations()})
-	})
-	mux.HandleFunc("GET /api/v1/operations/{id}", func(w http.ResponseWriter, r *http.Request) {
-		op, _, ok := lookupOperation(r, manager, inits)
-		if !ok {
-			errorJSON(w, 404, "operation_not_found")
-			return
-		}
-		writeJSON(w, 200, op)
-	})
-	mux.HandleFunc("POST /api/v1/operations/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
-		var body struct{}
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		if dec.Decode(&body) != nil || dec.More() {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		op, err := manager.Cancel(r.PathValue("id"))
-		if errors.Is(err, operations.ErrNotFound) && inits != nil {
-			op, err = inits.Cancel(r.PathValue("id"))
-		}
-		switch {
-		case errors.Is(err, operations.ErrNotFound):
-			errorJSON(w, 404, "operation_not_found")
-		case errors.Is(err, operations.ErrNotRunning):
-			errorJSON(w, 409, "operation_not_running")
-		default:
-			writeJSON(w, 202, op)
-		}
-	})
-	mux.HandleFunc("GET /api/v1/operations/{id}/events", func(w http.ResponseWriter, r *http.Request) {
-		_, log, ok := lookupOperation(r, manager, inits)
-		if !ok {
-			errorJSON(w, 404, "operation_not_found")
-			return
-		}
-		if log == nil {
-			errorJSON(w, 410, "log_not_retained")
-			return
-		}
-		after, ok := eventCursor(r)
-		if !ok {
-			errorJSON(w, 400, "invalid_cursor")
-			return
-		}
-		stream(w, r, func() operations.Operation {
-			op, _, _ := lookupOperation(r, manager, inits)
-			return op
-		}, log, after)
-	})
+	execRoutes(mux, "/api/v1", nil, launchSourceOf(manager, inits))
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, body any) bool {
@@ -368,43 +158,6 @@ func decodeBody(w http.ResponseWriter, r *http.Request, body any) bool {
 		return false
 	}
 	return true
-}
-
-// applyError maps a refused approval or apply to a typed response. Nothing was run.
-func applyError(w http.ResponseWriter, err error) {
-	var rejected *operations.RejectError
-	switch {
-	case errors.Is(err, operations.ErrNotFound):
-		errorJSON(w, 404, "plan_not_found")
-	case errors.As(err, &rejected):
-		writeJSON(w, 409, map[string]string{"error": rejected.Code, "reason": rejected.Reason})
-	default:
-		errorJSON(w, 500, "apply_not_started")
-	}
-}
-
-func lookupPlan(r *http.Request, manager *operations.Manager) (*operations.Plan, bool) {
-	id := r.PathValue("id")
-	if !idPattern.MatchString(id) {
-		return &operations.Plan{}, false
-	}
-	p, ok := manager.Plan(id)
-	if !ok {
-		return &operations.Plan{}, false
-	}
-	return p, true
-}
-
-// lookupOperation finds a launch-project operation or a Hub initialization by ID.
-func lookupOperation(r *http.Request, manager *operations.Manager, inits *operations.Inits) (operations.Operation, *operations.Log, bool) {
-	id := r.PathValue("id")
-	if !idPattern.MatchString(id) {
-		return operations.Operation{}, nil, false
-	}
-	if op, log, ok := manager.Operation(id); ok {
-		return op, log, ok
-	}
-	return inits.Operation(id)
 }
 
 // stream sends retained log events as SSE, then status updates until the operation ends.
@@ -462,4 +215,312 @@ func stream(w http.ResponseWriter, r *http.Request, current func() operations.Op
 		case <-heartbeat.C:
 		}
 	}
+}
+
+// lookupPlan finds a plan of src by the request's {id}; any other ID is not found.
+func lookupPlan(r *http.Request, src interface {
+	Plan(string) (*operations.Plan, bool)
+}) (*operations.Plan, bool) {
+	id := r.PathValue("id")
+	if !idPattern.MatchString(id) {
+		return nil, false
+	}
+	return src.Plan(id)
+}
+
+// scopedOperation is an operation with the Hub scope it ran in (omitted for the launch project).
+type scopedOperation struct {
+	operations.Operation
+	Scope *projects.ScopeView `json:"scope,omitempty"`
+}
+
+// applyTimeout bounds approval and apply requests. A Hub scope revalidates first (engine
+// version and workspace list, up to inspectTimeout) and a launch apply under an AWS account
+// policy asks STS again (up to 20 s); one bound covers both.
+const applyTimeout = inspectTimeout
+
+// execRoutes registers the plan, apply and operation routes under prefix: "/api/v1" for the
+// launch project (hub nil) and "/api/v1/contexts/{cid}" for Hub workspaces. Hub routes check
+// the scoped execution switch and the {cid} context before reading the body. Requests carry
+// no path, executable, argv, flag, environment value, -target or plan file.
+func execRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, source sourceOf) {
+	handle := routesUnder(mux, prefix, hub)
+	handle("POST /plans", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Acknowledge *bool    `json:"acknowledgeBackendAccess"`
+			VarFiles    []string `json:"varFiles"`
+			// Replace holds opaque resource IDs from the snapshot, never addresses.
+			Replace []string `json:"replace"`
+			// ProfileID binds a launch plan to an execution profile; ContextFingerprint is the
+			// fingerprint of the context the user reviewed.
+			ProfileID          *string `json:"profileId"`
+			ContextFingerprint string  `json:"contextFingerprint"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		// The preflight must have been shown: planning contacts providers and the backend.
+		if body.Acknowledge == nil || !*body.Acknowledge {
+			reasonJSON(w, 400, "acknowledgement_required", "Planning may contact providers and the backend and take the state lock. Confirm backend access first.")
+			return
+		}
+		profileID, ok := profileOf(w, hub, body.ProfileID)
+		if !ok {
+			return
+		}
+		if len(body.ContextFingerprint) > 128 {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		src, ok := source(w, r, true)
+		if !ok {
+			return
+		}
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
+		defer cancel()
+		op, err := src.StartPlan(ctx, operations.PlanStart{VarFiles: body.VarFiles, Replace: body.Replace, ProfileID: profileID, ContextFingerprint: body.ContextFingerprint})
+		switch {
+		case err == nil:
+			writeJSON(w, 202, scopedOperation{op, src.View()})
+		case mapOpError(w, r, hub, src.Holder(), err):
+		case errors.Is(err, operations.ErrUnavailable):
+			reasonJSON(w, 409, "planning_unavailable", "Planning is not available for this workspace.")
+		case errors.Is(err, operations.ErrReplace):
+			reasonJSON(w, 400, "invalid_replace", "Choose managed resources of this workspace to replace.")
+		default:
+			errorJSON(w, 500, "plan_not_started")
+		}
+	})
+	handle("GET /plans", func(w http.ResponseWriter, r *http.Request) {
+		src, ok := source(w, r, false)
+		if !ok {
+			return
+		}
+		out := []planSummary{}
+		for _, p := range src.Plans() {
+			out = append(out, summarize(p))
+		}
+		writeJSON(w, 200, map[string]any{"plans": out, "scope": src.View()})
+	})
+	handle("GET /plans/{id}", func(w http.ResponseWriter, r *http.Request) {
+		src, ok := source(w, r, false)
+		if !ok {
+			return
+		}
+		p, ok := lookupPlan(r, src)
+		if !ok {
+			errorJSON(w, 404, "plan_not_found")
+			return
+		}
+		changed, status := src.ContextStatus(p)
+		writeJSON(w, 200, struct {
+			*operations.Plan
+			EngineVersionLabel string                 `json:"currentEngineVersion"`
+			ContextChanged     bool                   `json:"contextChanged"`
+			Apply              operations.ApplyStatus `json:"apply"`
+			SourceStatus       gitctx.SourceStatus    `json:"sourceStatus"`
+			Scope              *projects.ScopeView    `json:"scope,omitempty"`
+		}{p, src.Snapshot().Info.Version, changed, status, src.SourceStatus(p), src.View()})
+	})
+	// Preflight evaluates every apply check on the server. verifyIdentity runs the read-only
+	// AWS STS caller identity probe, which contacts AWS, and is false unless the user asks.
+	// A Hub scope is revalidated first by each of preflight, approval and apply; the apply
+	// revalidates it again, fully, with the root claim held.
+	handle("POST /plans/{id}/preflight", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			VerifyIdentity bool `json:"verifyIdentity"`
+		}
+		src, ok := planRequest(w, r, source, &body, func() bool { return true })
+		if !ok {
+			return
+		}
+		ctx, cancel := withDeadline(w, r, preflightTimeout)
+		defer cancel()
+		report, err := src.Preflight(ctx, r.PathValue("id"), operations.PreflightRequest{VerifyIdentity: body.VerifyIdentity})
+		if err != nil {
+			applyError(w, r, hub, src, err)
+			return
+		}
+		writeJSON(w, 200, struct {
+			operations.PreflightReport
+			Scope *projects.ScopeView `json:"scope,omitempty"`
+		}{report, src.View()})
+	})
+	handle("POST /plans/{id}/approval", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Binding      string   `json:"preflightBinding"`
+			Acknowledged []string `json:"acknowledged"`
+		}
+		src, ok := planRequest(w, r, source, &body, func() bool {
+			if len(body.Binding) > 128 || len(body.Acknowledged) > 32 {
+				return false
+			}
+			for _, a := range body.Acknowledged {
+				if len(a) > 64 {
+					return false
+				}
+			}
+			return true
+		})
+		if !ok {
+			return
+		}
+		ctx, cancel := withDeadline(w, r, applyTimeout)
+		defer cancel()
+		approval, err := src.Approve(ctx, r.PathValue("id"), operations.ApprovalRequest{Binding: body.Binding, Acknowledged: body.Acknowledged})
+		if err != nil {
+			applyError(w, r, hub, src, err)
+			return
+		}
+		writeJSON(w, 200, struct {
+			operations.Approval
+			Scope *projects.ScopeView `json:"scope,omitempty"`
+		}{approval, src.View()})
+	})
+	handle("POST /plans/{id}/apply", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Token        string `json:"confirmationToken"`
+			Confirmation string `json:"confirmation"`
+		}
+		src, ok := planRequest(w, r, source, &body, func() bool { return len(body.Token) <= 128 && len(body.Confirmation) <= 256 })
+		if !ok {
+			return
+		}
+		ctx, cancel := withDeadline(w, r, applyTimeout)
+		defer cancel()
+		op, err := src.StartApply(ctx, r.PathValue("id"), body.Token, body.Confirmation)
+		if err != nil {
+			applyError(w, r, hub, src, err)
+			return
+		}
+		writeJSON(w, 202, scopedOperation{op, src.View()})
+	})
+	handle("GET /plans/{id}/changes/{change}", func(w http.ResponseWriter, r *http.Request) {
+		src, ok := source(w, r, false)
+		if !ok {
+			return
+		}
+		p, ok := lookupPlan(r, src)
+		if !ok {
+			errorJSON(w, 404, "plan_not_found")
+			return
+		}
+		change := r.PathValue("change")
+		detail, found := p.Details[change]
+		if !idPattern.MatchString(change) || !found {
+			errorJSON(w, 404, "change_not_found")
+			return
+		}
+		writeJSON(w, 200, detail)
+	})
+	handle("GET /operations", func(w http.ResponseWriter, r *http.Request) {
+		src, ok := source(w, r, false)
+		if !ok {
+			return
+		}
+		ops := src.Operations()
+		if ops == nil {
+			ops = []operations.Operation{}
+		}
+		writeJSON(w, 200, map[string]any{"operations": ops, "scope": src.View()})
+	})
+	handle("GET /operations/{id}", func(w http.ResponseWriter, r *http.Request) {
+		src, op, _, ok := lookupOperation(w, r, source)
+		if !ok {
+			return
+		}
+		writeJSON(w, 200, scopedOperation{op, src.View()})
+	})
+	handle("POST /operations/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		src, ok := source(w, r, false)
+		if !ok {
+			return
+		}
+		if !idPattern.MatchString(r.PathValue("id")) {
+			errorJSON(w, 404, "operation_not_found")
+			return
+		}
+		op, err := src.Cancel(r.PathValue("id"))
+		switch {
+		case errors.Is(err, operations.ErrNotFound):
+			errorJSON(w, 404, "operation_not_found")
+		case errors.Is(err, operations.ErrNotRunning):
+			errorJSON(w, 409, "operation_not_running")
+		default:
+			writeJSON(w, 202, scopedOperation{op, src.View()})
+		}
+	})
+	handle("GET /operations/{id}/events", func(w http.ResponseWriter, r *http.Request) {
+		src, _, log, ok := lookupOperation(w, r, source)
+		if !ok {
+			return
+		}
+		if log == nil {
+			errorJSON(w, 410, "log_not_retained")
+			return
+		}
+		after, ok := eventCursor(r)
+		if !ok {
+			errorJSON(w, 400, "invalid_cursor")
+			return
+		}
+		id := r.PathValue("id")
+		stream(w, r, func() operations.Operation {
+			op, _, _ := src.Operation(id)
+			return op
+		}, log, after)
+	})
+}
+
+// planRequest reads the body of a preflight, approval or apply request and resolves its
+// source without creating a Hub scope: a context with no scope has no plans. A plan ID of
+// another source answers plan_not_found when the request runs.
+// bounded applies the body's length limits, the same for launch and Hub requests.
+func planRequest(w http.ResponseWriter, r *http.Request, source sourceOf, body any, bounded func() bool) (execSource, bool) {
+	if !decodeBody(w, r, body) {
+		return nil, false
+	}
+	if !idPattern.MatchString(r.PathValue("id")) {
+		errorJSON(w, 404, "plan_not_found")
+		return nil, false
+	}
+	if !bounded() {
+		errorJSON(w, 400, "invalid_request")
+		return nil, false
+	}
+	return source(w, r, false)
+}
+
+// applyError maps a refused preflight, approval or apply. Nothing was applied.
+func applyError(w http.ResponseWriter, r *http.Request, hub *projects.Hub, src execSource, err error) {
+	switch {
+	case errors.Is(err, operations.ErrNotFound):
+		errorJSON(w, 404, "plan_not_found")
+	case mapOpError(w, r, hub, src.Holder(), err):
+	default:
+		errorJSON(w, 500, "apply_not_started")
+	}
+}
+
+// lookupOperation finds an operation of the request's source; anything else is
+// operation_not_found.
+func lookupOperation(w http.ResponseWriter, r *http.Request, source sourceOf) (execSource, operations.Operation, *operations.Log, bool) {
+	src, ok := source(w, r, false)
+	if !ok {
+		return nil, operations.Operation{}, nil, false
+	}
+	id := r.PathValue("id")
+	op, log, found := operations.Operation{}, (*operations.Log)(nil), false
+	if idPattern.MatchString(id) {
+		op, log, found = src.Operation(id)
+	}
+	if !found {
+		errorJSON(w, 404, "operation_not_found")
+		return nil, operations.Operation{}, nil, false
+	}
+	return src, op, log, true
 }

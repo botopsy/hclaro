@@ -15,39 +15,7 @@ import (
 // nothing and contact nothing; verifying, scanning and preparing are explicit POSTs that carry
 // the reviewed context fingerprint and revalidate the scope first. Requests carry no profile.
 func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
-	// pinOf resolves the discovery context of an open scope; check is set for requests that
-	// contact AWS, and only those create the scope. A read of a context without a scope has
-	// nothing to show (discovery results go with their scope): scan_not_found. It answers
-	// refusals itself.
-	pinOf := func(w http.ResponseWriter, r *http.Request, check bool, reviewed string) (*discovery.Service, *projects.Scope, discovery.Pin, []string, bool) {
-		if hub.Discovery == nil {
-			if scopedContext(w, r, hub) {
-				reasonJSON(w, 409, "discovery_unavailable", "Cloud discovery is not available in this session.")
-			}
-			return nil, nil, discovery.Pin{}, nil, false
-		}
-		if len(reviewed) > 128 {
-			errorJSON(w, 400, "invalid_request")
-			return nil, nil, discovery.Pin{}, nil, false
-		}
-		s, ok := resolveScope(w, r, hub, check)
-		if !ok {
-			return nil, nil, discovery.Pin{}, nil, false
-		}
-		if s == nil {
-			errorJSON(w, 404, "scan_not_found")
-			return nil, nil, discovery.Pin{}, nil, false
-		}
-		ctx, cancel := withDeadline(w, r, inspectTimeout)
-		defer cancel()
-		pin, environ, err := scopeDiscoveryPin(ctx, s, check, reviewed)
-		if err != nil {
-			scopedStartError(w, r, hub, s, err)
-			return nil, nil, discovery.Pin{}, nil, false
-		}
-		return hub.Discovery, s, pin, environ, true
-	}
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/discovery/options", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/discovery/options", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		s, base, ok := scopedOptions(w, r, hub)
 		if !ok {
 			return
@@ -91,140 +59,15 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			}
 		}
 		writeJSON(w, 200, out)
-	})
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/discovery/identity", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			ContextFingerprint string `json:"contextFingerprint"`
+	}))
+	available := func(w http.ResponseWriter) (*discovery.Service, bool) {
+		if hub.Discovery == nil {
+			reasonJSON(w, 409, "discovery_unavailable", "Cloud discovery is not available in this session.")
+			return nil, false
 		}
-		if !scopedGate(w, hub) || !decodeBody(w, r, &body) {
-			return
-		}
-		svc, _, pin, environ, ok := pinOf(w, r, true, body.ContextFingerprint)
-		if !ok {
-			return
-		}
-		ctx, cancel := withDeadline(w, r, verifyTimeout)
-		defer cancel()
-		identity, err := svc.Verify(ctx, pin, environ)
-		if err != nil {
-			discoveryError(w, err)
-			return
-		}
-		writeJSON(w, 200, identity)
-	})
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/discovery/scans", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			IdentityID         string                   `json:"identityId"`
-			ContextFingerprint string                   `json:"contextFingerprint"`
-			Scope              discovery.DiscoveryScope `json:"scope"`
-			// The scan preview must have been shown: listing calls AWS APIs.
-			Acknowledge *bool `json:"acknowledgeApiCalls"`
-		}
-		if !scopedGate(w, hub) || !decodeBody(w, r, &body) {
-			return
-		}
-		if body.Acknowledge == nil || !*body.Acknowledge {
-			errorJSON(w, 400, "acknowledgement_required")
-			return
-		}
-		if !idPattern.MatchString(body.IdentityID) {
-			reasonJSON(w, 409, "identity_required", "Verify the AWS context before scanning.")
-			return
-		}
-		svc, _, pin, environ, ok := pinOf(w, r, true, body.ContextFingerprint)
-		if !ok {
-			return
-		}
-		scan, err := svc.Start(pin, environ, body.IdentityID, body.Scope)
-		if err != nil {
-			discoveryError(w, err)
-			return
-		}
-		writeJSON(w, 202, scan)
-	})
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/discovery/scans", func(w http.ResponseWriter, r *http.Request) {
-		if !scopedContext(w, r, hub) {
-			return
-		}
-		scans := []discovery.Scan{}
-		if hub.Discovery != nil {
-			scans = hub.Discovery.Scans(r.PathValue("cid"))
-		}
-		writeJSON(w, 200, map[string]any{"scans": scans})
-	})
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/discovery/scans/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if !scopedGate(w, hub) {
-			return
-		}
-		id := r.PathValue("id")
-		if !idPattern.MatchString(id) {
-			errorJSON(w, 404, "scan_not_found")
-			return
-		}
-		svc, s, pin, _, ok := pinOf(w, r, false, "")
-		if !ok {
-			return
-		}
-		view, err := svc.View(id, pin, s.Snapshot())
-		if err != nil {
-			discoveryError(w, err)
-			return
-		}
-		writeJSON(w, 200, view)
-	})
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/discovery/scans/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
-		var body struct{}
-		if !scopedGate(w, hub) || !decodeBody(w, r, &body) || !scopedContext(w, r, hub) {
-			return
-		}
-		id := r.PathValue("id")
-		if !idPattern.MatchString(id) || hub.Discovery == nil {
-			errorJSON(w, 404, "scan_not_found")
-			return
-		}
-		scan, err := hub.Discovery.Cancel(id, r.PathValue("cid"))
-		if err != nil {
-			discoveryError(w, err)
-			return
-		}
-		writeJSON(w, 200, scan)
-	})
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/discovery/scans/{id}/candidates/{cand}/prepare", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			ContextFingerprint string `json:"contextFingerprint"`
-			AcknowledgeUnknown bool   `json:"acknowledgeUnknownMapping"`
-		}
-		if !scopedGate(w, hub) || !decodeBody(w, r, &body) {
-			return
-		}
-		id, cand := r.PathValue("id"), r.PathValue("cand")
-		if !idPattern.MatchString(id) || !idPattern.MatchString(cand) {
-			errorJSON(w, 404, "candidate_not_found")
-			return
-		}
-		svc, s, pin, environ, ok := pinOf(w, r, true, body.ContextFingerprint)
-		if !ok {
-			return
-		}
-		ctx, cancel := withDeadline(w, r, verifyTimeout)
-		defer cancel()
-		prefill, err := svc.Prepare(ctx, id, cand, pin, environ, s.Snapshot(), body.AcknowledgeUnknown)
-		if err != nil {
-			discoveryError(w, err)
-			return
-		}
-		writeJSON(w, 200, prefill)
-	})
-}
-
-// scopedGate refuses a scoped request while Hub execution is off, before reading the body,
-// so nothing is revealed.
-func scopedGate(w http.ResponseWriter, hub *projects.Hub) bool {
-	if !hub.ScopedExecution {
-		projectError(w, hub, projects.ErrScopedDisabled)
-		return false
+		return hub.Discovery, true
 	}
-	return true
+	discoveryExecRoutes(mux, "/api/v1/contexts/{cid}", hub, available, hubSourceOf(hub))
 }
 
 // scopeDiscoveryPin is the discovery context of scope s, with the inherited AWS profile name

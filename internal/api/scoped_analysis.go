@@ -1,13 +1,18 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
+	"hclaro/internal/discovery"
 	"hclaro/internal/drift"
 	"hclaro/internal/engine"
+	"hclaro/internal/gitctx"
+	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
+	"hclaro/internal/workspace"
 )
 
 // Scoped drift scan and dependency graph routes for Hub workspaces (M24.09). They mirror the
@@ -34,6 +39,46 @@ func (noScope) GraphImpact(string, string, string) (operations.GraphImpact, erro
 	return operations.GraphImpact{}, operations.ErrGraphNotFound
 }
 
+// noScope is also an execSource with no plans, operations or discovery results. Requests
+// that start work create a scope first, so its start methods are never reached.
+func (noScope) Plans() []*operations.Plan                         { return nil }
+func (noScope) Plan(string) (*operations.Plan, bool)              { return nil, false }
+func (noScope) Snapshot() workspace.Snapshot                      { return workspace.Snapshot{} }
+func (noScope) Operations() []operations.Operation                { return nil }
+func (noScope) Holder() string                                    { return "" }
+func (noScope) View() *projects.ScopeView                         { return nil }
+func (noScope) SourceStatus(*operations.Plan) gitctx.SourceStatus { return gitctx.SourceStatus{} }
+func (noScope) ContextStatus(*operations.Plan) (bool, operations.ApplyStatus) {
+	return false, operations.ApplyStatus{}
+}
+func (noScope) Operation(string) (operations.Operation, *operations.Log, bool) {
+	return operations.Operation{}, nil, false
+}
+func (noScope) Cancel(string) (operations.Operation, error) {
+	return operations.Operation{}, operations.ErrNotFound
+}
+func (noScope) StartPlan(context.Context, operations.PlanStart) (operations.Operation, error) {
+	return operations.Operation{}, operations.ErrNotFound
+}
+func (noScope) Preflight(context.Context, string, operations.PreflightRequest) (operations.PreflightReport, error) {
+	return operations.PreflightReport{}, operations.ErrNotFound
+}
+func (noScope) Approve(context.Context, string, operations.ApprovalRequest) (operations.Approval, error) {
+	return operations.Approval{}, operations.ErrNotFound
+}
+func (noScope) StartApply(context.Context, string, string, string) (operations.Operation, error) {
+	return operations.Operation{}, operations.ErrNotFound
+}
+func (noScope) PreviewImport(context.Context, imports.Request) (imports.Preview, error) {
+	return imports.Preview{}, operations.ErrNotFound
+}
+func (noScope) StartImport(context.Context, operations.ImportRequest) (operations.Operation, error) {
+	return operations.Operation{}, operations.ErrNotFound
+}
+func (noScope) DiscoveryPin(context.Context, bool, string, string) (discovery.Pin, []string, error) {
+	return discovery.Pin{}, nil, discovery.ErrNotFound
+}
+
 // analysisOptions are the parts of the drift and graph options of a Hub workspace that
 // describe the scope. Code and Reason explain why the scope itself is unavailable.
 type analysisOptions struct {
@@ -53,9 +98,6 @@ type analysisOptions struct {
 // engine command and never creates or evicts a scope (Hub.Preview). A workspace whose scope is unsupported gets options with its reason and a
 // nil scope; any other failure is answered here and returns ok false.
 func scopedOptions(w http.ResponseWriter, r *http.Request, hub *projects.Hub) (*projects.Scope, analysisOptions, bool) {
-	if !scopedContext(w, r, hub) {
-		return nil, analysisOptions{}, false
-	}
 	s, err := hub.Preview(r.PathValue("cid"))
 	var unsupported *projects.ScopeError
 	if errors.As(err, &unsupported) && unsupported.Code == projects.CodeExecutionUnsupported {
@@ -69,27 +111,15 @@ func scopedOptions(w http.ResponseWriter, r *http.Request, hub *projects.Hub) (*
 	return s, analysisOptions{Engine: view.Engine, Version: view.Version, Workspace: view.Workspace, Backend: view.Backend, Execution: view.ExecutionMode, Scope: &view, ExecutionContext: s.Execution(), ContextFingerprint: s.ProfileFingerprint()}, true
 }
 
-// scopedStartError maps a refused scoped drift scan or graph start. Nothing ran.
+// scopedStartError maps a refused scoped drift scan, graph or discovery request. Nothing ran.
 func scopedStartError(w http.ResponseWriter, r *http.Request, hub *projects.Hub, s *projects.Scope, err error) {
-	var rejected *operations.RejectError
-	switch {
-	case errors.As(err, &rejected):
-		reasonJSON(w, 409, rejected.Code, rejected.Reason)
-	case errors.Is(err, operations.ErrBusy):
-		reason := "Another operation is running in this project. Wait for it to finish, then try again."
-		if kind := s.Holder(); kind != "" {
-			reason = "Another operation (" + kind + ") is running in this project. Wait for it to finish, then try again."
-		}
-		reasonJSON(w, 409, "project_busy", reason)
-	case errors.Is(err, operations.ErrVarFiles):
-		reasonJSON(w, 400, "invalid_var_files", "Choose variable files from the scan options of this workspace.")
-	default:
-		scopeError(w, r, hub, err)
+	if !mapOpError(w, r, hub, s.Holder(), err) {
+		projectError(w, hub, err)
 	}
 }
 
 func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans/options", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans/options", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		s, base, ok := scopedOptions(w, r, hub)
 		if !ok {
 			return
@@ -104,12 +134,8 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			out.VarFiles = s.VarFiles()
 		}
 		writeJSON(w, 200, out)
-	})
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/drift-scans", func(w http.ResponseWriter, r *http.Request) {
-		if !hub.ScopedExecution {
-			projectError(w, hub, projects.ErrScopedDisabled)
-			return
-		}
+	}))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/drift-scans", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			// The preflight must have been shown: a scan queries providers and the backend.
 			Acknowledge *bool    `json:"acknowledgeProviderAccess"`
@@ -139,9 +165,9 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			scopedStartError(w, r, hub, s, err)
 			return
 		}
-		writeJSON(w, 202, map[string]any{"operation": scopedOperation{op, s.View()}, "scan": scan})
-	})
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 202, map[string]any{"operation": scopedOperation{op, hubSource{s}.View()}, "scan": scan})
+	}))
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		s, ok := resolveScope(w, r, hub, false)
 		if !ok {
 			return
@@ -151,23 +177,23 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			scans = s.DriftScans()
 		}
 		writeJSON(w, 200, map[string]any{"scans": scans})
-	})
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans/{id}", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans/{id}", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		if s, ok := resolveScope(w, r, hub, false); ok && s != nil {
 			serveDriftScan(w, r, s)
 		} else if ok {
 			serveDriftScan(w, r, noScope{})
 		}
-	})
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans/{id}/resources/{change}", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans/{id}/resources/{change}", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		if s, ok := resolveScope(w, r, hub, false); ok && s != nil {
 			serveDriftDetail(w, r, s)
 		} else if ok {
 			serveDriftDetail(w, r, noScope{})
 		}
-	})
+	}))
 
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/options", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/options", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		s, base, ok := scopedOptions(w, r, hub)
 		if !ok {
 			return
@@ -182,12 +208,8 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			out.Command = append([]string{base.Engine}, engine.GraphArgs()...)
 		}
 		writeJSON(w, 200, out)
-	})
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/graphs", func(w http.ResponseWriter, r *http.Request) {
-		if !hub.ScopedExecution {
-			projectError(w, hub, projects.ErrScopedDisabled)
-			return
-		}
+	}))
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/graphs", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			// The preflight must have been shown: `graph` runs the engine and may read the backend.
 			Acknowledge        *bool  `json:"acknowledgeEngineRun"`
@@ -215,9 +237,9 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			scopedStartError(w, r, hub, s, err)
 			return
 		}
-		writeJSON(w, 202, map[string]any{"operation": scopedOperation{op, s.View()}, "graph": run})
-	})
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 202, map[string]any{"operation": scopedOperation{op, hubSource{s}.View()}, "graph": run})
+	}))
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		s, ok := resolveScope(w, r, hub, false)
 		if !ok {
 			return
@@ -227,19 +249,19 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			graphs = s.Graphs()
 		}
 		writeJSON(w, 200, map[string]any{"graphs": graphs})
-	})
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/{id}", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/{id}", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		if s, ok := resolveScope(w, r, hub, false); ok && s != nil {
 			serveGraph(w, r, s)
 		} else if ok {
 			serveGraph(w, r, noScope{})
 		}
-	})
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/{id}/nodes/{node}", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/{id}/nodes/{node}", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		if s, ok := resolveScope(w, r, hub, false); ok && s != nil {
 			serveGraphImpact(w, r, s)
 		} else if ok {
 			serveGraphImpact(w, r, noScope{})
 		}
-	})
+	}))
 }

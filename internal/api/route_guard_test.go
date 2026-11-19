@@ -42,6 +42,21 @@ var dynamicRoutes = map[string][]string{
 	`"POST " + prefix + "/git/switch/preview"`: {"POST /api/v1/git/switch/preview", "POST /api/v1/projects/{id}/git/switch/preview"},
 	`"POST " + prefix + "/git/switch"`:         {"POST /api/v1/git/switch", "POST /api/v1/projects/{id}/git/switch"},
 	`"POST " + prefix + "/editor/open"`:        {"POST /api/v1/editor/open", "POST /api/v1/projects/{id}/editor/open"},
+	// routesUnder: the plan, apply, operation, import and discovery routes shared by the launch
+	// project and Hub contexts.
+	`method + " " + prefix + path`: {
+		"POST /api/v1/plans", "POST /api/v1/plans/{id}/preflight",
+		"POST /api/v1/plans/{id}/approval", "POST /api/v1/plans/{id}/apply",
+		"POST /api/v1/operations/{id}/cancel", "POST /api/v1/imports/preview",
+		"POST /api/v1/imports", "POST /api/v1/discovery/identity",
+		"POST /api/v1/discovery/scans", "POST /api/v1/discovery/scans/{id}/cancel",
+		"POST /api/v1/discovery/scans/{id}/candidates/{cand}/prepare", "POST /api/v1/contexts/{cid}/plans",
+		"POST /api/v1/contexts/{cid}/plans/{id}/preflight", "POST /api/v1/contexts/{cid}/plans/{id}/approval",
+		"POST /api/v1/contexts/{cid}/plans/{id}/apply", "POST /api/v1/contexts/{cid}/operations/{id}/cancel",
+		"POST /api/v1/contexts/{cid}/imports/preview", "POST /api/v1/contexts/{cid}/imports",
+		"POST /api/v1/contexts/{cid}/discovery/identity", "POST /api/v1/contexts/{cid}/discovery/scans",
+		"POST /api/v1/contexts/{cid}/discovery/scans/{id}/cancel", "POST /api/v1/contexts/{cid}/discovery/scans/{id}/candidates/{cand}/prepare",
+	},
 	`"POST /api/v1/projects/{id}/operations/" + string(tool)`: {
 		"POST /api/v1/projects/{id}/operations/validate", "POST /api/v1/projects/{id}/operations/fmt-check",
 		"POST /api/v1/projects/{id}/operations/providers", "POST /api/v1/projects/{id}/operations/outputs-metadata",

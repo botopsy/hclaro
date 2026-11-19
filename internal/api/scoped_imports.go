@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"hclaro/internal/imports"
+	"hclaro/internal/discovery"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 )
@@ -16,10 +16,7 @@ import (
 // preflight, approval and apply. Requests carry no path, profile or workspace. A discovery
 // link (M24.09) must name a candidate prepared in this same context.
 func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/imports/options", func(w http.ResponseWriter, r *http.Request) {
-		if !scopedContext(w, r, hub) {
-			return
-		}
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/imports/options", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		type options struct {
 			CanImport          bool                         `json:"canImport"`
 			Code               string                       `json:"code,omitempty"`
@@ -56,99 +53,6 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			Engine: view.Engine, Version: view.Version, Workspace: view.Workspace, Backend: view.Backend,
 			VarFiles: s.VarFiles(), Scope: &view, ExecutionContext: s.Execution(), ContextFingerprint: s.ProfileFingerprint(),
 		})
-	})
-	// The preview writes nothing and runs no engine command.
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/imports/preview", func(w http.ResponseWriter, r *http.Request) {
-		if !hub.ScopedExecution {
-			projectError(w, hub, projects.ErrScopedDisabled)
-			return
-		}
-		var body imports.Request
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		s, ok := resolveScope(w, r, hub, true)
-		if !ok {
-			return
-		}
-		ctx, cancel := withDeadline(w, r, inspectTimeout)
-		defer cancel()
-		preview, err := s.PreviewImport(ctx, body)
-		if err != nil {
-			scopeError(w, r, hub, err)
-			return
-		}
-		writeJSON(w, 200, struct {
-			imports.Preview
-			Scope projects.ScopeView `json:"scope"`
-		}{preview, s.View()})
-	})
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/imports", func(w http.ResponseWriter, r *http.Request) {
-		if !hub.ScopedExecution {
-			projectError(w, hub, projects.ErrScopedDisabled)
-			return
-		}
-		var body struct {
-			imports.Request
-			VarFiles      []string `json:"varFiles"`
-			PreviewSHA256 string   `json:"previewSha256"`
-			// Both acknowledgements are required: the file write and the backend access.
-			AcknowledgeWrite   *bool `json:"acknowledgeWrite"`
-			AcknowledgeBackend *bool `json:"acknowledgeBackendAccess"`
-			// ContextFingerprint is the one the import options returned.
-			ContextFingerprint string `json:"contextFingerprint"`
-			// DiscoveryToken, when set, links the import to a candidate prepared from this
-			// context's discovery scan.
-			DiscoveryToken string `json:"discoveryToken"`
-		}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		if body.AcknowledgeWrite == nil || !*body.AcknowledgeWrite || body.AcknowledgeBackend == nil || !*body.AcknowledgeBackend {
-			reasonJSON(w, 400, "acknowledgement_required", "Importing writes a new file to this project and runs a plan that may contact providers and the backend. Confirm both first.")
-			return
-		}
-		if len(body.ContextFingerprint) > 128 || len(body.PreviewSHA256) > 128 {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		s, ok := resolveScope(w, r, hub, true)
-		if !ok {
-			return
-		}
-		ctx, cancel := withDeadline(w, r, inspectTimeout)
-		defer cancel()
-		if body.DiscoveryToken != "" {
-			stale := hub.Discovery == nil || !idPattern.MatchString(body.DiscoveryToken)
-			if !stale {
-				pin, _, err := scopeDiscoveryPin(ctx, s, false, "")
-				stale = err != nil || hub.Discovery.CheckImport(body.DiscoveryToken, pin, body.Request) != nil
-			}
-			if stale {
-				reasonJSON(w, 409, "discovery_stale", "The import no longer matches the discovered object or its context (another workspace, project, profile, import ID or resource type, or the preparation expired). Prepare it again from Cloud discovery, or clear the discovery link to import manually.")
-				return
-			}
-		}
-		op, err := s.StartImport(ctx, body.Request, body.PreviewSHA256, body.VarFiles, body.ContextFingerprint)
-		var rejected *operations.RejectError
-		switch {
-		case errors.As(err, &rejected):
-			reasonJSON(w, 409, rejected.Code, rejected.Reason)
-		case errors.Is(err, operations.ErrBusy):
-			reason := "Another operation is running in this project. Wait for it to finish, then try again. Nothing was written."
-			if kind := s.Holder(); kind != "" {
-				reason = "Another operation (" + kind + ") is running in this project. Wait for it to finish, then try again. Nothing was written."
-			}
-			reasonJSON(w, 409, "project_busy", reason)
-		case errors.Is(err, operations.ErrVarFiles):
-			reasonJSON(w, 400, "invalid_var_files", "Choose variable files from the import options of this workspace.")
-		case err != nil:
-			scopeError(w, r, hub, err)
-		default:
-			if body.DiscoveryToken != "" {
-				hub.Discovery.Consume(body.DiscoveryToken)
-			}
-			writeJSON(w, 202, scopedOperation{op, s.View()})
-		}
-	})
+	}))
+	importExecRoutes(mux, "/api/v1/contexts/{cid}", hub, func() *discovery.Service { return hub.Discovery }, hubSourceOf(hub))
 }
