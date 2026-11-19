@@ -71,7 +71,7 @@ func (g *gitRecorder) service(t *testing.T) *gitctx.Service {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		for _, c := range g.calls {
-			if !gitctx.Allowed(c) || !slices.Contains([]string{"rev-parse", "status", "diff"}, c[0]) {
+			if !gitctx.Allowed(c) || !slices.Contains([]string{"rev-parse", "status", "diff", "ls-files", "check-ignore"}, c[0]) {
 				t.Errorf("non read-only git command: %v", c)
 			}
 		}

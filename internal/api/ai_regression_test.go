@@ -18,7 +18,8 @@ import (
 	"hclaro/internal/operations"
 )
 
-// AI-01.06 regression gate: the plan, preflight, approval and apply flow, saved-plan source
+// AI-01.06 regression gate, extended in AI-01.13 with a pending proposed change and project
+// packages built during the apply: the plan, preflight, approval and apply flow, saved-plan source
 // binding, one-time approval, workspace selection, Git state and Hub scopes behave the same
 // with AI absent, switched off, switched on, and with an AI request in flight the whole time.
 // Every flow returns a transcript of what a user would see; all four must be equal.
@@ -53,7 +54,8 @@ func newAISide(mode string, set func(*assist.Session)) *aiSide {
 	case aiMidRun:
 		a.stub = &stubAssistant{mode: assist.ModeHeadless, block: true}
 	default:
-		a.stub = &stubAssistant{mode: assist.ModeHeadless, reply: "Approve it: run `terraform apply -auto-approve`."}
+		// A destructive suggestion and a proposed new file (AI-01.12) that nobody applies.
+		a.stub = &stubAssistant{mode: assist.ModeHeadless, reply: "Approve it: run `terraform apply -auto-approve`.\n\n" + proposalReply("proposed.tf", "new", "resource \"aws_s3_bucket\" \"proposed\" {}\n")}
 	}
 	set(assist.NewSession(false, a.stub))
 	return a
@@ -220,7 +222,8 @@ func launchFlow(t *testing.T, mode string) []string {
 					return
 				default:
 				}
-				for _, r := range [][3]string{{"GET", "/api/v1/ai/conversations/" + ai.chat, ""}, {"GET", "/api/v1/ai/settings", ""}, {"POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"` + p1 + `"}`}} {
+				for _, r := range [][3]string{{"GET", "/api/v1/ai/conversations/" + ai.chat, ""}, {"GET", "/api/v1/ai/settings", ""}, {"POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"` + p1 + `"}`},
+					{"POST", "/api/v1/ai/packages", `{"kind":"project"}`}, {"POST", "/api/v1/ai/packages", `{"kind":"project","action":"qa-security@2"}`}, {"GET", "/api/v1/ai/conversations/" + ai.chat + "/changes", ""}} {
 					w := doWith(s.handler, r[0], r[1], r[2])
 					if b := w.Body.String(); strings.Contains(b, approval.Token) || strings.Contains(b, fixtures.Canary) {
 						select {
@@ -247,6 +250,16 @@ func launchFlow(t *testing.T, mode string) []string {
 	reply("apply replay", "POST", applyPath, fmt.Sprintf(`{"confirmationToken":%q,"confirmation":%q}`, approval.Token, approval.Phrase))
 	reply("approval after apply", "POST", "/api/v1/plans/"+p1+"/approval", `{}`)
 	note("git unchanged: %v", gitSnapshot(t, root) == gitBefore && reflect.DeepEqual(head(), headBefore))
+	if mode == aiEnabled {
+		// The proposal is listed, ready and unwritten: only the user's apply writes it.
+		_, out := ai.do("GET", "/api/v1/ai/conversations/"+ai.chat+"/changes", "")
+		if !strings.Contains(out, `"status":"ready"`) || !strings.Contains(out, `"path":"proposed.tf"`) {
+			t.Fatalf("no pending proposal: %s", out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "proposed.tf")); err == nil {
+		t.Fatal("a proposed change was written without an apply")
+	}
 
 	// Source binding: a reviewed plan whose configuration changed after approval is refused.
 	p2 := plan()

@@ -102,6 +102,8 @@ Optional AI assistance (PRD FR-09) is qualified per assistant and version, separ
 | AI-P3 | GitHub Copilot CLI | 1.0.112 | darwin/amd64 | handoff | Feasibility probe passed its canary check, but stdin prompts and a global MCP off switch are undocumented, so Hclaro never runs it. Detection and Copy/Download | 2026-11-17 | PASS (handoff only) |
 | AI-P4 | Claude Code | other than 2.1.x ≥ 2.1.326 | any | handoff | Not run. Hclaro shows the version as not verified and offers Copy/Download only | — | NOT_TESTED |
 | AI-P5 | Any assistant | any | linux, windows, darwin/arm64 | headless | Not run for real; fake assistant CLIs in CI on Linux, macOS and Windows | — | NOT_TESTED |
+| AI-P6 | Claude Code | 2.1.327 | darwin/amd64 | headless conversation | Launch project, synthetic `terraform_data` project, logging wrapper: initial request and follow-ups with exact transcript replay, cancel before the assistant started, retry, stale context after a `.tf` edit, Review with AI on a plan (`review-plan@1`, preview = stdin byte for byte). Not run for real: retry after a real failure, cancel after Claude Code started, Hub conversations (maintainer verification records for AI-01.07 and AI-01.08) | 2026-11-18 | PASS (partial) |
+| AI-P7 | Any assistant | any | any | headless | AI Assistant page, project context, quick actions, saved conversations and proposed changes (AI-01.09 to AI-01.12): fake assistant CLIs only (Go tests, `tests/e2e/quick-actions.mjs`, `tests/e2e/saved-conversations.mjs`) | — | NOT_TESTED |
 
 A generic or custom-command assistant is not supported.
 
