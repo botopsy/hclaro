@@ -294,7 +294,7 @@ func TestUnregisterDuringReadDiscardsSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-fake.started
-	if err := hub.Remove(s.ID); err != nil {
+	if _, err := hub.Remove(s.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, reason, err := hub.Context(c.ID); !errors.Is(err, ErrContextNotFound) || reason != "project_removed" {
@@ -467,7 +467,7 @@ func TestContextClosedHookSeesEveryClose(t *testing.T) {
 	saw(c.ID, "project change")
 	saw(d.ID, "project change")
 	e, _, _ := hub.Open(s.ID, "a", false)
-	if err := hub.Remove(s.ID); err != nil {
+	if _, err := hub.Remove(s.ID); err != nil {
 		t.Fatal(err)
 	}
 	saw(e.ID, "project removal")

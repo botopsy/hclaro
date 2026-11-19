@@ -14,7 +14,7 @@ func (h *Hub) UseHistory(store *history.Store) {
 	h.History = store
 	store.Git = history.ReadGit
 	store.Project = func(root string) (string, string, bool) {
-		records, _ := h.Registry.List()
+		records, _ := h.Registry.List() // on a read error List returns the last good records
 		for _, p := range records {
 			if p.RootPath == root || sameDir(p.RootPath, root) {
 				name := p.Alias

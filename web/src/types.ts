@@ -1447,6 +1447,7 @@ export type CostEstimate = {
   stale: boolean;
   staleReason?: string;
   breakdown?: CostBreakdown;
+  historyWarning?: string;
 };
 export type CostAggregate = {
   id: string;

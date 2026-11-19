@@ -211,7 +211,7 @@ func TestLaunchBinder(t *testing.T) {
 		t.Fatalf("unknown profile: %v", err)
 	}
 	// Unregistering the project removes its profiles.
-	if err := hub.Remove(network); err != nil {
+	if _, err := hub.Remove(network); err != nil {
 		t.Fatal(err)
 	}
 	if list, _, _ := hub.Profiles.List(network); len(list) != 0 {
@@ -258,5 +258,29 @@ func TestLaunchUnderAnotherSpellingIsTheRegisteredProject(t *testing.T) {
 	}
 	if _, ok := hub.Locks.Acquire(summary.RootPath, "init"); ok {
 		t.Fatal("Hub init claimed the root of a running launch plan")
+	}
+}
+
+// Removing a project whose profiles cannot be deleted still removes it, and says so.
+func TestRemoveReportsProfilesLeftBehind(t *testing.T) {
+	if os.Geteuid() == 0 || filepath.Separator == '\\' {
+		t.Skip("needs POSIX permissions as a non-root user")
+	}
+	hub, ids, _ := profileFixture(t)
+	dir := t.TempDir()
+	hub.Profiles = profiles.Open(dir, time.Now())
+	if _, err := hub.Profiles.Create(ids["network"], profiles.Input{Name: "dev", AWSProfile: "dev-sso"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	warning, err := hub.Remove(ids["network"])
+	if err != nil || warning == "" {
+		t.Fatalf("warning %q, err %v", warning, err)
+	}
+	if _, err := hub.Registry.Get(ids["network"]); err == nil {
+		t.Fatal("project still registered")
 	}
 }

@@ -526,7 +526,7 @@ func TestClosingAScopeCancelsReleasesAndDeletes(t *testing.T) {
 	}
 	waitStage(t, s, op.ID, "Planning")
 	engineName, alias := "tofu", "renamed"
-	if err := hub.Remove(ids["network"]); !errors.Is(err, ErrBusy) {
+	if _, err := hub.Remove(ids["network"]); !errors.Is(err, ErrBusy) {
 		t.Fatalf("remove while planning: %v", err)
 	}
 	if _, err := hub.Update(ids["network"], Change{EnginePreference: &engineName}); !errors.Is(err, ErrBusy) {
@@ -561,7 +561,7 @@ func TestClosingAScopeCancelsReleasesAndDeletes(t *testing.T) {
 	if done := waitDone(t, s, op.ID); done.Status != operations.Cancelled {
 		t.Fatalf("%+v", done)
 	}
-	if err := hub.Remove(ids["network"]); err != nil {
+	if _, err := hub.Remove(ids["network"]); err != nil {
 		t.Fatal(err)
 	}
 	if _, reason, _ := hub.Context(c.ID); reason != "project_removed" {

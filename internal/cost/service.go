@@ -124,6 +124,8 @@ type CostEstimate struct {
 	Stale           bool       `json:"stale"`
 	StaleReason     string     `json:"staleReason,omitempty"`
 	Breakdown       *Breakdown `json:"breakdown,omitempty"`
+	// HistoryWarning is set when a completed estimate could not be saved to cost history.
+	HistoryWarning string `json:"historyWarning,omitempty"`
 }
 
 // Estimate statuses.
@@ -347,12 +349,26 @@ func (s *Service) run(ctx context.Context, r *record, in Input) {
 	defer s.wg.Done()
 	defer r.cancel()
 	breakdown, version, err := s.estimate(ctx, in)
+	finished := s.Now().UTC().Format(time.RFC3339)
+	// History is written before the lock (a slow disk must not block other calls) and before
+	// Completed is published, so the warning arrives with the final status.
+	warning := ""
+	if err == nil && s.Store != nil {
+		s.mu.Lock()
+		done := r.est
+		s.mu.Unlock()
+		done.FinishedAt, done.ProviderVersion, done.Breakdown = finished, version, &breakdown
+		if s.Store.Add(aggregateOf(done, in)) != nil {
+			warning = "This estimate could not be saved to cost history."
+		}
+	}
 	s.mu.Lock()
 	if s.running == r {
 		s.running = nil
 	}
-	r.est.FinishedAt = s.Now().UTC().Format(time.RFC3339)
+	r.est.FinishedAt = finished
 	r.est.ProviderVersion = version
+	r.est.HistoryWarning = warning
 	kind := ""
 	switch {
 	case err == nil:
@@ -365,11 +381,7 @@ func (s *Service) run(ctx context.Context, r *record, in Input) {
 	if kind != "" {
 		r.est.Error = &Problem{Code: kind, Message: Message(kind)}
 	}
-	est := r.est
 	s.mu.Unlock()
-	if est.Status == Completed && s.Store != nil {
-		_ = s.Store.Add(aggregateOf(est, in))
-	}
 }
 
 // estimate checks the CLI version again, writes the private input, runs the breakdown and

@@ -128,9 +128,9 @@ export function HubView({ notify }: { notify: (text: string) => void }) {
         notify('Project path updated');
         await refresh();
       }} />}
-   {dialog?.kind === 'remove' && <RemoveDialog project={dialog.project} onClose={() => setDialog(undefined)} onRemoved={() => {
+   {dialog?.kind === 'remove' && <RemoveDialog project={dialog.project} onClose={() => setDialog(undefined)} onRemoved={warning => {
         setDialog(undefined);
-        notify('Project removed from the Hub');
+        notify(warning ? `Project removed from the Hub. ${warning}` : 'Project removed from the Hub');
         client.removeQueries({ queryKey: ['context-open', dialog.project.id] });
         void refresh();
       }} />}
@@ -301,7 +301,7 @@ function TextDialog({ title, label, initial, action, description, mono, onClose,
   </div>;
 }
 
-function RemoveDialog({ project, onClose, onRemoved }: { project: Project; onClose: () => void; onRemoved: () => void }) {
+function RemoveDialog({ project, onClose, onRemoved }: { project: Project; onClose: () => void; onRemoved: (warning: string) => void }) {
   const [error, setError] = useState('');
   const cancel = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
@@ -314,8 +314,8 @@ function RemoveDialog({ project, onClose, onRemoved }: { project: Project; onClo
     {error && <p className="dialog-error" role="alert">{error}</p>}
     <div className="dialog-actions"><Button ref={cancel} variant="ghost" onClick={onClose}>Cancel</Button><Button variant="outline" onClick={async () => {
           try {
-            await send('DELETE', `projects/${project.id}`, {});
-            onRemoved();
+            const res = await send<{ warning?: string }>('DELETE', `projects/${project.id}`, {});
+            onRemoved(res.warning ?? '');
           } catch (e) {
             setError(message(e));
           }

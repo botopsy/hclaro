@@ -164,6 +164,7 @@ function EstimateView({ estimate: e, busy, onCancel }: { estimate: CostEstimate;
   const partial = c.percent !== null && c.percent < 100;
   return <div className={`cost-result ${e.stale ? 'stale' : ''}`}>
    {e.stale && <p className="plan-warning" role="alert"><TriangleAlert size={14} />Out of date: {e.staleReason}</p>}
+   {e.historyWarning && <p className="plan-warning" role="alert"><TriangleAlert size={14} />{e.historyWarning}</p>}
    <div className="cost-headline">
     <span className="muted">Estimated recurring monthly change{partial ? ' (partial)' : ''}</span>
     <strong className={`cost-delta ${b.monthlyDelta.startsWith('-') ? 'down' : /^0(\.0+)?$/.test(b.monthlyDelta) ? '' : 'up'}`}>{signed(b.monthlyDelta)} <abbr title={`Currency: ${b.currency}`}>{b.currency}</abbr> / month</strong>

@@ -824,6 +824,7 @@ func (s *Store) Record(r operations.Record) {
 		return
 	}
 	entry := s.convert(r)
+	// A failed write is kept in s.notice (shown with the history) and never affects the caller.
 	_ = s.mutate(func(d *document) error {
 		i := slices.IndexFunc(d.Entries, func(e HistoryEntry) bool { return e.ID == entry.ID })
 		if i >= 0 {
@@ -883,6 +884,7 @@ func (s *Store) RecordAssist(r assist.RunRecord) {
 		summary = "A conversation without project data was sent to an AI assistant. The messages and the reply are not kept. Nothing was run, applied or approved."
 	}
 	e.Outcome = Outcome{Result: map[bool]string{true: "answered", false: "not_answered"}[status == StatusSucceeded], Summary: summary}
+	// A failed write is kept in s.notice (shown with the history) and never affects the caller.
 	_ = s.mutate(func(d *document) error {
 		d.Entries = append(d.Entries, e)
 		return nil
@@ -918,6 +920,7 @@ func (s *Store) RecordAssistChange(r assist.ChangeRecord) {
 		e.Diagnostic = &Diagnostic{Code: r.Code, Message: clean(assist.ChangeReason(r.Code), maxMessage)}
 	}
 	e.Outcome = Outcome{Result: word(r.Outcome), Summary: summary}
+	// A failed write is kept in s.notice (shown with the history) and never affects the caller.
 	_ = s.mutate(func(d *document) error {
 		d.Entries = append(d.Entries, e)
 		return nil

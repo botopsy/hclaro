@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hclaro/internal/gitctx"
+	"hclaro/internal/imports"
 )
 
 // proposer is an Assistant whose reply is fixed text: a synthetic model proposing changes.
@@ -748,5 +749,62 @@ func TestNewFileIgnoredByGitIsRefused(t *testing.T) {
 		if v, _ := checkChange(root, proposal{path: "extra.tf", base: "new", text: "locals {}\n"}, f); v.Code != "change_ignored" {
 			t.Errorf("%s: %+v", name, v)
 		}
+	}
+}
+
+// A change whose "finished" record cannot be written reports it instead of dropping the error:
+// the next start would treat the change as interrupted.
+func TestSettleReportsUnwrittenRecord(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions as a non-root user")
+	}
+	root := changeRoot(t)
+	config := t.TempDir()
+	store := OpenStore(config, time.Now())
+	key := ProjectKey(root)
+	id, err := store.Backup(key, []byte(mainTF))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Retain(key, id, root, "main.tf"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(config, savedDir, key)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if err := store.Settle(key, id, root, "main.tf", true); err == nil {
+		t.Fatal("unwritten record not reported")
+	}
+}
+
+// When the record that a removal finished cannot be written, moved reports it and the removed
+// file can be put back before the next start would do it unasked.
+func TestUnsettledRemovalIsPutBack(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions as a non-root user")
+	}
+	root := changeRoot(t)
+	write(t, root, "modules/net/extra.tf", "locals {}\n")
+	s, _, scope, _ := proposing(t, root, "no change")
+	var keyDir string
+	id, unsettled, err := s.moved(scope, "modules/net/extra.tf", []byte("locals {}\n"), func(keep string) error {
+		dir := filepath.Join(root, "modules/net")
+		if err := os.Rename(filepath.Join(dir, "extra.tf"), filepath.Join(dir, imports.AsideName(keep))); err != nil {
+			return err
+		}
+		keyDir = filepath.Join(s.Store.config, savedDir, scope.ProjectKey)
+		return os.Chmod(keyDir, 0o500)
+	})
+	t.Cleanup(func() { _ = os.Chmod(keyDir, 0o700) })
+	if err != nil || !unsettled || id == "" {
+		t.Fatalf("id %q unsettled %v err %v", id, unsettled, err)
+	}
+	if !putBackRemoved(root, "modules/net/extra.tf", id) || read(t, root, "modules/net/extra.tf") != "locals {}\n" {
+		t.Fatal("removed file not put back")
+	}
+	if exists(filepath.Join(root, "modules/net", imports.AsideName(id))) {
+		t.Fatal("aside name left behind")
 	}
 }

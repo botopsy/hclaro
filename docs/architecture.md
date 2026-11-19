@@ -480,7 +480,7 @@ Every API endpoint requires `Authorization: Bearer <launch-token>`. Requests the
 | `GET /api/v1/projects` | Registry status and notice, launch root, inherited environment flags (`TF_WORKSPACE` name when valid, `TF_DATA_DIR`, whether `TF_CLI_ARGS*` is set) and project summaries. Runs no command |
 | `POST /api/v1/projects` | `{path, alias?, engine?}` → 201 summary; 400 `invalid_path`/`invalid_alias`/`invalid_engine` with reason; 409 `duplicate_project` with `existingId`, `registry_unavailable`, `too_many_projects` |
 | `PATCH /api/v1/projects/{id}` | `{alias?, pinned?, engine?, rootPath?}` → 200 summary; same errors, 404 `project_not_found` |
-| `DELETE /api/v1/projects/{id}` | `{}` → 200; unregisters only |
+| `DELETE /api/v1/projects/{id}` | `{}` → 200 `{removed, warning}`; unregisters only. `warning` is non-empty when the project's execution profiles could not be deleted |
 | `POST /api/v1/projects/order` | `{ids}` (a permutation) → 200; 400 `invalid_order` |
 | `POST /api/v1/projects/{id}/inspect` | `{}` → 200 summary with `inspection` (engine, version, workspaces, `cliDefault`, hidden count, diagnostic) |
 | `POST /api/v1/projects/browse` | `{path}` (empty for home) → 200 folder listing; 400 `browse_failed` |
@@ -503,7 +503,7 @@ Every API endpoint requires `Authorization: Bearer <launch-token>`. Requests the
 | `PATCH /api/v1/projects/{id}/execution-profiles/{pid}` | The full profile plus `expectedRevision` → 200 (closes contexts using it); 404 `profile_not_found`; 409 `revision_conflict` |
 | `DELETE /api/v1/projects/{id}/execution-profiles/{pid}` | `{expectedRevision}` → 200 (closes contexts using it); 404, 409 `revision_conflict` |
 | `POST /api/v1/projects/{id}/execution-profiles/{pid}/clone`, `…/execution-profiles/default` | `{name}` → 201; `{profileId}` (empty clears) → 200 |
-| `GET /api/v1/projects/{id}/var-files` | Approvable variable files: reference, canonical path, size, modification time, linked; never contents |
+| `GET /api/v1/projects/{id}/var-files` | Approvable variable files: reference, canonical path, size, modification time, linked; never contents. 409 `var_files_unreadable` when the project folder cannot be read |
 | `GET /api/v1/projects/{id}/execution-context?profileId=&workspace=` | Execution summary (root, backend/mode, engine looked up on `PATH`, cached version, workspace and its source, data directory, resolved context with fingerprint, issues). Runs no command |
 | `GET /api/v1/comparisons/target?projectId=&workspace=&profileId=` | Project summary and the last read of an open context for that target. Runs no command |
 | `POST /api/v1/comparisons` | `{left, right, rules, reload, acknowledgeStateRead: true}` → 202 comparison (opens or reuses two read contexts); 400 `acknowledgement_required`, `invalid_request`, `invalid_target`, `invalid_workspace`, `same_target`, `invalid_rule` (`index`, `reason`) |
@@ -515,7 +515,7 @@ Every API endpoint requires `Authorization: Bearer <launch-token>`. Requests the
 | `POST /api/v1/cost/opt-in` | `{"acknowledged":true,"disclosureVersion":"1"}` → 200 capabilities; 400 `acknowledgement_required`/`invalid_request`; 409 `strict_local`, `cli_missing`, `cli_unsupported`, `opt_in_required` (other disclosure version), `no_launch_project`, `cost_unavailable` |
 | `POST /api/v1/cost/opt-out` | `{}` → 200 capabilities; cancels a running estimate |
 | `POST /api/v1/plans/{id}/cost-estimates` | `{}` (no other field) → 202 `CostEstimate` (`running`); 404 `plan_not_found`; 409 `opt_in_required`, `strict_local`, `context_changed`, `busy`, `input_unavailable`, `input_too_large` |
-| `GET /api/v1/plans/{id}/cost-estimate`, `GET /api/v1/cost-estimates/{id}` | Latest estimate of a plan / one estimate: status, `error {code,message}`, provider and version, `pricingSource`, `basis`, short fingerprint and digest, `stale`/`staleReason`, `breakdown` (totals, `coverage`, `caveats`, `types`, `items`, `truncated`); 404 `estimate_not_found` |
+| `GET /api/v1/plans/{id}/cost-estimate`, `GET /api/v1/cost-estimates/{id}` | Latest estimate of a plan / one estimate: status, `error {code,message}`, provider and version, `pricingSource`, `basis`, short fingerprint and digest, `stale`/`staleReason`, `historyWarning` (a completed estimate was not saved to cost history), `breakdown` (totals, `coverage`, `caveats`, `types`, `items`, `truncated`); 404 `estimate_not_found` |
 | `POST /api/v1/cost-estimates/{id}/cancel` | `{}` → 200 estimate |
 | `GET /api/v1/cost/history`, `POST /api/v1/cost/history/clear` | Saved aggregates of the launch project, newest first, and `persisted` / `{}` → `{removed}` |
 | `GET /api/v1/discovery/options` | Discovery availability, supported types and regions, limits, default region and its source, workspace, execution context summary and the current verification for the tab's context (`?profileId=`). Runs no command |

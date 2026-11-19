@@ -100,9 +100,9 @@ func (s *Service) OpenEditor(ctx context.Context, root, id, editor string, line 
 	if err != nil {
 		return EditorResult{}, ErrNotFound
 	}
-	top := FindGit(canonical)
-	if top != "" {
-		top, _ = filepath.EvalSymlinks(top)
+	top, err := repositoryTop(canonical)
+	if err != nil {
+		return EditorResult{}, ErrNotFound
 	}
 	scope, err := NewScope(canonical, top, s.environ())
 	if err != nil {

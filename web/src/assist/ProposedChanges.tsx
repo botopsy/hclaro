@@ -64,7 +64,7 @@ function ChangeCard({ scope, id, change }: { scope: PlanScope; id: string; chang
    {c.status === 'invalid' && <p className="plan-warning" role="note"><span>Cannot be applied: {c.reason}</span></p>}
    {c.diff && c.status !== 'invalid' && <DiffText diff={c.diff} />}
    {c.status === 'applied' && <p className="info-line" role="status">Written to <code>{c.path}</code>{c.created ? ' (new file)' : <>; a backup was kept for Undo, and the replaced file stays next to it as <code>{c.aside}</code> in case another program still had it open. Hclaro deletes that file after 30 days only if nothing was written into it</>}. Saved plans of this project no longer match its configuration. Nothing was run: run a plan to review the effect, and see Git for the file's status.</p>}
-   {c.status === 'applied' && c.reason && <p className="plan-warning" role="alert"><span>{c.reason}</span></p>}
+   {(c.status === 'applied' || c.status === 'undone') && c.reason && <p className="plan-warning" role="alert"><span>{c.reason}</span></p>}
    {c.status === 'rejected' && <p className="muted" role="status">Rejected. Nothing was written.</p>}
    {c.status === 'undone' && <p className="muted" role="status">Undone: {c.created ? 'the new file was removed' : 'the file was restored from its backup'}.</p>}
    {refused && <p className="dialog-error" role="alert">{refused}</p>}
