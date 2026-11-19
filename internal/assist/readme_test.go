@@ -12,7 +12,7 @@ func TestReadmeQuotesTheDisclosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readme := string(b)
+	readme := strings.ReplaceAll(string(b), "\r\n", "\n") // Windows checkouts may use CRLF
 	if !strings.Contains(readme, "### Disclosure text (version "+DisclosureVersion+")") {
 		t.Fatalf("README does not quote disclosure version %s", DisclosureVersion)
 	}
