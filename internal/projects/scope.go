@@ -399,6 +399,12 @@ func (s *Scope) Holder() string {
 	return kind
 }
 
+// Exclusive runs fn under the scope's operation lock (operations.Manager.Exclusive).
+func (s *Scope) Exclusive(what string, fn func() error) error { return s.manager.Exclusive(what, fn) }
+
+// Root is the scope's project root as its operations use it.
+func (s *Scope) Root() string { return s.manager.Root() }
+
 // Plans returns this scope's reviewed plans, oldest first.
 func (s *Scope) Plans() []*operations.Plan { return s.manager.Plans() }
 

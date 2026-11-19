@@ -43,6 +43,7 @@ var readOnly = map[string]map[string]bool{
 	"diff-tree":    {"-r": true, "-z": true, "--name-only": true, "--no-renames": true},
 	"cat-file":     {"-t": true},
 	"ls-files":     {}, // exact shape checked in Allowed
+	"check-ignore": {}, // exact shape checked in Allowed
 	"diff":         {"--no-ext-diff": true, "--no-textconv": true, "--no-color": true, "--no-renames": true, fullContext: true, "HEAD": true, "--": true},
 }
 
@@ -64,6 +65,9 @@ func Allowed(args []string) bool {
 		return len(args) == 7 && slices.Equal(args[:5], []string{"diff-tree", "-r", "-z", "--name-only", "--no-renames"}) && commitPattern.MatchString(args[5]) && commitPattern.MatchString(args[6])
 	case "ls-files":
 		return slices.Equal(args, ConfigFilesArgs)
+	case "check-ignore":
+		// check-ignore -- <path>: one plain relative path (Git refuses pathspec magic here).
+		return len(args) == 3 && args[1] == "--" && validRepoPath(args[2]) && !hasControl(args[2]) && !strings.HasPrefix(args[2], ":") && !strings.HasPrefix(args[2], "-")
 	case "cat-file":
 		// cat-file -t <commit>:<path>
 		if len(args) != 3 || args[1] != "-t" {

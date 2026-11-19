@@ -25,10 +25,10 @@ const maxMessage = 8000;
 const quickActions = [
   { id: 'qa-describe@1', label: 'Describe project' },
   { id: 'qa-architecture@1', label: 'Architecture review' },
-  { id: 'qa-security@1', label: 'Security review' },
+  { id: 'qa-security@2', label: 'Security review' },
   { id: 'qa-cost@1', label: 'Cost analysis' },
-  { id: 'qa-issues@1', label: 'Find issues' },
-  { id: 'qa-improve@1', label: 'Suggest improvements' }
+  { id: 'qa-issues@2', label: 'Find issues' },
+  { id: 'qa-improve@2', label: 'Suggest improvements' }
 ];
 
 export function AssistantPage({ scope, project, workspace, noProject }: { scope?: PlanScope; project: string; workspace: string; noProject?: boolean }) {

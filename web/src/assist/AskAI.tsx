@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 import type { ImportRequest } from '../types';
+import { hasProposal, ProposedChanges, useChanges } from './ProposedChanges';
 
 // AI handoff (AI-01.03) and conversations (AI-01.04, AI-01.07): the server builds a sanitized
 // context package; the user previews it and only Copy, Download or Review with an assistant hands it over.
@@ -226,17 +227,20 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
     // Also after a refusal: a context_changed refusal must show the stale banner and lock the input.
     await chat.refetch();
   }
+  const proposing = !!c?.turns.some(t => t.role === 'assistant' && !t.hidden && hasProposal(t.text));
+  const changes = useChanges(scope, id, c?.turns.length ?? 0, proposing);
   const tooLong = new TextEncoder().encode(text).length > maxMessage;
   const running = c?.state === 'running';
   const locked = running || c?.stale || !!c?.readOnly;
   return <section className="assist-run" aria-label="Conversation">
-   <p className="plan-warning" role="note"><TriangleAlert size={14} /><span>AI output is unverified. Hclaro never runs, applies or approves anything it suggests; check every claim and command yourself.</span></p>
+   <p className="plan-warning" role="note"><TriangleAlert size={14} /><span>AI output is unverified. Hclaro never runs, applies or approves anything it suggests, and writes a proposed file change only when you apply it; check every claim and command yourself.</span></p>
    {chat.error ? <p className="dialog-error" role="alert">{chat.error.message}</p> : !c ? <p className="muted" role="status"><LoaderCircle className="spin" size={14} /> Starting…</p> : <>
     <p className="muted assist-usage">{name} · {running ? 'waiting for a reply' : c.state} · {Math.ceil(c.usedBytes / 1024)} of {c.limitBytes / 1024} KiB used. Every message resends the whole conversation.</p>
     <ol className="assist-turns" aria-label="Messages">
      {c.turns.map((t, i) => t.hidden ? <li key={i} className="assist-turn context" role="note">Hidden: this saved {t.role === 'context' ? 'project context' : 'message'} now looks like it contains a secret, a credential or a local path.</li>
        : t.role === 'context' ? <li key={i} className="assist-turn context" role="note">Project context attached (hash <code title={t.sha256}>{t.sha256?.slice(0, 12)}…</code>)</li> : <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
-      {t.role === 'assistant' ? <pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{t.text || '(empty reply)'}</pre>
+      {t.role === 'assistant' ? <><pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{t.text || '(empty reply)'}</pre>
+        {changes.data && changes.data.changes.some(v => v.turn === i) && <ProposedChanges scope={scope} id={id} changes={changes.data.changes.filter(v => v.turn === i)} />}</>
         : t.prompt ? <p>{t.prompt.startsWith('qa-') ? 'Ran a quick action on the context package' : 'Asked for a review of the context package'} (<code>{t.prompt}</code>).</p>
         : <p>{t.text || 'Shared the context package.'}</p>}</li>)}
     </ol>

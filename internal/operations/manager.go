@@ -477,6 +477,26 @@ func (m *Manager) Running() bool {
 	return m.running != nil || m.starting
 }
 
+// Exclusive runs fn while no operation runs in this workspace and with the root claim held,
+// so a file write (an AI-proposed change, AI-01.12) never races a plan, apply, import or init
+// in the same folder. It returns ErrBusy or ErrClosed without running fn.
+func (m *Manager) Exclusive(what string, fn func() error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch {
+	case m.closed:
+		return ErrClosed
+	case m.running != nil || m.starting:
+		return ErrBusy
+	}
+	release, ok := m.Locks.Acquire(m.root, what)
+	if !ok {
+		return ErrBusy
+	}
+	defer release()
+	return fn()
+}
+
 // Applying reports whether an apply is running.
 func (m *Manager) Applying() bool {
 	m.mu.Lock()

@@ -74,6 +74,7 @@ var kindTable = []kindInfo{
 	{"tool", "Project tool", false},
 	{"branch", "Branch switch", false},
 	{"assist", "AI analysis", false},
+	{"assist-change", "AI proposed change", false},
 	{KindUnknown, "Unknown operation", true},
 }
 
@@ -166,6 +167,12 @@ type AssistSummary struct {
 	PackageSHA256 string `json:"packageSha256"`
 	// Prompt is the registry prompt ID of the turn ("review-plan@1"), when Hclaro wrote it.
 	Prompt string `json:"prompt,omitempty"`
+	// A proposed change decision (kind assist-change, AI-01.12): the conversation, the project
+	// relative path and the file hashes before and after. Never file content.
+	Conversation string `json:"conversation,omitempty"`
+	Path         string `json:"path,omitempty"`
+	BaseSHA256   string `json:"baseSha256,omitempty"`
+	NewSHA256    string `json:"newSha256,omitempty"`
 }
 
 // PlanSummary is what a reviewed plan proposed: counts and the addresses with their actions.
@@ -882,6 +889,43 @@ func (s *Store) RecordAssist(r assist.RunRecord) {
 	})
 }
 
+// RecordAssistChange keeps the metadata of one decision about an AI-proposed change.
+func (s *Store) RecordAssistChange(r assist.ChangeRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status != Ready {
+		return
+	}
+	status, summary := StatusSucceeded, map[string]string{
+		"applied":  "A file change an AI assistant proposed was applied after review. A backup of the replaced file was kept. Nothing was run.",
+		"rejected": "A file change an AI assistant proposed was rejected. Nothing was written.",
+		"undone":   "An applied AI-proposed file change was undone. Nothing was run.",
+	}[r.Outcome]
+	if summary == "" {
+		status, summary = StatusFailed, "A file change an AI assistant proposed was refused by Hclaro's checks. Nothing was written."
+	}
+	at := r.At.UTC().Format(time.RFC3339)
+	e := HistoryEntry{ID: newSession(), Kind: "assist-change", Action: word(r.Outcome), Status: status, StartedAt: at, FinishedAt: at, Engine: word(r.Engine),
+		Command: []string{}, Excerpt: []Line{}, Assist: scrubAssist(&AssistSummary{Provider: r.Provider, Conversation: r.Conversation, Path: r.Path, BaseSHA256: r.BaseSHA256, NewSHA256: r.NewSHA256})}
+	e.ProjectID, e.ProjectName, e.Registered = s.project(operations.Record{Root: r.Root})
+	if r.Project != "" {
+		e.ProjectName = clean(r.Project, 120)
+	}
+	if workspaceRe.MatchString(r.Workspace) {
+		e.Workspace = r.Workspace
+	}
+	if r.Code != "" && codePattern.MatchString(r.Code) {
+		e.Diagnostic = &Diagnostic{Code: r.Code, Message: clean(assist.ChangeReason(r.Code), maxMessage)}
+	}
+	e.Outcome = Outcome{Result: word(r.Outcome), Summary: summary}
+	_ = s.mutate(func(d *document) error {
+		d.Entries = append(d.Entries, e)
+		return nil
+	})
+}
+
+var changePathRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_./-]{0,511}$`)
+
 var promptID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}@[1-9][0-9]{0,5}$`)
 
 func scrubAssist(a *AssistSummary) *AssistSummary {
@@ -894,6 +938,17 @@ func scrubAssist(a *AssistSummary) *AssistSummary {
 	}
 	if promptID.MatchString(a.Prompt) {
 		out.Prompt = a.Prompt
+	}
+	for _, h := range [][2]*string{{&out.BaseSHA256, &a.BaseSHA256}, {&out.NewSHA256, &a.NewSHA256}} {
+		if len(*h[1]) == 64 && hexPattern.MatchString(*h[1]) {
+			*h[0] = *h[1]
+		}
+	}
+	if ValidID(a.Conversation) {
+		out.Conversation = a.Conversation
+	}
+	if changePathRe.MatchString(a.Path) && !strings.Contains(a.Path, "..") {
+		out.Path = a.Path
 	}
 	return out
 }

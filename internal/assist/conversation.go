@@ -227,6 +227,8 @@ type conversation struct {
 	// Saved conversations (AI-01.11): how a reopened copy re-checks its context, the fingerprint
 	// of its latest project package and the assistant version it ran with.
 	resume, fingerprint, version string
+	// changes holds this session's decisions about proposed changes, by "turn/index" (AI-01.12).
+	changes map[string]*changeState
 }
 
 // The intro is provider-neutral: the same first message goes to Claude Code (headless) and is

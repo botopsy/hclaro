@@ -238,4 +238,29 @@ describe('AI conversation', () => {
     expect(screen.getByLabelText('Follow-up message')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   });
+  it('shows Hclaro-computed proposals and applies or rejects each one on its own', async () => {
+    const proposed = 'Here is a fix.\n```hclaro-change path=main.tf base=' + 'a'.repeat(64) + '\nlocals {}\n```\n```hclaro-change path=../x.tf base=new\nlocals {}\n```\n';
+    const turns = [first[0], { role: 'assistant', text: proposed, at }];
+    const ready = { turn: 1, index: 0, path: 'main.tf', status: 'ready', created: false, baseSha256: 'a'.repeat(64), newSha256: 'b'.repeat(64), diff: '--- a/main.tf\n+++ b/main.tf\n@@ -1,1 +1,1 @@\n-locals { a = 1 }\n+locals {}\n', added: 1, removed: 1 };
+    const bad = { turn: 1, index: 1, path: '../x.tf', status: 'invalid', code: 'change_path', reason: 'Hclaro writes only .tf and .tofu files inside the project folder.', created: true, added: 0, removed: 0 };
+    serve({}, () => chat('ready', turns), {
+      [`/ai/conversations/${id}/changes`]: () => Response.json({ changes: [ready, bad] }),
+      [`/ai/conversations/${id}/changes/apply`]: () => Response.json({ ...ready, status: 'applied', canUndo: true })
+    });
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Text to share: review prompt and context package');
+    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    const list = await screen.findByRole('list', { name: 'Proposed changes' });
+    expect(within(list).getByLabelText('Diff computed by Hclaro').textContent).toContain('+locals {}');
+    expect(within(list).getByText(/Cannot be applied: Hclaro writes only/)).toBeInTheDocument();
+    // One Apply per valid proposal, no "apply all"; nothing is posted before the click.
+    expect(within(list).getAllByRole('button', { name: /^Apply/ })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /apply all/i })).toBeNull();
+    expect(posts.filter(p => p.url.includes('/changes/'))).toHaveLength(0);
+    await user.click(within(list).getByRole('button', { name: 'Apply to main.tf' }));
+    expect(posts.filter(p => p.url.includes('/changes/'))).toEqual([{ url: `/api/v1/ai/conversations/${id}/changes/apply`, body: { turn: 1, index: 0, baseSha256: 'a'.repeat(64), newSha256: 'b'.repeat(64) } }]);
+    expect(await within(list).findByText(/Nothing was run: run a plan to review the effect/)).toBeInTheDocument();
+    expect(within(list).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+  });
 });
