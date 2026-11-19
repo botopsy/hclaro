@@ -61,23 +61,6 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		}
 		return nil, false
 	}
-	pinOf := func(w http.ResponseWriter, profileID, expected string) (discovery.Pin, []string, bool) {
-		if !validProfileParam(profileID) {
-			errorJSON(w, 400, "invalid_request")
-			return discovery.Pin{}, nil, false
-		}
-		pin, environ, err := discoveryPin(manager, profileID, expected)
-		var rejected *operations.RejectError
-		switch {
-		case errors.As(err, &rejected):
-			reasonJSON(w, 409, rejected.Code, rejected.Reason)
-			return discovery.Pin{}, nil, false
-		case err != nil:
-			reasonJSON(w, 409, "context_unavailable", "The execution context could not be resolved.")
-			return discovery.Pin{}, nil, false
-		}
-		return pin, environ, true
-	}
 	mux.HandleFunc("GET /api/v1/discovery/options", func(w http.ResponseWriter, r *http.Request) {
 		profileID := r.URL.Query().Get("profileId")
 		if !validProfileParam(profileID) {
@@ -138,19 +121,60 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 			"maxConcurrency": discovery.MaxConcurrency, "defaultConcurrency": discovery.DefaultConcurrent, "pageSize": discovery.PageSize,
 		}, snap.Info.Project, snap.Info.Engine, snap.Info.Workspace, snap.Info.Backend, snap.Status, identity, projectID, context, profileError})
 	})
-	mux.HandleFunc("POST /api/v1/discovery/identity", func(w http.ResponseWriter, r *http.Request) {
+	discoveryExecRoutes(mux, "/api/v1", nil, available, launchSourceOf(manager, nil))
+}
+
+// discoveryExecRoutes registers the discovery routes that verify, scan, list, read, cancel
+// and prepare under prefix, as execRoutes. The AWS CLI runs with the source's execution
+// profile environment; a Hub context's verifications, scans and prepared imports belong to
+// that context only and are dropped with its scope. GET routes run nothing and contact
+// nothing; verifying, scanning and preparing are explicit POSTs that carry the reviewed
+// context fingerprint and create and revalidate a Hub scope first. A read of a Hub context
+// without a scope has nothing to show: scan_not_found.
+func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, available func(http.ResponseWriter) (*discovery.Service, bool), source sourceOf) {
+	handle := routesUnder(mux, prefix, hub)
+	// pinOf resolves the discovery service and context of a request; check is set for
+	// requests that contact AWS, and only those create a Hub scope. It answers refusals itself.
+	pinOf := func(w http.ResponseWriter, r *http.Request, check bool, profileID, reviewed string) (*discovery.Service, execSource, discovery.Pin, []string, bool) {
+		if len(reviewed) > 128 {
+			errorJSON(w, 400, "invalid_request")
+			return nil, nil, discovery.Pin{}, nil, false
+		}
+		svc, ok := available(w)
+		if !ok {
+			return nil, nil, discovery.Pin{}, nil, false
+		}
+		src, ok := source(w, r, check)
+		if !ok {
+			return nil, nil, discovery.Pin{}, nil, false
+		}
+		ctx, cancel := withDeadline(w, r, inspectTimeout)
+		defer cancel()
+		pin, environ, err := src.DiscoveryPin(ctx, check, profileID, reviewed)
+		switch {
+		case err == nil:
+			return svc, src, pin, environ, true
+		case errors.Is(err, discovery.ErrNotFound):
+			discoveryError(w, err)
+		case mapOpError(w, r, hub, src.Holder(), err):
+		default:
+			reasonJSON(w, 409, "context_unavailable", "The execution context could not be resolved.")
+		}
+		return nil, nil, discovery.Pin{}, nil, false
+	}
+	handle("POST /discovery/identity", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			ProfileID          string `json:"profileId"`
-			ContextFingerprint string `json:"contextFingerprint"`
+			ProfileID          *string `json:"profileId"`
+			ContextFingerprint string  `json:"contextFingerprint"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		svc, ok := available(w)
+		profileID, ok := profileOf(w, hub, body.ProfileID)
 		if !ok {
 			return
 		}
-		pin, environ, ok := pinOf(w, body.ProfileID, body.ContextFingerprint)
+		svc, _, pin, environ, ok := pinOf(w, r, true, profileID, body.ContextFingerprint)
 		if !ok {
 			return
 		}
@@ -163,10 +187,10 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		}
 		writeJSON(w, 200, identity)
 	})
-	mux.HandleFunc("POST /api/v1/discovery/scans", func(w http.ResponseWriter, r *http.Request) {
+	handle("POST /discovery/scans", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			IdentityID         string                   `json:"identityId"`
-			ProfileID          string                   `json:"profileId"`
+			ProfileID          *string                  `json:"profileId"`
 			ContextFingerprint string                   `json:"contextFingerprint"`
 			Scope              discovery.DiscoveryScope `json:"scope"`
 			// The scan preview must have been shown: listing calls AWS APIs.
@@ -176,18 +200,18 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 			return
 		}
 		if body.Acknowledge == nil || !*body.Acknowledge {
-			errorJSON(w, 400, "acknowledgement_required")
+			reasonJSON(w, 400, "acknowledgement_required", "Listing AWS objects calls AWS APIs. Confirm the scan first.")
 			return
 		}
 		if !idPattern.MatchString(body.IdentityID) {
 			reasonJSON(w, 409, "identity_required", "Verify the AWS context before scanning.")
 			return
 		}
-		svc, ok := available(w)
+		profileID, ok := profileOf(w, hub, body.ProfileID)
 		if !ok {
 			return
 		}
-		pin, environ, ok := pinOf(w, body.ProfileID, body.ContextFingerprint)
+		svc, _, pin, environ, ok := pinOf(w, r, true, profileID, body.ContextFingerprint)
 		if !ok {
 			return
 		}
@@ -198,35 +222,45 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		}
 		writeJSON(w, 202, scan)
 	})
-	mux.HandleFunc("GET /api/v1/discovery/scans", func(w http.ResponseWriter, r *http.Request) {
+	handle("GET /discovery/scans", func(w http.ResponseWriter, r *http.Request) {
+		// A Hub workspace view lists scans without checking availability first.
+		if hub != nil && hub.Discovery == nil {
+			writeJSON(w, 200, map[string]any{"scans": []discovery.Scan{}})
+			return
+		}
 		svc, ok := available(w)
 		if !ok {
 			return
 		}
-		writeJSON(w, 200, map[string]any{"scans": svc.Scans("")})
+		// A Hub context lists only its own scans; the launch project's have no context.
+		writeJSON(w, 200, map[string]any{"scans": svc.Scans(r.PathValue("cid"))})
 	})
-	mux.HandleFunc("GET /api/v1/discovery/scans/{id}", func(w http.ResponseWriter, r *http.Request) {
+	handle("GET /discovery/scans/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		if !idPattern.MatchString(id) {
 			errorJSON(w, 404, "scan_not_found")
 			return
 		}
-		svc, ok := available(w)
+		profileID := ""
+		if hub == nil {
+			profileID = r.URL.Query().Get("profileId")
+		}
+		if !validProfileParam(profileID) {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
+		svc, src, pin, _, ok := pinOf(w, r, false, profileID, "")
 		if !ok {
 			return
 		}
-		pin, _, ok := pinOf(w, r.URL.Query().Get("profileId"), "")
-		if !ok {
-			return
-		}
-		view, err := svc.View(id, pin, manager.Snapshot())
+		view, err := svc.View(id, pin, src.Snapshot())
 		if err != nil {
 			discoveryError(w, err)
 			return
 		}
 		writeJSON(w, 200, view)
 	})
-	mux.HandleFunc("POST /api/v1/discovery/scans/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+	handle("POST /discovery/scans/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{}
 		if !decodeBody(w, r, &body) {
 			return
@@ -240,68 +274,44 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		if !ok {
 			return
 		}
-		scan, err := svc.Cancel(id, "")
+		scan, err := svc.Cancel(id, r.PathValue("cid"))
 		if err != nil {
 			discoveryError(w, err)
 			return
 		}
 		writeJSON(w, 200, scan)
 	})
-	mux.HandleFunc("POST /api/v1/discovery/scans/{id}/candidates/{cid}/prepare", func(w http.ResponseWriter, r *http.Request) {
+	handle("POST /discovery/scans/{id}/candidates/{cand}/prepare", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			ProfileID          string `json:"profileId"`
-			ContextFingerprint string `json:"contextFingerprint"`
-			AcknowledgeUnknown bool   `json:"acknowledgeUnknownMapping"`
+			ProfileID          *string `json:"profileId"`
+			ContextFingerprint string  `json:"contextFingerprint"`
+			AcknowledgeUnknown bool    `json:"acknowledgeUnknownMapping"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		id, cid := r.PathValue("id"), r.PathValue("cid")
-		if !idPattern.MatchString(id) || !idPattern.MatchString(cid) {
+		id, cand := r.PathValue("id"), r.PathValue("cand")
+		if !idPattern.MatchString(id) || !idPattern.MatchString(cand) {
 			errorJSON(w, 404, "candidate_not_found")
 			return
 		}
-		svc, ok := available(w)
+		profileID, ok := profileOf(w, hub, body.ProfileID)
 		if !ok {
 			return
 		}
-		pin, environ, ok := pinOf(w, body.ProfileID, body.ContextFingerprint)
+		svc, src, pin, environ, ok := pinOf(w, r, true, profileID, body.ContextFingerprint)
 		if !ok {
 			return
 		}
 		ctx, cancel := withDeadline(w, r, verifyTimeout)
 		defer cancel()
-		prefill, err := svc.Prepare(ctx, id, cid, pin, environ, manager.Snapshot(), body.AcknowledgeUnknown)
+		prefill, err := svc.Prepare(ctx, id, cand, pin, environ, src.Snapshot(), body.AcknowledgeUnknown)
 		if err != nil {
 			discoveryError(w, err)
 			return
 		}
 		writeJSON(w, 200, prefill)
 	})
-}
-
-// checkDiscoveryImport verifies an import started from a prepared discovery candidate. It
-// returns false after writing the refusal.
-func checkDiscoveryImport(w http.ResponseWriter, manager *operations.Manager, token, profileID, fingerprint string, check func(discovery.Pin) error) bool {
-	if manager.Discovery == nil || !idPattern.MatchString(token) {
-		reasonJSON(w, 409, "discovery_stale", "This import was prepared from a discovery scan that is no longer available. Prepare it again from Cloud discovery.")
-		return false
-	}
-	pin, _, err := discoveryPin(manager, profileID, fingerprint)
-	var rejected *operations.RejectError
-	switch {
-	case errors.As(err, &rejected):
-		reasonJSON(w, 409, rejected.Code, rejected.Reason)
-		return false
-	case err != nil:
-		reasonJSON(w, 409, "context_unavailable", "The execution context could not be resolved.")
-		return false
-	}
-	if check(pin) != nil {
-		reasonJSON(w, 409, "discovery_stale", "The import no longer matches the discovered object or its context (another account, workspace, profile, import ID or resource type, or the preparation expired). Prepare it again from Cloud discovery, or clear the discovery link to import manually.")
-		return false
-	}
-	return true
 }
 
 // discoveryError maps discovery errors to typed responses. Messages never include CLI output.

@@ -42,7 +42,7 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 		inits = hub.Inits
 	}
 	planRoutes(mux, store, manager, inits, hub, csrf, version)
-	importRoutes(mux, store, manager)
+	importRoutes(mux, store, manager, inits)
 	driftRoutes(mux, store, manager, hub)
 	graphRoutes(mux, store, manager, hub)
 	gitRoutes(mux, store, manager, hub)

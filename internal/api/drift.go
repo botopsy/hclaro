@@ -69,23 +69,14 @@ func driftRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations
 			return
 		}
 		op, scan, err := manager.StartDriftScan(operations.DriftStart{VarFiles: body.VarFiles, ProfileID: body.ProfileID, ContextFingerprint: body.ContextFingerprint})
-		var rejected *operations.RejectError
 		switch {
-		case errors.As(err, &rejected):
-			writeJSON(w, 409, map[string]string{"error": rejected.Code, "reason": rejected.Reason})
-		case errors.Is(err, operations.ErrBusy):
-			errorJSON(w, 409, "operation_running")
-		case errors.Is(err, operations.ErrLoading):
-			errorJSON(w, 409, "workspace_loading")
-		case errors.Is(err, operations.ErrVarFiles):
-			errorJSON(w, 400, "invalid_var_files")
-		case errors.Is(err, operations.ErrClosed):
-			errorJSON(w, 503, "shutting_down")
-		case err != nil:
-			errorJSON(w, 500, "scan_not_started")
-		default:
+		case err == nil:
 			writeJSON(w, 202, map[string]any{"operation": op, "scan": scan})
+		case mapOpError(w, r, nil, "", err):
+		default:
+			errorJSON(w, 500, "scan_not_started")
 		}
+
 	})
 	mux.HandleFunc("GET /api/v1/drift-scans", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"scans": manager.DriftScans()})
