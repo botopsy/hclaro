@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -97,6 +98,16 @@ func codexRuns(home string) []codexfake.Record {
 	}
 }
 
+// runnableCodex skips tests that need Codex to run: Codex never runs on Windows (the platform
+// gate refuses first, covered by TestCodexGates on every OS), and there is no file stat key there
+// to simulate a runnable one.
+func runnableCodex(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Codex is copy-only on Windows")
+	}
+}
+
 func TestCodexSignIn(t *testing.T) {
 	now := time.Now()
 	ok := func(plan string) map[string]any { return authFile(plan, now.Add(time.Hour).Unix()) }
@@ -174,6 +185,9 @@ func TestCodexGates(t *testing.T) {
 		}, KindCodexAgents},
 		{"managed path", func(t *testing.T, c *CodexCLI, _ string) { put(t, c.Host.Managed[0], "") }, KindCodexManaged},
 		{"managed path unreadable", func(t *testing.T, c *CodexCLI, _ string) {
+			if runtime.GOOS == "windows" {
+				t.Skip("chmod 0 does not deny access on Windows")
+			}
 			d := t.TempDir()
 			os.Chmod(d, 0)
 			t.Cleanup(func() { os.Chmod(d, 0o700) })
@@ -238,6 +252,7 @@ func put(t *testing.T, path, content string) {
 // A run passes every gate, the effective-settings probes and the self-check, then runs the exact
 // argv in an empty folder with a Git ceiling, CODEX_HOME and no secret in its environment.
 func TestCodexRun(t *testing.T) {
+	runnableCodex(t)
 	c, home, codexHome := codexFake(t, "codex")
 	ctx := context.Background()
 	if st := c.Detect(ctx); st.Mode != ModeHeadless {
@@ -292,6 +307,7 @@ func TestCodexRun(t *testing.T) {
 // The self-check fails closed for every way a tampered Codex could misbehave, and its failure
 // sticks to that binary until it changes.
 func TestCodexSelfCheckFailures(t *testing.T) {
+	runnableCodex(t)
 	for _, mode := range []string{"tools", "ran", "proxy", "write"} {
 		t.Run(mode, func(t *testing.T) {
 			c, home, _ := codexFake(t, "codex")
@@ -312,6 +328,7 @@ func TestCodexSelfCheckFailures(t *testing.T) {
 // Before every send the effective settings are read again: a feature turned on or a catalog that
 // offers a shell refuses Codex; a different but acceptable configuration re-runs the self-check.
 func TestCodexRevalidatesEverySend(t *testing.T) {
+	runnableCodex(t)
 	ctx := context.Background()
 	c, home, _ := codexFake(t, "codex")
 	if _, err := c.Run(ctx, []byte("one")); err != nil {
@@ -336,6 +353,7 @@ func TestCodexRevalidatesEverySend(t *testing.T) {
 // A failed or interrupted turn never returns text, even when part of a reply arrived; the first
 // error event stops Codex at once.
 func TestCodexFailedTurns(t *testing.T) {
+	runnableCodex(t)
 	for _, tc := range []struct{ mode, want string }{
 		{"codex-error", KindFailed}, {"codex-failed", KindFailed}, {"codex-empty", KindMalformed}, {"codex-garbage", KindMalformed},
 	} {

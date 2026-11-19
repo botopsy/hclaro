@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -119,6 +120,16 @@ func historyText(t *testing.T, dir string) string {
 	return b.String()
 }
 
+// runnableCodex skips tests that need Codex to run: Codex never runs on Windows (the platform
+// gate refuses first, covered by TestCodexGates in internal/assist on every OS), and there is no file stat key there
+// to simulate a runnable one.
+func runnableCodex(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Codex is copy-only on Windows")
+	}
+}
+
 // OD-AI-13 sentinel: AI is on by default, and with no click no assistant process starts (not
 // even --version), no canary reaches a response (planServer.do), history or the output.
 // Detection on request starts only --version, never a conversation, a Codex probe or the
@@ -149,7 +160,11 @@ func TestAIDefaultOnStartsNothingWithoutAClick(t *testing.T) {
 	}
 
 	st = detectNow(t, s)
-	if !st.Headless || st.DefaultProvider != "claude" || len(st.Providers) != 2 || st.Providers[1].Mode != assist.ModeHeadless {
+	codexMode := assist.ModeHeadless
+	if runtime.GOOS == "windows" {
+		codexMode = assist.ModeHandoff // Codex is copy-only on Windows
+	}
+	if !st.Headless || st.DefaultProvider != "claude" || len(st.Providers) != 2 || st.Providers[1].Mode != codexMode {
 		t.Fatalf("%+v", st)
 	}
 	if got := starts(home); len(got) != 2 || got[0] != "--version" || got[1] != "--version" {
@@ -169,6 +184,7 @@ func TestAIDefaultOnStartsNothingWithoutAClick(t *testing.T) {
 // field) reaches a response (planServer.do), a saved conversation, history, the output or Codex's
 // own environment.
 func TestAICodexConversation(t *testing.T) {
+	runnableCodex(t)
 	output := captureOutput(t)
 	s, home, histDir, config := aiServer(t, false)
 	detectNow(t, s)
@@ -311,7 +327,24 @@ func TestAICodexRefusals(t *testing.T) {
 		})
 	}
 
-	// Refused at send: a gate that fails after detection fails the turn before Codex starts.
+	off, offHome, _, _ := aiServer(t, false)
+	off.do("POST", "/api/v1/ai/settings", `{"enabled":false}`)
+	off.do("POST", "/api/v1/ai/detect", `{}`)
+	strict, strictHome, _, _ := aiServer(t, true)
+	if st := decode[assist.Settings](t, strict.do("POST", "/api/v1/ai/detect", `{}`)); st.Headless || st.Checking || len(st.Providers) != 0 {
+		t.Fatalf("strict local-only detected: %+v", st)
+	}
+	strict.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
+	wantError(t, strict.do("POST", "/api/v1/ai/conversations", chatBody("codex", "hello")), 409, "strict_local")
+	time.Sleep(50 * time.Millisecond)
+	if len(starts(offHome)) != 0 || len(starts(strictHome)) != 0 {
+		t.Fatal("an assistant process started with AI off or in strict local-only mode")
+	}
+}
+
+// A gate that fails after detection fails the turn before Codex starts.
+func TestAICodexRefusedAtSend(t *testing.T) {
+	runnableCodex(t)
 	s, home, _, _ := aiServer(t, false)
 	detectNow(t, s)
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
@@ -327,19 +360,5 @@ func TestAICodexRefusals(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "codex-run-2.json")); err == nil {
 		t.Fatal("Codex ran with a global AGENTS file present")
-	}
-
-	off, offHome, _, _ := aiServer(t, false)
-	off.do("POST", "/api/v1/ai/settings", `{"enabled":false}`)
-	off.do("POST", "/api/v1/ai/detect", `{}`)
-	strict, strictHome, _, _ := aiServer(t, true)
-	if st := decode[assist.Settings](t, strict.do("POST", "/api/v1/ai/detect", `{}`)); st.Headless || st.Checking || len(st.Providers) != 0 {
-		t.Fatalf("strict local-only detected: %+v", st)
-	}
-	strict.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
-	wantError(t, strict.do("POST", "/api/v1/ai/conversations", chatBody("codex", "hello")), 409, "strict_local")
-	time.Sleep(50 * time.Millisecond)
-	if len(starts(offHome)) != 0 || len(starts(strictHome)) != 0 {
-		t.Fatal("an assistant process started with AI off or in strict local-only mode")
 	}
 }
