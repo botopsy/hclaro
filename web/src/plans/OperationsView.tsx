@@ -1,22 +1,17 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, History, LoaderCircle, Terminal } from 'lucide-react';
-import { api } from '../api';
-import type { Operation } from '../types';
 import { Button } from '../components/ui/button';
 import { OperationLog } from './OperationLog';
 import { clock, duration } from './labels';
 import { historyPath, navigate } from '../router';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from './routes';
+import { launchScope, type PlanScope } from './routes';
+import { operationsQuery } from './operations';
 
 // scope names the project or Hub workspace whose operations are listed.
 export function OperationsView({ openPlan, scope = launchScope }: { openPlan: (id: string) => void; scope?: PlanScope }) {
   const [selected, setSelected] = useState<string>();
-  const operations = useQuery({
-    queryKey: ['operations', scopeKey(scope)],
-    queryFn: () => api<{ operations: Operation[] }>(scopedPath(scope, 'operations')),
-    refetchInterval: q => q.state.data?.operations.some(o => o.status === 'running') ? 2000 : false
-  });
+  const operations = useQuery(operationsQuery(scope));
   if (operations.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading operations…</p></div>;
   if (operations.error) return <div className="empty-state error-state" role="alert"><p>{operations.error.message}</p></div>;
   const list = operations.data.operations;

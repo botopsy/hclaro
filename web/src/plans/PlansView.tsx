@@ -2,10 +2,11 @@ import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, CircleX, FileDiff, History, LoaderCircle, Play, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { api, ApiError, post } from '../api';
-import type { ImportTarget, Operation, Plan, PlanOptions, PlanSummary, ReplaceTarget, ScopedPlanOptions } from '../types';
+import { operationActive, type ImportTarget, type Operation, type Plan, type PlanOptions, type PlanSummary, type ReplaceTarget, type ScopedPlanOptions } from '../types';
 import { Button } from '../components/ui/button';
 import { ApplyDialog } from './ApplyDialog';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from './routes';
+import { activeOperation, operationsQuery } from './operations';
 import { OperationLog } from './OperationLog';
 import { PlanReview } from './PlanReview';
 import { PreflightDialog } from './PreflightDialog';
@@ -59,16 +60,12 @@ export function PlansView({
     queryFn: async () => scoped ? fromScope(await api<ScopedPlanOptions>(scopedPath(scope, 'plans/options'))) : api<PlanOptions>(`plans/options${profileId ? `?profileId=${profileId}` : ''}`)
   });
   const plans = useQuery({ queryKey: ['plans', key], queryFn: () => api<{ plans: PlanSummary[] }>(scopedPath(scope, 'plans')) });
-  const operations = useQuery({
-    queryKey: ['operations', key],
-    queryFn: () => api<{ operations: Operation[] }>(scopedPath(scope, 'operations')),
-    refetchInterval: q => q.state.data?.operations.some(o => o.status === 'running') ? 2000 : false
-  });
+  const operations = useQuery(operationsQuery(scope));
   const latestOperation = operations.data?.operations[0];
-  const running = latestOperation?.status === 'running' ? latestOperation : undefined;
+  const running = activeOperation(operations.data?.operations);
   const shownId = planId ?? plans.data?.plans[0]?.id;
   const plan = useQuery({ queryKey: ['plan', key, shownId], queryFn: () => api<Plan>(scopedPath(scope, `plans/${shownId}`)), enabled: !!shownId });
-  const finishedOperation = latestOperation && latestOperation.status !== 'running' ? latestOperation : undefined;
+  const finishedOperation = latestOperation && !operationActive(latestOperation) ? latestOperation : undefined;
   // The newest plan failed or was cancelled after the newest plan: say so plainly.
   const failed = finishedOperation?.kind === 'plan' && finishedOperation.status !== 'succeeded' && !planId ? finishedOperation : undefined;
   const applied = finishedOperation?.kind === 'apply' && (!planId || planId === finishedOperation.planId) ? finishedOperation : undefined;

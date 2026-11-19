@@ -12,6 +12,7 @@ import { clock, engineLabel } from '../plans/labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
 import { ScopeSummary } from '../plans/PreflightDialog';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import { activeOperation, operationsQuery } from '../plans/operations';
 import { AskAI } from '../assist/AskAI';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 
@@ -71,12 +72,8 @@ export function DriftView({
   const key = scopeKey(scope);
   const options = useQuery({ queryKey: ['drift-options', key, workspaceStatus, profileId], queryFn: () => api<DriftOptions>(scoped ? scopedPath(scope, 'drift-scans/options') : `drift-scans/options${profileId ? `?profileId=${profileId}` : ''}`) });
   const scans = useQuery({ queryKey: ['drift-scans', key, workspaceStatus], queryFn: () => api<{ scans: DriftScan[] }>(scopedPath(scope, 'drift-scans')) });
-  const operations = useQuery({
-    queryKey: ['operations', key],
-    queryFn: () => api<{ operations: Operation[] }>(scopedPath(scope, 'operations')),
-    refetchInterval: q => q.state.data?.operations.some(o => o.status === 'running') ? 2000 : false
-  });
-  const running = operations.data?.operations.find(o => o.status === 'running');
+  const operations = useQuery(operationsQuery(scope));
+  const running = activeOperation(operations.data?.operations);
   const shownId = scanId ?? scans.data?.scans[0]?.id;
   const scan = useQuery({ queryKey: ['drift-scan', key, shownId, workspaceStatus], queryFn: () => api<DriftScan>(scopedPath(scope, `drift-scans/${shownId}`)), enabled: !!shownId });
   const finished = useCallback(() => {
