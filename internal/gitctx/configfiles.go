@@ -2,6 +2,8 @@ package gitctx
 
 import (
 	"context"
+	"errors"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -43,4 +45,26 @@ func (s *Service) ConfigFiles(ctx context.Context, root string) (files map[strin
 		files[p] = true
 	}
 	return files, true, true
+}
+
+// Ignored reports whether Git ignores rel, a root-relative slash path that need not exist
+// (AI-01.12 new files): by a .gitignore in any folder on its way, .git/info/exclude or
+// core.excludesFile, including a rule matching one of its parent folders; a negated rule
+// (!name) that re-includes it counts as not ignored. Root must be inside a repository. An
+// error means Git could not tell: callers treat it as ignored.
+func (s *Service) Ignored(ctx context.Context, root, rel string) (bool, error) {
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false, err
+	}
+	// Exit 0: ignored; 1: not ignored; anything else is a failure.
+	_, _, err = s.Runner.Run(ctx, canonical, 64<<10, "check-ignore", "--", rel)
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &exit) && exit.ExitCode() == 1:
+		return false, nil
+	}
+	return false, err
 }

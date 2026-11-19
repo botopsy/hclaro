@@ -146,7 +146,7 @@ describe('AI Assistant page', () => {
     expect(gets.some(u => u.endsWith(`/ai/conversations/${other}`))).toBe(false);
   });
 
-  const actions = [['Describe project', 'qa-describe@1'], ['Architecture review', 'qa-architecture@1'], ['Security review', 'qa-security@1'], ['Cost analysis', 'qa-cost@1'], ['Find issues', 'qa-issues@1'], ['Suggest improvements', 'qa-improve@1']];
+  const actions = [['Describe project', 'qa-describe@1'], ['Architecture review', 'qa-architecture@1'], ['Security review', 'qa-security@2'], ['Cost analysis', 'qa-cost@1'], ['Find issues', 'qa-issues@2'], ['Suggest improvements', 'qa-improve@2']];
 
   it.each(actions)('%s previews prompt and package, then starts with that prompt', async (label, prompt) => {
     serve();

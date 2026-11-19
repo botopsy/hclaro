@@ -53,3 +53,22 @@ func TestAssistChatSummary(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 }
+
+// A decision about an AI-proposed change keeps the path and hashes, never file content.
+func TestAssistChangeIsMetadataOnly(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	base, next := strings.Repeat("ab", 32), strings.Repeat("cd", 32)
+	scope := assist.RunScope{Project: "network", Root: "/synthetic/network", Workspace: "default", Engine: "terraform"}
+	s.RecordAssistChange(assist.ChangeRecord{RunScope: scope, Conversation: id(1), Provider: "claude", Path: "modules/net/main.tf", BaseSHA256: base, NewSHA256: next, Outcome: "applied", At: t0})
+	s.RecordAssistChange(assist.ChangeRecord{RunScope: scope, Conversation: id(1), Provider: "claude", Path: "../escape.tf", NewSHA256: "not-a-hash", Outcome: "refused", Code: "change_path", At: t0})
+	b, err := os.ReadFile(filepath.Join(dir, fileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	if !strings.Contains(text, `"kind":"assist-change"`) || !strings.Contains(text, "modules/net/main.tf") || !strings.Contains(text, base) || !strings.Contains(text, next) ||
+		strings.Contains(text, "escape") || strings.Contains(text, "not-a-hash") || strings.Contains(text, "/synthetic/network") || !strings.Contains(text, `"code":"change_path"`) {
+		t.Fatalf("history file:\n%s", text)
+	}
+}

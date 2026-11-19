@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/imports"
 	"hclaro/internal/state"
 )
 
@@ -41,6 +43,9 @@ var (
 	projectKey = regexp.MustCompile(`^[0-9a-f]{16}$`)
 	// redactedPair is a name with a value Hclaro already redacted: `db_password: "[redacted]"`.
 	redactedPair = regexp.MustCompile(`[A-Za-z0-9_.-]+"?\s*[:=]\s*"?\[redacted\]"?`)
+	// hashMarker is a file hash Hclaro prints in a package file header, or that a proposal
+	// header repeats (AI-01.12): a SHA-256, not a secret.
+	hashMarker = regexp.MustCompile(`\(sha256 [0-9a-f]{64}\)|\bbase=[0-9a-f]{64}\b`)
 )
 
 // ProjectKey derives the store key of a project root without keeping the path.
@@ -193,6 +198,9 @@ func (s *Store) plainDir(r *os.Root, name string) bool {
 // Sweep and delete-all never touch anything else.
 func ours(name string) bool {
 	id, ok := strings.CutSuffix(name, ".json")
+	if !ok {
+		id, ok = strings.CutSuffix(name, ".backup") // AI-01.12 backups, swept like conversations
+	}
 	return ok && savedID.MatchString(id) || strings.HasPrefix(name, ".conversation-") && strings.HasSuffix(name, ".tmp")
 }
 
@@ -227,11 +235,22 @@ func (s *Store) Sweep(now time.Time) int {
 		if !projectKey.MatchString(key) || !s.plainDir(r, key) {
 			continue
 		}
+		// Recovery artifacts first: their records decide when their backups may go.
+		for _, f := range names(r, key) {
+			if id, ok := strings.CutSuffix(f, ".aside"); ok && savedID.MatchString(id) {
+				s.sweepAside(r, key, id, now)
+			}
+		}
 		for _, f := range names(r, key) {
 			name := filepath.Join(key, f)
 			info, err := r.Lstat(name)
 			if err != nil || !info.Mode().IsRegular() || !ours(f) {
 				continue
+			}
+			if id, ok := strings.CutSuffix(f, ".backup"); ok {
+				if _, err := r.Lstat(filepath.Join(key, id+".aside")); err == nil {
+					continue // still needed to recognize its recovery artifact
+				}
 			}
 			if strings.HasSuffix(f, ".tmp") || now.Sub(info.ModTime()) > s.retention {
 				if r.Remove(name) == nil && strings.HasSuffix(f, ".json") {
@@ -282,6 +301,171 @@ func (s *Store) write(doc savedDoc) error {
 	}
 	_ = r.Chmod(doc.ProjectKey, 0o700)
 	return writeAtomic(r, doc.ProjectKey, path, b)
+}
+
+// Backup keeps a copy of a project file before an AI-proposed change replaces it (AI-01.12),
+// as <project key>/<id>.backup (owner-only). It is deleted with the retention of saved
+// conversations.
+func (s *Store) Backup(key string, data []byte) (string, error) {
+	id := randomID()
+	if !projectKey.MatchString(key) {
+		return "", errors.New("invalid project key")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.root(true)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	if err := r.Mkdir(key, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", err
+	}
+	if !s.plainDir(r, key) {
+		return "", errNotPlain
+	}
+	return id, writeAtomic(r, key, filepath.Join(key, id+".backup"), data)
+}
+
+// ReadBackup returns backup id of project key.
+func (s *Store) ReadBackup(key, id string) ([]byte, error) {
+	if !projectKey.MatchString(key) || !savedID.MatchString(id) {
+		return nil, errNotPlain
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.root(false)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	if !s.plainDir(r, key) {
+		return nil, errNotPlain
+	}
+	return readFile(r, filepath.Join(key, id+".backup"), maxProjectFile)
+}
+
+// RemoveBackup deletes backup id of project key.
+func (s *Store) RemoveBackup(key, id string) {
+	if !projectKey.MatchString(key) || !savedID.MatchString(id) {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r, err := s.root(false); err == nil {
+		_ = r.Remove(filepath.Join(key, id+".backup"))
+		r.Close()
+	}
+}
+
+// asideRecord owns one recovery artifact of a proposed change (AI-01.12): the file a replacement
+// or removal moved aside, imports.AsideName(id) in the folder of Path inside Root. The backup with
+// the same ID holds the bytes the artifact was verified to hold. Done is false while the change
+// runs: a record still not done at startup means Hclaro stopped in the middle of it.
+type asideRecord struct {
+	Version int    `json:"version"`
+	Root    string `json:"root"`
+	Path    string `json:"path"`
+	Done    bool   `json:"done"`
+}
+
+// Retain records, before anything moves, that backup id of project key may leave a recovery
+// artifact next to rel in root.
+func (s *Store) Retain(key, id, root, rel string) error {
+	return s.writeAside(key, id, asideRecord{Version: 1, Root: root, Path: rel})
+}
+
+// Settle ends a change: with kept, its artifact and backup stay until the retention; without,
+// nothing was moved, so the record and backup go now.
+func (s *Store) Settle(key, id, root, rel string, kept bool) {
+	if kept {
+		_ = s.writeAside(key, id, asideRecord{Version: 1, Root: root, Path: rel, Done: true})
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r, err := s.root(false); err == nil {
+		_ = r.Remove(filepath.Join(key, id+".aside"))
+		_ = r.Remove(filepath.Join(key, id+".backup"))
+		r.Close()
+	}
+}
+
+func (s *Store) writeAside(key, id string, rec asideRecord) error {
+	if !projectKey.MatchString(key) || !savedID.MatchString(id) {
+		return errNotPlain
+	}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.root(true)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	if err := r.Mkdir(key, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	if !s.plainDir(r, key) {
+		return errNotPlain
+	}
+	return writeAtomic(r, key, filepath.Join(key, id+".aside"), b)
+}
+
+// sweepAside handles one recovery artifact at startup. Callers hold mu.
+//   - A change interrupted between moving the file aside and placing the new one left the name
+//     empty: the artifact, if it still holds exactly the backed-up bytes, is linked back (never
+//     overwriting). The change is rolled back, not completed.
+//   - After the retention, the artifact is deleted only if it still holds exactly the backed-up
+//     bytes (nothing anyone wrote into it is lost); otherwise it stays in the project for the
+//     user. Then the record and backup go.
+func (s *Store) sweepAside(r *os.Root, key, id string, now time.Time) {
+	name := filepath.Join(key, id+".aside")
+	info, err := r.Lstat(name)
+	if err != nil || !info.Mode().IsRegular() {
+		return
+	}
+	var rec asideRecord
+	b, err := readFile(r, name, 8<<10)
+	expired := now.Sub(info.ModTime()) > s.retention
+	aside, target := "", ""
+	if err == nil && json.Unmarshal(b, &rec) == nil && rec.Version == 1 && filepath.IsAbs(rec.Root) && validChangePath(rec.Path) {
+		if dir, err := imports.SafeDir(rec.Root, rec.Path); err == nil {
+			aside, target = filepath.Join(dir, imports.AsideName(id)), filepath.Join(dir, path.Base(rec.Path))
+		}
+	}
+	backup, berr := readFile(r, filepath.Join(key, id+".backup"), maxProjectFile)
+	same := aside != "" && berr == nil && sameBytes(aside, backup)
+	_, terr := os.Lstat(target)
+	switch {
+	case !rec.Done && same && errors.Is(terr, os.ErrNotExist):
+		if os.Link(aside, target) == nil {
+			_ = os.Remove(aside) // only a second name of the restored file
+		}
+	case expired && same:
+		_ = os.Remove(aside)
+	}
+	if expired {
+		_ = r.Remove(name)
+		_ = r.Remove(filepath.Join(key, id+".backup"))
+	} else if !rec.Done {
+		if b, err := json.Marshal(asideRecord{Version: 1, Root: rec.Root, Path: rec.Path, Done: true}); err == nil {
+			_ = writeAtomic(r, key, name, b)
+		}
+	}
+}
+
+// sameBytes reports whether the regular file p holds exactly want.
+func sameBytes(p string, want []byte) bool {
+	info, err := os.Lstat(p)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	got, err := os.ReadFile(p)
+	return err == nil && string(got) == string(want)
 }
 
 // exists reports whether conversation id of project key has a file.
@@ -514,11 +698,11 @@ func (s *Session) docOf(c *conversation) savedDoc {
 
 // newScan returns the secret scan of saved text: the package scan of user messages
 // (builder.safe), with the project root and home as local paths. Hclaro's own marker next to a
-// secret-like key ("password: [redacted]") is not a secret.
+// secret-like key ("password: [redacted]") and its file hashes are not secrets.
 func newScan(root string) func(string) bool {
 	b := newBuilder("message", Scope{Root: root})
 	return func(text string) bool {
-		text = strings.ReplaceAll(redactedPair.ReplaceAllString(text, ""), state.Redacted, "")
+		text = strings.ReplaceAll(redactedPair.ReplaceAllString(hashMarker.ReplaceAllString(text, ""), ""), state.Redacted, "")
 		return text == "" || b.safe("message", text, 0)
 	}
 }

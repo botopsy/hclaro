@@ -138,7 +138,7 @@ try {
   const settingsText = await page.locator('body').innerText()
   assert(settingsText.includes('Individual cost line items are never shared') && settingsText.includes('totals, coverage, per-type counts and monthly change'), 'v7 cost line in Settings')
   const st = await call(page, 'GET', 'ai/settings')
-  assert.equal(st.body.disclosure.version, '8')
+  assert.equal(st.body.disclosure.version, '9')
   ok('disclosure v8 shown in Settings, with the cost line')
   await nav(page, 'AI Assistant')
   await page.getByText('Accept the AI disclosure in Settings to use quick actions.').waitFor()
@@ -161,7 +161,7 @@ try {
     const args = await fs.readFile(path.join(logA, 'args', before + '.txt'), 'utf8')
     assert(args.includes('--restricted') && args.includes('--tools'), 'restricted argv')
     await page.getByText(/Ran a quick action on the context package/).waitFor()
-    ok(`${label}: preview-before-start, turn-1 stdin == preview bytes, prompt ${text.match(/\((qa-[a-z]+@1)\)/)[1]}`)
+    ok(`${label}: preview-before-start, turn-1 stdin == preview bytes, prompt ${text.match(/\((qa-[a-z]+@[0-9]+)\)/)[1]}`)
     if (i === actions.length - 1) {
       await page.getByLabel('Follow-up message').fill('Which of these first?')
       await page.getByRole('button', {name: 'Send message'}).click()

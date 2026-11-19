@@ -69,6 +69,10 @@ type GitFiles struct {
 	// Known is false when the project is in a repository but Git could not list its files
 	// (Git missing, failing or truncated output): the package is blocked.
 	Known bool
+	// Ignored asks Git whether it ignores a path that need not exist (gitctx.Ignored); a new
+	// file proposed in a repository is refused when it is, when Git cannot tell, or when this
+	// is nil.
+	Ignored func(rel string) (bool, error)
 }
 
 var (
@@ -79,6 +83,9 @@ var (
 
 type projectFile struct {
 	rel, lang, text string
+	// sha256 is set for an HCL file shared exactly as it is on disk (normalized): a proposed
+	// change may replace it whole (AI-01.12). An edited file cannot be replaced.
+	sha256 string
 }
 
 type moduleCall struct{ dir, name, source string }
@@ -290,7 +297,7 @@ func Project(s Scope, git GitFiles) (Package, error) {
 func (p *projectScan) read(c candidate) {
 	rel, kind := c.rel, c.kind
 	// CRLF files and a UTF-8 byte order mark give the same package as their Unix form.
-	text := strings.ReplaceAll(strings.TrimPrefix(string(c.data), "\ufeff"), "\r\n", "\n")
+	text := normalized(c.data)
 	if !utf8.ValidString(text) {
 		p.omit(rel, "not UTF-8 text")
 		return
@@ -307,7 +314,33 @@ func (p *projectScan) read(c candidate) {
 		return
 	}
 	p.dirs[dir]++
-	p.files = append(p.files, projectFile{rel: rel, lang: map[string]string{"json": "json", "hcl": "hcl"}[kind], text: out})
+	f := projectFile{rel: rel, lang: map[string]string{"json": "json", "hcl": "hcl"}[kind], text: out}
+	if kind == "hcl" && unchanged(text, out) {
+		f.sha256 = sum(text)
+	}
+	p.files = append(p.files, f)
+}
+
+// unchanged reports whether shared, the text Hclaro shares for an HCL file, is the file text
+// itself, line for line as display shows it.
+func unchanged(text, shared string) bool {
+	if text != shared {
+		return false
+	}
+	for _, l := range strings.Split(text, "\n") {
+		if display(l, true) != l {
+			return false
+		}
+	}
+	return true
+}
+
+// sharedAsIs reports whether the project package shares the HCL file rel (normalized text)
+// unchanged, so a whole-file replacement loses nothing the assistant could not see.
+func sharedAsIs(root, rel, text string) bool {
+	p := &projectScan{b: newBuilder(KindProject, Scope{Root: root}), dirs: map[string]int{}, addresses: map[string][]string{}}
+	out, reason := p.hclFile(path.Dir(rel), text)
+	return reason == "" && unchanged(text, out)
 }
 
 // hit is the per-line scan of a configuration file: a credential-shaped or local-path line, or
@@ -816,7 +849,14 @@ func (p *projectScan) addFiles() {
 	})
 	blocks := make([][]string, len(files))
 	for i, f := range files {
-		block := []string{"# file: " + b.label(f.rel)}
+		header := "# file: " + b.label(f.rel)
+		switch {
+		case f.sha256 != "":
+			header += " (sha256 " + f.sha256 + ")"
+		case f.lang == "hcl":
+			header += " (edited for sharing: cannot be replaced by a proposed change)"
+		}
+		block := []string{header}
 		for _, l := range strings.Split(f.text, "\n") {
 			block = append(block, display(l, true))
 		}

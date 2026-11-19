@@ -100,7 +100,9 @@ func gitFiles(ctx context.Context, svc *gitctx.Service, root string) assist.GitF
 		svc = gitctx.New()
 	}
 	listed, repo, ok := svc.ConfigFiles(ctx, root)
-	return assist.GitFiles{Repo: repo, Listed: listed, Known: ok}
+	// Asked later, after callers may have cancelled ctx; each Git call has its own timeout.
+	ignored := func(rel string) (bool, error) { return svc.Ignored(context.WithoutCancel(ctx), root, rel) }
+	return assist.GitFiles{Repo: repo, Listed: listed, Known: ok, Ignored: ignored}
 }
 
 func providerNames(snap workspace.Snapshot) []string {
@@ -527,6 +529,99 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 		writeJSON(w, 200, map[string]int{"deleted": n})
 	}
+	// Proposed changes (AI-01.12). Listing validates every proposal of the conversation against
+	// the files now. Apply and undo run under the workspace's operation lock (exclusive) and
+	// write only what the user reviewed; reject writes nothing. None of them runs the engine.
+	listChanges := func(w http.ResponseWriter, r *http.Request, src assistSource) {
+		sess, _ := on(w)
+		if id, ok := conversationID(w, r); ok {
+			out, err := sess.Changes(src.key, id, runScope(src), changeFiles(src))
+			if err != nil {
+				aiRefusal(w, err)
+				return
+			}
+			writeJSON(w, 200, map[string]any{"changes": out})
+		}
+	}
+	decideChange := func(w http.ResponseWriter, r *http.Request, src assistSource, action string, exclusive func(func() error) error) {
+		sess, _ := on(w)
+		var body assist.ChangeRequest
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		id, ok := conversationID(w, r)
+		if !ok {
+			return
+		}
+		var v assist.ChangeView
+		var err error
+		switch action {
+		case "apply":
+			v, err = sess.ApplyChange(src.key, id, body, runScope(src), changeFiles(src), exclusive)
+		case "reject":
+			v, err = sess.RejectChange(src.key, id, body.Turn, body.Index, runScope(src), changeFiles(src))
+		default:
+			v, err = sess.UndoChange(src.key, id, body.Turn, body.Index, runScope(src), exclusive)
+		}
+		if err != nil {
+			aiRefusal(w, err)
+			return
+		}
+		writeJSON(w, 200, v)
+	}
+	launchChange := func(action string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := on(w); ok {
+				if src, ok := launch(w); ok {
+					decideChange(w, r, src, action, func(fn func() error) error { return manager.Exclusive("ai-change", fn) })
+				}
+			}
+		}
+	}
+	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/changes/apply", launchChange("apply"))
+	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/changes/reject", launchChange("reject"))
+	mux.HandleFunc("POST /api/v1/ai/conversations/{id}/changes/undo", launchChange("undo"))
+	mux.HandleFunc("GET /api/v1/ai/conversations/{id}/changes", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := on(w); ok {
+			if src, ok := launch(w); ok {
+				listChanges(w, r, src)
+			}
+		}
+	})
+	if hub != nil {
+		mux.HandleFunc("GET /api/v1/contexts/{cid}/ai/conversations/{id}/changes", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := on(w); ok {
+				if src, ok := hubSource(w, r, assist.KindResource); ok {
+					listChanges(w, r, src)
+				}
+			}
+		})
+		hubChange := func(action string) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				if _, ok := on(w); !ok {
+					return
+				}
+				src, ok := hubSource(w, r, assist.KindResource)
+				if !ok {
+					return
+				}
+				// Writes need the workspace's execution scope: its lock keeps plans, applies,
+				// imports and inits of the same folder out while the file is written.
+				scope, ok := resolveScope(w, r, hub, true)
+				if !ok {
+					return
+				}
+				if scope.Root() != src.scope.Root {
+					aiRefusal(w, &assist.Refusal{Code: assist.RefuseStale})
+					return
+				}
+				decideChange(w, r, src, action, func(fn func() error) error { return scope.Exclusive("ai-change", fn) })
+			}
+		}
+		mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/changes/apply", hubChange("apply"))
+		mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/changes/reject", hubChange("reject"))
+		mux.HandleFunc("POST /api/v1/contexts/{cid}/ai/conversations/{id}/changes/undo", hubChange("undo"))
+	}
 	withLaunch := func(handle func(http.ResponseWriter, *http.Request, assistSource)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if _, ok := on(w); ok {
@@ -759,6 +854,16 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 	}{p, sess.Settings().Disclosure, prompt.ID, assist.FirstTurn(p.Markdown, prompt), costLines != nil})
 }
 
+// changeFiles lists the configuration files Git does not ignore, for the scope check of a
+// proposed change (AI-01.12): the same allowlist the project package uses.
+func changeFiles(src assistSource) func() assist.GitFiles {
+	return func() assist.GitFiles {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return gitFiles(ctx, src.git, src.scope.Root)
+	}
+}
+
 func runScope(src assistSource) assist.RunScope {
 	return assist.RunScope{Project: src.scope.Project, Root: src.scope.Root, Workspace: src.scope.Workspace, Engine: src.scope.Engine, ProjectKey: assist.ProjectKey(src.scope.Root)}
 }
@@ -783,11 +888,11 @@ func aiRefusal(w http.ResponseWriter, err error) {
 	}
 	status := 409
 	switch r.Code {
-	case assist.RefuseNotFound, assist.RefuseNoChat:
+	case assist.RefuseNotFound, assist.RefuseNoChat, assist.RefuseChangeNotFound:
 		status = 404
 	case assist.RefuseInvalidArgs, assist.RefuseMessageEmpty:
 		status = 400
-	case assist.RefuseSaveFailed:
+	case assist.RefuseSaveFailed, assist.RefuseChangeFailed, assist.RefuseChangeNoBackup:
 		status = 500
 	case assist.RefuseTooLong, assist.RefuseMessageLong:
 		status = 413

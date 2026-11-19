@@ -88,3 +88,24 @@
 .assistant-mode { display: grid; gap: 4px; border: 0; padding: 0; margin: 0; }
 .assist-turn.context { font-size: 0.85em; color: var(--muted); }
 @media (width <= 900px) { .assistant-page { grid-template-columns: 1fr; } }
+
+/* Proposed changes (AI-01.12): Hclaro's diff of one proposed file, applied or rejected on its own. */
+.assist-changes { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.assist-change { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.assist-change.applied { border-color: var(--create); }
+.assist-change-head { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.assist-change .form-actions { margin: 0; }
+.assist-diff {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--inset);
+  font-family: SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.assist-diff .diff-add { color: var(--create); }
+.assist-diff .diff-del { color: var(--destroy); }
+.assist-diff .diff-hunk, .assist-diff .diff-head { opacity: .7; }

@@ -87,7 +87,7 @@ func TestUILabelsMatchTheKindTable(t *testing.T) {
 		t.Fatal("kinds map not found in HistoryView.tsx")
 	}
 	ui := map[string]string{}
-	for _, m := range regexp.MustCompile(`(\w+): '([^']*)'`).FindAllSubmatch(block[1], -1) {
+	for _, m := range regexp.MustCompile(`'?([\w-]+)'?: '([^']*)'`).FindAllSubmatch(block[1], -1) {
 		ui[string(m[1])] = string(m[2])
 	}
 	if len(ui) != len(kindTable) {

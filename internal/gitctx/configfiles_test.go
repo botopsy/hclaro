@@ -83,3 +83,25 @@ func TestConfigFilesListsTrackedFilesMatchingIgnoreRules(t *testing.T) {
 		t.Fatalf("%v %v", keys(files), ok)
 	}
 }
+
+// check-ignore takes exactly one plain relative path: no options, magic, escapes or controls.
+func TestCheckIgnoreShape(t *testing.T) {
+	if !Allowed([]string{"check-ignore", "--", "modules/net/extra.tf"}) {
+		t.Fatal("plain path refused")
+	}
+	for _, bad := range [][]string{
+		{"check-ignore", "extra.tf"},
+		{"check-ignore", "--stdin"},
+		{"check-ignore", "--no-index", "--", "extra.tf"},
+		{"check-ignore", "--", "a.tf", "b.tf"},
+		{"check-ignore", "--", ":(glob)*.tf"},
+		{"check-ignore", "--", "../x.tf"},
+		{"check-ignore", "--", "/etc/x.tf"},
+		{"check-ignore", "--", "-x.tf"},
+		{"check-ignore", "--", "a\nb.tf"},
+	} {
+		if Allowed(bad) {
+			t.Errorf("allowed %q", bad)
+		}
+	}
+}
