@@ -812,3 +812,29 @@ func TestStoreIgnoresUnreadableFile(t *testing.T) {
 		}
 	}
 }
+
+func TestEstimateReportsHistoryWriteFailure(t *testing.T) {
+	// Directory permissions do not stop root, and Windows has no POSIX modes.
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions as a non-root user")
+	}
+	runner := costtest.New()
+	s := service(t, runner, false)
+	dir := t.TempDir()
+	s.Store = cost.OpenStore(dir)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if _, err := s.OptIn(context.Background(), cost.DisclosureVersion); err != nil {
+		t.Fatal(err)
+	}
+	started, err := s.Start(input(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := waitDone(t, s, started.ID)
+	if e.Status != cost.Completed || e.HistoryWarning == "" {
+		t.Fatalf("estimate = %+v", e)
+	}
+}

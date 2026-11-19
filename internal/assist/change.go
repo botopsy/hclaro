@@ -706,12 +706,13 @@ func (s *Session) ApplyChange(key, id string, req ChangeRequest, scope RunScope,
 			return refuse(RefuseChangeReviewed)
 		}
 		st := &changeState{view: v}
+		unsettled := false
 		if old == nil {
 			err = imports.CreateAt(scope.Root, p.path, []byte(p.text))
 		} else {
 			// Exactly the bytes in the backup: a file that changed in any way is not replaced.
 			current := func(b []byte) bool { return bytes.Equal(b, old) }
-			st.backup, err = s.moved(scope, p.path, old, func(keep string) error {
+			st.backup, unsettled, err = s.moved(scope, p.path, old, func(keep string) error {
 				return imports.ReplaceAt(scope.Root, p.path, []byte(p.text), current, keep)
 			})
 			if st.backup != "" {
@@ -726,6 +727,9 @@ func (s *Session) ApplyChange(key, id string, req ChangeRequest, scope RunScope,
 			st.view.Reason = fmt.Sprintf(keptAside, aside.Name)
 		case err != nil:
 			return changeError(err)
+		}
+		if unsettled {
+			st.view.Reason = strings.TrimSpace(st.view.Reason + " " + unsettledReason)
 		}
 		st.view.Status, st.view.CanUndo = ChangeApplied, true
 		s.decide(t, req.Turn, st, "")
@@ -771,9 +775,11 @@ func (s *Session) UndoChange(key, id string, turn, index int, scope RunScope, ex
 			return err
 		}
 		applied := func(b []byte) bool { return sum(string(b)) == st.view.NewSHA256 }
+		var kept string
+		unsettled := false
 		// The applied text is backed up too: the file Undo moves aside is its recovery artifact.
 		if st.view.Created {
-			_, err = s.moved(scope, p.path, []byte(p.text), func(keep string) error {
+			kept, unsettled, err = s.moved(scope, p.path, []byte(p.text), func(keep string) error {
 				return imports.RemoveAt(scope.Root, p.path, applied, keep)
 			})
 		} else {
@@ -781,7 +787,7 @@ func (s *Session) UndoChange(key, id string, turn, index int, scope RunScope, ex
 			if rerr != nil {
 				return refuse(RefuseChangeNoUndo) // the backup is gone (retention) or not plain
 			}
-			_, err = s.moved(scope, p.path, []byte(p.text), func(keep string) error {
+			kept, unsettled, err = s.moved(scope, p.path, []byte(p.text), func(keep string) error {
 				return imports.ReplaceAt(scope.Root, p.path, old, applied, keep)
 			})
 		}
@@ -794,7 +800,14 @@ func (s *Session) UndoChange(key, id string, turn, index int, scope RunScope, ex
 			return changeError(err)
 		}
 		next := &changeState{view: st.view, backup: st.backup}
+		if unsettled && st.view.Created && kept != "" && putBackRemoved(scope.Root, p.path, kept) {
+			// The next start would restore the removed file anyway; restore it now and say so.
+			return refuse(RefuseChangeFailed)
+		}
 		next.view.Status, next.view.CanUndo = ChangeUndone, false
+		if unsettled {
+			next.view.Reason = unsettledReason
+		}
 		s.decide(t, turn, next, "")
 		out = next.view
 		return nil
@@ -810,14 +823,14 @@ func (s *Session) UndoChange(key, id string, turn, index int, scope RunScope, ex
 // artifact written before anything moves (Store.Retain), so an interrupted change is rolled back
 // at the next start. Afterwards the record is kept while the artifact exists, and dropped with
 // the backup when nothing was moved.
-func (s *Session) moved(scope RunScope, rel string, data []byte, op func(keep string) error) (string, error) {
-	id, err := s.Store.Backup(scope.ProjectKey, data)
+func (s *Session) moved(scope RunScope, rel string, data []byte, op func(keep string) error) (id string, unsettled bool, err error) {
+	id, err = s.Store.Backup(scope.ProjectKey, data)
 	if err != nil {
-		return "", refuse(RefuseChangeNoBackup)
+		return "", false, refuse(RefuseChangeNoBackup)
 	}
 	if err := s.Store.Retain(scope.ProjectKey, id, scope.Root, rel); err != nil {
 		s.Store.RemoveBackup(scope.ProjectKey, id)
-		return "", refuse(RefuseChangeNoBackup)
+		return "", false, refuse(RefuseChangeNoBackup)
 	}
 	err = op(id)
 	kept := false
@@ -825,12 +838,29 @@ func (s *Session) moved(scope RunScope, rel string, data []byte, op func(keep st
 		_, lerr := os.Lstat(filepath.Join(dir, imports.AsideName(id)))
 		kept = lerr == nil
 	}
-	s.Store.Settle(scope.ProjectKey, id, scope.Root, rel, kept)
+	unsettled = s.Store.Settle(scope.ProjectKey, id, scope.Root, rel, kept) != nil
 	if !kept {
 		id = ""
 	}
-	return id, err
+	return id, unsettled, err
 }
+
+// putBackRemoved links the moved-aside file keep back to rel, never over an existing name, as
+// the start-up sweep would. It reports whether the file is back.
+func putBackRemoved(root, rel, keep string) bool {
+	dir, err := imports.SafeDir(root, rel)
+	if err != nil {
+		return false
+	}
+	aside := filepath.Join(dir, imports.AsideName(keep))
+	if os.Link(aside, filepath.Join(dir, path.Base(rel))) != nil {
+		return false
+	}
+	_ = os.Remove(aside) // only a second name of the restored file
+	return true
+}
+
+const unsettledReason = "The file was written, but Hclaro could not record in its settings folder that the change finished. If Hclaro restarts before that folder is writable, it may treat the change as interrupted and put the moved-aside file back."
 
 // changeError maps a write failure to its refusal.
 func changeError(err error) error {

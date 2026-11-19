@@ -141,7 +141,7 @@ func TestMissingProjectKeepsRecordAndRemoveKeepsFiles(t *testing.T) {
 	if err != nil || repaired.Status != StatusReady || repaired.RootPath != moved {
 		t.Fatalf("%v %+v", err, repaired)
 	}
-	if err := hub.Remove(s.ID); err != nil {
+	if _, err := hub.Remove(s.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(moved, "main.tf")); err != nil {

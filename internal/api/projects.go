@@ -132,11 +132,12 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		if err := hub.Remove(r.PathValue("id")); err != nil {
+		warning, err := hub.Remove(r.PathValue("id"))
+		if err != nil {
 			projectError(w, hub, err)
 			return
 		}
-		writeJSON(w, 200, map[string]bool{"removed": true})
+		writeJSON(w, 200, map[string]any{"removed": true, "warning": warning})
 	})
 	mux.HandleFunc("POST /api/v1/projects/order", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

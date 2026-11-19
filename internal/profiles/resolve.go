@@ -88,10 +88,11 @@ func ResolveVarFile(root, ref string) (VarFile, error) {
 // .tfvars.json files at most five levels deep, skipping hidden folders, node_modules and
 // files the engine loads automatically. Linked files are listed only when they resolve to
 // a valid file inside the root. The walk is bounded; truncated reports whether it stopped.
-func Candidates(root string) (files []VarFile, truncated bool) {
+// An unreadable root is an error; unreadable folders below it are skipped.
+func Candidates(root string) (files []VarFile, truncated bool, err error) {
 	files = []VarFile{}
 	visited := 0
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if path == root {
 				return err
@@ -119,8 +120,11 @@ func Candidates(root string) (files []VarFile, truncated bool) {
 		}
 		return nil
 	})
+	if err != nil {
+		return []VarFile{}, false, err
+	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Ref < files[j].Ref })
-	return files, truncated
+	return files, truncated, nil
 }
 
 // EnvStatus says whether an expected environment variable is set. The value is never read

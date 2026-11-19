@@ -285,7 +285,10 @@ func TestVarFileResolutionIsSymlinkSafe(t *testing.T) {
 	if err != nil || f.Path != "env/prod.tfvars" || !f.Linked || f.Size == 0 {
 		t.Fatalf("linked inside root: %+v %v", f, err)
 	}
-	files, truncated := Candidates(root)
+	files, truncated, err := Candidates(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	refs := []string{}
 	for _, f := range files {
 		refs = append(refs, f.Ref)
@@ -474,5 +477,22 @@ func TestAWSCLIBindingKeepsTheFingerprint(t *testing.T) {
 	p.AWSAuth = AWSVault
 	if Resolve(p, t.TempDir(), nil).Fingerprint == r.Fingerprint {
 		t.Fatal("aws-vault not in the fingerprint")
+	}
+}
+
+func TestCandidatesReportsUnreadableRoot(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions as a non-root user")
+	}
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	if files, _, err := Candidates(root); err == nil {
+		t.Fatalf("unreadable root listed as %v", files)
+	}
+	if _, _, err := Candidates(filepath.Join(t.TempDir(), "gone")); err == nil {
+		t.Fatal("missing root listed as empty")
 	}
 }

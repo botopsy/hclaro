@@ -48,6 +48,16 @@ type SourceStatus struct {
 
 const maxSourceBytes = 256 << 20
 
+// repositoryTop is the canonical top level of the repository holding canonical, or "" outside
+// one. A top that cannot be resolved is an error: the scope is refused, not left unbounded.
+func repositoryTop(canonical string) (string, error) {
+	top := FindGit(canonical)
+	if top == "" {
+		return "", nil
+	}
+	return filepath.EvalSymlinks(top)
+}
+
 // Fingerprint computes the source fingerprint of root without running Git: HEAD is read
 // from .git files and the content hash from the files in scope.
 func (s *Service) Fingerprint(root string) *PlanSourceFingerprint {
@@ -56,12 +66,12 @@ func (s *Service) Fingerprint(root string) *PlanSourceFingerprint {
 	if err != nil {
 		return fp
 	}
-	top := FindGit(canonical)
 	if head := ReadHead(canonical); head != nil {
 		fp.Repository, fp.Commit, fp.Branch, fp.Detached = true, head.Commit, head.Branch, head.Detached
 	}
-	if top != "" {
-		top, _ = filepath.EvalSymlinks(top)
+	top, err := repositoryTop(canonical)
+	if err != nil {
+		return fp
 	}
 	scope, err := NewScope(canonical, top, s.environ())
 	if err != nil {
@@ -190,9 +200,10 @@ func (s *Service) Locate(root, mode, module, typ, name string) SourceReference {
 		ref.Reason = "The project folder could not be resolved."
 		return ref
 	}
-	top := FindGit(canonical)
-	if top != "" {
-		top, _ = filepath.EvalSymlinks(top)
+	top, err := repositoryTop(canonical)
+	if err != nil {
+		ref.Reason = "The project folder could not be resolved."
+		return ref
 	}
 	scope, err := NewScope(canonical, top, s.environ())
 	if err != nil {

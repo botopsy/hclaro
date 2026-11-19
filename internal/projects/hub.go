@@ -449,13 +449,14 @@ func (h *Hub) Update(id string, c Change) (Summary, error) {
 }
 
 // Remove unregisters a project and closes its contexts, cancelling reads in progress. It is
-// refused (ErrBusy) while one of its contexts runs an operation.
-func (h *Hub) Remove(id string) error {
+// refused (ErrBusy) while one of its contexts runs an operation. The warning is set when the
+// project is gone but its execution profiles could not be deleted.
+func (h *Hub) Remove(id string) (warning string, err error) {
 	if h.running(func(x *Context) bool { return x.ProjectID == id }) {
-		return ErrBusy
+		return "", ErrBusy
 	}
 	if _, err := h.Registry.Remove(id); err != nil {
-		return err
+		return "", err
 	}
 	h.forget(id, "project_removed")
 	// The project's execution profiles are Hclaro settings, not project files; they go too.
@@ -463,14 +464,17 @@ func (h *Hub) Remove(id string) error {
 	if h.Profiles != nil {
 		if h.Auth != nil {
 			// Running sign-ins of the project's profiles are cancelled and checks dropped.
-			list, _, _ := h.Profiles.List(id)
+			list, _, _ := h.Profiles.List(id) // on a read error List still returns the last good profiles
 			for _, p := range list {
 				h.Auth.Forget(id, p.ID)
 			}
 		}
-		_ = h.Profiles.RemoveProject(id)
+		// A fixed message: the error names private paths of the settings folder.
+		if h.Profiles.RemoveProject(id) != nil {
+			return "Its execution profiles could not be deleted from Hclaro's settings folder; they stay there but no project can use them.", nil
+		}
 	}
-	return nil
+	return "", nil
 }
 
 // Reorder sets the stored order.
@@ -737,7 +741,7 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 	h.wg.Add(1)
 	started = true
 	h.mu.Unlock()
-	_ = h.Registry.Touch(p.ID, ws, h.Now())
+	_ = h.Registry.Touch(p.ID, ws, h.Now()) // best effort: a failed write loses only the "recently opened" time and workspace
 	go func() {
 		defer h.wg.Done()
 		defer release()

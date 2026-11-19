@@ -133,7 +133,7 @@ func TestRemovingAProjectCancelsItsSignIns(t *testing.T) {
 	if _, err := auth.StartLogin(context.Background(), target, awsauth.ModeSSO); err != nil {
 		t.Fatal(err)
 	}
-	if err := hub.Remove(network); err != nil {
+	if _, err := hub.Remove(network); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "sign-in not cancelled", func() bool {

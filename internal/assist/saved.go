@@ -134,7 +134,7 @@ func OpenStore(configDir string, now time.Time) *Store {
 			}
 		} else if errors.Is(err, os.ErrNotExist) {
 			b, _ := json.MarshalIndent(map[string]int{"version": savedVersion, "retentionDays": DefaultRetentionDays}, "", "  ")
-			_ = writeAtomic(r, ".", savedSettings, b)
+			_ = writeAtomic(r, ".", savedSettings, b) // best effort: the defaults apply without the file
 		}
 		r.Close()
 	}
@@ -376,19 +376,21 @@ func (s *Store) Retain(key, id, root, rel string) error {
 }
 
 // Settle ends a change: with kept, its artifact and backup stay until the retention; without,
-// nothing was moved, so the record and backup go now.
-func (s *Store) Settle(key, id, root, rel string, kept bool) {
+// nothing was moved, so the record and backup go now. An error means the record still reads
+// as interrupted, so the next start may roll the change back.
+func (s *Store) Settle(key, id, root, rel string, kept bool) error {
 	if kept {
-		_ = s.writeAside(key, id, asideRecord{Version: 1, Root: root, Path: rel, Done: true})
-		return
+		return s.writeAside(key, id, asideRecord{Version: 1, Root: root, Path: rel, Done: true})
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Nothing was moved: a record left behind names no artifact and the sweep only marks it done.
 	if r, err := s.root(false); err == nil {
 		_ = r.Remove(filepath.Join(key, id+".aside"))
 		_ = r.Remove(filepath.Join(key, id+".backup"))
 		r.Close()
 	}
+	return nil
 }
 
 func (s *Store) writeAside(key, id string, rec asideRecord) error {
@@ -453,7 +455,7 @@ func (s *Store) sweepAside(r *os.Root, key, id string, now time.Time) {
 		_ = r.Remove(filepath.Join(key, id+".backup"))
 	} else if !rec.Done {
 		if b, err := json.Marshal(asideRecord{Version: 1, Root: rec.Root, Path: rec.Path, Done: true}); err == nil {
-			_ = writeAtomic(r, key, name, b)
+			_ = writeAtomic(r, key, name, b) // best effort: the next sweep marks it done again
 		}
 	}
 }

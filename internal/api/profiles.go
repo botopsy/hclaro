@@ -274,7 +274,11 @@ func profileRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			reasonJSON(w, 409, "project_unavailable", summary.Problem)
 			return
 		}
-		files, truncated := profiles.Candidates(p.RootPath)
+		files, truncated, err := profiles.Candidates(p.RootPath)
+		if err != nil {
+			reasonJSON(w, 409, "var_files_unreadable", "The project folder could not be read to list variable files. Check its permissions.")
+			return
+		}
 		writeJSON(w, 200, map[string]any{"files": files, "truncated": truncated})
 	})
 	// The execution context summary shown before an operation. It runs no command: the
