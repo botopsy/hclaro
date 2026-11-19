@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -86,7 +87,8 @@ func TestReplaceKeepsTheReplacedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(filepath.Join(root, "main.tf"))
-	if content(t, filepath.Join(root, "main.tf")) != ours || info.Mode().Perm() != 0o640 {
+	// Windows has no Unix permission bits (it reports 0666 for any writable file).
+	if content(t, filepath.Join(root, "main.tf")) != ours || runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 {
 		t.Fatalf("replace: %q %v", content(t, filepath.Join(root, "main.tf")), info.Mode().Perm())
 	}
 	if a := left(t, root); len(a) != 1 || content(t, filepath.Join(root, a[0])) != base {
@@ -107,7 +109,16 @@ func TestInPlaceWriteThroughAnOpenFileStaysRecoverable(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if err := ReplaceAt(root, "main.tf", []byte(ours), isBase, keep); err != nil {
+	err = ReplaceAt(root, "main.tf", []byte(ours), isBase, keep)
+	if runtime.GOOS == "windows" {
+		// Windows refuses to move a file another process holds open: the replace fails and
+		// changes nothing (no write, no recovery artifact, no temporary file).
+		if err == nil || content(t, filepath.Join(root, "main.tf")) != base || len(left(t, root)) != 0 {
+			t.Fatalf("replace of an open file on Windows: %v", err)
+		}
+		return
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.WriteAt([]byte(editor), 0); err != nil {
