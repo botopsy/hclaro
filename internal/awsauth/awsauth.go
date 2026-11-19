@@ -115,9 +115,33 @@ func (m *Manager) Epoch(projectID, profileID string) uint64 {
 	return m.epochs[key(projectID, profileID)]
 }
 
-// run is the real Exec: the executable from PATH, argv only, empty stdin, bounded output,
-// the pager and auto-prompt disabled.
+// ErrRefusedArgs is returned for a command not on the sign-in allowlist; no process starts.
+var ErrRefusedArgs = errors.New("hclaro refused to run this command because it is not on the allowlist")
+
+// allowed is the sign-in allowlist: the exact commands this package builds, with a valid
+// profile name where one is substituted.
+func allowed(name string, args []string) bool {
+	is := func(want ...string) bool { return slices.Equal(args, want) }
+	profile := func(prefix ...string) bool {
+		return len(args) == len(prefix)+1 && slices.Equal(args[:len(prefix)], prefix) && awsvault.ValidProfile(args[len(prefix)])
+	}
+	switch name {
+	case "aws-vault":
+		return is("--version")
+	case "aws":
+		return is("--version") || is("login", "help") || is("configure", "list-profiles") ||
+			profile("configure", "get", "sso_session", "--profile") || profile("configure", "get", "sso_start_url", "--profile") ||
+			profile("sso", "login", "--profile") || profile("login", "--profile")
+	}
+	return false
+}
+
+// run is the real Exec: an allowlisted command, the executable from PATH, argv only, empty
+// stdin, bounded output, the pager and auto-prompt disabled.
 func run(ctx context.Context, environ []string, name string, args ...string) ([]byte, []byte, error) {
+	if !allowed(name, args) {
+		return nil, nil, ErrRefusedArgs
+	}
 	exe, err := exec.LookPath(name)
 	if err != nil {
 		return nil, nil, exec.ErrNotFound

@@ -658,3 +658,37 @@ func TestAWSVaultMFAFailsFastWithoutAPrompt(t *testing.T) {
 		t.Fatalf("plan through an MFA vault: %v after %v", err, time.Since(start))
 	}
 }
+
+// run refuses any command not on the sign-in allowlist before starting a process (B01).
+func TestRunRefusesArgvOffTheAllowlist(t *testing.T) {
+	f := setup(t, "aws", "aws-vault")
+	ctx := context.Background()
+	for _, c := range []struct {
+		name string
+		args []string
+	}{
+		{"aws", []string{"s3", "rm", "s3://bucket", "--recursive"}},
+		{"aws", []string{"sso", "login", "--profile", "-x"}},
+		{"aws", []string{"sso", "login", "--profile", "dev", "--no-browser"}},
+		{"aws", []string{"configure", "get", "aws_secret_access_key", "--profile", "dev"}},
+		{"aws", []string{"configure", "set", "region", "x"}},
+		{"aws", []string{"login", "--profile", "dev\x00"}},
+		{"aws-vault", []string{"exec", "dev", "--", "sh"}},
+		{"sh", []string{"--version"}},
+	} {
+		if _, _, err := run(ctx, nil, c.name, c.args...); !errors.Is(err, ErrRefusedArgs) {
+			t.Fatalf("%s %q: %v", c.name, c.args, err)
+		}
+	}
+	if len(spyLines(t, f.awsSpy)) != 0 || len(spyLines(t, f.vaultSpy)) != 0 {
+		t.Fatal("a refused command started a process")
+	}
+	for _, args := range [][]string{{"--version"}, {"configure", "list-profiles"}, {"configure", "get", "sso_session", "--profile", "sso-dev"}} {
+		if _, _, err := run(ctx, nil, "aws", args...); errors.Is(err, ErrRefusedArgs) {
+			t.Fatalf("%q refused", args)
+		}
+	}
+	if n := len(spyLines(t, f.awsSpy)); n != 3 {
+		t.Fatalf("%d allowed calls recorded, want 3", n)
+	}
+}

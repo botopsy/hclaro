@@ -259,7 +259,21 @@ type procResult struct {
 	exitOK, overflow, stopped bool
 }
 
+// allowedArgv is the allowlist every process start passes: the exact argv shapes Hclaro runs.
+// Substituted values (catalog path, self-check URL) are validated in codexArgv.
+func allowedArgv(path string, args []string) bool {
+	if path == osascriptPath {
+		return slices.Equal(args, osascriptArgs)
+	}
+	return slices.Equal(args, Claude.VersionArgs) || slices.Equal(args, Claude.RunArgs) ||
+		slices.Equal(args, codexAdapter.VersionArgs) || codexArgv(args)
+}
+
+// runProc starts one allowlisted process; anything else is refused before exec.
 func runProc(ctx context.Context, p proc) (procResult, error) {
+	if !allowedArgv(p.path, p.args) {
+		return procResult{}, &Failure{Kind: KindRefusedArgs}
+	}
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 	runCtx, stopRun := context.WithCancel(ctx)
@@ -408,7 +422,7 @@ func claudeReply(stdout, stderr []byte, exitOK bool) (string, string) {
 // search removed) leaves no tool; --strict-config fails on a misspelt key; project docs, skill
 // instructions, environment context and analytics are off; credentials come only from
 // CODEX_HOME/auth.json, the file the gates read. codexCatalogArg is replaced by the catalog path.
-var Codex = Adapter{
+var codexAdapter = Adapter{
 	ID: "codex", Name: "OpenAI Codex", Command: "codex",
 	VersionArgs: []string{"--version"},
 	RunArgs: []string{"exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules",

@@ -55,7 +55,7 @@ func shownDisclosure(detected []ProviderStatus) Disclosure {
 	send, claude, codex := false, false, false
 	for _, d := range detected {
 		if d.Mode == ModeHeadless {
-			send, claude, codex = true, claude || d.ID == Claude.ID, codex || d.ID == Codex.ID
+			send, claude, codex = true, claude || d.ID == Claude.ID, codex || d.ID == codexAdapter.ID
 		}
 	}
 	out := Disclosure{Version: disclosure.Version, Lines: []string{}}
