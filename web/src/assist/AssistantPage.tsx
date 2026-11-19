@@ -6,12 +6,12 @@ import { api, post } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 import { ErrorState } from '../workbench/ErrorState';
-import { AssistDrawer, ConversationPanel, assistSettingsQuery, type Approve, type Conversation } from './AskAI';
+import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, useAcceptThen, useDetectAssistants, type Approve, type Conversation } from './AskAI';
 
 // The AI Assistant page (AI-01.09): conversations that are not tied to a plan or drift result.
 // A conversation starts with no project data, or with a project package the user previewed in
 // the existing drawer. The project and workspace are the ones the context selector shows; the
-// assistant is fixed per conversation. Conversations of another project or workspace stay
+// assistant is the one chosen in Settings (AI-01.14) and fixed per conversation. Conversations of another project or workspace stay
 // listed, read-only. Saved conversations (AI-01.11) of this project are listed below them and
 // can be reopened or deleted.
 
@@ -47,9 +47,9 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   });
   const [confirmAll, setConfirmAll] = useState(false);
   const providers = settings?.providers ?? [];
-  const eligible = settings?.headless ? providers.filter(p => p.mode === 'headless-eligible') : [];
-  const [picked, setPicked] = useState<string>();
-  const provider = eligible.find(p => p.id === (picked ?? settings?.defaultProvider)) ?? eligible[0];
+  const provider = chosenAssistant(settings);
+  const acceptThen = useAcceptThen();
+  useDetectAssistants(settings);
   const [mode, setMode] = useState<Mode>('chat');
   const [text, setText] = useState('');
   const [selected, setSelected] = useState<string>();
@@ -89,7 +89,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
     setBusy(true);
     setFailed(undefined);
     try {
-      await start();
+      await acceptThen(settings!, () => start());
     } catch (err) {
       setFailed(err instanceof Error ? err.message : 'The conversation could not be started.');
     } finally {
@@ -110,10 +110,9 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
       }
     } : undefined;
   const tooLong = new TextEncoder().encode(text).length > maxMessage;
-  const blocked = providers.filter(p => p.mode !== 'headless-eligible' || !settings.headless);
+  const chosen = providers.find(p => p.id === settings.defaultProvider);
   const actionsOff = noProject ? 'Open a project to use quick actions: they share its configuration.'
-    : !provider ? 'Quick actions need an assistant Hclaro can run. A handoff-only assistant can use Preview project context, then Copy or Download.'
-    : !settings.disclosureAccepted ? 'Accept the AI disclosure in Settings to use quick actions.' : undefined;
+    : !provider ? 'Quick actions need an assistant Hclaro can run. A handoff-only assistant can use Preview project context, then Copy or Download.' : undefined;
 
   return <div className="assistant-page">
    <nav className="assistant-list" aria-label="Conversations in this session">
@@ -146,13 +145,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
       }} staleHint="If the project files changed, attach the current project context to continue; otherwise close it and start a new conversation." actions={<Button variant="outline" onClick={() => setPreview('attach')}><FileCode2 size={14} />Attach project context</Button>} />
       : <div className="assistant-new">
        <p className="muted">Project <strong>{project}</strong> · workspace <strong>{workspace}</strong>, from the context selector.</p>
-       <label>Assistant
-        <select value={provider?.id ?? ''} disabled={eligible.length === 0} onChange={e => setPicked(e.target.value)}>
-         {eligible.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-         {blocked.map(p => <option key={p.id} value="" disabled>{p.name}: {settings.strictLocal ? 'strict local-only mode' : p.mode === 'handoff-only' ? 'handoff-only, copy or download instead' : p.message || 'not available'}</option>)}
-         {eligible.length === 0 && blocked.length === 0 && <option value="">No assistant detected</option>}
-        </select>
-       </label>
+       <p className="muted" role="note">Assistant: <strong>{provider?.name ?? chosen?.name ?? 'none detected'}</strong>{settings.checking ? ' · checking…' : settings.strictLocal ? ' · strict local-only mode' : !provider && chosen ? ' · copy or download only' : ''}. Change it in Settings.</p>
        <section className="assistant-actions" aria-label="Quick actions">
         <h2>Quick actions</h2>
         <p className="muted assist-note">Each one previews the project context and a fixed prompt first. It uses only the configuration Hclaro reads: no state, live cloud data or pricing.</p>
@@ -162,7 +155,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
         }}><Zap size={14} />{a.label}</Button>)}</div>
         {actionsOff && <p className="muted assist-note" role="note">{actionsOff}</p>}
        </section>
-       <p className="muted assist-note">The assistant is fixed for each conversation. Changing it here affects only new conversations; open conversations keep theirs.</p>
+       <p className="muted assist-note">The assistant is fixed for each conversation. Changing it in Settings affects only new conversations; open conversations keep theirs.</p>
        <fieldset className="assistant-mode">
         <legend>Context</legend>
         <label><input type="radio" name="assistant-mode" checked={mode === 'chat'} onChange={() => setMode('chat')} />Conversation only: no project data is attached</label>
@@ -173,10 +166,10 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
        </label>
        {tooLong && <p className="dialog-error" role="alert">This message is longer than {maxMessage} bytes. Shorten it to send it.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
-       {!settings.disclosureAccepted && eligible.length > 0 && <p className="muted assist-note">To send anything, accept the AI disclosure in Settings first.</p>}
-       {eligible.length === 0 && <p className="muted assist-note">No assistant can run here. Preview the project context to copy or download it for an assistant you run yourself.</p>}
+       {!settings.disclosureAccepted && provider && mode === 'chat' && <ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
+       {!provider && <p className="muted assist-note">No assistant can run here. Preview the project context to copy or download it for an assistant you run yourself.</p>}
        <div className="form-actions">
-        {mode === 'chat' ? <Button disabled={busy || !provider || !settings.disclosureAccepted || !text.trim() || tooLong} onClick={() => void startChat()}><Send size={14} />Start conversation</Button>
+        {mode === 'chat' ? <Button disabled={busy || !provider || !text.trim() || tooLong} onClick={() => void startChat()}><Send size={14} />{settings.disclosureAccepted || !provider ? 'Start conversation' : 'Accept and send'}</Button>
           : <Button disabled={busy || tooLong} onClick={() => setPreview('start')}><Sparkles size={14} />Preview project context</Button>}
        </div>
       </div>}

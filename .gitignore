@@ -50,5 +50,8 @@ Thumbs.db
 
 # Local planning and coding-agent instructions; kept on the maintainer's machine, not published.
 /tasks/
+# Provider probe harnesses and evidence (real-run outputs, sign-in-derived checks); never published
+# even if /tasks/ is later tracked.
+/tasks/AI/probe/
 /AGENTS.md
 /CLAUDE.md

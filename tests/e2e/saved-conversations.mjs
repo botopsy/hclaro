@@ -77,11 +77,10 @@ async function open(url) {
   return page
 }
 const nav = (page, label) => page.getByRole('button', {name: label, exact: true}).first().click()
+// AI is on by default (AI-01.14); the disclosure is accepted inline by the first Accept and send.
 async function aiOn(page) {
   await nav(page, 'Settings')
-  await page.getByRole('group', {name: 'AI assistance'}).getByRole('button', {name: 'On'}).click()
-  await page.getByRole('button', {name: 'Accept the disclosure for this session'}).click()
-  await page.getByText('Disclosure accepted for this session').waitFor()
+  await page.getByRole('group', {name: 'AI assistance'}).getByRole('button', {name: 'On', pressed: true}).waitFor()
   await nav(page, 'AI Assistant')
 }
 async function files() {
@@ -97,7 +96,7 @@ try {
   let page = await open(run.url)
   await aiOn(page)
   await page.getByLabel('Message').fill('How do moved blocks work?')
-  await page.getByRole('button', {name: 'Start conversation'}).click()
+  await page.getByRole('button', {name: 'Accept and send'}).click()
   await page.getByText('Fake reply 0').waitFor()
   assert.deepEqual(await files(), [], 'an unsaved conversation was written')
   const box = page.getByRole('checkbox', {name: /Save conversation/})
@@ -125,7 +124,7 @@ try {
   await page.getByText('Fake reply 1').waitFor()
   const before = await turns()
   await page.getByLabel('Follow-up message').fill('After a restart?')
-  await page.getByRole('button', {name: 'Send message'}).click()
+  await page.getByRole('button', {name: 'Accept and send'}).click() // a new process: not accepted yet
   await page.getByText(`Fake reply ${before}`).waitFor()
   const replay = await turn(before)
   assert(replay.startsWith(await turn(1)) && replay.includes('Fake reply 1') && replay.endsWith('After a restart?\n```\n'), 'replayed stdin')

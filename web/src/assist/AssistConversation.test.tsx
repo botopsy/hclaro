@@ -160,12 +160,30 @@ describe('AI conversation', () => {
     expect(screen.getByRole('button', { name: 'Review with Claude Code' })).toBeEnabled();
   });
 
-  it('needs the disclosure accepted, and offers no Send in strict local-only mode', async () => {
-    serve({ disclosureAccepted: false }, () => chat('ready', first));
+  it('opening the preview asks for detection, never with AI off or strict local-only (AI-01.14)', async () => {
+    serve({ checked: false, headless: false }, () => chat('ready', first));
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    expect(screen.getByRole('button', { name: 'Review with Claude Code' })).toBeDisabled();
-    expect(screen.getByText(/accept the AI disclosure in Settings/)).toBeInTheDocument();
+    expect(posts.map(p => p.url)).toContain('/api/v1/ai/detect');
+    cleanup();
+    serve({ checked: false, headless: false, strictLocal: true }, () => chat('ready', first));
+    show();
+    await screen.findByLabelText('Text to share: review prompt and context package');
+    expect(posts.map(p => p.url)).not.toContain('/api/v1/ai/detect');
+  });
+
+  it('accepts the disclosure inline on the first Send, and offers no Send in strict local-only mode', async () => {
+    serve({ disclosureAccepted: false }, () => chat('ready', first));
+    const user = userEvent.setup();
+    show();
+    await screen.findByLabelText('Text to share: review prompt and context package');
+    expect(screen.queryByRole('button', { name: 'Review with Claude Code' })).toBeNull();
+    expect(within(screen.getByLabelText('Before you share')).getByText(disclosure.lines[0])).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Accept and send' }));
+    const sent = posts.filter(p => !p.url.endsWith('/ai/packages'));
+    expect(sent.map(p => p.url)).toEqual(['/api/v1/ai/settings', '/api/v1/ai/conversations']);
+    expect(sent[0].body).toEqual({ acceptDisclosure: '4' });
+    expect(sent[1].body).toMatchObject({ provider: 'claude', disclosureVersion: '4' });
     cleanup();
 
     serve({ strictLocal: true, headless: false }, () => chat('ready', first));

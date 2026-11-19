@@ -102,6 +102,8 @@ func TestConversationRefusals(t *testing.T) {
 		_, err := s.StartConversation(key, hash, provider, version, scope, "")
 		return err
 	}
+	refused(t, start("a", "h1", "good", DisclosureVersion), RefuseDisclosure) // on by default, not accepted
+	s.SetEnabled(false)
 	refused(t, start("a", "h1", "good", DisclosureVersion), RefuseDisabled)
 	s.SetEnabled(true)
 	s.Put("a", Package{Kind: KindPlan, Markdown: pkgText, SHA256: "h1"}, nil)

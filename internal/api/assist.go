@@ -129,8 +129,20 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 		writeJSON(w, 200, manager.Assist.Settings())
 	})
-	// Settings changes: the master switch, the default assistant (among detected
-	// headless-eligible ones) and accepting the disclosure for this session. Executable paths
+	// Detection on request (AI-01.14 review): the browser asks only when the user opens an AI
+	// preview or the AI Assistant page, or clicks Check in Settings. GET never starts a process.
+	mux.HandleFunc("POST /api/v1/ai/detect", func(w http.ResponseWriter, r *http.Request) {
+		if !decodeBody(w, r, &struct{}{}) {
+			return
+		}
+		if manager.Assist == nil {
+			reasonJSON(w, 409, "ai_unavailable", "AI assistance is not available in this session.")
+			return
+		}
+		writeJSON(w, 200, manager.Assist.Detect())
+	})
+	// Settings changes: the master switch and the assistant (both saved, AI-01.14; the assistant
+	// must be one of the adapters) and accepting the disclosure for this session. Executable paths
 	// are never set here (OD-AI-3).
 	mux.HandleFunc("POST /api/v1/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -150,10 +162,16 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			return
 		}
 		if body.Enabled != nil {
-			manager.Assist.SetEnabled(*body.Enabled)
+			if _, err := manager.Assist.SetEnabled(*body.Enabled); err != nil {
+				reasonJSON(w, 500, "ai_settings_not_saved", "The AI settings could not be saved in the configuration folder, so nothing changed.")
+				return
+			}
 		}
 		if body.DefaultProvider != nil {
-			if err := manager.Assist.SetDefault(*body.DefaultProvider); err != nil {
+			if err := manager.Assist.SetDefault(*body.DefaultProvider); errors.Is(err, assist.ErrPrefs) {
+				reasonJSON(w, 500, "ai_settings_not_saved", "The AI settings could not be saved in the configuration folder, so nothing changed.")
+				return
+			} else if err != nil {
 				aiRefusal(w, err)
 				return
 			}

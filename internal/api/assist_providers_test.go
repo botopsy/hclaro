@@ -21,11 +21,12 @@ type providerSet struct {
 
 func providerSets() []providerSet {
 	codex := func() *stubAssistant { return &stubAssistant{id: "codex", mode: assist.ModeHandoff} }
-	copilot := func() *stubAssistant { return &stubAssistant{id: "copilot", mode: assist.ModeHandoff} }
+	// A synthetic handoff-only adapter keeps that path covered after Copilot's removal (OD-AI-14).
+	other := func() *stubAssistant { return &stubAssistant{id: "handoff", mode: assist.ModeHandoff} }
 	return []providerSet{
-		{name: "codex only", claude: &stubAssistant{id: "claude", mode: assist.ModeUnsupported}, handoffs: []*stubAssistant{codex()}},
-		{name: "copilot only", claude: &stubAssistant{id: "claude", mode: assist.ModeUnsupported}, handoffs: []*stubAssistant{copilot()}},
-		{name: "claude absent, codex and copilot", claude: &stubAssistant{id: "claude", mode: assist.ModeUnsupported}, handoffs: []*stubAssistant{codex(), copilot()}},
+		{name: "codex copy-only", claude: &stubAssistant{id: "claude", mode: assist.ModeUnsupported}, handoffs: []*stubAssistant{codex()}},
+		{name: "other handoff-only", claude: &stubAssistant{id: "claude", mode: assist.ModeUnsupported}, handoffs: []*stubAssistant{other()}},
+		{name: "claude absent, codex and other", claude: &stubAssistant{id: "claude", mode: assist.ModeUnsupported}, handoffs: []*stubAssistant{codex(), other()}},
 		{name: "none installed"},
 		{name: "claude installed", claude: &stubAssistant{id: "claude", mode: assist.ModeHeadless, reply: "ok"}, handoffs: []*stubAssistant{codex()}},
 	}
@@ -54,7 +55,14 @@ func checkProviderSet(t *testing.T, ps providerSet, do doFunc, prefix string, re
 	}
 	headless := ps.claude != nil && ps.claude.mode == assist.ModeHeadless
 	st := decode[assist.Settings](t, do("GET", "/api/v1/ai/settings", ""))
-	if !st.Handoff || st.Headless != headless || (st.DefaultProvider == "claude") != headless || (!headless && st.DefaultProvider != "") {
+	// No eligible assistant: the first installed one is chosen, for Copy only (AI-01.14).
+	want := ""
+	if headless {
+		want = "claude"
+	} else if len(ps.handoffs) > 0 {
+		want = ps.handoffs[0].id
+	}
+	if !st.Handoff || st.Headless != headless || st.DefaultProvider != want {
 		t.Fatalf("settings %+v", st)
 	}
 	// The Anthropic billing line is shown only when Claude Code can be sent requests.
@@ -62,8 +70,17 @@ func checkProviderSet(t *testing.T, ps providerSet, do doFunc, prefix string, re
 	if anthropic(st.Disclosure) != headless || st.Disclosure.Version != assist.DisclosureVersion {
 		t.Fatalf("settings disclosure %q", st.Disclosure.Lines)
 	}
-	if w := do("POST", "/api/v1/ai/settings", `{"defaultProvider":"codex"}`); w.Code != 409 {
-		t.Fatalf("handoff-only assistant became the default: %d %s", w.Code, w.Body)
+	if w := do("POST", "/api/v1/ai/settings", `{"defaultProvider":"copilot"}`); w.Code != 409 {
+		t.Fatalf("an unknown assistant was accepted: %d %s", w.Code, w.Body)
+	}
+	for _, h := range ps.handoffs {
+		// A copy-only assistant can be chosen, but it never makes Send available.
+		if st := decode[assist.Settings](t, do("POST", "/api/v1/ai/settings", `{"defaultProvider":"`+h.id+`"}`)); st.Headless || st.DefaultProvider != h.id {
+			t.Fatalf("copy-only choice: %+v", st)
+		}
+	}
+	if headless {
+		do("POST", "/api/v1/ai/settings", `{"defaultProvider":"claude"}`)
 	}
 	var last builtPackage
 	for kind, body := range requests {

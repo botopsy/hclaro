@@ -74,7 +74,8 @@ func startBody(hash, provider, message string) string {
 // waitChat polls a conversation under base until its turn has finished.
 func waitChat(t *testing.T, do doFunc, base, id string) assist.Conversation {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+	// 30 s: a first Codex turn also runs the self-check, slow under -race on a loaded machine.
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
 		c := decode[assist.Conversation](t, do("GET", base+"/ai/conversations/"+id, ""))
 		if c.State != assist.StateRunning {
 			return c
@@ -93,19 +94,20 @@ func TestAIConversationOverHTTP(t *testing.T) {
 	s.manager.Assist.Record = func(r assist.RunRecord) { mu.Lock(); records = append(records, r); mu.Unlock() }
 	planID := s.plan()
 	zero := strings.Repeat("0", 64)
+	s.manager.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "stub", "")), 409, "ai_disabled")
 	wantError(t, s.do("GET", "/api/v1/ai/conversations/"+strings.Repeat("a", 32), ""), 409, "ai_disabled")
 
 	s.enableAI()
 	st := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", ""))
-	if !st.Headless || st.DefaultProvider != "stub" || st.Accepted || st.Disclosure.Version != "9" {
+	if !st.Headless || st.DefaultProvider != "stub" || st.Accepted || st.Disclosure.Version != "10" {
 		t.Fatalf("%+v", st)
 	}
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+planID+`"}`))
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 409, "disclosure_required")
 	// The browser cannot set an executable path.
 	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"path":"/bin/sh"}`), 400, "invalid_request")
-	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"9"}`)
+	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"10"}`)
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"7"}`), 409, "disclosure_required")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "other", "")), 409, "provider_unavailable")
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "stub", "")), 404, "package_not_found")
@@ -260,9 +262,9 @@ func TestAIHubConversationStaysInItsContext(t *testing.T) {
 	}
 }
 
-// Disclosure v9: a v7 acceptance does not count; turning AI off revokes acceptance.
+// Disclosure v10: a v7 or v9 acceptance does not count; turning AI off revokes acceptance.
 func TestAIDisclosureVersionGatesConversations(t *testing.T) {
-	if assist.DisclosureVersion != "9" {
+	if assist.DisclosureVersion != "10" {
 		t.Fatalf("disclosure version %s", assist.DisclosureVersion)
 	}
 	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
@@ -286,8 +288,9 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 	if decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", "")).Accepted {
 		t.Fatal("a v7 acceptance was recorded")
 	}
-	if !decode[assist.Settings](t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"9"}`)).Accepted {
-		t.Fatal("v9 not accepted")
+	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"9"}`), 409, "disclosure_required")
+	if !decode[assist.Settings](t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"10"}`)).Accepted {
+		t.Fatal("v10 not accepted")
 	}
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", old), 409, "disclosure_required")
 	if w := s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")); w.Code != 202 {
