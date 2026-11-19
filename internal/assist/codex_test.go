@@ -277,7 +277,7 @@ func TestCodexRun(t *testing.T) {
 			catalog, _ = strconv.Unquote(v)
 		}
 	}
-	if catalog == "" || !slices.Equal(r.Args, codexArgs(Codex.RunArgs, catalog)) || r.Args[len(r.Args)-1] != "-" {
+	if catalog == "" || !slices.Equal(r.Args, codexArgs(codexAdapter.RunArgs, catalog)) || r.Args[len(r.Args)-1] != "-" {
 		t.Fatalf("argv %q", r.Args)
 	}
 	if _, err := os.Stat(catalog); !os.IsNotExist(err) {
@@ -563,4 +563,73 @@ func TestCodexRealBinaryOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("binary %s sha256 %s (stat %s)", bin, sum, key)
+}
+
+// Every process start is checked against the allowlist before exec (B01): an argv off the list,
+// a substituted catalog outside a private folder, a NUL byte or a non-loopback self-check URL is
+// refused and no process starts.
+func TestRunProcRefusesArgvOffTheAllowlist(t *testing.T) {
+	c, home, _ := codexFake(t, "codex")
+	run := codexAdapter.RunArgs
+	selfCheck := func(url string) []string {
+		args := codexArgs(run, filepath.Join(os.TempDir(), "hclaro-ai-x", "catalog.json"))
+		return append(args[:len(args)-1:len(args)-1], "-c", "openai_base_url="+strconv.Quote(url), "-")
+	}
+	for name, args := range map[string][]string{
+		"other exec":         {"exec", "--sandbox", "danger-full-access", "-"},
+		"placeholder":        run,
+		"public catalog":     codexArgs(run, "/etc/catalog.json"),
+		"nul in catalog":     codexArgs(run, filepath.Join(os.TempDir(), "hclaro-ai-x\x00", "catalog.json")),
+		"catalog traversal":  codexArgs(run, filepath.Join(os.TempDir(), "hclaro-ai-x", "..", "catalog.json")),
+		"remote self-check":  selfCheck("https://api.openai.com/v1"),
+		"extra run argument": append(codexArgs(run, filepath.Join(os.TempDir(), "hclaro-ai-x", "catalog.json")), "--yolo"),
+		"models other key":   {"debug", "models", "-c", "model_catalog_json=" + strconv.Quote("/etc/catalog.json")},
+		"features enabled":   {"features", "enable", "shell_tool"},
+		"osascript argv":     osascriptArgs,
+	} {
+		_, err := runProc(context.Background(), proc{path: c.Path, args: args, timeout: time.Second})
+		if KindOf(err) != KindRefusedArgs {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := runProc(context.Background(), proc{path: osascriptPath, args: []string{"-e", "do shell script \"id\""}, timeout: time.Second}); KindOf(err) != KindRefusedArgs {
+		t.Errorf("osascript: %v", err)
+	}
+	if runs := codexRuns(home); len(runs) != 0 {
+		t.Fatalf("a refused argv started codex %d times", len(runs))
+	}
+}
+
+// The real Codex shapes pass, with the catalog writeCatalog produces and a loopback base URL.
+func TestCodexArgvShapesAllowed(t *testing.T) {
+	runnableCodex(t)
+	catalog, cleanup, err := writeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	args := codexArgs(codexAdapter.RunArgs, catalog)
+	self := append(args[:len(args)-1:len(args)-1], "-c", "openai_base_url="+strconv.Quote("http://127.0.0.1:54321/v1"), "-")
+	for _, a := range [][]string{args, self, codexFeatureArgs(), {"debug", "models", "-c", "model_catalog_json=" + strconv.Quote(catalog)},
+		codexAdapter.VersionArgs, Claude.VersionArgs, Claude.RunArgs} {
+		if !allowedArgv("/opt/codex", a) {
+			t.Errorf("refused %q", a)
+		}
+	}
+	if !allowedArgv(osascriptPath, osascriptArgs) {
+		t.Error("osascript profile probe refused")
+	}
+}
+
+// The Codex adapter only runs through CodexCLI: a plain CLI around it skips the gates, so its
+// run argv (with the catalog placeholder) is refused before any process starts.
+func TestPlainCLIRefusesCodexAdapter(t *testing.T) {
+	c, home, _ := codexFake(t, "codex")
+	plain := &CLI{Adapter: codexAdapter, Path: c.Path}
+	if _, err := plain.Run(context.Background(), []byte("hi")); KindOf(err) != KindRefusedArgs {
+		t.Fatal(err)
+	}
+	if runs := codexRuns(home); len(runs) != 0 {
+		t.Fatalf("plain CLI started codex %d times", len(runs))
+	}
 }

@@ -251,7 +251,7 @@ func TestCodexVersionPinned(t *testing.T) {
 		{"codex-cli 0.166.1", "0.166.1", false},
 		{"codex-cli 0.165.0", "0.165.0", false},
 	} {
-		if v, ok := Codex.ParseVersion([]byte(tc.out)); v != tc.ver || ok != tc.ok {
+		if v, ok := codexAdapter.ParseVersion([]byte(tc.out)); v != tc.ver || ok != tc.ok {
 			t.Errorf("%q: %q %v", tc.out, v, ok)
 		}
 	}

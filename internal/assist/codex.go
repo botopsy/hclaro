@@ -12,9 +12,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -28,7 +28,7 @@ import (
 // gate is in tasks/AI/CODEX-INVESTIGATION.md §6–7.
 //
 //   - macOS only (Linux and Windows have no runtime verification).
-//   - exactly codex-cli 0.166.0, through the verified argv (Codex.RunArgs).
+//   - exactly codex-cli 0.166.0, through the verified argv (codexAdapter.RunArgs, unexported: only CodexCLI runs it).
 //   - no AGENTS.md or AGENTS.override.md in CODEX_HOME: Codex sends either to OpenAI.
 //   - no managed source: /etc/codex, a macOS managed preference for com.openai.codex (file or
 //     forced value), or a managed or cloud-config cache in CODEX_HOME. Managed requirements pin
@@ -105,7 +105,7 @@ type CodexCLI struct {
 
 // NewCodexCLI is the Codex provider; path is the --codex-path flag ("" looks codex up on PATH).
 func NewCodexCLI(path string) *CodexCLI {
-	return &CodexCLI{CLI: CLI{Adapter: Codex, Path: path}}
+	return &CodexCLI{CLI: CLI{Adapter: codexAdapter, Path: path}}
 }
 
 func (c *CodexCLI) now() time.Time {
@@ -218,17 +218,20 @@ func codexManagedPaths() ([]string, error) {
 	}, nil
 }
 
+const osascriptPath = "/usr/bin/osascript"
+
+var osascriptArgs = []string{"-l", "JavaScript", "-e", profileScript}
+
 func osascriptProfile(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-e", profileScript)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + os.Getenv("HOME")}
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	r, err := runProc(ctx, proc{path: osascriptPath, args: osascriptArgs, env: []string{"PATH=/usr/bin:/bin", "HOME=" + os.Getenv("HOME")},
+		limit: 4 << 10, timeout: 10 * time.Second})
+	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(out.String()), nil
+	if !r.exitOK || r.overflow {
+		return "", errors.New("osascript failed")
+	}
+	return strings.TrimSpace(string(r.stdout)), nil
 }
 
 // codexSignIn reads CODEX_HOME/auth.json strictly: a ChatGPT sign-in, a personal plan claim and
@@ -364,7 +367,7 @@ func (c *CodexCLI) Run(ctx context.Context, payload []byte) (string, error) {
 	if kind != "" {
 		return "", &Failure{Kind: kind}
 	}
-	binding := bindingOf(sum, st.Version, features, models)
+	binding := bindingOf(c.RunArgs, sum, st.Version, features, models)
 	c.mu.Lock()
 	if c.passed != binding {
 		if kind := c.selfCheck(ctx, bin, catalog); kind != "" {
@@ -427,6 +430,70 @@ func privateDir() (string, error) {
 	return real, nil
 }
 
+var selfCheckURL = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]{1,5}/v1$`)
+
+// codexArgv reports whether args is one of the Codex shapes Hclaro runs: the run, the
+// self-check (the run plus a loopback base URL), `features list` and `debug models`.
+func codexArgv(args []string) bool {
+	run := codexAdapter.RunArgs
+	n := len(run) - 1 // the run's argv without its final "-"
+	prefix := func() bool {
+		for i, want := range run[:n] {
+			if want == "model_catalog_json="+codexCatalogArg {
+				if !catalogArg(args[i]) {
+					return false
+				}
+			} else if args[i] != want {
+				return false
+			}
+		}
+		return true
+	}
+	switch {
+	case len(args) == n+1:
+		return prefix() && args[n] == "-"
+	case len(args) == n+3:
+		url, ok := quotedValue(args[n+1], "openai_base_url=")
+		return prefix() && args[n] == "-c" && ok && selfCheckURL.MatchString(url) && args[n+2] == "-"
+	case len(args) == 4 && args[0] == "debug":
+		return slices.Equal(args[:3], []string{"debug", "models", "-c"}) && catalogArg(args[3])
+	}
+	return slices.Equal(args, codexFeatureArgs())
+}
+
+// quotedValue returns the value of a key="value" argument written by strconv.Quote.
+func quotedValue(arg, key string) (string, bool) {
+	q, ok := strings.CutPrefix(arg, key)
+	if !ok {
+		return "", false
+	}
+	v, err := strconv.Unquote(q)
+	return v, err == nil && strconv.Quote(v) == q
+}
+
+// catalogArg accepts model_catalog_json= only with a catalog written by writeCatalog: an
+// absolute catalog.json in a hclaro-ai- folder directly in the temporary directory.
+func catalogArg(arg string) bool {
+	p, ok := quotedValue(arg, "model_catalog_json=")
+	if !ok || !filepath.IsAbs(p) || filepath.Clean(p) != p || strings.ContainsRune(p, 0) || filepath.Base(p) != "catalog.json" {
+		return false
+	}
+	dir := filepath.Dir(p)
+	tmp, err := filepath.EvalSymlinks(os.TempDir())
+	return err == nil && strings.HasPrefix(filepath.Base(dir), "hclaro-ai-") && filepath.Dir(dir) == tmp
+}
+
+// codexFeatureArgs is `codex features list` with the run's --disable flags.
+func codexFeatureArgs() []string {
+	out := []string{"features", "list"}
+	for i, a := range codexAdapter.RunArgs {
+		if a == "--disable" {
+			out = append(out, a, codexAdapter.RunArgs[i+1])
+		}
+	}
+	return out
+}
+
 // codexArgs fills the catalog path into the allowlisted argv; nothing else varies.
 func codexArgs(template []string, catalog string) []string {
 	out := slices.Clone(template)
@@ -480,9 +547,10 @@ func (c *CodexCLI) binaryHash(bin string) (string, string, error) {
 	return key, sum, nil
 }
 
-func bindingOf(parts ...string) string {
+// bindingOf hashes the self-check inputs, including runArgs: the argv template the run uses.
+func bindingOf(runArgs []string, parts ...string) string {
 	h := sha256.New()
-	for _, p := range append(parts, strings.Join(Codex.RunArgs, "\x00"), string(codexCatalog)) {
+	for _, p := range append(parts, strings.Join(runArgs, "\x00"), string(codexCatalog)) {
 		h.Write([]byte(strconv.Itoa(len(p))))
 		h.Write([]byte{0})
 		h.Write([]byte(p))
@@ -504,13 +572,7 @@ func (c *CodexCLI) effective(ctx context.Context, bin, home, catalog string) (st
 	}
 	defer os.RemoveAll(dir)
 	env := append(c.codexEnv(home, dir), proxy.env()...)
-	features := []string{"features", "list"}
-	for i, a := range c.RunArgs {
-		if a == "--disable" {
-			features = append(features, a, c.RunArgs[i+1])
-		}
-	}
-	fr, err := runProc(ctx, proc{path: bin, args: features, dir: dir, env: env, limit: codexProbeLimit, timeout: codexProbeTime})
+	fr, err := runProc(ctx, proc{path: bin, args: codexFeatureArgs(), dir: dir, env: env, limit: codexProbeLimit, timeout: codexProbeTime})
 	if err != nil {
 		return "", "", KindOf(err)
 	}
