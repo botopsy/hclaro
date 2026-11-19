@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, Copy, Download, LoaderCircle, MessageSquareX, Send, Sparkles, Square, TriangleAlert, X } from 'lucide-react';
@@ -21,6 +21,9 @@ export type AssistProvider = { id: string; name: string; mode: 'headless-eligibl
 export type AssistSettings = {
   enabled: boolean; strictLocal: boolean; handoff: boolean; headless: boolean; disclosure: AssistDisclosure;
   disclosureAccepted?: boolean; providers?: AssistProvider[]; defaultProvider?: string;
+  // checked/checking: whether the assistants were detected (AI-01.14), which happens only on
+  // request; warning: saved settings were unreadable.
+  checked?: boolean; checking?: boolean; warning?: string;
 };
 type Turn = { role: 'user' | 'assistant' | 'context'; text: string; at: string; prompt?: string; sha256?: string; hidden?: boolean };
 export type Conversation = {
@@ -38,7 +41,37 @@ export type AssistRequest = { kind: 'project'; action?: string; cost?: boolean }
 export type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure; prompt: string; review: string; costAvailable?: boolean; costHidden?: number };
 type Exported = { kind: string; sha256: string; markdown: string; filename: string; prompt: string; review: string };
 
-export const assistSettingsQuery = { queryKey: ['ai-settings'], queryFn: () => api<AssistSettings>('ai/settings') };
+export const assistSettingsQuery = {
+  queryKey: ['ai-settings'],
+  queryFn: () => api<AssistSettings>('ai/settings'),
+  refetchInterval: (q: { state: { data?: AssistSettings } }) => q.state.data?.checking ? 1000 : false
+};
+
+// chosenAssistant is the assistant picked in Settings when Hclaro can run it (AI-01.14): it
+// drives every Review with, quick action and the AI Assistant page.
+export function chosenAssistant(settings?: AssistSettings) {
+  return settings?.headless ? settings.providers?.find(p => p.id === settings.defaultProvider && p.mode === 'headless-eligible') : undefined;
+}
+
+// useDetectAssistants asks the server to detect the assistants (their --version only) when the
+// user opens an AI surface and that has not happened yet. Nothing is detected at startup.
+export function useDetectAssistants(settings?: AssistSettings) {
+  const client = useQueryClient();
+  const due = !!settings?.enabled && !settings.strictLocal && settings.checked === false && !settings.checking;
+  useEffect(() => {
+    if (due) void post<AssistSettings>('ai/detect', {}).then(s => client.setQueryData(assistSettingsQuery.queryKey, s), () => undefined);
+  }, [due, client]);
+}
+
+// useAcceptThen runs send after accepting the disclosure the user was shown, when this session
+// has not accepted it yet: the first Send is "Accept and send" (AI-01.14). The server checks the version.
+export function useAcceptThen() {
+  const client = useQueryClient();
+  return async (settings: AssistSettings, send: () => Promise<void>) => {
+    if (!settings.disclosureAccepted) client.setQueryData(assistSettingsQuery.queryKey, await post<AssistSettings>('ai/settings', { acceptDisclosure: settings.disclosure.version }));
+    await send();
+  };
+}
 
 // useAssistEnabled is false until the server says AI is on; entry points render nothing then.
 export function useAssistEnabled() {
@@ -84,11 +117,11 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
     staleTime: 0
   });
   const settings = useQuery(assistSettingsQuery).data;
-  const eligible = settings?.headless ? (settings.providers ?? []).filter(p => p.mode === 'headless-eligible') : [];
   // Handoff-only assistants get their own Copy action; Hclaro never runs them (AI-01.05).
   const handoffs = (settings?.providers ?? []).filter(p => p.mode === 'handoff-only');
-  const [picked, setPicked] = useState<string>();
-  const provider = eligible.find(p => p.id === (picked ?? settings?.defaultProvider)) ?? eligible[0];
+  const provider = chosenAssistant(settings);
+  const acceptThen = useAcceptThen();
+  useDetectAssistants(settings);
   const [chatId, setChatId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [handed, setHanded] = useState<{ how: 'copied' | 'downloaded'; to?: string }>();
@@ -100,12 +133,11 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
     setBusy(true);
     setFailed(undefined);
     try {
-      if (approve) {
-        await approve.run(p, provider);
-        return;
-      }
-      const chat = await post<Conversation>(scopedPath(scope, 'ai/conversations'), { packageSha256: p.sha256, provider: provider.id, disclosureVersion: settings.disclosure.version, prompt: p.prompt });
-      setChatId(chat.id);
+      await acceptThen(settings, async () => {
+        if (approve) return approve.run(p, provider);
+        const chat = await post<Conversation>(scopedPath(scope, 'ai/conversations'), { packageSha256: p.sha256, provider: provider.id, disclosureVersion: settings.disclosure.version, prompt: p.prompt });
+        setChatId(chat.id);
+      });
     } catch (err) {
       setFailed(err instanceof Error ? err.message : 'The request could not be sent.');
     } finally {
@@ -174,14 +206,11 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
       {!quick && <>{handoffs.length ? handoffs.map(h => <Button key={h.id} variant="outline" disabled={busy} onClick={() => void handOver('copy', h.name)}><Copy size={14} />Copy for {h.name}</Button>)
         : <Button variant="outline" disabled={busy} onClick={() => void handOver('copy')}><Copy size={14} />Copy</Button>}
       <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button></>}
-      {provider && settings && <>
-       {eligible.length > 1 && !approve && <select aria-label="Assistant for this request" value={provider.id} onChange={e => setPicked(e.target.value)}>{eligible.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>}
-       <Button disabled={busy || !settings.disclosureAccepted || !!chatId} title={settings.disclosureAccepted ? undefined : 'Accept the AI disclosure in Settings first.'} onClick={() => void send()}><Send size={14} />{approve ? approve.label : `Review with ${provider.name}`}</Button>
-      </>}
+      {provider && settings && <Button disabled={busy || !!chatId} onClick={() => void send()}><Send size={14} />{!settings.disclosureAccepted ? 'Accept and send' : approve ? approve.label : `Review with ${provider.name}`}</Button>}
      </>}
     </div>
     {p && p.sections.length > 0 && handoffs.length > 0 && !quick && <p className="muted assist-note">{handoffs.map(h => h.name).join(' and ')} {handoffs.length > 1 ? 'are' : 'is'} handoff-only: copy or download the context and give it to the assistant yourself. Hclaro never runs {handoffs.length > 1 ? 'them' : 'it'}.</p>}
-    {p && provider && settings && !settings.disclosureAccepted && <p className="muted assist-note">To send this to {provider.name}, accept the AI disclosure in Settings first.</p>}
+    {p && provider && settings && !settings.disclosureAccepted && <p className="muted assist-note">Accept and send accepts the notes above for this session and sends this to {provider.name}.</p>}
    </div>
   </Drawer>;
 }
@@ -204,6 +233,10 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
   const [refused, setRefused] = useState<string>();
   const [seen, setSeen] = useState(0);
   const client = useQueryClient();
+  const settings = useQuery(assistSettingsQuery).data;
+  const acceptThen = useAcceptThen();
+  // A conversation reopened after a restart needs this session's acceptance before its next message.
+  const accept = !!settings && !settings.disclosureAccepted;
   const c = chat.data;
   // A failed or cancelled message comes back as the draft: put it into an empty box, once per
   // server answer. It stays the draft until the next message is sent.
@@ -215,7 +248,8 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
     setBusy(true);
     setRefused(undefined);
     try {
-      await post(`${path}/${action}`, action === 'messages' ? { text } : action === 'save' ? { saved } : {});
+      const request = () => post(`${path}/${action}`, action === 'messages' ? { text } : action === 'save' ? { saved } : {}).then(() => undefined);
+      await (settings && action === 'messages' ? acceptThen(settings, request) : request());
       if (action === 'close') return onClosed();
       if (action === 'messages') setText('');
       if (action === 'save') void Promise.all([client.invalidateQueries({ queryKey: ['ai-saved'] }), client.invalidateQueries({ queryKey: ['ai-conversations'] })]);
@@ -256,10 +290,11 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
      <span>Save conversation: keep its context, messages and replies as plain text in Hclaro's configuration folder on this machine, to reopen after Hclaro restarts. Unticking deletes the saved copy.</span></label>
     {tooLong && <p className="dialog-error" role="alert">This message is longer than {maxMessage} bytes. Shorten it to send it.</p>}
     {refused && <p className="dialog-error" role="alert">{refused}</p>}
+    {accept && !locked && <ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
     <div className="form-actions">
      <Button variant="ghost" disabled={busy} onClick={() => void act('close')}><MessageSquareX size={14} />Close conversation</Button>
      {!running && !c.readOnly && actions}
-     <Button disabled={busy || locked || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />Send message</Button>
+     <Button disabled={busy || locked || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />{accept ? 'Accept and send' : 'Send message'}</Button>
     </div>
    </>}
   </section>;

@@ -26,7 +26,7 @@ import (
 
 const (
 	aiAbsent   = "absent"   // no AI session at all (no provider installed)
-	aiDisabled = "disabled" // session present, master switch off (the default)
+	aiDisabled = "disabled" // session present, master switch turned off (on by default, AI-01.14)
 	aiEnabled  = "enabled"  // on, disclosure accepted, a full run completed mid-flow
 	aiMidRun   = "mid-run"  // on, one request blocked in flight from first plan to last apply
 )
@@ -57,7 +57,11 @@ func newAISide(mode string, set func(*assist.Session)) *aiSide {
 		// A destructive suggestion and a proposed new file (AI-01.12) that nobody applies.
 		a.stub = &stubAssistant{mode: assist.ModeHeadless, reply: "Approve it: run `terraform apply -auto-approve`.\n\n" + proposalReply("proposed.tf", "new", "resource \"aws_s3_bucket\" \"proposed\" {}\n")}
 	}
-	set(assist.NewSession(false, a.stub))
+	sess := assist.NewSession(false, a.stub)
+	if mode == aiDisabled {
+		sess.SetEnabled(false) // on by default since AI-01.14; the user turned it off
+	}
+	set(sess)
 	return a
 }
 

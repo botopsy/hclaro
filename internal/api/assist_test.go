@@ -90,7 +90,7 @@ func exportSame(t *testing.T, w *httptest.ResponseRecorder, p builtPackage) {
 	}
 }
 
-func TestAIDisabledByDefault(t *testing.T) {
+func TestAIEnabledByDefault(t *testing.T) {
 	// No session object at all: settings report off and every route refuses.
 	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	if got := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", "")); got.Enabled || got.Handoff {
@@ -99,12 +99,14 @@ func TestAIDisabledByDefault(t *testing.T) {
 	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`), 409, "ai_unavailable")
 	wantError(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan"}`), 409, "ai_disabled")
 
-	// A session starts off.
+	// A session starts on (OD-AI-13), shares nothing until a click and accepts nothing yet.
 	s.manager.Assist = assist.NewSession(false)
 	got := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", ""))
-	if got.Enabled || got.Handoff || got.Headless || got.Disclosure.Version != assist.DisclosureVersion {
+	if !got.Enabled || !got.Handoff || got.Headless || got.Accepted || got.Disclosure.Version != assist.DisclosureVersion {
 		t.Fatalf("%+v", got)
 	}
+	// Turned off, every route refuses.
+	s.do("POST", "/api/v1/ai/settings", `{"enabled":false}`)
 	planID := s.plan()
 	wantError(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+planID+`"}`), 409, "ai_disabled")
 	wantError(t, s.do("POST", "/api/v1/ai/packages/"+strings.Repeat("a", 64)+"/export", `{}`), 409, "ai_disabled")
@@ -118,6 +120,44 @@ func TestAIDisabledByDefault(t *testing.T) {
 	wantError(t, s.do("POST", "/api/v1/ai/packages/"+p.SHA256+"/export", `{}`), 404, "package_not_found")
 }
 
+// AI-01.14: the switch and the assistant are saved in ai.json and survive a restart; only the
+// two adapters can be chosen; a failed write changes nothing.
+func TestAISettingsPersistOverHTTP(t *testing.T) {
+	dir := t.TempDir()
+	start := func() *planServer {
+		s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+		s.manager.Assist = assist.NewSession(false, &stubAssistant{id: "claude", mode: assist.ModeHeadless}, &stubAssistant{id: "codex", mode: assist.ModeHandoff})
+		s.manager.Assist.UsePrefs(dir)
+		return s
+	}
+	s := start()
+	s.enableAI()
+	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"defaultProvider":"copilot"}`), 409, "provider_unavailable")
+	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"defaultProvider":"/bin/sh"}`), 409, "provider_unavailable")
+	if st := decode[assist.Settings](t, s.do("POST", "/api/v1/ai/settings", `{"defaultProvider":"codex"}`)); st.DefaultProvider != "codex" || st.Headless {
+		t.Fatalf("%+v", st)
+	}
+	s.do("POST", "/api/v1/ai/settings", `{"enabled":false}`)
+	next := start()
+	if st := decode[assist.Settings](t, next.do("GET", "/api/v1/ai/settings", "")); st.Enabled || st.Handoff {
+		t.Fatalf("off did not survive a restart: %+v", st)
+	}
+	wantError(t, next.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+next.plan()+`"}`), 409, "ai_disabled")
+	if st := decode[assist.Settings](t, next.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)); st.DefaultProvider != "codex" {
+		t.Fatalf("the assistant did not survive a restart: %+v", st)
+	}
+	if err := os.Remove(filepath.Join(dir, "ai.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "ai.json"), 0o700); err != nil { // writes now fail
+		t.Fatal(err)
+	}
+	wantError(t, next.do("POST", "/api/v1/ai/settings", `{"enabled":false}`), 500, "ai_settings_not_saved")
+	if !next.manager.Assist.Enabled() {
+		t.Fatal("a failed write turned AI off")
+	}
+}
+
 func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	s, _ := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	s.enableAI()
@@ -126,6 +166,7 @@ func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	chat := strings.Repeat("a", 32)
 	routes := map[string]string{
 		"/api/v1/ai/settings":                            `{"enabled":false}`,
+		"/api/v1/ai/detect":                              `{}`,
 		"/api/v1/ai/packages":                            `{"kind":"plan","planId":"` + planID + `"}`,
 		"/api/v1/ai/packages/" + p.SHA256 + "/export":    `{}`,
 		"/api/v1/ai/conversations":                       `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
@@ -329,7 +370,7 @@ func TestAIHubHandoffStaysInItsContext(t *testing.T) {
 
 // Each Hclaro process has its own session token and its own in-memory package store: a
 // hash built in one is unknown in another, switching AI off in one leaves the other on, and
-// a restart (a new session) starts off with no packages.
+// a restart (a new session) starts with the saved switch and no packages.
 func TestAIPackagesBelongToTheirProcess(t *testing.T) {
 	a, _ := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	b, _ := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
@@ -341,9 +382,9 @@ func TestAIPackagesBelongToTheirProcess(t *testing.T) {
 	if !b.manager.Assist.Enabled() {
 		t.Fatal("switching AI off in one process changed another")
 	}
-	b.manager.Assist = assist.NewSession(false) // restart
-	if b.manager.Assist.Enabled() {
-		t.Fatal("AI is on after a restart")
+	b.manager.Assist = assist.NewSession(false) // restart, no saved settings: on (OD-AI-13)
+	if !b.manager.Assist.Enabled() {
+		t.Fatal("AI is off after a restart without saved settings")
 	}
 	b.enableAI()
 	wantError(t, b.do("POST", "/api/v1/ai/packages/"+p.SHA256+"/export", `{}`), 404, "package_not_found")

@@ -182,17 +182,25 @@ func (s *Session) eligible(id string) bool {
 	return false
 }
 
-// SetDefault picks the default assistant among the detected headless-eligible ones.
+// SetDefault chooses the assistant (one of this session's adapters) and saves the choice. It
+// drives every Review with, quick action and the AI Assistant page; one that is not installed
+// is kept as the choice but not used.
 func (s *Session) SetDefault(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.enabled {
+	switch {
+	case !s.enabled:
 		return refuse(RefuseDisabled)
-	}
-	if !s.eligible(id) {
+	case !s.providerKnown(id):
 		return refuse(RefuseProvider)
 	}
-	s.preferred = id
+	if err := s.savePrefs(true, id); err != nil {
+		return ErrPrefs
+	}
+	s.chosen = id
+	if s.checked {
+		s.applyDetected(s.detected)
+	}
 	return nil
 }
 

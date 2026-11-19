@@ -1,6 +1,7 @@
 package assist
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -16,6 +18,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"hclaro/internal/assist/codexfake"
 )
 
 // The fake assistant CLI is this test binary: when HOME holds fakeMarker, TestMain acts as
@@ -31,7 +35,14 @@ type fakeRecord struct {
 }
 
 func TestMain(m *testing.M) {
+	// Hclaro's Codex self-check runs with a fresh HOME, so it is recognized by its argv.
+	if codexfake.IsSelfCheck(os.Args[1:]) {
+		os.Exit(codexfake.Main("", ""))
+	}
 	if mode, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), fakeMarker)); err == nil {
+		if strings.HasPrefix(string(mode), "codex") {
+			os.Exit(codexfake.Main(string(mode), codexHostileReply))
+		}
 		os.Exit(fakeCLI(string(mode)))
 	}
 	os.Exit(m.Run())
@@ -53,8 +64,6 @@ func fakeCLI(mode string) int {
 			os.Stdout.WriteString("something else\n")
 		case "codex":
 			os.Stdout.WriteString("codex-cli 0.166.0\n")
-		case "copilot":
-			os.Stdout.WriteString("GitHub Copilot CLI 1.0.112.\nRun 'copilot update' to check for updates.\n")
 		default:
 			os.Stdout.WriteString("2.1.326 (Claude Code)\n")
 		}
@@ -173,13 +182,31 @@ func TestDetection(t *testing.T) {
 	}
 }
 
+// handoffOnly is a synthetic second handoff-only adapter: Copilot was removed (OD-AI-14), but
+// the path stays covered by more than one adapter.
+var handoffOnly = Adapter{ID: "handoff", Name: "Handoff Fake", Command: "handoff-fake", VersionArgs: []string{"--version"},
+	ParseVersion: anyVersion(regexp.MustCompile(`^([0-9.]+) \(Claude Code\)$`)), Handoff: "It has no verified tools-off mode."}
+
+// anyVersion reads a handoff-only test adapter's version from the first output line; every
+// version is "supported" so Detect reports the handoff reason, never a version warning.
+func anyVersion(re *regexp.Regexp) func([]byte) (string, bool) {
+	return func(out []byte) (string, bool) {
+		first, _, _ := bytes.Cut(bytes.TrimSpace(out), []byte("\n"))
+		m := re.FindSubmatch(bytes.TrimSpace(first))
+		if m == nil {
+			return "", false
+		}
+		return string(m[1]), true
+	}
+}
+
 // Handoff-only adapters (AI-01.05) go through the same fake-CLI checks: detection runs only
 // --version, isolated like a run, and Run refuses before starting the assistant.
 func TestHandoffOnlyAdapters(t *testing.T) {
 	ctx := context.Background()
-	for _, a := range []Adapter{Codex, Copilot} {
+	for _, a := range []Adapter{handoffOnly} {
 		t.Run(a.ID, func(t *testing.T) {
-			c, home := fake(t, a.ID)
+			c, home := fake(t, "ok")
 			c.Adapter = a
 			st := c.Detect(ctx)
 			if st.Mode != ModeHandoff || st.Reason != KindNotEligible || st.Version == "" || st.Path != c.Path || !strings.HasSuffix(st.Message, a.Handoff) {
@@ -212,23 +239,20 @@ func TestHandoffOnlyAdapters(t *testing.T) {
 	}
 }
 
-// Version strings recorded by the probe (probe/results-20261117-*/). AWS Copilot, which
-// Homebrew also installs as `copilot`, is not read as GitHub Copilot CLI.
-func TestHandoffVersionParsing(t *testing.T) {
+// OD-CODEX-2: exactly 0.166.0 is runnable; every other version is reported but refused.
+func TestCodexVersionPinned(t *testing.T) {
 	for _, tc := range []struct {
-		a        Adapter
 		out, ver string
+		ok       bool
 	}{
-		{Codex, "codex-cli 0.166.0\n", "0.166.0"},
-		{Codex, "codex 0.166.0", ""},
-		{Copilot, "GitHub Copilot CLI 1.0.112.\n", "1.0.112"},
-		// Real 1.0.112 output on 2026-11-17 (the probe kept only the first line).
-		{Copilot, "GitHub Copilot CLI 1.0.112.\nRun 'copilot update' to check for updates.\n", "1.0.112"},
-		{Copilot, "GitHub Copilot CLI 1.0.113", "1.0.113"},
-		{Copilot, "copilot version: v1.34.0, built for darwin-arm64", ""},
+		{"codex-cli 0.166.0\n", "0.166.0", true},
+		{"codex 0.166.0", "", false},
+		{"codex-cli 0.167.0\nupdate available\n", "0.167.0", false},
+		{"codex-cli 0.166.1", "0.166.1", false},
+		{"codex-cli 0.165.0", "0.165.0", false},
 	} {
-		if v, _ := tc.a.ParseVersion([]byte(tc.out)); v != tc.ver {
-			t.Errorf("%s %q: %q", tc.a.ID, tc.out, v)
+		if v, ok := Codex.ParseVersion([]byte(tc.out)); v != tc.ver || ok != tc.ok {
+			t.Errorf("%q: %q %v", tc.out, v, ok)
 		}
 	}
 }

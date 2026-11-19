@@ -96,11 +96,19 @@ async function open(url) {
   return {page, context, errors, external}
 }
 const nav = (page, label) => page.getByRole('button', {name: label, exact: true}).first().click()
+// AI is on by default (AI-01.14): Settings shows the switch already on, and nothing is detected
+// until asked (Check now). accept accepts the disclosure through the API, as the first inline
+// Accept and send would.
 async function aiOn(page, accept) {
   await nav(page, 'Settings')
-  await page.getByRole('group', {name: 'AI assistance'}).getByRole('button', {name: 'On'}).click()
-  if (accept) await page.getByRole('button', {name: 'Accept the disclosure for this session'}).click()
-  if (accept) await page.getByText('Disclosure accepted for this session').waitFor()
+  await page.getByRole('group', {name: 'AI assistance'}).getByRole('button', {name: 'On', pressed: true}).waitFor()
+  assert.equal((await call(page, 'GET', 'ai/settings')).body.checked, false, 'assistants detected before a click')
+  await page.getByRole('button', {name: 'Check now'}).click()
+  await waitFor(async () => (await call(page, 'GET', 'ai/settings')).body.checked, 'detection')
+  if (accept) {
+    const st = await call(page, 'GET', 'ai/settings')
+    assert.equal((await call(page, 'POST', 'ai/settings', {acceptDisclosure: st.body.disclosure.version})).body.disclosureAccepted, true)
+  }
 }
 // Mutations from the page, like the UI's own client: bearer token + CSRF header + same Origin.
 const call = (page, method, p, body) => page.evaluate(async ([method, p, body]) => {
@@ -134,17 +142,10 @@ try {
   const {page, errors, external} = await open(A.url)
   await page.getByRole('navigation').first().waitFor()
   await aiOn(page, false)
-  await page.getByText(/Individual cost line items are never shared/).first().waitFor()
-  const settingsText = await page.locator('body').innerText()
-  assert(settingsText.includes('Individual cost line items are never shared') && settingsText.includes('totals, coverage, per-type counts and monthly change'), 'v7 cost line in Settings')
   const st = await call(page, 'GET', 'ai/settings')
-  assert.equal(st.body.disclosure.version, '9')
-  ok('disclosure v8 shown in Settings, with the cost line')
-  await nav(page, 'AI Assistant')
-  await page.getByText('Accept the AI disclosure in Settings to use quick actions.').waitFor()
-  for (const [label] of actions) assert(await page.getByRole('button', {name: label, exact: true}).isDisabled(), label + ' enabled before acceptance')
-  ok('quick actions disabled with a reason before the disclosure is accepted')
-  await aiOn(page, true)
+  assert.equal(st.body.disclosure.version, '10')
+  assert(st.body.disclosure.lines.join('\n').includes('Individual cost line items are never shared'), 'cost line in the disclosure')
+  ok('AI on by default, assistants detected only on Check now; disclosure v10 with the cost line')
   await nav(page, 'AI Assistant')
 
   for (const [i, [label, heading]] of actions.entries()) {
@@ -155,7 +156,8 @@ try {
     assert(!text.includes('## Cost estimate (Infracost'), label + ': cost section without opt-in')
     assert.equal(await turns(logA), before, label + ': sent before Start')
     assert.equal(await page.getByRole('button', {name: /^Copy/}).count(), 0, label + ': Copy offered for a quick action')
-    await page.getByRole('button', {name: 'Start ' + label.toLowerCase(), exact: true}).click()
+    // The first Start in the session is Accept and send, with the disclosure shown in the preview.
+    await page.getByLabel('AI context preview', {exact: true}).getByRole('button', {name: i === 0 ? 'Accept and send' : 'Start ' + label.toLowerCase(), exact: true}).click()
     await page.getByText(`Fake reply ${before}`).waitFor()
     assert.equal(await turn(logA, before), text, label + ': stdin differs from the preview')
     const args = await fs.readFile(path.join(logA, 'args', before + '.txt'), 'utf8')

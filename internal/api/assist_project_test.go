@@ -35,6 +35,7 @@ func TestAIProjectContextOverHTTP(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	s.manager.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
 	wantError(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"project"}`), 409, "ai_disabled")
 	wantError(t, s.do("GET", "/api/v1/ai/conversations", ""), 409, "ai_disabled")
 	s.enableAI()

@@ -20,6 +20,8 @@ func TestReadmeQuotesTheDisclosure(t *testing.T) {
 		mark := ""
 		if line, ok := strings.CutPrefix(l, claudeLine); ok {
 			mark, l = "*(Claude Code)* ", line
+		} else if line, ok := strings.CutPrefix(l, codexLine); ok {
+			mark, l = "*(OpenAI Codex)* ", line
 		} else if line, ok := strings.CutPrefix(l, sendLine); ok {
 			mark, l = "*(headless)* ", line
 		}

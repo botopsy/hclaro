@@ -82,13 +82,42 @@ describe('AI Assistant page', () => {
     expect(await screen.findByRole('region', { name: 'Conversation' })).toBeInTheDocument();
   });
 
-  it('lists handoff-only assistants as unavailable and explains that the assistant is fixed per conversation', async () => {
+  it('uses the assistant chosen in Settings, fixed per conversation', async () => {
     serve();
     show();
-    const select = await screen.findByLabelText('Assistant');
-    const options = within(select).getAllByRole('option') as HTMLOptionElement[];
-    expect(options.map(o => [o.textContent, o.disabled])).toEqual([['Claude Code', false], ['Codex CLI: handoff-only, copy or download instead', true]]);
-    expect(screen.getByText(/Changing it here affects only new conversations/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Assistant:/)).toHaveTextContent('Assistant: Claude Code. Change it in Settings.');
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByText(/Changing it in Settings affects only new conversations/)).toBeInTheDocument();
+  });
+
+  it('opening the page asks for detection once, only if it has not run (AI-01.14)', async () => {
+    serve({ checked: false, headless: false, providers: [] });
+    show();
+    await screen.findByText(/^Assistant:/);
+    await vi.waitFor(() => expect(posts.map(p => p.url)).toEqual(['/api/v1/ai/detect']));
+    cleanup();
+    serve({ checked: true });
+    show();
+    await screen.findByText(/^Assistant:/);
+    expect(posts).toEqual([]);
+  });
+
+  it('a chosen copy-only assistant offers no Send', async () => {
+    serve({ headless: false, providers: [{ ...claude, mode: 'unsupported', reason: 'cli_missing' }, codex], defaultProvider: 'codex' });
+    show();
+    expect(await screen.findByText(/^Assistant:/)).toHaveTextContent('Assistant: Codex CLI · copy or download only.');
+    expect(screen.getByRole('button', { name: 'Start conversation' })).toBeDisabled();
+  });
+
+  it('shows the disclosure inline and gates the first message behind Accept and send', async () => {
+    serve({ disclosureAccepted: false });
+    const user = userEvent.setup();
+    show();
+    expect(within(await screen.findByLabelText('Before you send')).getByText(disclosure.lines[0])).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Message'), 'hi');
+    await user.click(screen.getByRole('button', { name: 'Accept and send' }));
+    expect(posts.map(p => p.url)).toEqual(['/api/v1/ai/settings', '/api/v1/ai/conversations']);
+    expect(posts[0].body).toEqual({ acceptDisclosure: '5' });
   });
 
   it('attaches project context only after the preview is approved (Hub scope)', async () => {
@@ -192,8 +221,7 @@ describe('AI Assistant page', () => {
   it.each([
     ['no project', {}, true, /Open a project to use quick actions/],
     ['handoff-only assistant', { providers: [codex] }, false, /need an assistant Hclaro can run/],
-    ['strict local-only', { headless: false }, false, /need an assistant Hclaro can run/],
-    ['disclosure not accepted', { disclosureAccepted: false }, false, /Accept the AI disclosure in Settings to use quick actions/]
+    ['strict local-only', { headless: false }, false, /need an assistant Hclaro can run/]
   ])('disables quick actions with a reason: %s', async (_, settings, noProject, reason) => {
     serve(settings);
     show({ kind: 'launch' }, noProject);

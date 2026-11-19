@@ -51,6 +51,8 @@ type Options struct {
 	// ClaudePath is the Claude Code executable for headless AI requests (AI-01.04). It is set
 	// only by this flag, never from the browser (OD-AI-3); empty looks up claude on PATH.
 	ClaudePath string
+	// CodexPath is the OpenAI Codex executable, set the same way (AI-01.14).
+	CodexPath string
 }
 
 // hiddenFlags are accepted but not listed in --help.
@@ -75,6 +77,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.BoolVar(&o.Hub, "hub", false, "Open the Workspace Hub; the current directory is not read unless --path is given")
 	flags.BoolVar(&o.StrictLocal, "strict-local", false, "Strict local-only mode: disable features that send data to third-party services (cost estimation, AI requests sent by Hclaro)")
 	flags.StringVar(&o.ClaudePath, "claude-path", "", "Claude Code executable for AI requests sent from the UI (default: claude on PATH)")
+	flags.StringVar(&o.CodexPath, "codex-path", "", "OpenAI Codex executable for AI requests sent from the UI (default: codex on PATH)")
 	flags.StringVar(&o.ExportHistory, "export-history", "", "Write the redacted operation history to a new .json or .md `file` and exit")
 	noHubExecution := flags.Bool("no-hub-execution", false, "Keep Hub workspaces read-only: no plans, applies or imports outside the launch project")
 	flags.Var(noOp{}, "experimental-hub-execution", "Former opt-in for Hub execution; now the default (ignored)")
@@ -101,12 +104,14 @@ func Parse(args []string, output io.Writer) (Options, error) {
 			o.PathSet = true
 		}
 	})
-	if o.ClaudePath != "" {
-		abs, err := filepath.Abs(o.ClaudePath)
-		if err != nil {
-			return o, errors.New("invalid --claude-path")
+	for name, p := range map[string]*string{"claude-path": &o.ClaudePath, "codex-path": &o.CodexPath} {
+		if *p != "" {
+			abs, err := filepath.Abs(*p)
+			if err != nil {
+				return o, errors.New("invalid --" + name)
+			}
+			*p = abs
 		}
-		o.ClaudePath = abs
 	}
 	if flags.NArg() > 0 {
 		return o, errors.New("unexpected positional argument; use --path")
@@ -281,16 +286,20 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		manager.Cost.Store = cost.OpenStore(dir)
 	}
 	cost.SweepStale("", time.Now())
-	// AI assistance (AI-01.03, AI-01.04): off until switched on in Settings; packages and
-	// replies stay in memory unless the user saves a conversation. Strict local-only mode keeps handoff and never runs an assistant
-	// (OD-AI-4). History keeps request metadata only.
+	// AI assistance (AI-01.03, AI-01.04, AI-01.14): on by default unless turned off in Settings
+	// (saved in ai.json); being on starts no assistant and shares nothing without a click (assistants
+	// are detected only on request). Codex runs only on macOS behind its gates and local self-check
+	// (assist/codex.go). Packages and replies stay in
+	// memory unless the user saves a conversation. Strict local-only mode keeps handoff and never
+	// runs an assistant (OD-AI-4). History keeps request metadata only.
 	manager.Assist = assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath},
-		&assist.CLI{Adapter: assist.Codex}, &assist.CLI{Adapter: assist.Copilot})
+		assist.NewCodexCLI(o.CodexPath))
 	manager.Assist.Record = operationHistory.RecordAssist
 	manager.Assist.RecordChange = operationHistory.RecordAssistChange
 	// Saved conversations (AI-01.11): opt-in per conversation, in the configuration folder;
 	// expired ones are deleted now.
 	if dir, err := projects.ConfigDir(); err == nil {
+		manager.Assist.UsePrefs(dir)
 		manager.Assist.Store = assist.OpenStore(dir, time.Now())
 	}
 	// A closed, reloaded or evicted Hub context takes its AI packages and conversations with it.

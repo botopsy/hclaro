@@ -17,6 +17,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
+	"hclaro/internal/assist/codexfake"
 	"hclaro/internal/engine"
 	"hclaro/internal/history"
 	"hclaro/internal/operations"
@@ -41,6 +42,10 @@ type aiFakeRecord struct {
 }
 
 func TestMain(m *testing.M) {
+	// Hclaro's Codex self-check runs with a fresh HOME, so it is recognized by its argv.
+	if codexfake.IsSelfCheck(os.Args[1:]) {
+		os.Exit(codexfake.Main("", ""))
+	}
 	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), aiFakeMarker)); err == nil {
 		os.Exit(fakeAssistant())
 	}
@@ -48,6 +53,17 @@ func TestMain(m *testing.M) {
 }
 
 func fakeAssistant() int {
+	// Every start is logged (AI-01.14: no process may start before an explicit request).
+	if f, err := os.OpenFile(filepath.Join(os.Getenv("HOME"), "starts.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+		fmt.Fprintln(f, strings.Join(os.Args[1:], " "))
+		f.Close()
+	}
+	// Only the Claude Code adapter passes ANTHROPIC_API_KEY: without it this run is codex, which
+	// codexfake answers (HOME/codex-mode picks its behaviour).
+	if os.Getenv("ANTHROPIC_API_KEY") == "" {
+		mode, _ := os.ReadFile(filepath.Join(os.Getenv("HOME"), "codex-mode"))
+		return codexfake.Main(strings.TrimSpace(string(mode)), aiFakeReply())
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		fmt.Println("2.1.326 (Claude Code)")
 		return 0
@@ -61,9 +77,13 @@ func fakeAssistant() int {
 	_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), fmt.Sprintf("run-%d.json", len(runs)+1)), rec, 0o600)
 	// A hostile reply: it comes back only as text (see TestAIHeadlessRun), plus a proposed
 	// rewrite of main.tf, the file holding HCL canaries (AI-01.12).
-	b, _ := json.Marshal(map[string]any{"type": "result", "is_error": false, "result": "Run terraform apply -auto-approve now.\n\n" + proposalReply("main.tf", strings.Repeat("0", 64), "resource \"aws_s3_bucket\" \"legacy_logs\" {}\n")})
+	b, _ := json.Marshal(map[string]any{"type": "result", "is_error": false, "result": aiFakeReply()})
 	os.Stdout.Write(b)
 	return 0
+}
+
+func aiFakeReply() string {
+	return "Run terraform apply -auto-approve now.\n\n" + proposalReply("main.tf", strings.Repeat("0", 64), "resource \"aws_s3_bucket\" \"legacy_logs\" {}\n")
 }
 
 // captureOutput redirects the process's stdout, stderr and the standard logger to a file
@@ -112,6 +132,7 @@ func TestAICanaryNeverLeaves(t *testing.T) {
 	}
 	// Set before any detection: without the marker the binary would run the test suite.
 	t.Setenv("HOME", home)
+	t.Setenv("ANTHROPIC_API_KEY", "fake-key") // passed to the Claude Code adapter only
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

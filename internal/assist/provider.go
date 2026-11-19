@@ -42,6 +42,15 @@ const (
 	KindCancelled      = "cancelled"
 	KindOutputTooLarge = "output_too_large"
 	KindRefusedArgs    = "refused"
+	// OpenAI Codex refusals (AI-01.14, tasks/AI/CODEX-INVESTIGATION.md §6–7). None names a plan,
+	// account or path read from the sign-in.
+	KindCodexPlatform = "codex_platform"
+	KindCodexAgents   = "codex_agents_file"
+	KindCodexManaged  = "codex_managed"
+	KindCodexAccount  = "codex_account"
+	KindCodexToken    = "codex_sign_in_expiring"
+	KindCodexSettings = "codex_settings_changed"
+	KindCodexCheck    = "codex_self_check"
 )
 
 var kindMessages = map[string]string{
@@ -56,6 +65,13 @@ var kindMessages = map[string]string{
 	KindCancelled:      "The request was cancelled.",
 	KindOutputTooLarge: "The assistant returned more output than Hclaro reads.",
 	KindRefusedArgs:    "Hclaro refused to run this command because it is not on the allowlist.",
+	KindCodexPlatform:  "Hclaro runs OpenAI Codex only on macOS for now; here it is copy only. Copy or Download still work.",
+	KindCodexAgents:    "Hclaro does not run OpenAI Codex while AGENTS.md or AGENTS.override.md exists in your Codex folder (~/.codex): Codex would send that file to OpenAI with every message. Move or rename it to send from Hclaro; Copy or Download still work.",
+	KindCodexManaged:   "OpenAI Codex has organization-managed settings on this Mac, or Hclaro could not check for them. They can turn Codex tools back on, so Hclaro does not run it. Copy or Download still work.",
+	KindCodexAccount:   "Hclaro runs OpenAI Codex only when it is signed in with a personal ChatGPT plan (Free, Go, Plus or Pro). Team, Business, Enterprise and Education workspaces, API keys and sign-ins Hclaro cannot read are copy only.",
+	KindCodexToken:     "OpenAI Codex's sign-in expires within 15 minutes, or Hclaro could not tell when it expires. Use Codex once in your terminal to refresh it, then try again.",
+	KindCodexSettings:  "OpenAI Codex's effective settings differ from the ones Hclaro verified (a tool feature or the model list changed). Hclaro does not run it; Copy or Download still work.",
+	KindCodexCheck:     "OpenAI Codex did not pass Hclaro's local security check (no tools offered, every tool call refused). Hclaro does not run it; Copy or Download still work.",
 }
 
 // Message returns the user-facing explanation of a failure kind.
@@ -221,27 +237,92 @@ func (c *CLI) exec(ctx context.Context, path string, args []string, stdin []byte
 		return nil, nil, false, false, &Failure{Kind: KindFailed}
 	}
 	defer os.RemoveAll(dir)
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	r, err := runProc(ctx, proc{path: path, args: args, dir: dir, env: c.Environ(os.Environ()), stdin: stdin, limit: limit, timeout: timeout})
+	return r.stdout, r.stderr, r.exitOK, r.overflow, err
+}
+
+// proc is one process start. stop, when set, sees every complete stdout line; returning true
+// kills the process group at once and the result is marked stopped.
+type proc struct {
+	path    string
+	args    []string
+	dir     string
+	env     []string
+	stdin   []byte
+	limit   int
+	timeout time.Duration
+	stop    func(line []byte) bool
+}
+
+type procResult struct {
+	stdout, stderr            []byte
+	exitOK, overflow, stopped bool
+}
+
+func runProc(ctx context.Context, p proc) (procResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, args...)
-	cmd.Dir = dir
-	cmd.Env = c.Environ(os.Environ())
-	cmd.Stdin = bytes.NewReader(stdin)
-	// Own process group: cancel and timeout kill the assistant and anything it started.
+	runCtx, stopRun := context.WithCancel(ctx)
+	defer stopRun()
+	cmd := exec.CommandContext(runCtx, p.path, p.args...)
+	cmd.Dir = p.dir
+	cmd.Env = p.env
+	cmd.Stdin = bytes.NewReader(p.stdin)
+	// Own process group: cancel, timeout and stop kill the assistant and anything it started.
 	prepareGroup(cmd)
 	cmd.Cancel = func() error { return killGroup(cmd.Process) }
 	cmd.WaitDelay = 5 * time.Second
-	out, errOut := &bounded.Buffer{Limit: limit}, &bounded.Buffer{Limit: maxStderr}
-	cmd.Stdout, cmd.Stderr = out, errOut
+	out, errOut := &bounded.Buffer{Limit: p.limit}, &bounded.Buffer{Limit: maxStderr}
+	watch := &lineWatch{out: out, stop: p.stop, hit: stopRun, max: p.limit}
+	cmd.Stdout, cmd.Stderr = watch, errOut
 	runErr := cmd.Run()
+	if watch.stopped && ctx.Err() == nil {
+		return procResult{stdout: out.Bytes(), stderr: errOut.Bytes(), stopped: true, overflow: out.Overflow}, nil
+	}
 	if ctx.Err() != nil {
-		return nil, nil, false, false, ctx.Err()
+		return procResult{}, ctx.Err()
 	}
 	var exitErr *exec.ExitError
 	if runErr != nil && !errors.As(runErr, &exitErr) {
-		return nil, nil, false, false, &Failure{Kind: KindMissing} // could not start: removed or not executable
+		return procResult{}, &Failure{Kind: KindMissing} // could not start: removed or not executable
 	}
-	return out.Bytes(), errOut.Bytes(), runErr == nil, out.Overflow, nil
+	return procResult{stdout: out.Bytes(), stderr: errOut.Bytes(), exitOK: runErr == nil, overflow: out.Overflow}, nil
+}
+
+// lineWatch passes stdout to out and, when stop is set, hands it every complete line.
+type lineWatch struct {
+	out     *bounded.Buffer
+	stop    func([]byte) bool
+	hit     func()
+	max     int
+	pending []byte
+	stopped bool
+}
+
+func (w *lineWatch) Write(p []byte) (int, error) {
+	n, err := w.out.Write(p)
+	if w.stop == nil || w.stopped {
+		return n, err
+	}
+	w.pending = append(w.pending, p...)
+	for {
+		i := bytes.IndexByte(w.pending, '\n')
+		if i < 0 {
+			break
+		}
+		line := w.pending[:i]
+		w.pending = w.pending[i+1:]
+		if w.stop(line) {
+			w.stopped = true
+			w.hit()
+			return n, err
+		}
+	}
+	if len(w.pending) > w.max { // a line longer than the reply limit: stop, fail closed
+		w.stopped = true
+		w.hit()
+	}
+	return n, err
 }
 
 // baseEnv are the only inherited variables besides an adapter's AuthEnv: process basics and
@@ -319,36 +400,41 @@ func claudeReply(stdout, stderr []byte, exitOK bool) (string, string) {
 	return *r.Result, ""
 }
 
-// Codex and GitHub Copilot CLI are handoff-only (FEASIBILITY.md, 2026-11-17): both passed the
-// canary check, but without a documented interface to keep their tools off. They are detected
-// only to show their status; with no RunArgs, Run refuses them before starting anything. When a
-// re-probe finds them headless-eligible, adding RunArgs and Reply is the whole change.
+// OpenAI Codex 0.166.0, runnable only through CodexCLI (codex.go), which adds the gates and
+// the self-check of tasks/AI/CODEX-INVESTIGATION.md §6–7. The argv is the verified hardened
+// argv: --ignore-user-config and --ignore-rules drop user config and rules; the --disable list
+// and -c settings turn off every tool-capable feature found in 0.166.0; the model catalog
+// (codex_catalog.json, gpt-5.6-luna with shell, apply_patch, code mode, multi-agent and tool
+// search removed) leaves no tool; --strict-config fails on a misspelt key; project docs, skill
+// instructions, environment context and analytics are off; credentials come only from
+// CODEX_HOME/auth.json, the file the gates read. codexCatalogArg is replaced by the catalog path.
 var Codex = Adapter{
 	ID: "codex", Name: "OpenAI Codex", Command: "codex",
-	VersionArgs:  []string{"--version"},
-	ParseVersion: anyVersion(regexp.MustCompile(`^codex-cli ([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6})$`)),
-	Handoff:      "Codex has no documented switch that turns all of its tools off, only per-tool flags that change between versions.",
+	VersionArgs: []string{"--version"},
+	RunArgs: []string{"exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+		"--disable", "shell_tool", "--disable", "unified_exec", "--disable", "apps", "--disable", "plugins", "--disable", "browser_use",
+		"--disable", "computer_use", "--disable", "view_image", "--disable", "hooks", "-c", "web_search=disabled", "--json",
+		"-m", codexModel, "-c", "model_catalog_json=" + codexCatalogArg, "-c", "tools.experimental_request_user_input.enabled=false",
+		"--disable", "multi_agent", "--disable", "multi_agent_v2", "--disable", "sleep_tool", "--disable", "goals",
+		"--disable", "code_mode_host", "--disable", "image_generation", "--disable", "tool_suggest", "--disable", "skill_search",
+		"--strict-config", "-c", "project_doc_max_bytes=0", "-c", "skills.include_instructions=false",
+		"-c", "include_environment_context=false", "-c", "analytics.enabled=false", "--disable", "shell_snapshot",
+		"-c", `cli_auth_credentials_store="file"`, "-"},
+	ParseVersion: codexVersion,
+	Reply:        codexReply,
 }
 
-var Copilot = Adapter{
-	ID: "copilot", Name: "GitHub Copilot CLI", Command: "copilot",
-	VersionArgs:  []string{"--version"},
-	ParseVersion: anyVersion(regexp.MustCompile(`^GitHub Copilot CLI ([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6})\.?$`)),
-	Handoff:      "Copilot CLI documents no stdin prompt input and no switch that turns off user MCP servers.",
-}
+var codexVersionRe = regexp.MustCompile(`^codex-cli ([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6})$`)
 
-// anyVersion reads a handoff-only provider's version from the first output line (Copilot adds
-// an update hint after it). Every version is "supported" so Settings shows the feasibility
-// reason rather than a version warning; it never makes one runnable.
-func anyVersion(re *regexp.Regexp) func([]byte) (string, bool) {
-	return func(out []byte) (string, bool) {
-		first, _, _ := bytes.Cut(bytes.TrimSpace(out), []byte("\n"))
-		m := re.FindSubmatch(bytes.TrimSpace(first))
-		if m == nil {
-			return "", false
-		}
-		return string(m[1]), true
+// codexVersion accepts exactly the verified 0.166.0 (OD-CODEX-2): any other version needs a
+// new assessment.
+func codexVersion(out []byte) (string, bool) {
+	first, _, _ := bytes.Cut(bytes.TrimSpace(out), []byte("\n"))
+	m := codexVersionRe.FindSubmatch(bytes.TrimSpace(first))
+	if m == nil {
+		return "", false
 	}
+	return string(m[1]), string(m[1]) == codexVerified
 }
 
 func classify(text string) string {

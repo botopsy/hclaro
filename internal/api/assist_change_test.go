@@ -40,6 +40,7 @@ func TestAIProposedChangeOverHTTP(t *testing.T) {
 	s.manager.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
 	planID := s.plan()
 
+	s.manager.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
 	wantError(t, s.do("GET", "/api/v1/ai/conversations/"+strings.Repeat("a", 32)+"/changes", ""), 409, "ai_disabled")
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)

@@ -116,7 +116,7 @@ func TestChatListAndWorkspaceSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	settle(t, s, "launch", launch.ID)
-	if s.SetEnabled(false); len(s.List("launch", "default")) != 0 {
+	if _, _ = s.SetEnabled(false); len(s.List("launch", "default")) != 0 {
 		t.Fatal("turning AI off kept conversations")
 	}
 }
