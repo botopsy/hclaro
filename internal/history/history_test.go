@@ -1,8 +1,9 @@
-package history
+package history_test
 
 import (
 	"encoding/json"
 	"fmt"
+	. "hclaro/internal/history"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,7 +23,7 @@ func id(n int) string { return fmt.Sprintf("%032x", n) }
 
 func open(t *testing.T, dir string) *Store {
 	t.Helper()
-	s := Open(dir, t0)
+	s := Open(dir, t0, Sources{})
 	s.Now = func() time.Time { return t0 }
 	return s
 }
@@ -36,12 +37,12 @@ func finished(s *Store, n int, kind, status string, started time.Time, mutate ..
 			m(&r)
 		}
 	}
-	s.Record(r)
+	s.Record(r.Event())
 }
 
 func readFile(t *testing.T, s *Store) string {
 	t.Helper()
-	b, err := os.ReadFile(s.path)
+	b, err := os.ReadFile(s.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,12 +55,12 @@ func TestStoreCreatesPrivateAtomicFile(t *testing.T) {
 	if status, notice, _ := s.Status(); status != Ready || notice != "" {
 		t.Fatal(status, notice)
 	}
-	if _, err := os.Stat(s.path); !os.IsNotExist(err) {
+	if _, err := os.Stat(s.Path()); !os.IsNotExist(err) {
 		t.Fatal("opening must not create the file")
 	}
 	finished(s, 1, "plan", operations.Succeeded, t0)
 	if runtime.GOOS != "windows" {
-		fi, err := os.Stat(s.path)
+		fi, err := os.Stat(s.Path())
 		if err != nil || fi.Mode().Perm() != 0o600 {
 			t.Fatalf("file mode %v %v", fi, err)
 		}
@@ -72,7 +73,7 @@ func TestStoreCreatesPrivateAtomicFile(t *testing.T) {
 	if len(leftovers) != 0 {
 		t.Fatal(leftovers)
 	}
-	var doc document
+	var doc Document
 	if err := json.Unmarshal([]byte(readFile(t, s)), &doc); err != nil || doc.Version != SchemaVersion || len(doc.Entries) != 1 {
 		t.Fatalf("%v %+v", err, doc)
 	}
@@ -80,7 +81,7 @@ func TestStoreCreatesPrivateAtomicFile(t *testing.T) {
 		t.Fatal("the project root path must not be stored")
 	}
 	e := s.List(Filter{})[0]
-	if e.ProjectName != "network" || e.ProjectID != rootID("/synthetic/network") || e.Registered || e.Workspace != "dev" || e.EngineVersion != "1.9.8" {
+	if e.ProjectName != "network" || e.ProjectID != RootID("/synthetic/network") || e.Registered || e.Workspace != "dev" || e.EngineVersion != "1.9.8" {
 		t.Fatalf("%+v", e)
 	}
 }
@@ -90,8 +91,8 @@ func TestRestartPersistsAndMarksInterrupted(t *testing.T) {
 	s := open(t, dir)
 	finished(s, 1, "plan", operations.Succeeded, t0)
 	// An apply and an init that were still running when Hclaro stopped.
-	s.Record(operations.Record{Operation: operations.Operation{ID: id(2), Kind: "apply", Status: operations.Running, StartedAt: t0.Format(time.RFC3339), PlanID: id(9)}, Root: "/synthetic/network", Engine: "terraform"})
-	s.Record(operations.Record{Operation: operations.Operation{ID: id(3), Kind: "init", Status: operations.Queued, StartedAt: t0.Format(time.RFC3339)}, Root: "/synthetic/network", Engine: "terraform"})
+	s.Record(operations.Record{Operation: operations.Operation{ID: id(2), Kind: "apply", Status: operations.Running, StartedAt: t0.Format(time.RFC3339), PlanID: id(9)}, Root: "/synthetic/network", Engine: "terraform"}.Event())
+	s.Record(operations.Record{Operation: operations.Operation{ID: id(3), Kind: "init", Status: operations.Queued, StartedAt: t0.Format(time.RFC3339)}, Root: "/synthetic/network", Engine: "terraform"}.Event())
 	if e, _ := s.Get(id(2)); e.Status != StatusRunning || e.Outcome.Result != "running" {
 		t.Fatalf("%+v", e)
 	}
@@ -118,7 +119,7 @@ func TestRestartPersistsAndMarksInterrupted(t *testing.T) {
 func TestRunningEntryOfThisSessionIsKeptAndFinished(t *testing.T) {
 	s := open(t, t.TempDir())
 	start := operations.Record{Operation: operations.Operation{ID: id(1), Kind: "plan", Status: operations.Running, StartedAt: t0.Format(time.RFC3339)}, Root: "/r", Engine: "terraform"}
-	s.Record(start)
+	s.Record(start.Event())
 	if err := s.Delete(id(1)); err != ErrRunning {
 		t.Fatalf("deleting a running entry: %v", err)
 	}
@@ -126,7 +127,7 @@ func TestRunningEntryOfThisSessionIsKeptAndFinished(t *testing.T) {
 		t.Fatal("clear must keep running operations")
 	}
 	start.Operation.Status, start.Final = operations.Failed, true
-	s.Record(start)
+	s.Record(start.Event())
 	if e, _ := s.Get(id(1)); e.Status != StatusFailed || e.Outcome.Result != "not_planned" {
 		t.Fatalf("%+v", e)
 	}
@@ -141,7 +142,7 @@ func TestCorruptHistoryIsMovedAside(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := filepath.Join(dir, fileName)
+			path := filepath.Join(dir, FileName)
 			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -176,7 +177,7 @@ func TestInvalidEntriesAreDroppedIndividually(t *testing.T) {
 	entries = append(entries, bad)
 	doc["entries"] = entries
 	b, _ := json.Marshal(doc)
-	_ = os.WriteFile(s.path, b, 0o600)
+	_ = os.WriteFile(s.Path(), b, 0o600)
 	if got := open(t, dir).List(Filter{}); len(got) != 1 || got[0].ID != id(1) {
 		t.Fatalf("%+v", got)
 	}
@@ -189,7 +190,7 @@ func TestHandEditedSecretsAreScrubbedOnRead(t *testing.T) {
 		r.Operation.Diagnostic = &operations.Diagnostic{Code: "plan_failed", Message: "ok"}
 	})
 	edited := strings.Replace(readFile(t, s), `"message":"ok"`, `"message":"password=`+canary+`"`, 1)
-	_ = os.WriteFile(s.path, []byte(edited), 0o600)
+	_ = os.WriteFile(s.Path(), []byte(edited), 0o600)
 	e, _ := open(t, dir).Get(id(1))
 	if b, _ := json.Marshal(e); strings.Contains(string(b), canary) {
 		t.Fatalf("canary served from a hand-edited file: %s", b)
@@ -198,7 +199,7 @@ func TestHandEditedSecretsAreScrubbedOnRead(t *testing.T) {
 
 func TestNewerSchemaIsLeftUntouched(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, fileName)
+	path := filepath.Join(dir, FileName)
 	body := `{"version":99,"entries":[{"anything":true}]}`
 	_ = os.WriteFile(path, []byte(body), 0o600)
 	s := open(t, dir)
@@ -219,7 +220,7 @@ func TestNewerSchemaIsLeftUntouched(t *testing.T) {
 
 func TestMigrationUpgradesOlderSchema(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, fileName)
+	path := filepath.Join(dir, FileName)
 	// A hypothetical schema 0 named the kind "action" and stored no retention.
 	legacy := `{"version":0,"entries":[{"id":"` + id(1) + `","action":"plan","status":"succeeded","startedAt":"2026-11-05T10:00:00Z","durationMs":5,"engine":"terraform","projectId":"` + id(7) + `","projectName":"net","registered":true,"command":["terraform","plan"],"outcome":{"result":"planned","summary":"x","verified":false},"excerpt":[]}]}`
 	_ = os.WriteFile(path, []byte(legacy), 0o600)
@@ -245,12 +246,12 @@ func TestMigrationUpgradesOlderSchema(t *testing.T) {
 	if !ok || e.Kind != "plan" || e.ProjectName != "net" {
 		t.Fatalf("%+v", e)
 	}
-	var doc document
+	var doc Document
 	if err := json.Unmarshal([]byte(readFile(t, s)), &doc); err != nil || doc.Version != SchemaVersion {
 		t.Fatal("the migrated file was not written", err)
 	}
 	other := t.TempDir()
-	_ = os.WriteFile(filepath.Join(other, fileName), []byte(legacy), 0o600)
+	_ = os.WriteFile(filepath.Join(other, FileName), []byte(legacy), 0o600)
 	if _, notice, _ := OpenWith(other, t0, nil).Status(); !strings.Contains(notice, "no upgrade from schema 0") {
 		t.Fatal(notice)
 	}
@@ -280,8 +281,8 @@ func TestInterruptedWriteKeepsPreviousFile(t *testing.T) {
 	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
 		blocked := open(t, t.TempDir())
 		finished(blocked, 1, "plan", operations.Succeeded, t0)
-		_ = os.Chmod(filepath.Dir(blocked.path), 0o500)
-		t.Cleanup(func() { _ = os.Chmod(filepath.Dir(blocked.path), 0o700) })
+		_ = os.Chmod(filepath.Dir(blocked.Path()), 0o500)
+		t.Cleanup(func() { _ = os.Chmod(filepath.Dir(blocked.Path()), 0o700) })
 		finished(blocked, 2, "plan", operations.Succeeded, t0)
 		if _, notice, _ := blocked.Status(); !strings.Contains(notice, "could not be written") {
 			t.Fatal(notice)
@@ -339,7 +340,7 @@ func TestRetentionBoundaries(t *testing.T) {
 	for i := 1; i <= 60; i++ {
 		finished(s3, i, "plan", operations.Succeeded, t0.Add(time.Duration(i)*time.Second), func(r *operations.Record) { r.Excerpt = big })
 	}
-	fi, _ := os.Stat(s3.path)
+	fi, _ := os.Stat(s3.Path())
 	got = s3.List(Filter{})
 	if fi.Size() > MinBytes || len(got) == 0 || len(got) == 60 || got[0].ID != id(60) {
 		t.Fatalf("size retention: %d bytes, %d entries", fi.Size(), len(got))
@@ -354,7 +355,7 @@ func TestRetentionBoundaries(t *testing.T) {
 func TestRetentionNeverDropsRunningEntries(t *testing.T) {
 	s := open(t, t.TempDir())
 	_ = s.SetRetention(HistoryRetentionPolicy{MaxEntries: 10, MaxAgeDays: 1, MaxBytes: MaxBytesLimit})
-	s.Record(operations.Record{Operation: operations.Operation{ID: id(100), Kind: "apply", Status: operations.Running, StartedAt: t0.Add(-48 * time.Hour).Format(time.RFC3339)}, Root: "/r", Engine: "terraform"})
+	s.Record(operations.Record{Operation: operations.Operation{ID: id(100), Kind: "apply", Status: operations.Running, StartedAt: t0.Add(-48 * time.Hour).Format(time.RFC3339)}, Root: "/r", Engine: "terraform"}.Event())
 	for i := 1; i <= 15; i++ {
 		finished(s, i, "plan", operations.Succeeded, t0.Add(time.Duration(i)*time.Minute))
 	}
@@ -365,12 +366,12 @@ func TestRetentionNeverDropsRunningEntries(t *testing.T) {
 
 func TestFiltersAndClearAreProjectScoped(t *testing.T) {
 	s := open(t, t.TempDir())
-	s.Project = func(root string) (string, string, bool) {
+	s.UseProject(func(root string) (string, string, bool) {
 		if root == "/a" {
 			return id(500), "alpha", true
 		}
 		return "", "", false
-	}
+	})
 	finished(s, 1, "plan", operations.Succeeded, t0, func(r *operations.Record) { r.Root = "/a" })
 	finished(s, 2, "plan", operations.Failed, t0.Add(time.Minute), func(r *operations.Record) { r.Root = "/a"; r.Workspace = "prod" })
 	finished(s, 3, "apply", operations.Succeeded, t0.Add(2*time.Minute), func(r *operations.Record) { r.Root = "/b" })
@@ -424,20 +425,20 @@ func TestPlanSummaryKeepsAddressesNotValues(t *testing.T) {
 	if e.Plan == nil || e.Plan.Counts[plan.Replace] != 1 || e.Plan.Counts[plan.NoOp] != 0 || e.Plan.Outputs != 1 || len(e.Plan.Changes) != 4 || e.Plan.Fingerprint != "abababababab" {
 		t.Fatalf("%+v", e.Plan)
 	}
-	if e.Plan.Changes[2].Address != withheldAddr || e.Plan.Changes[3].Action != "import" {
+	if e.Plan.Changes[2].Address != WithheldAddr || e.Plan.Changes[3].Action != "import" {
 		t.Fatalf("%+v", e.Plan.Changes)
 	}
 	if strings.Contains(readFile(t, s), canary) || strings.Contains(readFile(t, s), "db_password") {
 		t.Fatal("plan values or output names reached the history file")
 	}
-	// More than maxChanges changes: the rest are counted, not listed.
-	many := make([]plan.Change, maxChanges+7)
+	// More than MaxChanges changes: the rest are counted, not listed.
+	many := make([]plan.Change, MaxChanges+7)
 	for i := range many {
 		many[i] = plan.Change{Address: fmt.Sprintf("null_resource.n[%d]", i), Action: plan.Create}
 	}
 	finished(s, 2, "plan", operations.Succeeded, t0, func(r *operations.Record) { r.Plan = reviewed(id(51), many...) })
 	e, _ = s.Get(id(2))
-	if len(e.Plan.Changes) != maxChanges || e.Plan.Omitted != 7 || e.Plan.Counts[plan.Create] != maxChanges+7 {
+	if len(e.Plan.Changes) != MaxChanges || e.Plan.Omitted != 7 || e.Plan.Counts[plan.Create] != MaxChanges+7 {
 		t.Fatalf("%d %d", len(e.Plan.Changes), e.Plan.Omitted)
 	}
 }
@@ -531,7 +532,7 @@ func TestCanaryNeverWritten(t *testing.T) {
 
 func TestReportMarkdownEscapesValues(t *testing.T) {
 	s := open(t, t.TempDir())
-	s.Project = func(string) (string, string, bool) { return id(500), "a|b `x` <script>\n# H", true }
+	s.UseProject(func(string) (string, string, bool) { return id(500), "a|b `x` <script>\n# H", true })
 	finished(s, 1, "plan", operations.Succeeded, t0, func(r *operations.Record) {
 		r.Plan = reviewed(id(50), plan.Change{Address: "aws_instance.a`b", Action: plan.Create})
 		r.Excerpt = []operations.Event{{Seq: 1, Level: "info", Text: "excerpt line"}}
@@ -667,5 +668,23 @@ func TestExportPathValidation(t *testing.T) {
 	var back Report
 	if json.Unmarshal(b, &back) != nil || len(back.Entries) != 1 {
 		t.Fatal(string(b))
+	}
+}
+
+// Only an AI change decision gets an ID from history; an operation's start and end keep the
+// ID they arrive with, so the end replaces the start.
+func TestOnlyChangeDecisionsGetAnID(t *testing.T) {
+	s := open(t, t.TempDir())
+	s.Record(Event{Kind: "plan", StartedAt: t0.Format(time.RFC3339), Root: "/r"})
+	s.Record(Event{Kind: "plan", Status: StatusFailed, Final: true, StartedAt: t0.Format(time.RFC3339), Root: "/r"})
+	s.Record(Event{Kind: "assist-change", Outcome: "rejected", Final: true, StartedAt: t0.Format(time.RFC3339)})
+	entries := s.List(Filter{})
+	if len(entries) != 2 {
+		t.Fatalf("%d entries: %+v", len(entries), entries)
+	}
+	for _, e := range entries {
+		if (e.Kind == "assist-change") != ValidID(e.ID) {
+			t.Fatalf("%s entry ID %q", e.Kind, e.ID)
+		}
 	}
 }

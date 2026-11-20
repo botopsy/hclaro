@@ -1,7 +1,8 @@
-package history
+package history_test
 
 import (
 	"encoding/json"
+	. "hclaro/internal/history"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func mustRead(t *testing.T, path string) []byte {
 
 func TestSchema1FixtureLoadsAndStaysSchema1(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, fileName)
+	path := filepath.Join(dir, FileName)
 	body := fixture(t, "v1.json")
 	if err := os.WriteFile(path, body, 0o600); err != nil {
 		t.Fatal(err)
@@ -52,7 +53,7 @@ func TestSchema1FixtureLoadsAndStaysSchema1(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 	finished(s, 2, "plan", operations.Succeeded, t0)
-	var doc document
+	var doc Document
 	if err := json.Unmarshal(mustRead(t, path), &doc); err != nil || doc.Version != 1 || len(doc.Entries) != 2 {
 		t.Fatalf("rewritten file: %+v %v", doc, err)
 	}
@@ -63,7 +64,7 @@ func TestSchema1FixtureLoadsAndStaysSchema1(t *testing.T) {
 
 func TestNewerSchemaFixtureIsNeverChanged(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, fileName)
+	path := filepath.Join(dir, FileName)
 	newer := fixture(t, "v2-newer.json")
 	if err := os.WriteFile(path, newer, 0o600); err != nil {
 		t.Fatal(err)
@@ -91,11 +92,11 @@ func TestNewerSchemaWrittenDuringSessionIsNotDowngraded(t *testing.T) {
 	s := open(t, dir)
 	finished(s, 1, "plan", operations.Succeeded, t0)
 	newer := fixture(t, "v2-newer.json")
-	if err := os.WriteFile(s.path, newer, 0o600); err != nil {
+	if err := os.WriteFile(s.Path(), newer, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	finished(s, 2, "plan", operations.Succeeded, t0)
-	if string(mustRead(t, s.path)) != string(newer) {
+	if string(mustRead(t, s.Path())) != string(newer) {
 		t.Fatal("newer history downgraded by Record")
 	}
 	if status, notice, _ := s.Status(); status != ReadOnly || !strings.Contains(notice, "newer Hclaro (schema 2)") {
@@ -107,7 +108,7 @@ func TestNewerSchemaWrittenDuringSessionIsNotDowngraded(t *testing.T) {
 	if _, err := s.Clear(Filter{}); err != ErrUnavailable {
 		t.Fatal(err)
 	}
-	if string(mustRead(t, s.path)) != string(newer) {
+	if string(mustRead(t, s.Path())) != string(newer) {
 		t.Fatal("newer history downgraded")
 	}
 }
@@ -134,7 +135,7 @@ func upgradeFrom0() map[int]Migration {
 
 func TestSchemaUpgradeKeepsABackupFirst(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, fileName)
+	path := filepath.Join(dir, FileName)
 	_ = os.WriteFile(path, []byte(legacy), 0o600)
 	s := OpenWith(dir, t0, upgradeFrom0())
 	backup := path + ".schema-0-20261106T100000Z"
@@ -147,7 +148,7 @@ func TestSchemaUpgradeKeepsABackupFirst(t *testing.T) {
 	if fi, err := os.Stat(backup); err != nil || (os.PathSeparator == '/' && fi.Mode().Perm() != 0o600) {
 		t.Fatalf("backup mode: %v %v", fi.Mode(), err)
 	}
-	var doc document
+	var doc Document
 	if err := json.Unmarshal(mustRead(t, path), &doc); err != nil || doc.Version != 1 {
 		t.Fatal("upgraded file not written", err)
 	}
@@ -156,7 +157,7 @@ func TestSchemaUpgradeKeepsABackupFirst(t *testing.T) {
 // Without a backup copy an upgrade does not happen and the file is left unchanged.
 func TestSchemaUpgradeWithoutBackupLeavesFileUnchanged(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, fileName)
+	path := filepath.Join(dir, FileName)
 	_ = os.WriteFile(path, []byte(legacy), 0o600)
 	// An existing entry at the backup name is never replaced, so the copy fails.
 	if err := os.Mkdir(path+".schema-0-20261106T100000Z", 0o700); err != nil {
@@ -178,9 +179,9 @@ func TestOlderSchemaWrittenDuringSessionIsLeftAlone(t *testing.T) {
 	s := OpenWith(dir, t0, upgradeFrom0())
 	s.Now = func() time.Time { return t0 }
 	finished(s, 1, "plan", operations.Succeeded, t0)
-	_ = os.WriteFile(s.path, []byte(legacy), 0o600)
+	_ = os.WriteFile(s.Path(), []byte(legacy), 0o600)
 	finished(s, 2, "plan", operations.Succeeded, t0)
-	if string(mustRead(t, s.path)) != legacy {
+	if string(mustRead(t, s.Path())) != legacy {
 		t.Fatal("older history rewritten during the session")
 	}
 	if status, notice, _ := s.Status(); status != ReadOnly || !strings.Contains(notice, "older Hclaro (schema 0)") {
@@ -199,7 +200,7 @@ func TestInvalidSchemaVersionsAreKeptAside(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := filepath.Join(dir, fileName)
+			path := filepath.Join(dir, FileName)
 			_ = os.WriteFile(path, []byte(body), 0o600)
 			s := open(t, dir)
 			if status, notice, _ := s.Status(); status != Ready || !strings.Contains(notice, "history.json.corrupt-20261106T100000Z") {

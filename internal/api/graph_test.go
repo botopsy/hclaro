@@ -155,7 +155,8 @@ func TestGraphAPIFailuresAndUnsupported(t *testing.T) {
 	store.Load(t.Context(), remote, "terraform", nil)
 	manager := operations.NewManager(store, remote, t.TempDir())
 	t.Cleanup(func() { manager.Close(time.Second) })
-	rs := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), remote, manager}
+	services := &Services{}
+	rs := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), remote, manager, services}
 	options := decode[struct {
 		CanGenerate bool   `json:"canGenerate"`
 		Reason      string `json:"reason"`

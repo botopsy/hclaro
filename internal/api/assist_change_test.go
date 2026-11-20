@@ -36,11 +36,11 @@ func TestAIProposedChangeOverHTTP(t *testing.T) {
 	const old = "resource \"aws_s3_bucket\" \"legacy_logs\" {}\n" // newImportServer's main.tf
 	const next = "resource \"aws_s3_bucket\" \"legacy_logs\" {\n  bucket = \"logs\"\n}\n"
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: proposalReply("main.tf", sha(old), next)}
-	s.manager.Assist = assist.NewSession(false, stub)
-	s.manager.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
+	s.svc.Assist = assist.NewSession(false, stub)
+	s.svc.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
 	planID := s.plan()
 
-	s.manager.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
+	s.svc.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
 	wantError(t, s.do("GET", "/api/v1/ai/conversations/"+strings.Repeat("a", 32)+"/changes", ""), 409, "ai_disabled")
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
@@ -127,8 +127,8 @@ func TestAIProposedChangeOverHTTP(t *testing.T) {
 func TestAIProposedChangeInHubWorkspace(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: proposalReply("hclaro_ai.tf", "new", "locals {\n  owner = \"net\"\n}\n")}
-	s.launch.Assist = assist.NewSession(false, stub)
-	s.launch.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
+	s.svc.Assist = assist.NewSession(false, stub)
+	s.svc.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
@@ -183,8 +183,8 @@ func TestAIProposedNewFileIgnoredByGit(t *testing.T) {
 	}
 	reply := proposalReply("main_override.tf", "new", "locals {}\n") + proposalReply("extra.tf", "new", "locals {}\n")
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: reply}
-	s.manager.Assist = assist.NewSession(false, stub)
-	s.manager.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
+	s.svc.Assist = assist.NewSession(false, stub)
+	s.svc.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	w := s.do("POST", "/api/v1/ai/conversations", chatBody("Add files."))

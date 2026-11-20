@@ -34,7 +34,7 @@ func newDiscoveryServer(t *testing.T) (*planServer, *discoverytest.Runner, strin
 	runner := &discoverytest.Runner{}
 	svc := discovery.New(runner)
 	svc.Sleep = func(context.Context, time.Duration) error { return nil }
-	s.manager.Discovery = svc
+	s.svc.Discovery = svc
 	t.Cleanup(func() { svc.Close(time.Second) })
 	return s, runner, root
 }
@@ -248,10 +248,11 @@ func TestDiscoveryUnavailableAndRouteGuard(t *testing.T) {
 	}
 	store := workspace.New(workspace.Info{})
 	manager := operations.NewManager(store, &engine.Fake{}, "")
+	services := &Services{}
 	runner := &discoverytest.Runner{}
-	manager.Discovery = discovery.New(runner)
-	t.Cleanup(func() { manager.Close(time.Second); manager.Discovery.Close(time.Second) })
-	hubless := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), nil, manager}
+	services.Discovery = discovery.New(runner)
+	t.Cleanup(func() { manager.Close(time.Second); services.Discovery.Close(time.Second) })
+	hubless := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), nil, manager, services}
 	if w := hubless.do("POST", "/api/v1/discovery/identity", `{}`); w.Code != 409 || decode[map[string]string](t, w)["error"] != "no_launch_project" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -306,7 +307,7 @@ func TestDiscoveryUnavailableAndRouteGuard(t *testing.T) {
 // for the synthetic AWS fixtures. IDs and times are fixed so the file is deterministic.
 func TestDiscoveryGolden(t *testing.T) {
 	s, _, _ := newDiscoveryServer(t)
-	svc := s.manager.Discovery
+	svc := s.svc.Discovery
 	n := 0
 	var mu sync.Mutex
 	svc.NewID = func() string { mu.Lock(); defer mu.Unlock(); n++; return fmt.Sprintf("%032x", n) }

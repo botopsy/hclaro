@@ -76,16 +76,17 @@ func main() {
 		_ = os.WriteFile(filepath.Join(temp, "main.tf"), []byte(mainTF), 0o644)
 	}
 	fake.Root = root
-	manager := operations.NewManager(store, fake, root)
-	manager.TempDir = temp
+	deps := operations.Deps{TempDir: temp, StateIDs: discovery.StateIDs}
 	if gitRoot != "" {
 		git := gitctx.New()
 		// File IDs must match across the per-request processes; links are never opened.
 		git.UseKey([]byte(strings.Repeat("k", 32)))
 		git.OpenURL = func(context.Context, string) error { return nil }
 		git.Environ = func() []string { return nil }
-		manager.Git = git
+		deps.Git = git
 	}
+	manager := operations.New(store, fake, root, deps)
+	services := &api.Services{}
 	next := 0
 	manager.NewID = func() string { next++; return fmt.Sprintf("%032x", next) }
 	// Cloud discovery answers from recorded synthetic AWS fixtures; no process or network.
@@ -96,7 +97,7 @@ func main() {
 	svc.Now = func() time.Time { return time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC) }
 	discoveryID := 0
 	svc.NewID = func() string { discoveryID++; return fmt.Sprintf("%032x", 0xd000+discoveryID) }
-	manager.Discovery = svc
+	services.Discovery = svc
 	defer svc.Close(5 * time.Second)
 	// The developer's own AWS settings never reach the synthetic harness.
 	for _, name := range []string{"AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION"} {
@@ -137,7 +138,7 @@ func main() {
 	costID := 0
 	costs.NewID = func() string { costID++; return fmt.Sprintf("%032x", 0xc000+costID) }
 	costs.TempDir = temp
-	manager.Cost = costs
+	services.Cost = costs
 	defer costs.Close(5 * time.Second)
 	if os.Getenv("HCLARO_FIXTURE_COST") == "1" {
 		if _, err := costs.OptIn(context.Background(), cost.DisclosureVersion); err == nil {
@@ -155,7 +156,7 @@ func main() {
 		}
 	}
 	defer manager.Close(5 * time.Second)
-	handler := api.Handler(store, manager, nil, ui.Assets(), "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
+	handler := api.Handler(store, manager, nil, services, ui.Assets(), "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
 	var body io.Reader
 	if request.Body != "" {
 		body = strings.NewReader(request.Body)

@@ -24,7 +24,7 @@ func chatBody(message string) string {
 func TestAIProjectContextOverHTTP(t *testing.T) {
 	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.manager.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	for name, text := range map[string]string{
 		"terraform.tfvars":  `db_password = "CANARY_TFVARS"`,
 		"terraform.tfstate": `{"resources":[{"instances":[{"attributes":{"p":"CANARY_STATE"}}]}]}`,
@@ -35,7 +35,7 @@ func TestAIProjectContextOverHTTP(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s.manager.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
+	s.svc.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
 	wantError(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"project"}`), 409, "ai_disabled")
 	wantError(t, s.do("GET", "/api/v1/ai/conversations", ""), 409, "ai_disabled")
 	s.enableAI()
@@ -86,7 +86,7 @@ func TestAIProjectContextOverHTTP(t *testing.T) {
 func TestAIHubProjectContextStaysInItsContext(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.launch.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
@@ -120,7 +120,7 @@ func TestAIHubProjectContextStaysInItsContext(t *testing.T) {
 func TestAIProjectConversationGoesStaleOnFileChange(t *testing.T) {
 	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.manager.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"project"}`))
@@ -177,7 +177,7 @@ func TestAIProjectPackageRefusedWhenIgnoreRulesChange(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.manager.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"project"}`))

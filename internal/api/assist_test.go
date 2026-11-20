@@ -39,7 +39,7 @@ func sum(s string) string {
 func newAssistServer(t *testing.T, fake *engine.Fake) (*planServer, string) {
 	t.Helper()
 	s, root := newImportServer(t, fake)
-	s.manager.Assist = assist.NewSession(false)
+	s.svc.Assist = assist.NewSession(false)
 	return s, root
 }
 
@@ -100,7 +100,7 @@ func TestAIEnabledByDefault(t *testing.T) {
 	wantError(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan"}`), 409, "ai_disabled")
 
 	// A session starts on (OD-AI-13), shares nothing until a click and accepts nothing yet.
-	s.manager.Assist = assist.NewSession(false)
+	s.svc.Assist = assist.NewSession(false)
 	got := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", ""))
 	if !got.Enabled || !got.Handoff || got.Headless || got.Accepted || got.Disclosure.Version != assist.DisclosureVersion {
 		t.Fatalf("%+v", got)
@@ -126,8 +126,8 @@ func TestAISettingsPersistOverHTTP(t *testing.T) {
 	dir := t.TempDir()
 	start := func() *planServer {
 		s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
-		s.manager.Assist = assist.NewSession(false, &stubAssistant{id: "claude", mode: assist.ModeHeadless}, &stubAssistant{id: "codex", mode: assist.ModeHandoff})
-		s.manager.Assist.UsePrefs(dir)
+		s.svc.Assist = assist.NewSession(false, &stubAssistant{id: "claude", mode: assist.ModeHeadless}, &stubAssistant{id: "codex", mode: assist.ModeHandoff})
+		s.svc.Assist.UsePrefs(dir)
 		return s
 	}
 	s := start()
@@ -153,7 +153,7 @@ func TestAISettingsPersistOverHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantError(t, next.do("POST", "/api/v1/ai/settings", `{"enabled":false}`), 500, "ai_settings_not_saved")
-	if !next.manager.Assist.Enabled() {
+	if !next.svc.Assist.Enabled() {
 		t.Fatal("a failed write turned AI off")
 	}
 }
@@ -199,7 +199,7 @@ func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 		t.Fatalf("GET settings without session: %d", w.Code)
 	}
 	// Refused requests changed nothing: AI is still on and the package still exports.
-	if !s.manager.Assist.Enabled() {
+	if !s.svc.Assist.Enabled() {
 		t.Fatal("a refused request turned AI off")
 	}
 	if w := doWith(s.handler, "GET", "/api/v1/ai/conversations/"+chat, "", without("Authorization")); w.Code != 401 {
@@ -248,7 +248,7 @@ func TestAIPlanHandoff(t *testing.T) {
 func TestAIPackageExpires(t *testing.T) {
 	s, _ := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	now := time.Now()
-	s.manager.Assist.Now = func() time.Time { return now }
+	s.svc.Assist.Now = func() time.Time { return now }
 	s.enableAI()
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+s.plan()+`"}`))
 	now = now.Add(assist.PackageTTL + time.Second)
@@ -258,7 +258,7 @@ func TestAIPackageExpires(t *testing.T) {
 func TestAIResourceAndReload(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
 	s, store := newDriftServer(t, fake)
-	s.manager.Assist = assist.NewSession(false)
+	s.svc.Assist = assist.NewSession(false)
 	s.enableAI()
 	page := decode[struct {
 		Resources []struct{ ID, Address string }
@@ -305,7 +305,7 @@ func TestAIImportHandoffAndBlocked(t *testing.T) {
 func TestAIDriftHandoff(t *testing.T) {
 	fake := &engine.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed}
 	s, _ := newDriftServer(t, fake)
-	s.manager.Assist = assist.NewSession(false)
+	s.svc.Assist = assist.NewSession(false)
 	s.enableAI()
 	_, scan := startScan(t, s)
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"drift","scanId":"`+scan.ID+`"}`))
@@ -322,7 +322,7 @@ func TestAIDriftHandoff(t *testing.T) {
 // reloaded context refuse the hash.
 func TestAIHubHandoffStaysInItsContext(t *testing.T) {
 	s := newScopedServer(t)
-	s.launch.Assist = assist.NewSession(false)
+	s.svc.Assist = assist.NewSession(false)
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	a := s.openLoaded("network", "dev", "")
 	b := s.openLoaded("network", "prod", "")
@@ -377,11 +377,11 @@ func TestAIPackagesBelongToTheirProcess(t *testing.T) {
 	p := build(t, a.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+a.plan()+`"}`))
 	wantError(t, b.do("POST", "/api/v1/ai/packages/"+p.SHA256+"/export", `{}`), 404, "package_not_found")
 	a.do("POST", "/api/v1/ai/settings", `{"enabled":false}`)
-	if !b.manager.Assist.Enabled() {
+	if !b.svc.Assist.Enabled() {
 		t.Fatal("switching AI off in one process changed another")
 	}
-	b.manager.Assist = assist.NewSession(false) // restart, no saved settings: on (OD-AI-13)
-	if !b.manager.Assist.Enabled() {
+	b.svc.Assist = assist.NewSession(false) // restart, no saved settings: on (OD-AI-13)
+	if !b.svc.Assist.Enabled() {
 		t.Fatal("AI is off after a restart without saved settings")
 	}
 	b.enableAI()
@@ -390,7 +390,7 @@ func TestAIPackagesBelongToTheirProcess(t *testing.T) {
 
 func TestAIHubRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	s := newScopedServer(t)
-	s.launch.Assist = assist.NewSession(false)
+	s.svc.Assist = assist.NewSession(false)
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	cid := s.openLoaded("network", "dev", "")
 	page := decode[struct{ Resources []struct{ ID string } }](t, s.do("GET", "/api/v1/contexts/"+cid+"/resources?limit=1", ""))
@@ -429,7 +429,7 @@ func TestAIHubRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 func TestAIHubEvictedScopePackageIsStale(t *testing.T) {
 	s := newScopedServer(t)
 	s.hub.MaxScopes = 1
-	s.launch.Assist = assist.NewSession(false)
+	s.svc.Assist = assist.NewSession(false)
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	a := s.openLoaded("network", "dev", "")
 	b := s.openLoaded("network", "prod", "")

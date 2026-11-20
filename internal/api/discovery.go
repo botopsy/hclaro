@@ -57,15 +57,15 @@ func inheritedAWSProfile() string {
 // discoveryRoutes serve AWS discovery for the launch workspace. GET routes never run a
 // command or contact AWS; verifying the identity, starting a scan and preparing an import are
 // explicit, CSRF-protected POSTs.
-func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *projects.Hub) {
+func discoveryRoutes(mux *http.ServeMux, deps *Services, manager *operations.Manager, hub *projects.Hub) {
 	available := func(w http.ResponseWriter) (*discovery.Service, bool) {
 		switch {
-		case manager.Discovery == nil:
+		case deps.Discovery == nil:
 			reasonJSON(w, 409, "discovery_unavailable", "Cloud discovery is not available in this session.")
 		case manager.Root() == "":
 			reasonJSON(w, 409, "no_launch_project", "Cloud discovery runs for the project Hclaro was opened with from the terminal.")
 		default:
-			return manager.Discovery, true
+			return deps.Discovery, true
 		}
 		return nil, false
 	}
@@ -78,7 +78,7 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		snap := manager.Snapshot()
 		canScan, reason := true, ""
 		switch {
-		case manager.Discovery == nil:
+		case deps.Discovery == nil:
 			canScan, reason = false, "Cloud discovery is not available in this session."
 		case manager.Root() == "":
 			canScan, reason = false, "Cloud discovery runs for the project Hclaro was opened with from the terminal."
@@ -101,7 +101,7 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		if canScan {
 			if pin, environ, perr := discoveryPin(manager, false, profileID, ""); perr == nil {
 				region, regionSource = discovery.RegionOf(pin, environ)
-				if id, ok := manager.Discovery.Identity(pin); ok {
+				if id, ok := deps.Discovery.Identity(pin); ok {
 					identity = &id
 				}
 			}

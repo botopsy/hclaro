@@ -11,7 +11,7 @@ import (
 	"hclaro/internal/workspace"
 )
 
-func importRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, inits *operations.Inits) {
+func importRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, manager *operations.Manager, inits *operations.Inits) {
 	mux.HandleFunc("GET /api/v1/imports/options", func(w http.ResponseWriter, r *http.Request) {
 		snap := store.Get()
 		caps := snap.Info.Capabilities
@@ -29,7 +29,7 @@ func importRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			VarFiles         []string `json:"varFiles"`
 		}{caps.CanImport, caps.ImportReason, caps.CanApply, caps.ApplyReason, caps.SupportsImportBlocks, caps.SupportsGeneratedConfig, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles()})
 	})
-	importExecRoutes(mux, "/api/v1", nil, func() *discovery.Service { return manager.Discovery }, launchSourceOf(manager, inits))
+	importExecRoutes(mux, "/api/v1", nil, func() *discovery.Service { return deps.Discovery }, launchSourceOf(manager, inits))
 }
 
 // importExecRoutes registers the import preview and start under prefix, as execRoutes. The

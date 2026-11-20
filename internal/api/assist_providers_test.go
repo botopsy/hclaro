@@ -134,7 +134,7 @@ func TestAIHandoffWithoutClaude(t *testing.T) {
 	for _, ps := range providerSets() {
 		t.Run(ps.name, func(t *testing.T) {
 			s, _ := newDriftServer(t, &engine.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed})
-			s.manager.Assist = ps.session()
+			s.svc.Assist = ps.session()
 			s.enableAI()
 			_, scan := startScan(t, s)
 			page := decode[struct{ Resources []struct{ ID string } }](t, s.do("GET", "/api/v1/resources?limit=1", ""))
@@ -152,7 +152,7 @@ func TestAIHubHandoffWithoutClaude(t *testing.T) {
 	for _, ps := range providerSets() {
 		t.Run(ps.name, func(t *testing.T) {
 			s := newScopedServer(t)
-			s.launch.Assist = ps.session()
+			s.svc.Assist = ps.session()
 			do := func(method, path, body string) *httptest.ResponseRecorder { return s.do(method, path, body) }
 			turnOnAI(t, do)
 			a := s.openLoaded("network", "dev", "")

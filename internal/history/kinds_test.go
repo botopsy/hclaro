@@ -1,7 +1,8 @@
-package history
+package history_test
 
 import (
 	"encoding/json"
+	. "hclaro/internal/history"
 	"os"
 	"regexp"
 	"slices"
@@ -41,7 +42,7 @@ func TestUnknownKindIsKeptAndMarkedOnReRead(t *testing.T) {
 	e := doc["entries"].([]any)[0].(map[string]any)
 	e["kind"], e["projectName"] = "destroy", "password="+canary
 	b, _ := json.Marshal(doc)
-	_ = os.WriteFile(s.path, b, 0o600)
+	_ = os.WriteFile(s.Path(), b, 0o600)
 	got := open(t, dir).List(Filter{})
 	if len(got) != 1 || got[0].Kind != KindUnknown {
 		t.Fatalf("%+v", got)
@@ -58,7 +59,7 @@ func TestUnknownKindIsKeptAndMarkedOnReRead(t *testing.T) {
 func TestInterruptedUnknownKindMayHaveChangedInfrastructure(t *testing.T) {
 	dir := t.TempDir()
 	s := open(t, dir)
-	s.Record(operations.Record{Operation: operations.Operation{ID: id(1), Kind: "destroy", Status: operations.Running, StartedAt: t0.Format(time.RFC3339)}, Root: "/synthetic/network", Engine: "terraform"})
+	s.Record(operations.Record{Operation: operations.Operation{ID: id(1), Kind: "destroy", Status: operations.Running, StartedAt: t0.Format(time.RFC3339)}, Root: "/synthetic/network", Engine: "terraform"}.Event())
 	e, _ := open(t, dir).Get(id(1))
 	if e.Kind != KindUnknown || e.Outcome.Result != "interrupted" || strings.Contains(e.Outcome.Summary, "did not change infrastructure") || !strings.Contains(e.Outcome.Summary, "may be partly changed") {
 		t.Fatalf("%+v", e)
@@ -67,7 +68,7 @@ func TestInterruptedUnknownKindMayHaveChangedInfrastructure(t *testing.T) {
 
 func TestEveryOperationKindHasAHistoryKind(t *testing.T) {
 	for _, k := range operations.Kinds {
-		if got := kind(operations.Operation{Kind: k}, nil); got == KindUnknown || !slices.Contains(Kinds, got) {
+		if got := (operations.Record{Operation: operations.Operation{Kind: k}}).Event().Kind; got == KindUnknown || !slices.Contains(Kinds, got) {
 			t.Errorf("operation kind %q is recorded as %q", k, got)
 		}
 	}
@@ -90,10 +91,10 @@ func TestUILabelsMatchTheKindTable(t *testing.T) {
 	for _, m := range regexp.MustCompile(`'?([\w-]+)'?: '([^']*)'`).FindAllSubmatch(block[1], -1) {
 		ui[string(m[1])] = string(m[2])
 	}
-	if len(ui) != len(kindTable) {
-		t.Fatalf("UI has %d kinds, history %d", len(ui), len(kindTable))
+	if len(ui) != len(KindTable) {
+		t.Fatalf("UI has %d kinds, history %d", len(ui), len(KindTable))
 	}
-	for _, k := range kindTable {
+	for _, k := range KindTable {
 		if ui[k.Kind] != k.Label {
 			t.Errorf("%s: UI %q, history %q", k.Kind, ui[k.Kind], k.Label)
 		}

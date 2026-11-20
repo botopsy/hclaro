@@ -10,6 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"hclaro/internal/assist"
+	"hclaro/internal/cost"
+	"hclaro/internal/discovery"
+	"hclaro/internal/history"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 	"hclaro/internal/security"
@@ -34,21 +38,39 @@ func errorJSON(w http.ResponseWriter, code int, name string) {
 	writeJSON(w, code, map[string]string{"error": name})
 }
 
-// Handler serves the API and embedded UI. hub is nil when the Workspace Hub is disabled.
-func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.Hub, assets fs.FS, host, token, csrf, version string) http.Handler {
+// Services are the session services the API serves next to operations. A nil service
+// disables its routes; routes read the fields on each request.
+type Services struct {
+	// Assist holds the session's AI switch and handoff packages (AI-01.03). It has no access
+	// to plans, approvals or operations.
+	Assist *assist.Session
+	// Discovery lists existing AWS objects for the launch workspace on request (M16).
+	Discovery *discovery.Service
+	// Cost estimates the monthly cost impact of reviewed plans on request (M17).
+	Cost *cost.Service
+	// History is the operation history; its routes are served only with the Hub.
+	History *history.Store
+}
+
+// Handler serves the API and embedded UI. hub is nil when the Workspace Hub is disabled;
+// deps may be nil.
+func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.Hub, deps *Services, assets fs.FS, host, token, csrf, version string) http.Handler {
+	if deps == nil {
+		deps = &Services{}
+	}
 	mux := http.NewServeMux()
 	var inits *operations.Inits
 	if hub != nil {
 		inits = hub.Inits
 	}
 	planRoutes(mux, store, manager, inits, hub, csrf, version)
-	importRoutes(mux, store, manager, inits)
+	importRoutes(mux, deps, store, manager, inits)
 	driftRoutes(mux, store, manager, hub)
 	graphRoutes(mux, store, manager, hub)
 	gitRoutes(mux, store, manager, hub)
-	discoveryRoutes(mux, manager, hub)
-	costRoutes(mux, store, manager)
-	assistRoutes(mux, store, manager, hub)
+	discoveryRoutes(mux, deps, manager, hub)
+	costRoutes(mux, deps, store, manager)
+	assistRoutes(mux, deps, store, manager, hub)
 	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": version})
 	})
@@ -66,8 +88,8 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 		profileRoutes(mux, hub)
 		authRoutes(mux, hub)
 		comparisonRoutes(mux, hub)
-		if hub.History != nil {
-			historyRoutes(mux, hub.History, manager, inits, version)
+		if deps.History != nil {
+			historyRoutes(mux, deps.History, manager, inits, version)
 		}
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { errorJSON(w, 404, "route_not_found") })

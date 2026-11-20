@@ -32,7 +32,7 @@ func newCostServer(t *testing.T, strict bool) (*planServer, *costtest.Runner, st
 	svc := cost.New(runner, strict)
 	svc.TempDir = t.TempDir()
 	svc.Store = cost.OpenStore(t.TempDir())
-	s.manager.Cost = svc
+	s.svc.Cost = svc
 	t.Cleanup(func() { svc.Close(5 * time.Second) })
 	return s, runner, root
 }
@@ -258,10 +258,11 @@ func TestCostUnavailableStatesAndGuards(t *testing.T) {
 	}
 	store := workspace.New(workspace.Info{})
 	manager := operations.NewManager(store, &engine.Fake{}, "")
+	services := &Services{}
 	hr := costtest.New()
-	manager.Cost = cost.New(hr, false)
-	t.Cleanup(func() { manager.Close(time.Second); manager.Cost.Close(time.Second) })
-	hubless := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), nil, manager}
+	services.Cost = cost.New(hr, false)
+	t.Cleanup(func() { manager.Close(time.Second); services.Cost.Close(time.Second) })
+	hubless := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), nil, manager, services}
 	if caps := decode[cost.CostProviderCapabilities](t, hubless.do("GET", "/api/v1/cost/provider", "")); caps.CanEstimate {
 		t.Fatalf("%+v", caps)
 	}
@@ -315,7 +316,7 @@ func TestCostUnavailableStatesAndGuards(t *testing.T) {
 // on the temporary project and are replaced with placeholders.
 func TestCostGolden(t *testing.T) {
 	s, _, _ := newCostServer(t, false)
-	svc := s.manager.Cost
+	svc := s.svc.Cost
 	n := 0
 	var mu sync.Mutex
 	next := func() string { mu.Lock(); defer mu.Unlock(); n++; return fmt.Sprintf("%032x", n) }

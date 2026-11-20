@@ -141,16 +141,17 @@ resource "aws_s3_bucket" "legacy_logs" {}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, root)
+	services := &Services{}
 	manager.TempDir = t.TempDir()
 	histDir := t.TempDir()
-	hist := history.Open(histDir, time.Now())
+	hist := history.Open(histDir, time.Now(), history.Sources{})
 	manager.Recorder = hist
-	manager.Assist = assist.NewSession(false, &assist.CLI{Adapter: assist.Claude, Path: exe})
-	manager.Assist.Record = hist.RecordAssist
+	services.Assist = assist.NewSession(false, &assist.CLI{Adapter: assist.Claude, Path: exe})
+	services.Assist.Record = func(r assist.RunRecord) { hist.Record(r.Event()) }
 	config := t.TempDir() // saved conversations
-	manager.Assist.Store = assist.OpenStore(config, time.Now())
-	t.Cleanup(func() { manager.Assist.Close(); manager.Close(5 * time.Second) })
-	s := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}
+	services.Assist.Store = assist.OpenStore(config, time.Now())
+	t.Cleanup(func() { services.Assist.Close(); manager.Close(5 * time.Second) })
+	s := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager, services}
 
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
@@ -288,9 +289,9 @@ resource "aws_s3_bucket" "legacy_logs" {}
 		}
 	}
 	// Restart: a new session on the same folder reopens the project conversation and replays it.
-	manager.Assist.Close()
+	services.Assist.Close()
 	restart(s, config, &assist.CLI{Adapter: assist.Claude, Path: exe})
-	manager.Assist.Record = hist.RecordAssist
+	services.Assist.Record = func(r assist.RunRecord) { hist.Record(r.Event()) }
 	if w = s.do("POST", "/api/v1/ai/saved/"+pid+"/open", `{}`); w.Code != 200 || decode[assist.Conversation](t, w).ReadOnly != "" {
 		t.Fatalf("reopen: %d %s", w.Code, w.Body)
 	}

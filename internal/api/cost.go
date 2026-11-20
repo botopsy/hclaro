@@ -34,15 +34,15 @@ func costStale(manager *operations.Manager, store *workspace.Store, b cost.Bindi
 // nothing is sent until the user opted in after the disclosure; GET routes never start a
 // process. Estimates are separate from plans and applies: their failure or cancellation
 // never changes a plan or blocks an apply.
-func costRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager) {
+func costRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, manager *operations.Manager) {
 	available := func(w http.ResponseWriter) (*cost.Service, bool) {
 		switch {
-		case manager.Cost == nil:
+		case deps.Cost == nil:
 			reasonJSON(w, 409, "cost_unavailable", "Cost estimation is not available in this session.")
 		case manager.Root() == "":
 			reasonJSON(w, 409, "no_launch_project", "Cost estimates are made for plans of the project Hclaro was opened with from the terminal.")
 		default:
-			return manager.Cost, true
+			return deps.Cost, true
 		}
 		return nil, false
 	}
@@ -51,11 +51,11 @@ func costRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		return e
 	}
 	mux.HandleFunc("GET /api/v1/cost/provider", func(w http.ResponseWriter, r *http.Request) {
-		if manager.Cost == nil {
+		if deps.Cost == nil {
 			writeJSON(w, 200, map[string]any{"provider": cost.ProviderInfracost, "state": "unavailable", "reason": "Cost estimation is not available in this session.", "installed": false, "enabled": false, "canEstimate": false, "strictLocal": false, "offlineAvailable": false})
 			return
 		}
-		caps := manager.Cost.Capabilities()
+		caps := deps.Cost.Capabilities()
 		if manager.Root() == "" {
 			caps.CanEstimate, caps.Reason = false, "Cost estimates are made for plans of the project Hclaro was opened with from the terminal."
 		}
@@ -91,11 +91,11 @@ func costRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		if manager.Cost == nil {
+		if deps.Cost == nil {
 			reasonJSON(w, 409, "cost_unavailable", "Cost estimation is not available in this session.")
 			return
 		}
-		writeJSON(w, 200, manager.Cost.OptOut())
+		writeJSON(w, 200, deps.Cost.OptOut())
 	})
 	mux.HandleFunc("POST /api/v1/plans/{id}/cost-estimates", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{}

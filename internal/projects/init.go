@@ -118,6 +118,12 @@ func contextID(p Record, name, executable string, environ []string, profile stri
 	if fingerprint == "" {
 		return ""
 	}
+	return envHash(environ, p.ID, p.RootPath, p.EnginePreference, name, executable, fileIdentity(executable), fingerprint, "profile:"+profile)
+}
+
+// envHash is the SHA-256 of fields followed by the sorted init-relevant variables of
+// environ (initEnvKey), each ended by a NUL.
+func envHash(environ []string, fields ...string) string {
 	env := []string{}
 	for _, item := range environ {
 		key, _, _ := strings.Cut(item, "=")
@@ -127,7 +133,7 @@ func contextID(p Record, name, executable string, environ []string, profile stri
 	}
 	sort.Strings(env)
 	h := sha256.New()
-	for _, field := range append([]string{p.ID, p.RootPath, p.EnginePreference, name, executable, fileIdentity(executable), fingerprint, "profile:" + profile}, env...) {
+	for _, field := range append(fields, env...) {
 		h.Write([]byte(field))
 		h.Write([]byte{0})
 	}

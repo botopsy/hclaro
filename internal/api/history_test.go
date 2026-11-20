@@ -41,14 +41,12 @@ func newHistoryServer(t *testing.T, config string) *historyServer {
 	root := t.TempDir()
 	hub := projects.NewHub(projects.Open(config, time.Now()), root)
 	t.Cleanup(hub.Close)
-	store := history.Open(config, time.Now())
-	hub.UseHistory(store)
-	manager := operations.NewManager(ws, fake, root)
-	manager.TempDir = t.TempDir()
+	store := history.Open(config, time.Now(), history.Sources{Project: hub.Registry.Identify})
+	hub.Use(operations.Deps{Recorder: store})
+	manager := operations.New(ws, fake, root, operations.Deps{TempDir: t.TempDir(), Recorder: store})
 	manager.Reload = func(context.Context) {}
-	manager.Recorder = store
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
-	h := Handler(ws, manager, hub, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
+	h := Handler(ws, manager, hub, &Services{History: store}, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
 	return &historyServer{&hubServer{t, h, hub, &atomic.Int64{}, ""}, manager, fake, store, config, root}
 }
 

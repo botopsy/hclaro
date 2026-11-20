@@ -54,20 +54,21 @@ func aiServer(t *testing.T, strict bool) (*planServer, string, string, string) {
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, root)
+	services := &Services{}
 	manager.TempDir = t.TempDir()
 	histDir := t.TempDir()
-	hist := history.Open(histDir, time.Now())
+	hist := history.Open(histDir, time.Now(), history.Sources{})
 	manager.Recorder = hist
 	codex := assist.NewCodexCLI(exe)
 	codex.Host = assist.CodexHost{GOOS: "darwin", Managed: []string{filepath.Join(home, "etc-codex")},
 		Profile: func(context.Context) (string, error) { return "absent,absent", nil }}
-	manager.Assist = assist.NewSession(strict, &assist.CLI{Adapter: assist.Claude, Path: exe}, codex)
-	manager.Assist.Record = hist.RecordAssist
+	services.Assist = assist.NewSession(strict, &assist.CLI{Adapter: assist.Claude, Path: exe}, codex)
+	services.Assist.Record = func(r assist.RunRecord) { hist.Record(r.Event()) }
 	config := t.TempDir()
-	manager.Assist.UsePrefs(config)
-	manager.Assist.Store = assist.OpenStore(config, time.Now())
-	t.Cleanup(func() { manager.Assist.Close(); manager.Close(5 * time.Second) })
-	return &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}, home, histDir, config
+	services.Assist.UsePrefs(config)
+	services.Assist.Store = assist.OpenStore(config, time.Now())
+	t.Cleanup(func() { services.Assist.Close(); manager.Close(5 * time.Second) })
+	return &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager, services}, home, histDir, config
 }
 
 // writeCodexAuth writes HOME/.codex/auth.json as Codex stores a ChatGPT sign-in (unsigned

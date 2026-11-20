@@ -3,6 +3,7 @@ package operations
 import (
 	"context"
 	"encoding/json"
+	"hclaro/internal/history"
 	"os"
 	"path/filepath"
 	"slices"
@@ -531,11 +532,11 @@ func mustCheck(t *testing.T, r PreflightReport, id string) preflight.Check {
 
 type records struct {
 	mu   sync.Mutex
-	list []Record
+	list []history.Event
 }
 
-func (r *records) Record(rec Record) { r.mu.Lock(); r.list = append(r.list, rec); r.mu.Unlock() }
-func (r *records) all() []Record {
+func (r *records) Record(rec history.Event) { r.mu.Lock(); r.list = append(r.list, rec); r.mu.Unlock() }
+func (r *records) all() []history.Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.list)

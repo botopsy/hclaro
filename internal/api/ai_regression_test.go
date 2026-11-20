@@ -176,7 +176,7 @@ func gitSnapshot(t *testing.T, root string) string {
 // launchFlow runs the launch project's whole review-to-apply flow next to AI in mode.
 func launchFlow(t *testing.T, mode string) []string {
 	s, root, _ := newGitLaunchServer(t)
-	ai := newAISide(mode, func(sess *assist.Session) { s.manager.Assist = sess })
+	ai := newAISide(mode, func(sess *assist.Session) { s.svc.Assist = sess })
 	ai.do = func(m, p, b string) (int, string) { w := s.do(m, p, b); return w.Code, w.Body.String() }
 	ai.base, ai.kind, ai.field = "/api/v1", assist.KindPlan, "planId"
 	ai.enable(t)
@@ -301,7 +301,7 @@ func TestAIDoesNotChangeTheLaunchApprovalFlow(t *testing.T) {
 // hubFlow runs a Hub-scoped review-to-apply in network/dev while AI works on network/prod.
 func hubFlow(t *testing.T, mode string) []string {
 	s := newScopedServer(t)
-	ai := newAISide(mode, func(sess *assist.Session) { s.launch.Assist = sess })
+	ai := newAISide(mode, func(sess *assist.Session) { s.svc.Assist = sess })
 	ai.do = func(m, p, b string) (int, string) { w := s.do(m, p, b); return w.Code, w.Body.String() }
 	ai.enable(t)
 	var log []string

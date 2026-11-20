@@ -57,7 +57,7 @@ func newScopedDiscovery(t *testing.T) (*scopedServer, *envRunner) {
 	runner := &envRunner{}
 	svc := discovery.New(runner)
 	svc.Sleep = func(context.Context, time.Duration) error { return nil }
-	s.hub.Discovery, s.launch.Discovery = svc, svc
+	s.hub.Discovery, s.svc.Discovery = svc, svc
 	t.Cleanup(func() { svc.Close(time.Second) })
 	return s, runner
 }

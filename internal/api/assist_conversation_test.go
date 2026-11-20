@@ -89,13 +89,13 @@ func waitChat(t *testing.T, do doFunc, base, id string) assist.Conversation {
 func TestAIConversationOverHTTP(t *testing.T) {
 	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "Run `terraform apply -auto-approve` then rm -rf / <script>x</script> [x](javascript:alert(1))"}
-	s.manager.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	var mu sync.Mutex
 	var records []assist.RunRecord
-	s.manager.Assist.Record = func(r assist.RunRecord) { mu.Lock(); records = append(records, r); mu.Unlock() }
+	s.svc.Assist.Record = func(r assist.RunRecord) { mu.Lock(); records = append(records, r); mu.Unlock() }
 	planID := s.plan()
 	zero := strings.Repeat("0", 64)
-	s.manager.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
+	s.svc.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "")), 409, "ai_disabled")
 	wantError(t, s.do("GET", "/api/v1/ai/conversations/"+strings.Repeat("a", 32), ""), 409, "ai_disabled")
 
@@ -178,8 +178,8 @@ func TestAIConversationOverHTTP(t *testing.T) {
 func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, block: true}
-	s.manager.Assist = assist.NewSession(false, stub)
-	defer s.manager.Assist.Close()
+	s.svc.Assist = assist.NewSession(false, stub)
+	defer s.svc.Assist.Close()
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+s.plan()+`"}`))
@@ -199,7 +199,7 @@ func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 	wantError(t, s.do("GET", "/api/v1/ai/conversations/"+id, ""), 404, "conversation_not_found")
 
 	strict, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
-	strict.manager.Assist = assist.NewSession(true, stub)
+	strict.svc.Assist = assist.NewSession(true, stub)
 	strict.enableAI()
 	strict.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	sp := build(t, strict.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+strict.plan()+`"}`))
@@ -211,7 +211,7 @@ func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 	// A handoff-only provider never starts a conversation.
 	h, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	handoff := &stubAssistant{mode: assist.ModeHandoff}
-	h.manager.Assist = assist.NewSession(false, handoff)
+	h.svc.Assist = assist.NewSession(false, handoff)
 	h.enableAI()
 	h.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	hp := build(t, h.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+h.plan()+`"}`))
@@ -226,7 +226,7 @@ func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 func TestAIHubConversationStaysInItsContext(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.launch.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
@@ -275,7 +275,7 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 	}
 	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.manager.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	s.enableAI()
 	st := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", ""))
 	if !strings.Contains(strings.Join(st.Disclosure.Lines, "\n"), "resends the whole conversation") {
@@ -316,8 +316,8 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 func TestAIHubContextCloseDropsConversations(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, block: true}
-	s.launch.Assist = assist.NewSession(false, stub)
-	defer s.launch.Assist.Close()
+	s.svc.Assist = assist.NewSession(false, stub)
+	defer s.svc.Assist.Close()
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	for _, how := range []string{"reopen", "close"} {
@@ -342,7 +342,7 @@ func TestAIHubContextCloseDropsConversations(t *testing.T) {
 		}
 		wantError(t, s.do("GET", "/api/v1/contexts/"+cid+"/ai/conversations/"+id, ""), 404, "context_closed")
 		wantError(t, s.do("GET", "/api/v1/contexts/"+next+"/ai/conversations/"+id, ""), 404, "conversation_not_found")
-		if _, err := s.launch.Assist.Conversation(cid, id); err == nil {
+		if _, err := s.svc.Assist.Conversation(cid, id); err == nil {
 			t.Fatalf("%s: the conversation is still in memory", how)
 		}
 	}
