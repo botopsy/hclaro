@@ -49,7 +49,7 @@ func main() {
 	if importing {
 		fake.PlanJSON, fake.GeneratedConfig = fixtures.PlanImport, fixtures.ImportGenerated
 	}
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	// Each request runs in a fresh process, so a completed plan is recreated with
 	// deterministic IDs before handling it.
 	temp, err := os.MkdirTemp("", "hclaro-fixture-")

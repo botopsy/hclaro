@@ -8,6 +8,7 @@ import (
 	"hclaro/internal/engine"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
+	"hclaro/internal/tfpolicy"
 )
 
 // profileView is the API shape of a stored execution profile. It has no value fields.
@@ -69,8 +70,8 @@ func (b profileBody) input() profiles.Input {
 // root is refused with its reason. Operations resolve the files again when they start.
 func checkVarFiles(w http.ResponseWriter, root string, refs []string) bool {
 	for _, ref := range refs {
-		if _, err := profiles.ResolveVarFile(root, ref); err != nil {
-			var vf *profiles.VarFileError
+		if _, err := tfpolicy.ResolveVarFile(root, ref); err != nil {
+			var vf *tfpolicy.VarFileError
 			if errors.As(err, &vf) {
 				writeJSON(w, 400, map[string]string{"error": "invalid_profile", "field": "varFiles", "code": vf.Code, "reason": vf.Message})
 				return false
@@ -274,7 +275,7 @@ func profileRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			reasonJSON(w, 409, "project_unavailable", summary.Problem)
 			return
 		}
-		files, truncated, err := profiles.Candidates(p.RootPath)
+		files, truncated, err := tfpolicy.VarFiles(p.RootPath)
 		if err != nil {
 			reasonJSON(w, 409, "var_files_unreadable", "The project folder could not be read to list variable files. Check its permissions.")
 			return

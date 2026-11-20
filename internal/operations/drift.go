@@ -13,6 +13,7 @@ import (
 
 	"hclaro/internal/drift"
 	"hclaro/internal/engine"
+	"hclaro/internal/tfpolicy"
 	"hclaro/internal/workspace"
 )
 
@@ -126,7 +127,7 @@ func (m *Manager) driftCapability(snap workspace.Snapshot) (bool, string) {
 			reason = "Planning is not available for this workspace."
 		}
 		return false, "A drift scan is a refresh-only plan. " + reason
-	case !engine.RefreshOnlySupport(info.Engine, info.Version):
+	case !tfpolicy.Supports(info.Engine, info.Version, tfpolicy.RefreshOnly):
 		return false, "This engine version is not in the range Hclaro has verified for refresh-only plans."
 	case snap.Status == "empty":
 		return false, "No state is recorded for this workspace, so there is nothing to compare with remote objects."

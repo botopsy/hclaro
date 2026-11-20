@@ -6,9 +6,9 @@ import (
 	"hclaro/internal/awsauth"
 	"os"
 
-	"hclaro/internal/engine"
 	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
+	"hclaro/internal/tfpolicy"
 )
 
 // ProfileRefusal explains why an execution profile cannot be used. Nothing ran.
@@ -50,7 +50,7 @@ func (h *Hub) execution(p Record, profileID string) (preference string, environ 
 	}
 	environ, err = profiles.Compose(base, resolved)
 	if err != nil {
-		return "", nil, nil, &ProfileRefusal{"unsafe_cli_args", "Inherited TF_CLI_ARGS settings add flags other than -no-color. " + engine.UnsafeArgsHelp(base)}
+		return "", nil, nil, &ProfileRefusal{"unsafe_cli_args", "Inherited TF_CLI_ARGS settings add flags other than -no-color. " + tfpolicy.UnsafeArgsHelp(base)}
 	}
 	c := operations.FromResolved(resolved)
 	preference = profile.Engine
@@ -166,7 +166,7 @@ func (h *Hub) AuthTarget(projectID, profileID string) (awsauth.Target, error) {
 	}
 	environ, err := profiles.Compose(os.Environ(), resolved)
 	if err != nil {
-		return awsauth.Target{}, &ProfileRefusal{"unsafe_cli_args", "Inherited TF_CLI_ARGS settings add flags other than -no-color. " + engine.UnsafeArgsHelp(os.Environ())}
+		return awsauth.Target{}, &ProfileRefusal{"unsafe_cli_args", "Inherited TF_CLI_ARGS settings add flags other than -no-color. " + tfpolicy.UnsafeArgsHelp(os.Environ())}
 	}
 	return awsauth.Target{ProjectID: p.ID, Context: resolved, Environ: environ}, nil
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/tfpolicy"
 )
 
 // Statuses used by initialization in addition to Running, Succeeded, Failed and Cancelled.
@@ -227,7 +228,7 @@ func (r *Inits) execute(ctx context.Context, e *initEntry, req InitRequest) (cod
 	case err != nil:
 		return "engine_version", nil, false
 	}
-	json := engine.InitJSON(req.Engine, version)
+	json := tfpolicy.Supports(req.Engine, version, tfpolicy.InitJSON)
 	r.update(e, func(o *Operation) {
 		o.Command = req.Context.Display(InitCommand(req.Engine, json))
 		e.meta.version = version

@@ -10,6 +10,7 @@ import (
 	"hclaro/internal/engine"
 	"hclaro/internal/graph"
 	"hclaro/internal/plan"
+	"hclaro/internal/tfpolicy"
 	"hclaro/internal/workspace"
 )
 
@@ -141,7 +142,7 @@ func (m *Manager) graphCapability(snap workspace.Snapshot) (bool, string) {
 			reason = "Planning is not available for this workspace."
 		}
 		return false, "Generating a graph needs the same initialized working directory as planning. " + reason
-	case !engine.GraphSupport(info.Engine, info.Version):
+	case !tfpolicy.Supports(info.Engine, info.Version, tfpolicy.Graph):
 		return false, "This engine version is not in the range Hclaro has verified for `graph`."
 	}
 	return true, ""

@@ -63,7 +63,7 @@ func sourceSetup(t *testing.T, fake *engine.Fake) (*Manager, string, string, *[]
 	gitFixture(t, repo, "add", ".")
 	gitFixture(t, repo, "commit", "-q", "-m", "initial")
 	store := workspace.New(workspace.Info{Project: "app", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	m := NewManager(store, fake, root)
 	m.TempDir = t.TempDir()
 	calls := &[][]string{}

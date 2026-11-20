@@ -616,7 +616,7 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot, hash bool) (*Scope, 
 	}
 	// After an apply, only this workspace's snapshot is read again, with the root claim
 	// still held; other contexts and the launch project are not touched.
-	m.Reload = func(ctx context.Context) { c.store.Load(ctx, readOnly{read}, name) }
+	m.Reload = func(ctx context.Context) { c.store.Load(ctx, readOnly{read}, name, environ) }
 	s := &Scope{ContextID: c.ID, hub: h, context: c, id: id, read: read, manager: m}
 	m.Verify = s.verify
 	m.ImportBinding = c.ID

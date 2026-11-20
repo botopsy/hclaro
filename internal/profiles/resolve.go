@@ -5,127 +5,19 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"hclaro/internal/awsvault"
-	"hclaro/internal/engine"
+	"hclaro/internal/tfpolicy"
 )
 
-// VarFile is a resolved variable file reference: the reference stored in the profile, the
-// canonical root-relative path passed to the engine, and display metadata. File contents are
-// never read here.
-type VarFile struct {
-	Ref        string `json:"ref"`
-	Path       string `json:"path"`
-	Size       int64  `json:"size"`
-	ModifiedAt string `json:"modifiedAt"`
-	Linked     bool   `json:"linked"`
-}
-
-// VarFileError explains why a reference cannot be used.
-type VarFileError struct {
-	Code    string `json:"code"`
-	Ref     string `json:"ref"`
-	Message string `json:"message"`
-}
-
-func (e *VarFileError) Error() string { return e.Message }
-
-// ResolveVarFile resolves ref inside root. The reference and its canonical target must both
-// be valid variable file paths inside the canonical root, so a symbolic link cannot point
-// outside the root, into a hidden folder or at a non-variable file.
-func ResolveVarFile(root, ref string) (VarFile, error) {
-	fail := func(code, message string) (VarFile, error) {
-		return VarFile{}, &VarFileError{code, ref, message}
-	}
-	if !engine.ValidVarFilePath(ref) || AutoLoaded(ref) {
-		return fail("var_file_invalid", ref+" is not a selectable variable file path.")
-	}
-	// The root is compared in canonical form, so a root reached through a link (for example
-	// /var on macOS) does not make every file look outside it.
-	if canonical, err := filepath.EvalSymlinks(root); err == nil {
-		root = canonical
-	} else {
-		return fail("var_file_unreadable", "The project root cannot be resolved.")
-	}
-	full := filepath.Join(root, filepath.FromSlash(ref))
-	link, err := os.Lstat(full)
-	if errors.Is(err, fs.ErrNotExist) {
-		return fail("var_file_missing", ref+" was not found in the project root. Restore it, or remove it from the profile.")
-	}
-	if err != nil {
-		return fail("var_file_unreadable", ref+" cannot be read. Check its permissions.")
-	}
-	resolved, err := filepath.EvalSymlinks(full)
-	if errors.Is(err, fs.ErrNotExist) {
-		return fail("var_file_missing", ref+" is a link to a file that no longer exists. Restore it, or remove it from the profile.")
-	}
-	if err != nil {
-		return fail("var_file_unreadable", ref+" cannot be resolved. Check its permissions.")
-	}
-	rel, err := filepath.Rel(root, resolved)
-	if err != nil || !filepath.IsLocal(rel) {
-		return fail("var_file_outside_root", ref+" resolves outside the project root through a symbolic link, so it was refused.")
-	}
-	rel = filepath.ToSlash(rel)
-	if !engine.ValidVarFilePath(rel) || AutoLoaded(rel) {
-		return fail("var_file_outside_root", ref+" resolves to "+rel+", which is not a selectable variable file (hidden folder, unusual name or automatically loaded file).")
-	}
-	info, err := os.Stat(resolved)
-	if err != nil || !info.Mode().IsRegular() {
-		return fail("var_file_not_regular", ref+" is not a regular file.")
-	}
-	return VarFile{Ref: ref, Path: rel, Size: info.Size(), ModifiedAt: info.ModTime().UTC().Format(time.RFC3339), Linked: link.Mode()&fs.ModeSymlink != 0}, nil
-}
-
-// Candidates lists variable files below root that a profile can approve: .tfvars and
-// .tfvars.json files at most five levels deep, skipping hidden folders, node_modules and
-// files the engine loads automatically. Linked files are listed only when they resolve to
-// a valid file inside the root. The walk is bounded; truncated reports whether it stopped.
-// An unreadable root is an error; unreadable folders below it are skipped.
-func Candidates(root string) (files []VarFile, truncated bool, err error) {
-	files = []VarFile{}
-	visited := 0
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if path == root {
-				return err
-			}
-			return nil
-		}
-		visited++
-		if visited > 20_000 || len(files) >= 500 {
-			truncated = true
-			return filepath.SkipAll
-		}
-		rel, _ := filepath.Rel(root, path)
-		rel = filepath.ToSlash(rel)
-		if d.IsDir() {
-			if path != root && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules" || strings.Count(rel, "/") >= 4) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !engine.ValidVarFilePath(rel) || AutoLoaded(rel) {
-			return nil
-		}
-		if f, err := ResolveVarFile(root, rel); err == nil {
-			files = append(files, f)
-		}
-		return nil
-	})
-	if err != nil {
-		return []VarFile{}, false, err
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Ref < files[j].Ref })
-	return files, truncated, nil
-}
+// VarFile and VarFileError are the shared variable file rules (see tfpolicy).
+type (
+	VarFile      = tfpolicy.VarFile
+	VarFileError = tfpolicy.VarFileError
+)
 
 // EnvStatus says whether an expected environment variable is set. The value is never read
 // into the result.
@@ -173,7 +65,7 @@ const IdentityNotVerified = "not_verified"
 // None is the context of an operation without a profile: the inherited environment.
 func None(projectID string, environ []string) Resolved {
 	r := Resolved{ProjectID: projectID, VarFiles: []VarFile{}, Env: []EnvStatus{}, Identity: IdentityNotVerified, Notices: []string{}, Issues: []Issue{}, VarIssues: []VarFileError{}}
-	if engine.UnsafeArgs(environ) {
+	if tfpolicy.UnsafeArgs(environ) {
 		r.Issues = append(r.Issues, unsafeIssue)
 	}
 	r.Fingerprint = r.fingerprint()
@@ -196,7 +88,7 @@ func Resolve(p Profile, root string, environ []string) Resolved {
 		}
 	}
 	for _, ref := range p.VarFiles {
-		f, err := ResolveVarFile(root, ref)
+		f, err := tfpolicy.ResolveVarFile(root, ref)
 		var vf *VarFileError
 		if errors.As(err, &vf) {
 			r.VarIssues = append(r.VarIssues, *vf)
@@ -326,25 +218,25 @@ func compositionNotices(p Profile, environ []string) []string {
 }
 
 // Compose returns the child environment for r: the inherited environment with TF_WORKSPACE,
-// TF_LOG* and TF_CLI_ARGS* removed (unsafe TF_CLI_ARGS* refuse instead), inherited AWS
+// engine-owned variables and TF_CLI_ARGS* removed (unsafe TF_CLI_ARGS* refuse instead), inherited AWS
 // credential overrides removed when an AWS profile is chosen, and only AWS_PROFILE (aws-cli)
 // or the aws-vault marker (aws-vault, see internal/awsvault), AWS_REGION and
 // AWS_DEFAULT_REGION added. The workspace is set by the engine adapter. Hclaro's own
 // environment is never changed and nothing is persisted.
 func Compose(base []string, r Resolved) ([]string, error) {
-	if engine.UnsafeArgs(base) {
-		return nil, engine.ErrUnsafeArgs
+	if tfpolicy.UnsafeArgs(base) {
+		return nil, tfpolicy.ErrUnsafeArgs
 	}
 	out := make([]string, 0, len(base)+3)
 	for _, item := range base {
 		key, _, _ := strings.Cut(item, "=")
-		upper := strings.ToUpper(key)
+		upper, rule := strings.ToUpper(key), tfpolicy.Controlled(key)
 		switch {
-		case upper == "TF_WORKSPACE", strings.HasPrefix(upper, "TF_CLI_ARGS"), strings.HasPrefix(upper, "TF_LOG"), upper == awsvault.Marker:
+		case rule == tfpolicy.Workspace, rule == tfpolicy.CLIArgs, rule == tfpolicy.EngineOwned, upper == awsvault.Marker:
 			continue
 		case r.AWSProfile != "" && awsCredentialNames[upper]:
 			continue
-		case r.AWSRegion != "" && (upper == "AWS_REGION" || upper == "AWS_DEFAULT_REGION"):
+		case r.AWSRegion != "" && rule == tfpolicy.AWSRegion:
 			continue
 		}
 		out = append(out, item)

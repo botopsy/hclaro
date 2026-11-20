@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"hclaro/internal/tfpolicy"
 )
 
 var (
@@ -153,9 +155,9 @@ func TestSupportMatrix(t *testing.T) {
 	}
 	// The documented ranges are the ones the version check accepts.
 	if !bytes.Contains(doc, []byte("**Terraform 1.5–1.17** and **OpenTofu 1.6–1.13**")) ||
-		!Supported("terraform", "1.5.0") || !Supported("terraform", "1.17.0") || Supported("terraform", "1.18.0") || Supported("terraform", "1.4.0") ||
-		!Supported("tofu", "1.6.0") || !Supported("tofu", "1.13.0") || Supported("tofu", "1.14.0") || Supported("tofu", "1.5.0") {
-		t.Error("documented version ranges differ from engine.Supported")
+		!tfpolicy.Supported("terraform", "1.5.0") || !tfpolicy.Supported("terraform", "1.17.0") || tfpolicy.Supported("terraform", "1.18.0") || tfpolicy.Supported("terraform", "1.4.0") ||
+		!tfpolicy.Supported("tofu", "1.6.0") || !tfpolicy.Supported("tofu", "1.13.0") || tfpolicy.Supported("tofu", "1.14.0") || tfpolicy.Supported("tofu", "1.5.0") {
+		t.Error("documented version ranges differ from tfpolicy.Supported")
 	}
 
 	// The validator refuses PASS rows that are not backed by real, recorded evidence.

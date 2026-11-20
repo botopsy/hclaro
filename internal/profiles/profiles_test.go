@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"hclaro/internal/awsvault"
-	"hclaro/internal/engine"
+	"hclaro/internal/tfpolicy"
 )
 
 const canary = "DO_NOT_LEAK_HCLARO_TEST_SECRET"
@@ -267,7 +267,7 @@ func TestVarFileResolutionIsSymlinkSafe(t *testing.T) {
 		"env/folder.tfvars": "var_file_outside_root",
 		"../x.tfvars":       "var_file_invalid",
 	} {
-		_, err := ResolveVarFile(root, ref)
+		_, err := tfpolicy.ResolveVarFile(root, ref)
 		var vf *VarFileError
 		if !errors.As(err, &vf) || vf.Code != code {
 			t.Errorf("%s: got %v, want %s", ref, err, code)
@@ -278,14 +278,14 @@ func TestVarFileResolutionIsSymlinkSafe(t *testing.T) {
 		}
 	}
 	// The ../.. link resolves into another temp directory: outside the root.
-	if _, err := ResolveVarFile(root, "env/up.tfvars"); err == nil {
+	if _, err := tfpolicy.ResolveVarFile(root, "env/up.tfvars"); err == nil {
 		t.Error("relative escape accepted")
 	}
-	f, err := ResolveVarFile(root, "linked.tfvars")
+	f, err := tfpolicy.ResolveVarFile(root, "linked.tfvars")
 	if err != nil || f.Path != "env/prod.tfvars" || !f.Linked || f.Size == 0 {
 		t.Fatalf("linked inside root: %+v %v", f, err)
 	}
-	files, truncated, err := Candidates(root)
+	files, truncated, err := tfpolicy.VarFiles(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestComposeRefusesInjectedCLIArgs(t *testing.T) {
 		"tf_cli_args_apply=-auto-approve",
 		"Tf_Cli_Args=-lock=false",
 	} {
-		if _, err := Compose([]string{"PATH=/bin", item}, r); !errors.Is(err, engine.ErrUnsafeArgs) {
+		if _, err := Compose([]string{"PATH=/bin", item}, r); !errors.Is(err, tfpolicy.ErrUnsafeArgs) {
 			t.Errorf("%s accepted: %v", item, err)
 		}
 		if issue := Resolve(Profile{ID: NewID(), ProjectID: projectA, Name: "x", Revision: 1}, t.TempDir(), []string{item}).Blocking(); issue == nil || issue.Code != "unsafe_cli_args" {
@@ -489,10 +489,10 @@ func TestCandidatesReportsUnreadableRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
-	if files, _, err := Candidates(root); err == nil {
+	if files, _, err := tfpolicy.VarFiles(root); err == nil {
 		t.Fatalf("unreadable root listed as %v", files)
 	}
-	if _, _, err := Candidates(filepath.Join(t.TempDir(), "gone")); err == nil {
+	if _, _, err := tfpolicy.VarFiles(filepath.Join(t.TempDir(), "gone")); err == nil {
 		t.Fatal("missing root listed as empty")
 	}
 }

@@ -276,7 +276,7 @@ func TestAIResourceAndReload(t *testing.T) {
 
 	// A new snapshot of the workspace makes the package stale.
 	time.Sleep(1100 * time.Millisecond) // CapturedAt has one-second resolution
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	wantError(t, s.do("POST", "/api/v1/ai/packages/"+p.SHA256+"/export", `{}`), 409, "context_changed")
 }
 

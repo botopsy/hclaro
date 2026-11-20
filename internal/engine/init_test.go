@@ -63,14 +63,6 @@ func TestInitArgsAreFixed(t *testing.T) {
 			}
 		}
 	}
-	for _, c := range []struct {
-		name, version string
-		json          bool
-	}{{"terraform", "1.9.0", true}, {"terraform", "1.17.2", true}, {"terraform", "1.8.5", false}, {"tofu", "1.10.0", false}, {"terraform", "1.99.0", false}, {"terraform", "2.0.0", false}} {
-		if InitJSON(c.name, c.version) != c.json {
-			t.Errorf("InitJSON(%s, %s) != %v", c.name, c.version, c.json)
-		}
-	}
 }
 
 func TestInitStreamsPinnedEnvironmentWithoutWorkspace(t *testing.T) {

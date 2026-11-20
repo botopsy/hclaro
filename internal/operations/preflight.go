@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"hclaro/internal/awscli"
-	"hclaro/internal/engine"
 	"hclaro/internal/preflight"
+	"hclaro/internal/tfpolicy"
 )
 
 // preflightBinding ties a passed preflight to the retained artifact. It is opaque to the browser
@@ -117,7 +117,7 @@ func (m *Manager) facts(ctx context.Context, p *Plan, identity awscli.Identity) 
 		ExecutionMode:    snap.Info.ExecutionMode,
 		CanApply:         snap.Info.Capabilities.CanApply,
 		ApplyReason:      snap.Info.Capabilities.ApplyReason,
-		EngineSupported:  engine.Supported(snap.Info.Engine, snap.Info.Version),
+		EngineSupported:  tfpolicy.Supported(snap.Info.Engine, snap.Info.Version),
 		Running:          m.running != nil,
 		Loading:          snap.Status == "loading",
 		Closed:           m.closed,

@@ -290,7 +290,7 @@ func TestDriftWorkspaceIsolationAndInvalidation(t *testing.T) {
 
 	// The project is read again in another workspace.
 	fake.SetWorkspace("other")
-	m.store.Load(context.Background(), fake, "terraform")
+	m.store.Load(context.Background(), fake, "terraform", nil)
 	other, _ := m.DriftScan(view.ID)
 	if other.Current || len(other.Resources) != 0 || !strings.Contains(other.StaleReason, "workspace demo") {
 		t.Fatalf("%+v", other)

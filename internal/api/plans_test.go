@@ -39,7 +39,7 @@ func newPlanServer(t *testing.T, fake *engine.Fake) *planServer {
 	t.Helper()
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, t.TempDir())
 	manager.TempDir = t.TempDir()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
@@ -324,7 +324,7 @@ func TestCancelOverHTTP(t *testing.T) {
 func TestPlanningUnavailable(t *testing.T) {
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "cloud", ExecutionMode: "remote-exec"})
 	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	s := &planServer{t, Handler(store, operations.NewManager(store, fake, t.TempDir()), nil, fstest.MapFS{}, host, session, csrf, "test"), fake, nil}
 	options := decode[map[string]any](t, s.do("GET", "/api/v1/plans/options", ""))
 	if options["canPlan"] != false || !strings.Contains(options["reason"].(string), "Remote execution") {

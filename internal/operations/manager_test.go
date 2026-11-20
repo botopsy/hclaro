@@ -10,12 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/tfpolicy"
 	"hclaro/internal/workspace"
 )
 
@@ -38,7 +40,7 @@ func setup(t *testing.T, fake *engine.Fake, info workspace.Info) (*Manager, stri
 		info = workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"}
 	}
 	store := workspace.New(info)
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	root := t.TempDir()
 	m := NewManager(store, fake, root)
 	m.TempDir = t.TempDir()
@@ -307,10 +309,11 @@ func TestVarFileSelection(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "prod.tfvars"), filepath.Join(root, "link.tfvars")); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(workspace.VarFiles(root), ","); got != "base.tfvars.json,prod.tfvars" {
+	if got := strings.Join(m.VarFiles(), ","); got != "base.tfvars.json,link.tfvars,prod.tfvars" {
 		t.Fatalf("candidates %s", got)
 	}
-	for _, bad := range [][]string{{"../prod.tfvars"}, {"terraform.tfvars"}, {"link.tfvars"}, {"-flag.tfvars"}, {"prod.tfvars", "prod.tfvars"}, {"a", "b", "c", "d", "e", "f", "g", "h", "i"}} {
+	// A link inside the root is the file it resolves to, so selecting both is a duplicate.
+	for _, bad := range [][]string{{"../prod.tfvars"}, {"terraform.tfvars"}, {"link.tfvars", "prod.tfvars"}, {"-flag.tfvars"}, {"prod.tfvars", "prod.tfvars"}, {"a", "b", "c", "d", "e", "f", "g", "h", "i"}} {
 		if _, err := m.StartPlan(bad, nil); !errors.Is(err, ErrVarFiles) {
 			t.Fatalf("%v accepted", bad)
 		}
@@ -336,6 +339,78 @@ func TestVarFileSelection(t *testing.T) {
 	}
 	if p.Fingerprint == m.Fingerprint(snap, p.VarFiles) {
 		t.Fatal("configuration change not reflected in fingerprint")
+	}
+}
+
+// Plan selection offers exactly the files the profile editor lists (tfpolicy.VarFiles, served
+// by GET /api/v1/projects/{id}/var-files): nested folders up to five levels, links that stay
+// inside the root, and nothing hidden, automatically loaded or outside the root. A selected
+// link reaches the engine as the canonical path it resolves to.
+func TestVarFileSelectionMatchesProfileEditor(t *testing.T) {
+	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
+	m, root := setup(t, fake, workspace.Info{})
+	outside := t.TempDir()
+	for _, name := range []string{"env/prod.tfvars", "a/b/c/d/deep.tfvars", "a/b/c/d/e/too-deep.tfvars", ".hidden/x.tfvars", "node_modules/x.tfvars", "terraform.tfvars", "env/terraform.tfvars", "top.tfvars.json"} {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("a = 1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(outside, "x.tfvars"), []byte("a = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]string{"linked.tfvars": filepath.Join(root, "env", "prod.tfvars"), "escape.tfvars": filepath.Join(outside, "x.tfvars"), "hidden-link.tfvars": filepath.Join(root, ".hidden", "x.tfvars")} {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	editor, truncated, err := tfpolicy.VarFiles(root)
+	if err != nil || truncated {
+		t.Fatalf("%v %v", err, truncated)
+	}
+	refs := []string{}
+	for _, f := range editor {
+		refs = append(refs, f.Ref)
+	}
+	want := []string{"a/b/c/d/deep.tfvars", "env/prod.tfvars", "env/terraform.tfvars", "linked.tfvars", "top.tfvars.json"}
+	if !slices.Equal(refs, want) || !slices.Equal(m.VarFiles(), want) {
+		t.Fatalf("editor %v, plan %v, want %v", refs, m.VarFiles(), want)
+	}
+	for _, bad := range []string{"escape.tfvars", "hidden-link.tfvars", ".hidden/x.tfvars", "a/b/c/d/e/too-deep.tfvars", "terraform.tfvars"} {
+		if _, err := m.StartPlan([]string{bad}, nil); !errors.Is(err, ErrVarFiles) {
+			t.Fatalf("%s accepted", bad)
+		}
+	}
+	op, err := m.StartPlan([]string{"linked.tfvars", "a/b/c/d/deep.tfvars"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(t, m, op.ID)
+	if got := fake.Requests()[0].VarFiles; !slices.Equal(got, []string{"env/prod.tfvars", "a/b/c/d/deep.tfvars"}) {
+		t.Fatalf("engine received %v", got)
+	}
+}
+
+// A plan resolves only the files it names; an unreadable root is reported as such, not as an
+// invalid selection.
+func TestVarFileSelectionReportsUnreadableRoot(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions as a non-root user")
+	}
+	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
+	m, root := setup(t, fake, workspace.Info{})
+	if err := os.WriteFile(filepath.Join(root, "prod.tfvars"), []byte("a = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	if _, err := m.StartPlan([]string{"prod.tfvars"}, nil); !errors.Is(err, ErrVarFilesUnreadable) {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -369,9 +444,9 @@ func TestLogIsBounded(t *testing.T) {
 // are the engines' formats (Terraform views/state_locker.go; OpenTofu log.Info with "type").
 func TestTranslateStateLock(t *testing.T) {
 	for input, want := range map[string]string{
-		`{"@level":"info","@message":"Acquiring state lock. This may take a few moments...","@module":"terraform.ui","@timestamp":"2026-11-15T10:46:39Z","type":"state_lock_acquire"}`: "Acquiring state lock. This may take a few moments...",
-		`{"@level":"info","@message":"Releasing state lock. This may take a few moments...","@module":"terraform.ui","@timestamp":"2026-11-15T10:46:39Z","type":"state_lock_release"}`: "Releasing state lock. This may take a few moments...",
-		`{"@level":"info","@message":"Acquiring state lock. This may take a few moments...","@module":"tofu.ui","@timestamp":"2026-11-15T10:46:39.1+00:00","type":"state_lock_acquire"}`:   "Acquiring state lock. This may take a few moments...",
+		`{"@level":"info","@message":"Acquiring state lock. This may take a few moments...","@module":"terraform.ui","@timestamp":"2026-11-15T10:46:39Z","type":"state_lock_acquire"}`:   "Acquiring state lock. This may take a few moments...",
+		`{"@level":"info","@message":"Releasing state lock. This may take a few moments...","@module":"terraform.ui","@timestamp":"2026-11-15T10:46:39Z","type":"state_lock_release"}`:   "Releasing state lock. This may take a few moments...",
+		`{"@level":"info","@message":"Acquiring state lock. This may take a few moments...","@module":"tofu.ui","@timestamp":"2026-11-15T10:46:39.1+00:00","type":"state_lock_acquire"}`: "Acquiring state lock. This may take a few moments...",
 	} {
 		for _, kind := range []string{"plan", "apply"} {
 			if level, text, _, ok := translate([]byte(input), kind, "Terraform", nil); !ok || text != want || level != "info" {

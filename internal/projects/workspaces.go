@@ -15,6 +15,7 @@ import (
 
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
+	"hclaro/internal/tfpolicy"
 	"hclaro/internal/workspace"
 )
 
@@ -241,8 +242,8 @@ func (h *Hub) ReviewWorkspaceWith(ctx context.Context, id string, action engine.
 		return refuse("delete_unsupported", r.Support.DeleteReason)
 	case !engine.ValidArgWorkspace(target):
 		return refuse("unsafe_name", "This name starts with a dash, so it could be read as a command flag. Manage it with the CLI.")
-	case engine.UnsafeArgs(inherited, "workspace list", "workspace "+string(action), "show"):
-		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS, TF_CLI_ARGS_show or a TF_CLI_ARGS_workspace* setting adds flags other than -no-color, which would change the reviewed command. "+engine.UnsafeArgsHelp(inherited, "workspace list", "workspace "+string(action), "show"))
+	case tfpolicy.UnsafeArgs(inherited, "workspace list", "workspace "+string(action), "show"):
+		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS, TF_CLI_ARGS_show or a TF_CLI_ARGS_workspace* setting adds flags other than -no-color, which would change the reviewed command. "+tfpolicy.UnsafeArgsHelp(inherited, "workspace list", "workspace "+string(action), "show"))
 	}
 	name, executable, manager, err := h.WorkspaceManagers(p.RootPath, preference, environ)
 	if err != nil {

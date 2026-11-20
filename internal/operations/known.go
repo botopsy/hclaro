@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"hclaro/internal/state"
+	"hclaro/internal/tfpolicy"
 )
 
 const (
@@ -70,7 +71,7 @@ func collectKnown(root string, selected []string, environ []string) *known {
 	} else {
 		for _, e := range entries {
 			n := e.Name()
-			if n == "terraform.tfvars" || n == "terraform.tfvars.json" || strings.HasSuffix(n, ".auto.tfvars") || strings.HasSuffix(n, ".auto.tfvars.json") {
+			if tfpolicy.AutoLoaded(n) {
 				names = append(names, n)
 			}
 		}

@@ -756,7 +756,7 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 		if adapter != nil {
 			read = readOnly{adapter}
 		}
-		c.store.Load(ctx, read, name)
+		c.store.Load(ctx, read, name, readEnviron)
 	}()
 	return c, false, nil
 }

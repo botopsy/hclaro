@@ -51,7 +51,7 @@ func lockedManager(t *testing.T, locked int) (*Manager, *engine.Fake) {
 	t.Helper()
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog), LockedReads: 1 + locked}
 	m, _ := setup(t, fake, workspace.Info{})
-	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform") }
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform", nil) }
 	info := m.store.Get().Info
 	m.Reinspect = func() workspace.Info { return info }
 	if !m.store.Get().Locked() {
@@ -65,7 +65,7 @@ func TestLockedReloadAfterApplyIsReadAgain(t *testing.T) {
 	shortRetries(t, 10, 20*time.Millisecond)
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, _ := setup(t, fake, workspace.Info{})
-	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform") }
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform", nil) }
 	id := planned(t, m)
 	fake.SetLockedReads(3) // the post-apply read and two re-reads
 	done := wait(t, m, approveAndApply(t, m, id).ID)
@@ -176,7 +176,7 @@ func TestUnlockedFailureIsNotRetried(t *testing.T) {
 	shortRetries(t, 3, 5*time.Millisecond)
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
-	m.Reload = func(ctx context.Context) { m.store.Load(ctx, nil, "terraform") }
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, nil, "terraform", nil) }
 	m.Reload(context.Background())
 	before := shows(fake)
 	m.RetryLockedRead()

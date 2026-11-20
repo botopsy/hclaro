@@ -37,7 +37,7 @@ func newHistoryServer(t *testing.T, config string) *historyServer {
 	t.Setenv("TF_DATA_DIR", "")
 	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
 	ws := workspace.New(workspace.Info{Project: "demo", Engine: "terraform", Version: "1.9.8", Workspace: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	ws.Load(context.Background(), fake, "terraform")
+	ws.Load(context.Background(), fake, "terraform", nil)
 	root := t.TempDir()
 	hub := projects.NewHub(projects.Open(config, time.Now()), root)
 	t.Cleanup(hub.Close)
