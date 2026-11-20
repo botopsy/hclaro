@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"hclaro/internal/tfpolicy"
 )
 
 // planHelper is the fake engine for plan tests, entered from TestHelperProcess. It verifies
@@ -183,7 +185,9 @@ func TestApplyCancelGetsItsOwnGracePeriodAndOneInterrupt(t *testing.T) {
 	if err := os.WriteFile(path, []byte("plan"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, ApplyRequest{Path: path}, line) })
+	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error {
+		return c.Apply(ctx, ApplyRequest{Path: path}, line)
+	})
 	if !errors.Is(err, ErrCancelled) {
 		t.Fatal(err)
 	}
@@ -198,7 +202,9 @@ func TestApplyThatFinishesAfterCancelIsNotReportedCancelled(t *testing.T) {
 	if err := os.WriteFile(path, []byte("plan"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error { return c.Apply(ctx, ApplyRequest{Path: path}, line) })
+	err, interrupts := cancelSlowStop(t, path, func(ctx context.Context, line func([]byte)) error {
+		return c.Apply(ctx, ApplyRequest{Path: path}, line)
+	})
 	if err != nil || interrupts != "1" {
 		t.Fatalf("%v %q", err, interrupts)
 	}
@@ -325,7 +331,7 @@ func TestApplyPassesOnlySavedPlan(t *testing.T) {
 		t.Fatal("injected apply flag accepted")
 	}
 	t.Setenv("TF_CLI_ARGS_apply", "")
-	for _, bad := range []ApplyRequest{{Path: path, Parallelism: -1}, {Path: path, Parallelism: MaxParallelism + 1}, {Path: path, LockTimeoutSeconds: MaxLockTimeoutSeconds + 1}} {
+	for _, bad := range []ApplyRequest{{Path: path, Parallelism: -1}, {Path: path, Parallelism: tfpolicy.MaxParallelism + 1}, {Path: path, LockTimeoutSeconds: tfpolicy.MaxLockTimeoutSeconds + 1}} {
 		if err := c.Apply(context.Background(), bad, func([]byte) {}); err == nil {
 			t.Fatalf("invalid options accepted: %+v", bad)
 		}
@@ -417,14 +423,6 @@ func TestPlanRefreshOnlyArguments(t *testing.T) {
 	if written, _ := os.ReadFile(out); string(written) != "-refresh-only" {
 		t.Fatalf("argv %q", written)
 	}
-	for _, v := range []struct {
-		name, version string
-		want          bool
-	}{{"terraform", "1.5.0", true}, {"terraform", "1.17.2", true}, {"tofu", "1.6.0", true}, {"tofu", "1.13.0", true}, {"terraform", "1.4.6", false}, {"tofu", "1.5.0", false}, {"terraform", "1.9.0-beta1", false}, {"terraform", "", false}} {
-		if got := RefreshOnlySupport(v.name, v.version); got != v.want {
-			t.Errorf("%s %s: %v", v.name, v.version, got)
-		}
-	}
 }
 
 func TestPlanRejectsUnsafeInputs(t *testing.T) {
@@ -482,13 +480,13 @@ func TestClassify(t *testing.T) {
 		"Error: Invalid reference":                            "",
 		// A release error comes after the engine ran; it also prints Lock Info.
 		"Error releasing the state lock\n\nLock Info:\n  ID: x": "state_unlock_failed",
-		"Error: Failed to unlock state: ConditionalCheckFailed":  "state_unlock_failed",
-		"Error locking state: Error acquiring the state lock":    "state_locked",
+		"Error: Failed to unlock state: ConditionalCheckFailed": "state_unlock_failed",
+		"Error locking state: Error acquiring the state lock":   "state_locked",
 		// Normal progress output is not a lock failure.
 		"Acquiring state lock. This may take a few moments...": "",
 		// "association" contains "sso"; only the word counts.
 		"Error: creating aws_route_table_association.a: InvalidRouteTableID.NotFound": "",
-		"Error: reading aws_ssoadmin_permission_set: not found":                      "",
+		"Error: reading aws_ssoadmin_permission_set: not found":                       "",
 		"Error: SSO token is invalid":                                                 "credentials",
 	} {
 		if got := Classify(text); got != want {

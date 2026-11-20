@@ -27,7 +27,7 @@ func importSetup(t *testing.T, fake *engine.Fake, files map[string]string) (*Man
 	t.Helper()
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestImportRefusesAnRDSInstanceManagedUnderAWSv5(t *testing.T) {
 	fake := &engine.Fake{}
 	m, _ := importSetup(t, fake, map[string]string{"main.tf": `resource "aws_db_instance" "copy" {}` + "\n"})
 	fake.StateJSON = []byte(`{"format_version": "1.0", "values": {"root_module": {"resources": [{"address": "aws_db_instance.orders", "mode": "managed", "type": "aws_db_instance", "name": "orders", "provider_name": "registry.terraform.io/hashicorp/aws", "values": {"id": "db-ABCDEFGHIJKLMNOPQRSTUVWXYZ", "identifier": "orders"}, "sensitive_values": {}}]}}}`)
-	m.store.Load(context.Background(), fake, "terraform")
+	m.store.Load(context.Background(), fake, "terraform", nil)
 	req := imports.Request{Address: "aws_db_instance.copy", ID: "orders", File: "imports.tf"}
 	p := m.PreviewImport(req)
 	if !p.Blocked || len(p.Issues) != 1 || p.Issues[0].Code != "id_in_state" || !strings.Contains(p.Issues[0].Message, "aws_db_instance.orders") {
@@ -220,7 +220,7 @@ func TestImportUnavailableWithoutLocalPlanning(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"})
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	caps := store.Get().Info.Capabilities
 	if caps.CanImport || !caps.SupportsImportBlocks || caps.ImportReason == "" {
 		t.Fatalf("%+v", caps)

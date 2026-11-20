@@ -562,7 +562,7 @@ func TestRealLaunchHub(t *testing.T) {
 			if _, list := cliWorkspaces(s, dirs, env, name, project); !slices.Contains(list, "w2") {
 				s.Fatalf("workspace w2 is gone")
 			}
-			// Plan and apply refusals name the variable (engine.UnsafeArgsHelp); so must this one.
+			// Plan and apply refusals name the variable (tfpolicy.UnsafeArgsHelp); so must this one.
 			if !strings.Contains(rv.Reason, "TF_CLI_ARGS_workspace_delete") && !strings.Contains(string(r.Body), "TF_CLI_ARGS_workspace_delete") {
 				s.Fatalf("refused, but the refusal does not name TF_CLI_ARGS_workspace_delete (M27.03 defect D-2): %q", rv.Reason)
 			}

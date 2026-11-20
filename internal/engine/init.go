@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +21,7 @@ type Initer interface {
 	Init(ctx context.Context, request InitRequest, line func(stream string, b []byte)) error
 }
 
-// InitRequest selects the output format. JSON is used only where InitJSON reports support.
+// InitRequest selects the output format. JSON is used only where tfpolicy.Supports reports InitJSON.
 type InitRequest struct {
 	JSON bool
 }
@@ -33,18 +32,6 @@ func InitArgs(json bool) []string {
 		return []string{"init", "-input=false", "-json"}
 	}
 	return []string{"init", "-input=false", "-no-color"}
-}
-
-// InitJSON reports whether machine-readable init output is used. Terraform added
-// `init -json` in 1.9; OpenTofu is kept on human output because its support has not been
-// verified here.
-func InitJSON(name, version string) bool {
-	m := versionPattern.FindStringSubmatch(version)
-	if m == nil || !Supported(name, version) {
-		return false
-	}
-	minor, _ := strconv.Atoi(m[1])
-	return name == "terraform" && minor >= 9
 }
 
 // initLimit bounds one init; provider downloads can be slow, prompts never happen.

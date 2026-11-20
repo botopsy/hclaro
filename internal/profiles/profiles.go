@@ -23,9 +23,9 @@ import (
 	"time"
 	"unicode"
 
-	"hclaro/internal/engine"
 	"hclaro/internal/safefile"
 	"hclaro/internal/state"
+	"hclaro/internal/tfpolicy"
 )
 
 // SchemaVersion is the profile file format written by this build. Schema 2 added the AWS
@@ -555,23 +555,8 @@ func NewID() string {
 	return hex.EncodeToString(b)
 }
 
-// AutoLoaded reports variable files the engines load on their own from the root module.
-func AutoLoaded(path string) bool {
-	if strings.Contains(path, "/") {
-		return false
-	}
-	return path == "terraform.tfvars" || path == "terraform.tfvars.json" || strings.HasSuffix(path, ".auto.tfvars") || strings.HasSuffix(path, ".auto.tfvars.json")
-}
-
 // controlled names are set or neutralized by Hclaro itself, so a profile cannot list them.
-func controlled(name string) bool {
-	upper := strings.ToUpper(name)
-	switch upper {
-	case "TF_WORKSPACE", "TF_IN_AUTOMATION", "CHECKPOINT_DISABLE", "TF_DATA_DIR", "AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION":
-		return true
-	}
-	return strings.HasPrefix(upper, "TF_CLI_ARGS") || strings.HasPrefix(upper, "TF_LOG")
-}
+func controlled(name string) bool { return tfpolicy.Controlled(name) != tfpolicy.Passed }
 
 // check validates every field. Values that look like credentials are refused everywhere,
 // because profile fields are displayed and stored in plain text.
@@ -591,7 +576,7 @@ func check(in Input) error {
 	if in.Engine != "" && in.Engine != "terraform" && in.Engine != "tofu" {
 		return invalid("engine", "The engine must be Terraform, OpenTofu or the project's choice.")
 	}
-	if in.Workspace != "" && !engine.ValidWorkspace(in.Workspace) {
+	if in.Workspace != "" && !tfpolicy.ValidWorkspace(in.Workspace) {
 		return invalid("workspace", "Workspace names use letters, digits, - and _ (at most 90 characters).")
 	}
 	if len(in.VarFiles) > MaxVarFiles {
@@ -600,9 +585,9 @@ func check(in Input) error {
 	seen := map[string]bool{}
 	for _, ref := range in.VarFiles {
 		switch {
-		case !engine.ValidVarFilePath(ref) || state.Suspicious(ref):
-			return invalid("varFiles", "Variable files must be .tfvars or .tfvars.json paths inside the project root, without hidden folders.")
-		case AutoLoaded(ref):
+		case !tfpolicy.ValidVarFilePath(ref) || state.Suspicious(ref):
+			return invalid("varFiles", "Variable files must be .tfvars or .tfvars.json paths inside the project root, outside hidden folders and node_modules.")
+		case tfpolicy.AutoLoaded(ref):
 			return invalid("varFiles", ref+" is loaded automatically by the engine; it does not need to be approved.")
 		case seen[ref]:
 			return invalid("varFiles", ref+" is listed twice.")
@@ -610,10 +595,10 @@ func check(in Input) error {
 		seen[ref] = true
 	}
 	o := in.Options
-	if o.Parallelism < 0 || o.Parallelism > engine.MaxParallelism {
-		return invalid("parallelism", fmt.Sprintf("Parallelism must be between 1 and %d, or empty for the engine default.", engine.MaxParallelism))
+	if o.Parallelism < 0 || o.Parallelism > tfpolicy.MaxParallelism {
+		return invalid("parallelism", fmt.Sprintf("Parallelism must be between 1 and %d, or empty for the engine default.", tfpolicy.MaxParallelism))
 	}
-	if o.LockTimeoutSeconds < 0 || o.LockTimeoutSeconds > engine.MaxLockTimeoutSeconds {
+	if o.LockTimeoutSeconds < 0 || o.LockTimeoutSeconds > tfpolicy.MaxLockTimeoutSeconds {
 		return invalid("lockTimeoutSeconds", "The state lock timeout must be between 1 and 3600 seconds, or empty for the engine default.")
 	}
 	if in.AWSProfile != "" && (!awsProfileName.MatchString(in.AWSProfile) || state.LooksSecret(in.AWSProfile)) {

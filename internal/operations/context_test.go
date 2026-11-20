@@ -190,9 +190,11 @@ func TestProfilePlanRefusesUnreviewedOrMismatchedContext(t *testing.T) {
 	writeFile(t, root, "env/prod.tfvars", "x = 1")
 	vars, _ := store.Create(testProject, profiles.Input{Name: "vars", VarFiles: []string{"env/prod.tfvars"}})
 	fp = reviewedFingerprint(t, m, vars.ID)
-	writeFile(t, root, "env/other.tfvars", "x = 2")
-	if _, err := m.StartPlanWith(PlanStart{VarFiles: []string{"env/other.tfvars"}, ProfileID: vars.ID, ContextFingerprint: fp}); err != ErrVarFiles {
-		t.Errorf("unapproved nested file: %v", err)
+	// Beside the profile's files a plan may add only files from the shared list (tfpolicy.VarFiles),
+	// which never offers a hidden folder.
+	writeFile(t, root, ".private/other.tfvars", "x = 2")
+	if _, err := m.StartPlanWith(PlanStart{VarFiles: []string{".private/other.tfvars"}, ProfileID: vars.ID, ContextFingerprint: fp}); err != ErrVarFiles {
+		t.Errorf("unlisted file: %v", err)
 	}
 	if err := os.Remove(filepath.Join(root, "env", "prod.tfvars")); err != nil {
 		t.Fatal(err)

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"hclaro/internal/tfpolicy"
 )
 
 // Planner is the engine surface that can run a plan. It has no apply method.
@@ -59,33 +61,6 @@ type PlanRequest struct {
 	RefreshOnly        bool
 }
 
-// Bounds for the profile-selectable plan options.
-const (
-	MaxParallelism        = 256
-	MaxLockTimeoutSeconds = 3600
-)
-
-var varFileSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-
-// ValidVarFilePath accepts a variable file reference relative to the project root:
-// slash-separated, at most five segments, no hidden or dot segments, no leading dash, and a
-// .tfvars or .tfvars.json name. It never accepts an absolute path or a flag.
-func ValidVarFilePath(path string) bool {
-	if path == "" || len(path) > 512 || strings.Contains(path, `\`) {
-		return false
-	}
-	parts := strings.Split(path, "/")
-	if len(parts) > 5 {
-		return false
-	}
-	for _, part := range parts {
-		if !varFileSegment.MatchString(part) {
-			return false
-		}
-	}
-	return strings.HasSuffix(path, ".tfvars") || strings.HasSuffix(path, ".tfvars.json")
-}
-
 // ExitError reports a failed engine command without its output. Hint is a classification
 // derived from stderr keywords; the stderr text itself is never returned.
 type ExitError struct {
@@ -125,7 +100,7 @@ func planArgs(request PlanRequest) ([]string, error) {
 		args = append(args, "-refresh-only")
 	}
 	for _, name := range request.VarFiles {
-		if !ValidVarFilePath(name) {
+		if !tfpolicy.ValidVarFilePath(name) {
 			return nil, errors.New("invalid variable file name")
 		}
 		args = append(args, "-var-file="+name)
@@ -173,13 +148,13 @@ func validAddress(address string) bool {
 // optionArgs appends the profile-selectable engine options shared by plan and apply.
 func optionArgs(args []string, parallelism, lockTimeout int) ([]string, error) {
 	if n := parallelism; n != 0 {
-		if n < 1 || n > MaxParallelism {
+		if n < 1 || n > tfpolicy.MaxParallelism {
 			return nil, errors.New("invalid parallelism")
 		}
 		args = append(args, "-parallelism="+strconv.Itoa(n))
 	}
 	if n := lockTimeout; n != 0 {
-		if n < 1 || n > MaxLockTimeoutSeconds {
+		if n < 1 || n > tfpolicy.MaxLockTimeoutSeconds {
 			return nil, errors.New("invalid lock timeout")
 		}
 		args = append(args, "-lock-timeout="+strconv.Itoa(n)+"s")

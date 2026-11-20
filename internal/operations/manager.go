@@ -29,6 +29,7 @@ import (
 	"hclaro/internal/preflight"
 	"hclaro/internal/redact"
 	"hclaro/internal/rootlock"
+	"hclaro/internal/tfpolicy"
 	"hclaro/internal/workspace"
 )
 
@@ -47,10 +48,12 @@ var (
 	// the state lock. Nothing runs on unread state.
 	ErrStateLocked = errors.New("another process holds the state lock")
 	ErrVarFiles    = errors.New("invalid variable file selection")
-	ErrReplace     = errors.New("invalid replace selection")
-	ErrNotFound    = errors.New("operation not found")
-	ErrNotRunning  = errors.New("operation is not running")
-	ErrClosed      = errors.New("hclaro is shutting down")
+	// ErrVarFilesUnreadable: the project root or a chosen variable file could not be read.
+	ErrVarFilesUnreadable = errors.New("variable files could not be read")
+	ErrReplace            = errors.New("invalid replace selection")
+	ErrNotFound           = errors.New("operation not found")
+	ErrNotRunning         = errors.New("operation is not running")
+	ErrClosed             = errors.New("hclaro is shutting down")
 )
 
 type Diagnostic struct {
@@ -342,21 +345,32 @@ func (m *Manager) StartPlanWith(req PlanStart) (Operation, error) {
 // maxVarFiles bounds one plan's variable file selection.
 const maxVarFiles = 16
 
-// selectVarFiles validates a variable file selection against the files in the root and,
-// with a profile, the profile's approved files. A profile reference becomes the canonical
-// root-relative path it resolved to, which is what the engine receives.
+// selectVarFiles validates a variable file selection: a profile's approved file, or a file
+// tfpolicy.ResolveVarFile accepts in the root (the rule tfpolicy.VarFiles lists by). Each
+// reference becomes the canonical root-relative path it resolves to, which is what the engine
+// receives. Only the requested references are resolved; the root is never walked here.
 func (m *Manager) selectVarFiles(varFiles []string, c *ExecutionContext) ([]string, error) {
-	allowed := workspace.VarFiles(m.root)
 	if len(varFiles) > maxVarFiles {
 		return nil, ErrVarFiles
 	}
 	selected := []string{}
 	for _, name := range varFiles {
 		path := name
-		if c != nil && c.approved[name] != "" {
+		switch {
+		case c != nil && c.approved[name] != "":
 			path = c.approved[name]
-		} else if !slices.Contains(allowed, name) {
+		case m.root == "":
 			return nil, ErrVarFiles
+		default:
+			f, err := tfpolicy.ResolveVarFile(m.root, name)
+			var vf *tfpolicy.VarFileError
+			if errors.As(err, &vf) && vf.Code == "var_file_unreadable" {
+				return nil, ErrVarFilesUnreadable
+			}
+			if err != nil {
+				return nil, ErrVarFiles
+			}
+			path = f.Path
 		}
 		if slices.Contains(selected, path) {
 			return nil, ErrVarFiles
@@ -614,7 +628,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 			message = fmt.Sprintf("The active workspace changed since Hclaro started (was %q). Restart Hclaro to review the current workspace.", snap.Info.Workspace)
 		}
 		if code == "unsafe_cli_args" {
-			message += " " + engine.UnsafeArgsHelp(environOr(e.environ), "plan", "workspace show", "show")
+			message += " " + tfpolicy.UnsafeArgsHelp(environOr(e.environ), "plan", "workspace show", "show")
 		}
 		if code == "credentials" {
 			message += credentialHint(e)
@@ -860,8 +874,20 @@ func sha256File(path string) (string, error) {
 // Root is the launch project root ("" without a launch project).
 func (m *Manager) Root() string { return m.root }
 
-// VarFiles lists the variable files a plan request may select.
-func (m *Manager) VarFiles() []string { return workspace.VarFiles(m.root) }
+// VarFiles lists the variable files a plan request may select: the same list a profile can
+// approve from (tfpolicy.VarFiles). Empty without a launch project or when the root cannot be
+// read; a request for a file is still checked on its own (selectVarFiles).
+func (m *Manager) VarFiles() []string {
+	refs := []string{}
+	if m.root == "" {
+		return refs
+	}
+	files, _, _ := tfpolicy.VarFiles(m.root)
+	for _, f := range files {
+		refs = append(refs, f.Ref)
+	}
+	return refs
+}
 
 // Cancel requests cancellation of a running operation.
 func (m *Manager) Cancel(id string) (Operation, error) {

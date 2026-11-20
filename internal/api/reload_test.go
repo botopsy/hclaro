@@ -18,14 +18,14 @@ import (
 func TestLaunchReloadReinspectsAndRereads(t *testing.T) {
 	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store := workspace.New(workspace.Info{Project: "demo", Backend: "unknown", ExecutionMode: "unsupported"})
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, t.TempDir())
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
 	s := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}
 	if w := s.do("POST", "/api/v1/workspace/reload", `{}`); w.Code != 409 || !strings.Contains(w.Body.String(), "reload_unavailable") {
 		t.Fatalf("without a launch reload: %d %s", w.Code, w.Body)
 	}
-	manager.Reload = func(ctx context.Context) { store.Load(ctx, fake, "terraform") }
+	manager.Reload = func(ctx context.Context) { store.Load(ctx, fake, "terraform", nil) }
 	manager.Reinspect = func() workspace.Info {
 		return workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"}
 	}

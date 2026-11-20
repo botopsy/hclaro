@@ -179,6 +179,8 @@ func mapOpError(w http.ResponseWriter, r *http.Request, hub *projects.Hub, holde
 		reasonJSON(w, 409, "workspace_loading", "Hclaro is still reading this workspace. Try again when it is loaded.")
 	case errors.Is(err, operations.ErrStateLocked):
 		reasonJSON(w, 409, projects.CodeStateLocked, "Another process holds the state lock, so the state could not be read and nothing ran. Hclaro never unlocks state. It reads the state again for about two minutes; after that, read the workspace again once the other process has finished.")
+	case errors.Is(err, operations.ErrVarFilesUnreadable):
+		reasonJSON(w, 409, "var_files_unreadable", "The project folder or a chosen variable file could not be read. Check its permissions, then try again.")
 	case errors.Is(err, operations.ErrVarFiles):
 		reasonJSON(w, 400, "invalid_var_files", "Choose variable files from the options of this workspace.")
 	case errors.Is(err, operations.ErrClosed):

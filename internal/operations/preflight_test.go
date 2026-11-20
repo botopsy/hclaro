@@ -255,7 +255,7 @@ func TestPreflightBlocksUnsupportedBackendAndEngine(t *testing.T) {
 			id := planned(t, m)
 			fake.VersionValue = tc.version
 			m.Reinspect = func() workspace.Info { return tc.info }
-			m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform") }
+			m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform", nil) }
 			if err := m.Reread(); err != nil {
 				t.Fatal(err)
 			}

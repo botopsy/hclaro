@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"hclaro/internal/engine"
 	"hclaro/internal/state"
+	"hclaro/internal/tfpolicy"
 )
 
 type Capabilities struct {
@@ -198,19 +200,27 @@ func Inspect(root string) Info {
 	if info.Backend == "unknown" {
 		info.Warnings = append(info.Warnings, "Backend type is unavailable from initialized metadata; execution mode is unverified.")
 	}
-	for _, item := range os.Environ() {
-		key, _, _ := strings.Cut(item, "=")
-		if strings.HasPrefix(key, "TF_CLI_ARGS") {
-			info.Warnings = append(info.Warnings, "Inherited TF_CLI_ARGS settings affect engine reads. Values are hidden.")
-			break
-		}
-	}
 	return info
 }
 
-func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName string) {
+// cliArgsWarning is the Info warning shown while the read environment has TF_CLI_ARGS*.
+const cliArgsWarning = "Inherited TF_CLI_ARGS settings affect engine reads. Values are hidden."
+
+// Load reads the workspace through adapter. environ is the environment the adapter's children
+// start from (nil: Hclaro's own); it decides the TF_CLI_ARGS warning.
+func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName string, environ []string) {
 	snap := s.Get()
 	snap.Info.Engine = engineName
+	if environ == nil {
+		environ = os.Environ()
+	}
+	snap.Info.Warnings = slices.DeleteFunc(slices.Clone(snap.Info.Warnings), func(w string) bool { return w == cliArgsWarning })
+	if slices.ContainsFunc(environ, func(item string) bool {
+		key, _, _ := strings.Cut(item, "=")
+		return tfpolicy.Controlled(key) == tfpolicy.CLIArgs
+	}) {
+		snap.Info.Warnings = append(snap.Info.Warnings, cliArgsWarning)
+	}
 	snap.Status = "loading"
 	snap.Diagnostic = nil
 	snap.CapturedAt = ""
@@ -305,7 +315,8 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 		snap.Info.Capabilities.CanApply = true
 	}
 	caps := &snap.Info.Capabilities
-	caps.SupportsImportBlocks, caps.SupportsGeneratedConfig = engine.ImportSupport(engineName, version)
+	caps.SupportsImportBlocks = tfpolicy.Supports(engineName, version, tfpolicy.ImportBlocks)
+	caps.SupportsGeneratedConfig = caps.SupportsImportBlocks
 	switch {
 	case !caps.SupportsImportBlocks:
 		caps.ImportReason = "This engine version does not support import blocks. Use the manual recipe."

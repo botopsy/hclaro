@@ -98,7 +98,7 @@ func TestApplyAppliesReviewedArtifactOnceAndReloads(t *testing.T) {
 func TestApplyReportsAFailedStateReload(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, _ := setup(t, fake, workspace.Info{})
-	m.Reload = func(ctx context.Context) { m.store.Load(ctx, nil, "terraform") }
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, nil, "terraform", nil) }
 	id := planned(t, m)
 	done := wait(t, m, approveAndApply(t, m, id).ID)
 	if done.Status != Succeeded || done.Outcome != "applied" || done.StateReloaded || !done.StateReloadFailed {
@@ -125,7 +125,7 @@ func TestApplyReloadWithoutRecordedStateIsNotAFailure(t *testing.T) {
 	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, _ := setup(t, fake, workspace.Info{})
 	absent := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: []byte(`{"format_version":"1.0"}`)}
-	m.Reload = func(ctx context.Context) { m.store.Load(ctx, absent, "terraform") }
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, absent, "terraform", nil) }
 	id := planned(t, m)
 	done := wait(t, m, approveAndApply(t, m, id).ID)
 	if m.store.Get().Diagnostic == nil || m.store.Get().Diagnostic.Code != "state_absent" {
@@ -418,7 +418,7 @@ func TestReplacePlanRequest(t *testing.T) {
 func TestRemoteExecutionNeverRetainsArtifact(t *testing.T) {
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "cloud", ExecutionMode: "remote-exec"})
 	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	caps := store.Get().Info.Capabilities
 	if caps.CanApply || !strings.Contains(caps.ApplyReason, "Remote execution") {
 		t.Fatalf("%+v", caps)

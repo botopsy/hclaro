@@ -10,6 +10,7 @@ import (
 
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
+	"hclaro/internal/tfpolicy"
 )
 
 // ToolsFactory resolves the engine for a project utility with a pinned environment. selected
@@ -171,7 +172,7 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 		return refuse("shared_data_dir", "TF_DATA_DIR is an absolute path, so every project would share one data directory. Restart Hclaro without it, or with a relative TF_DATA_DIR.")
 	}
 	environ := os.Environ()
-	if engine.UnsafeArgs(environ, engine.ToolArgs(tool, true, false)[0], "version") {
+	if tfpolicy.UnsafeArgs(environ, engine.ToolArgs(tool, true, false)[0], "version") {
 		return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS or a command-specific TF_CLI_ARGS_* setting adds flags other than -no-color, which would change this command. Restart Hclaro without them.")
 	}
 	preference := p.EnginePreference

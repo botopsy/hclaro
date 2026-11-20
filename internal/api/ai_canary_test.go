@@ -139,7 +139,7 @@ resource "aws_s3_bucket" "legacy_logs" {}
 
 	fake := &engine.Fake{Lines: lines(fixtures.PlanLog), PlanJSON: fixtures.PlanAllActions, VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: canaryState(t), Root: root}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, root)
 	manager.TempDir = t.TempDir()
 	histDir := t.TempDir()

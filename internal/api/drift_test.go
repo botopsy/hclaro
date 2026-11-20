@@ -51,7 +51,7 @@ func newDriftServer(t *testing.T, fake *engine.Fake) (*planServer, *workspace.St
 	t.Helper()
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, t.TempDir())
 	manager.TempDir = t.TempDir()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
@@ -137,7 +137,7 @@ func TestDriftScanAPI(t *testing.T) {
 	}
 	// Another workspace: the scan is withheld and its details refused.
 	fake.SetWorkspace("other")
-	store.Load(context.Background(), fake, "terraform")
+	store.Load(context.Background(), fake, "terraform", nil)
 	stale := decode[scanView](t, s.do("GET", "/api/v1/drift-scans/"+scan.ID, ""))
 	if stale.Current || len(stale.Resources) != 0 || !stale.Withheld {
 		t.Fatalf("%+v", stale)
@@ -161,7 +161,7 @@ func TestDriftScanAPIFailuresAndUnsupported(t *testing.T) {
 	// Remote execution: refused with a reason, nothing runs.
 	remote := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"})
-	store.Load(context.Background(), remote, "terraform")
+	store.Load(context.Background(), remote, "terraform", nil)
 	manager := operations.NewManager(store, remote, t.TempDir())
 	t.Cleanup(func() { manager.Close(time.Second) })
 	rs := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), remote, manager}

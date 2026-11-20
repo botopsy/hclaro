@@ -316,7 +316,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// After an apply, state is re-read so the explorer shows what the engine recorded.
-	manager.Reload = func(ctx context.Context) { store.Load(ctx, adapter, engineName) }
+	manager.Reload = func(ctx context.Context) { store.Load(ctx, adapter, engineName, nil) }
 	if root != "" {
 		// "Read again" and a Hub init of this folder inspect it again before reading state.
 		manager.Reinspect = func() workspace.Info { return workspace.Inspect(root) }
@@ -338,7 +338,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	go func() {
 		defer close(loaded)
 		if root != "" {
-			store.Load(runCtx, adapter, engineName)
+			store.Load(runCtx, adapter, engineName, nil)
 		}
 		readRelease()
 		// A startup read blocked by another process's state lock is read again (bounded).

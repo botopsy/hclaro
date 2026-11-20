@@ -15,6 +15,7 @@ import (
 	"hclaro/internal/engine"
 	"hclaro/internal/plan"
 	"hclaro/internal/preflight"
+	"hclaro/internal/tfpolicy"
 )
 
 // artifact is the single retained saved plan. The file holds plaintext secrets, so it lives
@@ -557,7 +558,7 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	}
 	switch code {
 	case "unsafe_cli_args":
-		message += " " + engine.UnsafeArgsHelp(environOr(e.environ), "apply", "workspace show")
+		message += " " + tfpolicy.UnsafeArgsHelp(environOr(e.environ), "apply", "workspace show")
 	case "credentials":
 		message += credentialHint(e)
 	}

@@ -33,7 +33,7 @@ func TestRereadPicksUpAnInitializedProject(t *testing.T) {
 	if err := m.Reread(); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("without Reinspect: %v", err)
 	}
-	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform") }
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform", nil) }
 	initialized := workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"}
 	m.Reinspect = func() workspace.Info { return initialized }
 	if err := m.Reread(); err != nil {
@@ -52,7 +52,7 @@ func TestRereadPicksUpAnInitializedProject(t *testing.T) {
 func TestRereadIsRefusedWhileBusy(t *testing.T) {
 	fake := &engine.Fake{Block: true}
 	m, root := setup(t, fake, workspace.Info{})
-	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform") }
+	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform", nil) }
 	m.Reinspect = func() workspace.Info {
 		return workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"}
 	}
@@ -75,7 +75,7 @@ func TestRereadIsRefusedWhileBusy(t *testing.T) {
 	}
 	wait(t, m, op.ID)
 	block := make(chan struct{})
-	m.Reload = func(ctx context.Context) { <-block; m.store.Load(ctx, fake, "terraform") }
+	m.Reload = func(ctx context.Context) { <-block; m.store.Load(ctx, fake, "terraform", nil) }
 	if err := m.Reread(); err != nil {
 		t.Fatal(err)
 	}

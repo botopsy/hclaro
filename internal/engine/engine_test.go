@@ -193,29 +193,6 @@ func TestDetection(t *testing.T) {
 		t.Fatal("missing CLI accepted")
 	}
 }
-func TestVersionCompatibility(t *testing.T) {
-	for _, v := range []string{"0.12.0", "2.0.0", "1.18.0", "1.9.0-beta", "bogus"} {
-		if Supported("terraform", v) {
-			t.Fatal(v)
-		}
-	}
-	if !Supported("tofu", "1.6.0") || !Supported("terraform", "1.5.0") || Supported("tofu", "1.5.0") {
-		t.Fatal("incorrect compatibility")
-	}
-	// Exact accepted edges, documented in docs/support-matrix.md, README.md and the version
-	// error. Widening either range needs real-engine evidence in the support matrix first.
-	for v, want := range map[string]bool{
-		"terraform 1.4.7": false, "terraform 1.5.0": true, "terraform 1.17.99": true, "terraform 1.18.0": false,
-		"tofu 1.5.9": false, "tofu 1.6.0": true, "tofu 1.13.99": true, "tofu 1.14.0": false,
-		"terraform 1.5.0-rc1": false, "tofu 1.9.0-beta1": false, "opentofu 1.6.0": false,
-		"terraform v1.5.0": false, "terraform 1.5": false, "terraform 1.5.0.1": false,
-	} {
-		name, version, _ := strings.Cut(v, " ")
-		if Supported(name, version) != want {
-			t.Errorf("Supported(%s) = %v", v, !want)
-		}
-	}
-}
 
 // Version edges through the fake CLI's `version -json`, the path Hclaro actually uses.
 func TestVersionBoundariesThroughCLI(t *testing.T) {
@@ -260,58 +237,6 @@ func TestBoundedOutput(t *testing.T) {
 	}
 	if _, err := b.Write([]byte("excess-output")); err == nil || string(b.b) != "safe" {
 		t.Fatal("output limit failed")
-	}
-}
-
-func TestImportSupport(t *testing.T) {
-	for _, c := range []struct {
-		name, version string
-		want          bool
-	}{
-		{"terraform", "1.5.0", true}, {"terraform", "1.9.8", true}, {"tofu", "1.6.0", true},
-		{"terraform", "1.4.6", false}, {"tofu", "1.5.0", false}, {"terraform", "1.10.0-rc1", false}, {"terraform", "2.0.0", false},
-	} {
-		if blocks, generate := ImportSupport(c.name, c.version); blocks != c.want || generate != c.want {
-			t.Errorf("%s %s: %v %v", c.name, c.version, blocks, generate)
-		}
-	}
-}
-
-func TestUnsafeArgs(t *testing.T) {
-	for _, c := range []struct {
-		env      string
-		commands []string
-		want     bool
-	}{
-		{"TF_CLI_ARGS=-lock=false", []string{"plan"}, true},
-		{"TF_CLI_ARGS_plan=-target=x", []string{"plan"}, true},
-		{"tf_cli_args_plan=-target=x", []string{"plan"}, true},
-		{"TF_CLI_ARGS_apply=-auto-approve", []string{"plan"}, false},
-		{"TF_CLI_ARGS_plan=-no-color", []string{"plan"}, false},
-		{"TF_CLI_ARGS_plan=  -no-color  -no-color ", []string{"plan"}, false},
-		{"TF_CLI_ARGS_plan=-no-color -refresh=false", []string{"plan"}, true},
-		{"TF_CLI_ARGS_plan=", []string{"plan"}, false},
-		{"TF_CLI_ARGSX=-x", []string{"plan"}, false},
-		{"TF_CLI_ARGS_workspace=-force", []string{"workspace delete"}, true},
-		{"TF_CLI_ARGS_workspace_delete=-force", []string{"workspace delete"}, true},
-		{"TF_CLI_ARGS_workspace_delete=-force", []string{"workspace new", "show"}, false},
-		{"TF_CLI_ARGS_workspace_deletex=-force", []string{"workspace delete"}, false},
-		{"TF_CLI_ARGS_providers_lock=-x", []string{"providers lock"}, true},
-		{"TF_CLI_ARGS_force_unlock=-force", []string{"force-unlock"}, true},
-		{"TF_CLI_ARGS_show=-x", []string{""}, false},
-		// No commands means every TF_CLI_ARGS* variable.
-		{"TF_CLI_ARGS_anything=-x", nil, true},
-		{"TF_CLI_ARGSX=-x", nil, true},
-		{"TF_CLI_ARGS_anything=-no-color", nil, false},
-		{"TF_LOG=-x", nil, false},
-	} {
-		if got := UnsafeArgs([]string{c.env}, c.commands...); got != c.want {
-			t.Errorf("UnsafeArgs(%q, %q) = %v", c.env, c.commands, got)
-		}
-		// The help names exactly the variables the check refuses.
-		if got := UnsafeArgsHelp([]string{c.env}, c.commands...) != ""; got != c.want {
-			t.Errorf("UnsafeArgsHelp(%q, %q) non-empty = %v", c.env, c.commands, got)
-		}
 	}
 }
 

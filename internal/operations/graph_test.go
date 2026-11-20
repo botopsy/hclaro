@@ -196,7 +196,7 @@ func TestGraphStalenessAndWorkspaceIsolation(t *testing.T) {
 		t.Fatalf("%+v", again.StaleReason)
 	}
 	fake.SetWorkspace("other")
-	m.store.Load(t.Context(), fake, "terraform")
+	m.store.Load(t.Context(), fake, "terraform", nil)
 	other, _ := m.Graph(view.ID, "")
 	if other.Current || len(other.Nodes) != 0 || !strings.Contains(other.StaleReason, "workspace demo") {
 		t.Fatalf("%+v", other)

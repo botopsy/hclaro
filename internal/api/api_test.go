@@ -17,7 +17,7 @@ import (
 
 func setup() http.Handler {
 	s := workspace.New(workspace.Info{Project: "demo", Initialized: true})
-	s.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo", JSON: fixtures.State}, "terraform")
+	s.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo", JSON: fixtures.State}, "terraform", nil)
 	return Handler(s, operations.NewManager(s, nil, ""), nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, "127.0.0.1:9273", strings.Repeat("a", 64), strings.Repeat("b", 64), "test")
 }
 func request(handler http.Handler, path, host, origin, token, method string) *httptest.ResponseRecorder {
@@ -101,7 +101,7 @@ func TestResourcesAndSecretBoundary(t *testing.T) {
 	}
 	// Every resource detail, not just the first page, must be redacted.
 	s := workspace.New(workspace.Info{Initialized: true})
-	s.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo", JSON: fixtures.State}, "terraform")
+	s.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo", JSON: fixtures.State}, "terraform", nil)
 	for _, r := range s.Get().Index.Resources {
 		if get("/api/v1/resources/"+r.ID).Code != 200 {
 			t.Fatal(r.ID)

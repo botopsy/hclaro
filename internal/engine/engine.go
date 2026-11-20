@@ -8,14 +8,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"hclaro/internal/awsvault"
 	"hclaro/internal/state"
+	"hclaro/internal/tfpolicy"
 )
 
 type Adapter interface {
@@ -51,7 +50,8 @@ func (c *CLI) WithEnvironment(environ []string, workspace string) *CLI {
 	return &copy
 }
 
-var ErrUnsafeArgs = errors.New("inherited TF_CLI_ARGS contains unsupported arguments; only -no-color is accepted")
+// ErrUnsafeArgs is tfpolicy.ErrUnsafeArgs, kept here for the many callers that check it.
+var ErrUnsafeArgs = tfpolicy.ErrUnsafeArgs
 
 // Read failures the CLI's stderr was classified as; the stderr text itself is never kept.
 var (
@@ -83,80 +83,6 @@ func ReadAdvice(err error, fallback string) string {
 		return "The CLI says this folder needs init (backend, modules or providers are not installed). Run init from the project's Hub page or in a terminal, then try again. Nothing was initialized automatically."
 	}
 	return fallback
-}
-
-// flagName matches a bare flag name; anything after "=" is a value and is never reported.
-var flagName = regexp.MustCompile(`^--?[A-Za-z][A-Za-z0-9_-]{0,40}$`)
-
-// unsafeArgsVar reports whether the variable key is read for one of commands, each a
-// subcommand as typed ("workspace select"). The engines read TF_CLI_ARGS and
-// TF_CLI_ARGS_<subcommand> with words joined by "_" and dashes turned into "_"
-// (TF_CLI_ARGS_workspace_select); every leading word group counts, so TF_CLI_ARGS_workspace
-// does too. No commands means any TF_CLI_ARGS*. Names compare without case, as Windows does.
-func unsafeArgsVar(key string, commands []string) bool {
-	upper := strings.ToUpper(key)
-	if upper == "TF_CLI_ARGS" || len(commands) == 0 && strings.HasPrefix(upper, "TF_CLI_ARGS") {
-		return true
-	}
-	for _, c := range commands {
-		name := "TF_CLI_ARGS"
-		for _, word := range strings.Fields(c) {
-			name += "_" + strings.ToUpper(strings.ReplaceAll(word, "-", "_"))
-			if upper == name {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// UnsafeArgs reports an inherited TF_CLI_ARGS variable read for one of commands (see
-// unsafeArgsVar) that adds anything other than -no-color.
-func UnsafeArgs(environ []string, commands ...string) bool {
-	for _, item := range environ {
-		key, value, _ := strings.Cut(item, "=")
-		if unsafeArgsVar(key, commands) && slices.ContainsFunc(strings.Fields(value), func(arg string) bool { return arg != "-no-color" }) {
-			return true
-		}
-	}
-	return false
-}
-
-// UnsafeArgsHelp explains which inherited TF_CLI_ARGS variables block the commands (see
-// unsafeArgsVar) and how to remove them. It names variables and flag names only, never values;
-// arguments that are not a plain flag are counted, not shown. It returns "" when none block.
-// shortcut: a secret passed space-separated after a flag and itself shaped like "-name" would
-// be named; such values are not expected from TF_CLI_ARGS.
-func UnsafeArgsHelp(environ []string, commands ...string) string {
-	found, unset := []string{}, []string{}
-	for _, item := range environ {
-		key, value, _ := strings.Cut(item, "=")
-		if !unsafeArgsVar(key, commands) {
-			continue
-		}
-		names, other := []string{}, 0
-		for _, arg := range strings.Fields(value) {
-			name, _, _ := strings.Cut(arg, "=")
-			switch {
-			case arg == "-no-color":
-			case flagName.MatchString(name):
-				names = append(names, name)
-			default:
-				other++
-			}
-		}
-		if other > 0 {
-			names = append(names, fmt.Sprintf("%d other argument(s)", other))
-		}
-		if len(names) > 0 {
-			found = append(found, key+" adds "+strings.Join(names, ", "))
-			unset = append(unset, key)
-		}
-	}
-	if len(found) == 0 {
-		return ""
-	}
-	return "Found: " + strings.Join(found, "; ") + ". Hidden flags such as -target, -replace, -lock=false or -auto-approve would change what runs without appearing in the reviewed command, so only -no-color is accepted. Unset them in the shell or environment that starts Hclaro (for example `unset " + strings.Join(unset, " ") + "`) and restart Hclaro. An execution profile cannot override inherited TF_CLI_ARGS settings, and Hclaro never removes them for you."
 }
 
 const readTimeout = 45 * time.Second
@@ -244,17 +170,10 @@ func (c *CLI) commandEnv(ctx context.Context, dropWorkspace bool, selected strin
 	if i := slices.IndexFunc(args, func(arg string) bool { return strings.HasPrefix(arg, "-") }); i >= 0 {
 		words = args[:i]
 	}
-	if UnsafeArgs(environ, strings.Join(words, " ")) {
+	if tfpolicy.UnsafeArgs(environ, strings.Join(words, " ")) {
 		return nil, ErrUnsafeArgs
 	}
-	for _, item := range environ {
-		key, _, _ := strings.Cut(item, "=")
-		if strings.HasPrefix(strings.ToUpper(key), "TF_LOG") || key == "TF_IN_AUTOMATION" || key == "CHECKPOINT_DISABLE" || dropWorkspace && strings.EqualFold(key, "TF_WORKSPACE") {
-			continue
-		}
-		cmd.Env = append(cmd.Env, item)
-	}
-	cmd.Env = append(cmd.Env, "TF_IN_AUTOMATION=1", "CHECKPOINT_DISABLE=1", "TF_LOG=OFF")
+	cmd.Env = tfpolicy.ChildEnv(environ, dropWorkspace)
 	if selected != "" {
 		if !ValidWorkspace(selected) {
 			return nil, errors.New("invalid workspace name")
@@ -307,43 +226,6 @@ func (c *CLI) runEnv(ctx context.Context, timeout time.Duration, dropWorkspace b
 	return buf.b, nil
 }
 
-var versionPattern = regexp.MustCompile(`^1\.(\d+)\.(\d+)$`)
-
-func Supported(name, version string) bool {
-	m := versionPattern.FindStringSubmatch(version)
-	if m == nil {
-		return false
-	}
-	minor, _ := strconv.Atoi(m[1])
-	// Conservative compatibility range, exercised with official-format synthetic output.
-	return name == "terraform" && minor >= 5 && minor <= 17 || name == "tofu" && minor >= 6 && minor <= 13
-}
-
-// ImportSupport reports declarative import capabilities for a supported version. Import
-// blocks and -generate-config-out arrived in Terraform 1.5 and OpenTofu 1.6, the lowest
-// versions Supported accepts; the check stays explicit so the range can widen safely.
-func ImportSupport(name, version string) (blocks, generate bool) {
-	m := versionPattern.FindStringSubmatch(version)
-	if m == nil || !Supported(name, version) {
-		return false, false
-	}
-	minor, _ := strconv.Atoi(m[1])
-	ok := name == "terraform" && minor >= 5 || name == "tofu" && minor >= 6
-	return ok, ok
-}
-
-// RefreshOnlySupport reports whether `plan -refresh-only` with -out and -json is available.
-// Terraform added it in 0.15.4 and OpenTofu has it in every release, so it holds for the whole
-// Supported range; the check stays explicit so the range can widen safely.
-func RefreshOnlySupport(name, version string) bool {
-	m := versionPattern.FindStringSubmatch(version)
-	if m == nil || !Supported(name, version) {
-		return false
-	}
-	minor, _ := strconv.Atoi(m[1])
-	return name == "terraform" && minor >= 5 || name == "tofu" && minor >= 6
-}
-
 func (c *CLI) Version(ctx context.Context) (string, error) {
 	b, err := c.run(ctx, readTimeout, "version", "-json")
 	if err != nil {
@@ -359,19 +241,15 @@ func (c *CLI) Version(ctx context.Context) (string, error) {
 	if c.Name == "tofu" && v.Tofu != "" {
 		v.Terraform = v.Tofu
 	}
-	if !Supported(c.Name, v.Terraform) {
+	if !tfpolicy.Supported(c.Name, v.Terraform) {
 		return "", errors.New("unsupported engine version; use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13")
 	}
 	return v.Terraform, nil
 }
 
-var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,90}$`)
-
 // ValidWorkspace accepts the conservative workspace name subset Hclaro displays and passes
-// to TF_WORKSPACE.
-func ValidWorkspace(name string) bool {
-	return workspaceName.MatchString(name) && !state.Suspicious(name)
-}
+// to TF_WORKSPACE (see tfpolicy.ValidWorkspace).
+func ValidWorkspace(name string) bool { return tfpolicy.ValidWorkspace(name) }
 
 func (c *CLI) Workspace(ctx context.Context) (string, error) {
 	b, err := c.run(ctx, readTimeout, "workspace", "show")

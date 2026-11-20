@@ -73,12 +73,4 @@ func TestGraphRunsOnlyGraph(t *testing.T) {
 	if _, err := c.Graph(context.Background()); !errors.Is(err, ErrUnsafeArgs) {
 		t.Fatal(err)
 	}
-	for _, v := range []struct {
-		name, version string
-		want          bool
-	}{{"terraform", "1.5.0", true}, {"terraform", "1.17.0", true}, {"tofu", "1.13.1", true}, {"terraform", "1.4.0", false}, {"tofu", "", false}} {
-		if GraphSupport(v.name, v.version) != v.want {
-			t.Errorf("%+v", v)
-		}
-	}
 }

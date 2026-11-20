@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestDiscoveryAndLoad(t *testing.T) {
 	}
 	mock := &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo", JSON: fixtures.State}
 	s := New(info)
-	s.Load(context.Background(), mock, "terraform")
+	s.Load(context.Background(), mock, "terraform", nil)
 	if s.Get().Diagnostic.Code != "uninitialized" || len(mock.Calls) != 1 {
 		t.Fatal(s.Get())
 	}
@@ -40,32 +41,32 @@ func TestDiscoveryAndLoad(t *testing.T) {
 		t.Fatal(info)
 	}
 	s = New(info)
-	s.Load(context.Background(), mock, "terraform")
+	s.Load(context.Background(), mock, "terraform", nil)
 	if s.Get().Status != "ready" || len(s.Get().Index.Resources) != 316 {
 		t.Fatal(s.Get().Status)
 	}
 	mock.JSON = fixtures.Empty
-	s.Load(context.Background(), mock, "terraform")
+	s.Load(context.Background(), mock, "terraform", nil)
 	if s.Get().Status != "empty" {
 		t.Fatal(s.Get().Status)
 	}
 	mock.JSON = []byte(`{"format_version":"1.0"}`)
-	s.Load(context.Background(), mock, "terraform")
+	s.Load(context.Background(), mock, "terraform", nil)
 	if s.Get().Diagnostic.Code != "state_absent" || s.Get().Info.Capabilities.CanReadState {
 		t.Fatal("missing state was treated as an empty snapshot")
 	}
 	mock.JSON = fixtures.State
-	s.Load(context.Background(), mock, "terraform")
+	s.Load(context.Background(), mock, "terraform", nil)
 	if s.Get().Diagnostic != nil || s.Get().Status != "ready" {
 		t.Fatal("successful read retained an old error")
 	}
 	s = New(info)
-	s.Load(context.Background(), nil, "")
+	s.Load(context.Background(), nil, "", nil)
 	if s.Get().Diagnostic.Code != "missing_cli" {
 		t.Fatal(s.Get())
 	}
 	mock.Err = errors.New("DO_NOT_LEAK_HCLARO_TEST_SECRET")
-	s.Load(context.Background(), mock, "terraform")
+	s.Load(context.Background(), mock, "terraform", nil)
 	if s.Get().Diagnostic.Code != "engine_version" {
 		t.Fatal(s.Get())
 	}
@@ -116,7 +117,7 @@ func (m *brokenState) State(context.Context) ([]byte, error) {
 func TestUnavailableDistinctFromEmpty(t *testing.T) {
 	s := New(Info{Initialized: true})
 	m := &brokenState{engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "demo"}}
-	s.Load(context.Background(), m, "terraform")
+	s.Load(context.Background(), m, "terraform", nil)
 	if s.Get().Status != "error" || s.Get().Diagnostic.Code != "state_unavailable" {
 		t.Fatal(s.Get())
 	}
@@ -140,7 +141,7 @@ func TestLockedStateRead(t *testing.T) {
 		errors.New("generic"):      "state_unavailable",
 	} {
 		s := New(Info{Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-		s.Load(context.Background(), &failingState{engine.Mock{VersionValue: "1.13.9", WorkspaceValue: "default"}, err}, "tofu")
+		s.Load(context.Background(), &failingState{engine.Mock{VersionValue: "1.13.9", WorkspaceValue: "default"}, err}, "tofu", nil)
 		snap := s.Get()
 		caps := snap.Info.Capabilities
 		if snap.Status != "error" || snap.Diagnostic == nil || snap.Diagnostic.Code != code || caps.CanPlan || caps.CanReadState || caps.CanApply || caps.CanImport || snap.Locked() != (code == "state_locked") {
@@ -153,7 +154,7 @@ func TestLockedStateRead(t *testing.T) {
 	}
 	// A read-only Hub scope keeps its own read-only reasons.
 	s := NewScoped(Info{Initialized: true, Backend: "local", ExecutionMode: "local-cli"}, Scope{Workspace: "default", ReadOnlyReason: "read only"})
-	s.Load(context.Background(), &failingState{engine.Mock{VersionValue: "1.13.9", WorkspaceValue: "default"}, engine.ErrReadStateLocked}, "tofu")
+	s.Load(context.Background(), &failingState{engine.Mock{VersionValue: "1.13.9", WorkspaceValue: "default"}, engine.ErrReadStateLocked}, "tofu", nil)
 	if snap := s.Get(); !snap.Locked() || snap.Info.Capabilities.PlanReason != "read only" {
 		t.Errorf("read-only scope: %+v", snap)
 	}
@@ -225,7 +226,7 @@ func TestBackendClassification(t *testing.T) {
 			continue
 		}
 		s := NewScoped(info, Scope{Workspace: "default", Executable: true})
-		s.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "default", JSON: fixtures.State}, "terraform")
+		s.Load(context.Background(), &engine.Mock{VersionValue: "1.9.8", WorkspaceValue: "default", JSON: fixtures.State}, "terraform", nil)
 		caps := s.Get().Info.Capabilities
 		local := tc.mode == "local-cli"
 		if caps.CanPlan != local || caps.CanApply != local || caps.CanImport != local {
@@ -237,5 +238,21 @@ func TestBackendClassification(t *testing.T) {
 		if !caps.CanReadState {
 			t.Errorf("%s: state should stay readable: %+v", tc.name, s.Get().Diagnostic)
 		}
+	}
+}
+
+// The TF_CLI_ARGS warning follows the environment the reads run with, not Hclaro's own: a
+// profile's composed environment without TF_CLI_ARGS clears it on the next read.
+func TestLoadWarnsAboutReadEnvironmentCLIArgs(t *testing.T) {
+	root := t.TempDir()
+	s := New(Inspect(root))
+	warned := func() bool { return slices.Contains(s.Get().Info.Warnings, cliArgsWarning) }
+	s.Load(context.Background(), nil, "terraform", []string{"tf_cli_args_plan=-no-color"})
+	if !warned() {
+		t.Fatal("TF_CLI_ARGS in the read environment not reported")
+	}
+	s.Load(context.Background(), nil, "terraform", []string{"HOME=/x"})
+	if warned() {
+		t.Fatal("warning kept after the read environment dropped TF_CLI_ARGS")
 	}
 }

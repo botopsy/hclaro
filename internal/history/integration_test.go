@@ -38,7 +38,7 @@ func newHarness(t *testing.T, fake *engine.Fake, dir string) *harness {
 		fake.StateJSON = fixtures.State
 	}
 	ws := workspace.New(workspace.Info{Project: "demo", Engine: "terraform", Version: "1.9.8", Workspace: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	ws.Load(context.Background(), fake, "terraform")
+	ws.Load(context.Background(), fake, "terraform", nil)
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "terraform.tfvars"), []byte(`note = "`+knownValue+`"`+"\n"), 0o600); err != nil {
 		t.Fatal(err)

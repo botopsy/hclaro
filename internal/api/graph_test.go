@@ -128,7 +128,7 @@ func TestGraphAPI(t *testing.T) {
 	}
 	// Another workspace: withheld, impact refused, the list has no node names.
 	fake.SetWorkspace("other")
-	store.Load(t.Context(), fake, "terraform")
+	store.Load(t.Context(), fake, "terraform", nil)
 	stale := decode[graphView](t, s.do("GET", "/api/v1/graphs/"+view.ID, ""))
 	if stale.Current || len(stale.Nodes) != 0 || !stale.Withheld {
 		t.Fatalf("%+v", stale.GraphRun)
@@ -152,7 +152,7 @@ func TestGraphAPIFailuresAndUnsupported(t *testing.T) {
 	}
 	remote := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, GraphDOT: fixtures.GraphTerraform}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"})
-	store.Load(t.Context(), remote, "terraform")
+	store.Load(t.Context(), remote, "terraform", nil)
 	manager := operations.NewManager(store, remote, t.TempDir())
 	t.Cleanup(func() { manager.Close(time.Second) })
 	rs := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), remote, manager}
