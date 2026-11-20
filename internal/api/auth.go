@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"hclaro/internal/awsauth"
+	"hclaro/internal/ids"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
 )
@@ -52,7 +53,7 @@ func authRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			return awsauth.Target{}, false
 		}
 		id := r.PathValue("pid")
-		if !profiles.ValidID(id) {
+		if !ids.Valid(id) {
 			reasonJSON(w, 404, "profile_not_found", "This execution profile no longer exists. Reload the profile list.")
 			return awsauth.Target{}, false
 		}

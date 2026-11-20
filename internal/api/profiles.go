@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/ids"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
 	"hclaro/internal/tfpolicy"
@@ -84,7 +85,7 @@ func checkVarFiles(w http.ResponseWriter, root string, refs []string) bool {
 }
 
 // validProfileParam accepts an empty value (no profile) or a profile ID.
-func validProfileParam(id string) bool { return id == "" || profiles.ValidID(id) }
+func validProfileParam(id string) bool { return id == "" || ids.Valid(id) }
 
 func profileError(w http.ResponseWriter, hub *projects.Hub, err error) {
 	var field *profiles.FieldError
@@ -128,7 +129,7 @@ func profileRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	}
 	pid := func(w http.ResponseWriter, r *http.Request) (string, bool) {
 		id := r.PathValue("pid")
-		if !profiles.ValidID(id) {
+		if !ids.Valid(id) {
 			reasonJSON(w, 404, "profile_not_found", "This execution profile no longer exists. Reload the profile list.")
 			return "", false
 		}

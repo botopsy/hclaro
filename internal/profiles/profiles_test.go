@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"hclaro/internal/awsvault"
+	"hclaro/internal/ids"
 	"hclaro/internal/tfpolicy"
 )
 
@@ -38,7 +39,7 @@ func TestProfilesSurviveRestartWithRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Revision != 1 || !ValidID(created.ID) {
+	if created.Revision != 1 || !ids.Valid(created.ID) {
 		t.Fatalf("created %+v", created)
 	}
 	if err := s.SetDefault(projectA, created.ID); err != nil {
