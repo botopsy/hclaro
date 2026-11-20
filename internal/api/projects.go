@@ -78,12 +78,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if errors.Is(err, projects.ErrRegistryUnavailable) && status == projects.RegistryReady {
 			status, notice = projects.RegistryUnavailable, "The project registry changed on disk and can no longer be read. Changes are disabled until it is fixed and Hclaro restarts."
 		}
-		writeJSON(w, 200, struct {
-			Projects    []projects.Summary   `json:"projects"`
-			Registry    map[string]string    `json:"registry"`
-			Launch      string               `json:"launchRoot,omitempty"`
-			Environment projects.Environment `json:"environment"`
-		}{list, map[string]string{"status": status, "notice": notice, "path": path}, hub.Launch, projects.Env()})
+		writeJSON(w, 200, projectList{list, map[string]string{"status": status, "notice": notice, "path": path}, hub.Launch, projects.Env()})
 	})
 	mux.HandleFunc("POST /api/v1/projects", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -210,10 +205,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			projectError(w, hub, err)
 			return
 		}
-		writeJSON(w, 200, struct {
-			*projects.Context
-			Reused bool `json:"reused"`
-		}{c, reused})
+		writeJSON(w, 200, openedContext{c, reused})
 	})
 	contextOf := func(w http.ResponseWriter, r *http.Request) *projects.Context { return openContext(w, r, hub) }
 	initRoutes(mux, hub)
@@ -459,4 +451,16 @@ func toolRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			}
 		})
 	}
+}
+
+type projectList struct {
+	Projects    []projects.Summary   `json:"projects"`
+	Registry    map[string]string    `json:"registry"`
+	Launch      string               `json:"launchRoot,omitempty"`
+	Environment projects.Environment `json:"environment"`
+}
+
+type openedContext struct {
+	*projects.Context
+	Reused bool `json:"reused"`
 }

@@ -6,17 +6,13 @@ import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { OperationLog } from '../plans/OperationLog';
+import { errorMessage } from '../lib/errorMessage';
+import { engineLabel } from '../lib/format';
 
 // The names Hclaro passes to a workspace command: never starting with "-", so a name can
 // never be read as a flag. The server applies the same rule.
-export const workspaceNamePattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,89}$/;
+const workspaceNamePattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,89}$/;
 
-function message(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to reach the local Hclaro server. Check that it is still running, then retry.';
-}
-function engineLabel(name?: string) {
-  return name === 'tofu' ? 'OpenTofu' : 'Terraform';
-}
 const titles: Record<WorkspaceAction, (name: string) => string> = {
   new: () => 'Create a workspace',
   select: name => `Set ${name} as CLI default`,
@@ -69,7 +65,7 @@ export function WorkspaceDialog({ projectId, profileId = '', action, initialName
     try {
       setReview(await send<WorkspaceReview>('POST', `projects/${projectId}/workspaces/review`, { action, name: target, ...(profileId ? { profileId } : {}) }));
     } catch (e) {
-      setError(message(e));
+      setError(errorMessage(e));
     } finally {
       setReviewing(false);
     }
@@ -90,7 +86,7 @@ export function WorkspaceDialog({ projectId, profileId = '', action, initialName
     try {
       setOperation(await send<Operation>('POST', `projects/${projectId}/operations/workspace`, { action, name: review.name, expectedContextId: review.contextId, ...(profileId ? { profileId } : {}) }));
     } catch (e) {
-      setError(message(e));
+      setError(errorMessage(e));
       setReview(undefined);
     } finally {
       setStarting(false);
@@ -101,7 +97,7 @@ export function WorkspaceDialog({ projectId, profileId = '', action, initialName
     onFinished();
   }, [onFinished]);
   const confirmed = action === 'delete' ? typed === review?.name : acknowledged;
-  const engine = engineLabel(review?.engine);
+  const engine = engineLabel(review?.engine, 'Terraform');
   const running = operation && !result;
   return <div className="dialog-backdrop">
    <div ref={dialog} className="dialog dialog-wide init-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-dialog-title">

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
 import { ChevronsUpDown, Clock, FileCode2, FolderKanban, FolderOpen, LoaderCircle, PanelLeftClose, PanelLeftOpen, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import { HclaroLogo, HclaroMark } from '../brand/HclaroLogo';
-import { groupLabels, importDiscoveryTabs, itemsIn, navState, type NavContext, type NavGroup, type NavItem, type View } from './config';
+import { globalPages, groupLabels, importDiscoveryTabs, itemsIn, navState, type NavContext, type NavGroup, type NavItem, type View } from './config';
 
 // What the project switcher shows as the current project.
 export type SidebarProject = {
@@ -161,7 +161,7 @@ function ProjectSwitcher({ project, targets, compact, workspace, onSwitch, showT
     {targets.projectPage && <ul>{option(targets.projectPage, <FolderOpen size={14} aria-hidden="true" />)}</ul>}
     {targets.launch && <><div className="switcher-label">Opened from terminal</div><ul>{option(targets.launch, <FileCode2 size={14} aria-hidden="true" />)}</ul></>}
     {targets.recent.length > 0 && <><div className="switcher-label">Recent projects</div><ul>{targets.recent.map(t => option(t, <Clock size={14} aria-hidden="true" />))}</ul></>}
-    <ul className="switcher-all">{option({ key: 'all', label: 'All projects', detail: 'Open, add or manage projects', path: '/projects' }, <FolderKanban size={14} aria-hidden="true" />)}</ul>
+    <ul className="switcher-all">{option({ key: 'all', label: 'All projects', detail: 'Open, add or manage projects', path: globalPages.hub.path }, <FolderKanban size={14} aria-hidden="true" />)}</ul>
    </div>}
   </div>;
 }

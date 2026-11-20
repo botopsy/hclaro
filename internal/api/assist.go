@@ -301,9 +301,9 @@ func assistRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, ma
 		case !fresh:
 			reasonJSON(w, 409, "context_changed", "The workspace changed since this package was built. Open the preview again to share current context.")
 		default:
-			out := map[string]string{"kind": kind, "sha256": hash, "markdown": markdown, "filename": "hclaro-" + kind + "-" + hash[:12] + ".md"}
+			out := assistExport{Kind: kind, SHA256: hash, Markdown: markdown, Filename: "hclaro-" + kind + "-" + hash[:12] + ".md"}
 			if p, ok := assist.ReviewPrompt(kind); ok {
-				out["prompt"], out["review"] = p.ID, assist.FirstTurn(markdown, p)
+				out.Prompt, out.Review = p.ID, assist.FirstTurn(markdown, p)
 			}
 			writeJSON(w, 200, out)
 		}
@@ -319,10 +319,10 @@ func assistRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, ma
 			return
 		}
 		var body struct {
-			PackageSHA256     string `json:"packageSha256"`
+			PackageSHA256 string `json:"packageSha256"`
 			// Provider, when given, is the assistant the user saw; the server refuses the start
 			// if its chosen assistant is another one. The server always picks the provider.
-			Provider string `json:"provider"`
+			Provider          string `json:"provider"`
 			DisclosureVersion string `json:"disclosureVersion"`
 			Message           string `json:"message"`
 			Prompt            string `json:"prompt"`
@@ -866,13 +866,7 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 	sess.Put(src.key, p, fresh)
 	// The review's or quick action's first turn (AI-01.08, AI-01.10): exactly what Send submits
 	// and Copy or Download hand over.
-	writeJSON(w, 200, struct {
-		assist.Package
-		Disclosure    assist.Disclosure `json:"disclosure"`
-		Prompt        string            `json:"prompt"`
-		Review        string            `json:"review"`
-		CostAvailable bool              `json:"costAvailable,omitempty"`
-	}{p, sess.Settings().Disclosure, prompt.ID, assist.FirstTurn(p.Markdown, prompt), costLines != nil})
+	writeJSON(w, 200, assistPackage{p, sess.Settings().Disclosure, prompt.ID, assist.FirstTurn(p.Markdown, prompt), costLines != nil})
 }
 
 // changeFiles lists the configuration files Git does not ignore, for the scope check of a
@@ -921,4 +915,23 @@ func aiRefusal(w http.ResponseWriter, err error) {
 		status = 422
 	}
 	reasonJSON(w, status, r.Code, r.Error())
+}
+
+type assistPackage struct {
+	assist.Package
+	Disclosure    assist.Disclosure `json:"disclosure"`
+	Prompt        string            `json:"prompt"`
+	Review        string            `json:"review"`
+	CostAvailable bool              `json:"costAvailable,omitempty"`
+}
+
+// assistExport is a previewed package handed over by Copy or Download. Prompt and Review are
+// set for kinds that have a review prompt.
+type assistExport struct {
+	Kind     string `json:"kind"`
+	SHA256   string `json:"sha256"`
+	Markdown string `json:"markdown"`
+	Filename string `json:"filename"`
+	Prompt   string `json:"prompt,omitempty"`
+	Review   string `json:"review,omitempty"`
 }

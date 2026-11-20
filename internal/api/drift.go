@@ -35,19 +35,7 @@ func driftRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations
 		if errors.As(err, &refusal) {
 			profileError = refusal.Message
 		}
-		writeJSON(w, 200, struct {
-			CanScan      bool              `json:"canScan"`
-			Reason       string            `json:"reason,omitempty"`
-			Engine       string            `json:"engine"`
-			Version      string            `json:"version"`
-			Workspace    string            `json:"workspace"`
-			Backend      string            `json:"backend"`
-			Execution    string            `json:"executionMode"`
-			VarFiles     []string          `json:"varFiles"`
-			ProjectID    string            `json:"projectId,omitempty"`
-			Context      *executionSummary `json:"context,omitempty"`
-			ProfileError string            `json:"profileError,omitempty"`
-		}{canScan, reason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, snap.Info.ExecutionMode, manager.VarFiles(), projectID, context, profileError})
+		writeJSON(w, 200, driftOptions{canScan, reason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, snap.Info.ExecutionMode, manager.VarFiles(), projectID, context, profileError})
 	})
 	mux.HandleFunc("POST /api/v1/drift-scans", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -124,4 +112,18 @@ func serveDriftDetail(w http.ResponseWriter, r *http.Request, src driftSource) {
 	default:
 		writeJSON(w, 200, detail)
 	}
+}
+
+type driftOptions struct {
+	CanScan      bool              `json:"canScan"`
+	Reason       string            `json:"reason,omitempty"`
+	Engine       string            `json:"engine"`
+	Version      string            `json:"version"`
+	Workspace    string            `json:"workspace"`
+	Backend      string            `json:"backend"`
+	Execution    string            `json:"executionMode"`
+	VarFiles     []string          `json:"varFiles"`
+	ProjectID    string            `json:"projectId,omitempty"`
+	Context      *executionSummary `json:"context,omitempty"`
+	ProfileError string            `json:"profileError,omitempty"`
 }

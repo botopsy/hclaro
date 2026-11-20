@@ -2,7 +2,7 @@ import { Ban, BookOpen, CircleHelp, Equal, Minus, Pencil, Plus, RefreshCw, Unlin
 import type { PlanAction } from '../types';
 
 // Actions are distinguished by icon and text, never by color alone.
-export const actionMeta: Record<PlanAction, { label: string; icon: LucideIcon; tone: string }> = {
+const actionMeta: Record<PlanAction, { label: string; icon: LucideIcon; tone: string }> = {
   create: { label: 'Create', icon: Plus, tone: 'create' },
   update: { label: 'Update', icon: Pencil, tone: 'update' },
   replace: { label: 'Replace', icon: RefreshCw, tone: 'destroy' },
@@ -43,17 +43,4 @@ const reasons: Record<string, string> = {
 export function reasonLabel(reason?: string) {
   if (!reason) return undefined;
   return reasons[reason] ?? reason.replaceAll('_', ' ');
-}
-
-export function clock(time?: string) {
-  return time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
-}
-
-export function duration(ms: number) {
-  const seconds = Math.round(ms / 1000);
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-}
-
-export function engineLabel(engine: string) {
-  return engine === 'tofu' ? 'OpenTofu' : engine === 'terraform' ? 'Terraform' : 'The engine';
 }

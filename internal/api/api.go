@@ -183,10 +183,7 @@ func listResources(w http.ResponseWriter, r *http.Request, snap workspace.Snapsh
 	total := len(matches)
 	start := min(offset, total)
 	end := min(start+limit, total)
-	writeJSON(w, 200, struct {
-		Resources []state.Resource `json:"resources"`
-		Total     int              `json:"total"`
-	}{matches[start:end], total})
+	writeJSON(w, 200, resourcePage{matches[start:end], total})
 }
 
 func resourceDetail(w http.ResponseWriter, snap workspace.Snapshot, id string) {
@@ -195,4 +192,9 @@ func resourceDetail(w http.ResponseWriter, snap workspace.Snapshot, id string) {
 		return
 	}
 	errorJSON(w, 404, "resource_not_found")
+}
+
+type resourcePage struct {
+	Resources []state.Resource `json:"resources"`
+	Total     int              `json:"total"`
 }

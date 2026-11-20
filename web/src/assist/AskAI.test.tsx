@@ -4,8 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import planGolden from '../../../fixtures/plan/all-actions.golden.json';
 import { PlanReview } from '../plans/PlanReview';
-import { AskAI, type AssistRequest } from './AskAI';
-import type { PlanScope } from '../plans/routes';
+import { AskAI } from './AskAI';
+import type { AssistRequest } from '../types';
+import type { PlanScope } from '../lib/scope';
 import type { ImportRequest, Plan } from '../types';
 
 const planId = 'a'.repeat(32);

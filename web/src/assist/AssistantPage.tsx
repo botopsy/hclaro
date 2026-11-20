@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileCode2, FolderOpen, LoaderCircle, MessageSquarePlus, Send, Sparkles, Trash2, Zap } from 'lucide-react';
-import { api, post } from '../api';
+import { api, send } from '../api';
 import { Button } from '../components/ui/button';
-import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
-import { ErrorState } from '../workbench/ErrorState';
-import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve, type Conversation } from './AskAI';
+import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
+import { ErrorState } from '../components/ErrorState';
+import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve } from './AskAI';
+import type { AssistListed, AssistSaved, Conversation } from '../types';
+import { errorMessage } from '../lib/errorMessage';
 
 // The AI Assistant page (AI-01.09): conversations that are not tied to a plan or drift result.
 // A conversation starts with no project data, or with a project package the user previewed in
@@ -15,8 +17,6 @@ import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, 
 // listed, read-only. Saved conversations (AI-01.11) of this project are listed below them and
 // can be reopened or deleted.
 
-type Listed = { id: string; provider: string; kind: string; state: string; title: string; project: string; workspace: string; here: boolean; saved: boolean; startedAt: string };
-type Saved = { id: string; title: string; provider: string; providerVersion: string; kind: string; workspace: string; createdAt: string; lastActivity: string; open: boolean };
 type Mode = 'chat' | 'project';
 // Quick actions (AI-01.10): a project package plus a fixed, versioned prompt from the server's
 // registry. Each goes through the same preview drawer; the IDs are what turn metadata records.
@@ -34,13 +34,13 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   const client = useQueryClient();
   const list = useQuery({
     queryKey: ['ai-conversations', scope ? scopeKey(scope) : 'none'],
-    queryFn: () => api<{ conversations: Listed[] }>(scopedPath(scope!, 'ai/conversations')),
+    queryFn: () => api<{ conversations: AssistListed[] }>(scopedPath(scope!, 'ai/conversations')),
     enabled: !!scope && settings?.enabled === true,
     refetchInterval: q => q.state.data?.conversations.some(c => c.state === 'running') ? 2000 : false
   });
   const saved = useQuery({
     queryKey: ['ai-saved', scope ? scopeKey(scope) : 'none'],
-    queryFn: () => api<{ conversations: Saved[]; available: boolean; retentionDays?: number }>(scopedPath(scope!, 'ai/saved')),
+    queryFn: () => api<{ conversations: AssistSaved[]; available: boolean; retentionDays?: number }>(scopedPath(scope!, 'ai/saved')),
     enabled: !!scope && settings?.enabled === true && !noProject
   });
   const [confirmAll, setConfirmAll] = useState(false);
@@ -64,11 +64,11 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   async function onSaved(action: string, id?: string) {
     setFailed(undefined);
     try {
-      const c = await post<{ id?: string }>(scopedPath(scope!, id ? `ai/saved/${id}/${action}` : `ai/saved/${action}`), {});
+      const c = await send<{ id?: string }>('POST', scopedPath(scope!, id ? `ai/saved/${id}/${action}` : `ai/saved/${action}`), {});
       if (action === 'open' && c.id) setSelected(c.id);
       setConfirmAll(false);
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : 'The saved conversation could not be changed.');
+      setFailed(errorMessage(err, 'The saved conversation could not be changed.'));
     }
     await Promise.all([list.refetch(), saved.refetch(), client.invalidateQueries({ queryKey: ['ai-conversation'] })]);
   }
@@ -77,7 +77,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   async function start(packageSha256?: string, prompt?: string) {
     if (!provider || !settings) return;
     // A quick action's first message is its prompt; the typed text stays in the box.
-    const c = await post<Conversation>(scopedPath(scope!, 'ai/conversations'), { provider: provider.id, disclosureVersion: settings.disclosure.version, ...(prompt ? { prompt } : { message: text }), ...(packageSha256 ? { packageSha256 } : {}) });
+    const c = await send<Conversation>('POST', scopedPath(scope!, 'ai/conversations'), { provider: provider.id, disclosureVersion: settings.disclosure.version, ...(prompt ? { prompt } : { message: text }), ...(packageSha256 ? { packageSha256 } : {}) });
     if (!prompt) setText('');
     setSelected(c.id);
     setPreview(undefined);
@@ -89,7 +89,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
     try {
       await acceptThen(settings!, () => start());
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : 'The conversation could not be started.');
+      setFailed(errorMessage(err, 'The conversation could not be started.'));
     } finally {
       setBusy(false);
     }
@@ -100,7 +100,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
     : preview === 'action' && action ? { label: `Start ${action.label.toLowerCase()}`, run: p => start(p.sha256, p.prompt) }
     : preview === 'attach' && selected ? {
       label: 'Attach to conversation', run: async p => {
-        await post(scopedPath(scope, `ai/conversations/${selected}/context`), { packageSha256: p.sha256 });
+        await send('POST', scopedPath(scope, `ai/conversations/${selected}/context`), { packageSha256: p.sha256 });
         setPreview(undefined);
         // The open panel polls only while a turn runs: show the attached turn and the cleared stale state now.
         await client.invalidateQueries({ queryKey: ['ai-conversation', scopeKey(scope), selected] });

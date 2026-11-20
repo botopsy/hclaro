@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import type { ProfileList } from '../types';
+import { readStorage, storageKeys, writeStorage } from '../lib/storage';
 
 const id = /^[0-9a-f]{32}$/;
 const listeners = new Set<() => void>();
@@ -10,18 +11,13 @@ const listeners = new Set<() => void>();
 // of the same project can use a different profile. "none" means the inherited environment;
 // nothing stored means "use the project's default profile".
 function read(projectId: string): string | undefined {
-  try {
-    const value = sessionStorage.getItem(`hclaro.profile.${projectId}`) || undefined;
-    return value === 'none' || value && id.test(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
+  const value = readStorage('session', storageKeys.profile(projectId));
+  return value === 'none' || value && id.test(value) ? value : undefined;
 }
 
+// Without storage the choice lasts until the page reloads.
 function write(projectId: string, value: string) {
-  try {
-    sessionStorage.setItem(`hclaro.profile.${projectId}`, value);
-  } catch {/* Without storage the choice lasts until the page reloads. */}
+  writeStorage('session', storageKeys.profile(projectId), value);
 }
 
 export function profilesQuery(projectId?: string) {

@@ -3,8 +3,8 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Operation } from '../types';
-import { activeOperation, operationsQuery } from './operations';
-import { launchScope } from './routes';
+import { activeOperation, operationsQuery } from './queries';
+import { launchScope } from './scope';
 
 const op = (id: string, status: Operation['status']) => ({ id, kind: 'plan', status, stage: status, startedAt: '2026-11-19T09:00:00Z', command: [] }) as unknown as Operation;
 

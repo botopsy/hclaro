@@ -7,7 +7,7 @@ import golden from '../../../fixtures/plan/all-actions.golden.json';
 import unsupportedGolden from '../../../fixtures/plan/unknown-actions.golden.json';
 import { PlansView } from './PlansView';
 import { ApplyDialog } from './ApplyDialog';
-import { planRoute } from './routes';
+import { planRoute } from '../lib/scope';
 import type { Approval, Operation, Plan, PlanOptions, PreflightCheck, PreflightReport } from '../types';
 
 const canary = 'DO_NOT_LEAK_HCLARO_TEST_SECRET';
@@ -52,7 +52,7 @@ const report: PreflightReport = {
     changes: [{ address: 'module.compute.aws_instance.main[0]', action: 'replace', requested: true }, { address: 'aws_lb_target_group_attachment.web[2]', action: 'delete' }, { address: 'aws_route53_record.www', action: 'create' }],
     truncated: false
   },
-  policy: { source: 'default', version: 1, valid: true }, identity: { state: 'not_requested' },
+  policy: { source: 'default', version: 1, valid: true, rules: { gitDirty: 'warn', productionLabels: { severity: 'warn', patterns: [] } } }, identity: { state: 'not_requested' },
   binding: 'b'.repeat(64), phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>']
 };
 

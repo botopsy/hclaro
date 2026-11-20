@@ -1,7 +1,7 @@
 import { ArrowRight, Box, Braces, CircleHelp, Database, FolderTree, Network, Terminal } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import type { Workspace } from '../types';
-import { timeLabel } from './format';
+import { timeLabel } from '../lib/format';
 export function Overview({
   workspace: w,
   browse,

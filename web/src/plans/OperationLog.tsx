@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { CircleStop, LoaderCircle, Terminal } from 'lucide-react';
-import { post, streamEvents } from '../api';
+import { send, streamEvents } from '../api';
 import { operationActive, type Operation, type OperationEvent } from '../types';
 import { Button } from '../components/ui/button';
-import { duration } from './labels';
-import { launchScope, scopedPath, type PlanScope } from './routes';
+import { launchScope, scopedPath, type PlanScope } from '../lib/scope';
+import { clock, duration } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
 const maxLines = 2000;
 
@@ -48,7 +49,7 @@ export function OperationLog({
           if (ended) return;
         } catch (e) {
           if (controller.signal.aborted) return;
-          setError(e instanceof Error ? e.message : 'The log stream was interrupted.');
+          setError(errorMessage(e, 'The log stream was interrupted.'));
           if (e instanceof Error && 'code' in e && e.code === 'log_not_retained') return;
         }
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -71,9 +72,9 @@ export function OperationLog({
   async function cancel() {
     setCancelling(true);
     try {
-      setOperation(await post<Operation>(`${route}/cancel`, {}));
+      setOperation(await send<Operation>('POST', `${route}/cancel`, {}));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Cancellation failed.');
+      setError(errorMessage(e, 'Cancellation failed.'));
       setCancelling(false);
     }
   }
@@ -85,7 +86,7 @@ export function OperationLog({
     {!done && <Button variant="outline" size="small" onClick={() => void cancel()} disabled={cancelling || operation.cancelRequested}><CircleStop size={13} />{operation.kind === 'apply' ? 'Interrupt apply' : `Cancel ${noun.toLowerCase()}`}</Button>}
    </header>
    {truncated && <p className="log-note">Earlier lines were dropped to keep memory bounded.</p>}
-   <ol ref={body} className="log-lines" role="log" aria-label={`${noun} output`} aria-live="polite">{events.map(e => <li key={e.seq} className={`log-${e.level}`}><time>{new Date(e.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>{e.text}</span></li>)}{!events.length && <li className="log-info"><span>Waiting for output…</span></li>}</ol>
+   <ol ref={body} className="log-lines" role="log" aria-label={`${noun} output`} aria-live="polite">{events.map(e => <li key={e.seq} className={`log-${e.level}`}><time>{clock(e.time)}</time><span>{e.text}</span></li>)}{!events.length && <li className="log-info"><span>Waiting for output…</span></li>}</ol>
    {error && <p className="log-note" role="alert">{error}</p>}
    {!done && <p className="log-note">{operation.kind === 'apply' ? 'Interrupting asks the engine to stop after the changes in progress. Objects being created or destroyed at that moment can be left partly changed.' : operation.kind === 'init' ? 'Cancelling interrupts the engine and anything it started. Partly downloaded providers or modules may remain under the data directory; running init again completes them.' : operation.kind === 'workspace' ? 'Cancelling interrupts the engine. If the command already started, it may or may not take effect; Hclaro lists workspaces again afterwards and never undoes anything automatically.' : operation.kind === 'tool' ? 'Cancelling interrupts the engine. This command is read-only; partial output is discarded and no result is shown.' : 'Cancelling interrupts the engine so it can release any state lock. Planning never changes infrastructure.'}</p>}
   </section>;

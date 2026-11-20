@@ -1,12 +1,14 @@
 import type { Operation, OperationEvent } from './types';
+import { saveFile } from './lib/download';
+import { storageKeys } from './lib/storage';
 let token = '';
 let csrf = '';
 export function initializeSession() {
   const params = new URLSearchParams(window.location.hash.slice(1));
   const incoming = params.get('session');
   try {
-    if (incoming && /^[a-f0-9]{64}$/.test(incoming)) sessionStorage.setItem('hclaro.session', incoming);
-    token = sessionStorage.getItem('hclaro.session') || '';
+    if (incoming && /^[a-f0-9]{64}$/.test(incoming)) sessionStorage.setItem(storageKeys.session, incoming);
+    token = sessionStorage.getItem(storageKeys.session) || '';
   } catch {
     token = incoming || '';
   }
@@ -33,7 +35,37 @@ const messages: Record<string, string> = {
   preflight_changed: 'The preflight results changed. Review them again. Nothing was applied.',
   scan_not_found: 'This drift scan is no longer kept. Scan again.',
   scan_not_started: 'The drift scan could not be started.',
-  invalid_request: 'The request was refused. Reload the page and try again.'
+  invalid_request: 'The request was refused. Reload the page and try again.',
+  // Refusals the server sends without a reason. internal/api/wire_test.go checks that every one has a message.
+  ai_failed: 'The assistant could not answer. Nothing was changed.',
+  apply_not_started: 'The apply could not be started. Nothing was applied.',
+  candidate_not_found: 'This discovered object is no longer in the scan. Scan again.',
+  change_not_found: 'This change is no longer available. Reload the page.',
+  comparison_not_found: 'This comparison is no longer kept. Compare again.',
+  comparison_not_started: 'The comparison could not be started.',
+  estimate_not_found: 'This cost estimate is no longer kept. Estimate again.',
+  graph_not_found: 'This dependency graph is no longer kept. Generate it again.',
+  graph_not_started: 'The dependency graph could not be started.',
+  history_not_found: 'This history entry is no longer kept.',
+  import_not_started: 'The import plan could not be started. Nothing was imported.',
+  invalid_cursor: 'The log position is not valid. Reload the page.',
+  invalid_filter: 'The history filter is not valid. Clear the filters and try again.',
+  invalid_format: 'Choose JSON or Markdown for the export.',
+  invalid_limit: 'The page size is not valid. Reload the page.',
+  invalid_mode: 'The resource mode filter is not valid. Clear the filters and try again.',
+  invalid_offset: 'The page is out of range. Go back to the first page.',
+  invalid_profile: 'The execution profile is not valid. Check its fields and try again.',
+  invalid_sort: 'The sort order is not valid. Reload the page.',
+  invalid_status: 'The status filter is not valid. Clear the filters and try again.',
+  match_not_found: 'This compared resource is no longer in the comparison. Reload it.',
+  node_not_found: 'This node is not in the dependency graph.',
+  operation_not_found: 'This operation is no longer kept.',
+  package_failed: 'The context package could not be built. Nothing was shared.',
+  plan_not_found: 'This plan is no longer kept. Run a new plan.',
+  plan_not_started: 'The plan could not be started.',
+  resource_not_found: 'This resource is no longer in the state snapshot. Read the workspace again.',
+  route_not_found: 'This feature is not available in this session.',
+  snapshot_unavailable: 'The workspace state is not readable yet. Read the workspace again.'
 };
 export class ApiError extends Error {
   // fields are the structural paths of a blocked AI context package, never values.
@@ -55,7 +87,7 @@ async function failure(response: Response): Promise<ApiError> {
   } catch {/* Non-JSON errors use the generic message. */}
   return new ApiError(code, reason || messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.', fields);
 }
-export type Session = { csrfToken: string; capabilities?: { scopedExecution?: boolean } };
+type Session = { csrfToken: string; capabilities?: { scopedExecution?: boolean } };
 // The one /session read: it serves the capabilities query and the CSRF header of mutations.
 // Concurrent callers share the request in flight; nothing is kept after it settles.
 let pendingSession: Promise<Session> | undefined;
@@ -89,9 +121,6 @@ async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: str
 export function api<T>(path: string): Promise<T> {
   return request<T>('GET', path);
 }
-export function post<T>(path: string, body: unknown): Promise<T> {
-  return request<T>('POST', path, body);
-}
 export function send<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body: unknown): Promise<T> {
   return request<T>(method, path, body);
 }
@@ -100,7 +129,7 @@ export function send<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body:
 export function openInNewTab(path: string) {
   window.open(`${path}#session=${token}`, '_blank', 'noopener');
 }
-export type StreamHandlers = {
+type StreamHandlers = {
   log: (event: OperationEvent) => void;
   status: (operation: Operation) => void;
   truncated: () => void;
@@ -157,13 +186,5 @@ export async function download(path: string, filename: string) {
     cache: 'no-store'
   });
   if (!response.ok) throw await failure(response);
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveFile(await response.blob(), filename);
 }

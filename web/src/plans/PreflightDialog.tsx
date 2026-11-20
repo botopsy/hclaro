@@ -3,9 +3,9 @@ import { CloudCog, LockKeyhole, Play, RefreshCcw, ShieldCheck, X } from 'lucide-
 import type { ExecutionContext, PlanOptions, ReplaceTarget, ScopeView } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
-import { engineLabel } from './labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
+import { engineLabel } from '../lib/format';
 
 // Shown before every plan: planning is not a local-only read.
 export function PreflightDialog({

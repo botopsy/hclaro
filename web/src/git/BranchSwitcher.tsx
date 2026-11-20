@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, ChevronDown, GitBranch, LoaderCircle, ShieldCheck, TriangleAlert, X } from 'lucide-react';
-import { post } from '../api';
+import { send } from '../api';
 import type { GitBranchList, GitContext, GitSwitchPreview } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { shortCommit } from './GitView';
+import { errorMessage } from '../lib/errorMessage';
 
-function message(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to reach the local Hclaro server.';
-}
 // Queries whose answers depend on the checked-out source. None of them runs Terraform/OpenTofu.
 const sourceQueries = ['git-head', 'git-status', 'git-diff', 'git-branches', 'source', 'plans', 'plan', 'plan-options', 'var-files', 'execution-context', 'operations', 'history', 'projects'];
 
@@ -23,7 +21,7 @@ export function BranchSwitcher({ prefix, workspace, notify }: { prefix: string; 
   const wrapper = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   // Listing runs one read-only git for-each-ref, only when the selector is opened.
-  const list = useQuery({ queryKey: ['git-branches', prefix], queryFn: () => post<GitBranchList>(`${prefix}git/branches`, {}), enabled: open, retry: false });
+  const list = useQuery({ queryKey: ['git-branches', prefix], queryFn: () => send<GitBranchList>('POST', `${prefix}git/branches`, {}), enabled: open, retry: false });
   useEffect(() => {
     if (!open) return;
     function key(event: KeyboardEvent) {
@@ -51,7 +49,7 @@ export function BranchSwitcher({ prefix, workspace, notify }: { prefix: string; 
    {open && <div id="branch-switcher-panel" className="switcher-popover branch-popover" role="group" aria-label="Switch Git branch">
     <div className="switcher-label">Git branch</div>
     {list.isPending ? <p className="branch-note" role="status"><LoaderCircle className="spin" size={12} /> Listing local branches…</p>
-     : list.error ? <p className="branch-note" role="alert">{message(list.error)}</p>
+     : list.error ? <p className="branch-note" role="alert">{errorMessage(list.error)}</p>
      : l && l.state !== 'repository' ? <p className="branch-note" role="status">{l.message}</p>
      : l && <>
       <p className="branch-note">{h?.detached ? <><TriangleAlert size={12} aria-hidden="true" /> Detached HEAD at <code>{shortCommit(h.commit)}</code></> : <>Current: <strong className="mono">{h?.branch}</strong></>}</p>
@@ -79,10 +77,10 @@ function SwitchDialog({ prefix, target, workspace, notify, onClose }: { prefix: 
   useModal(dialog, cancel, onClose);
   const client = useQueryClient();
   // The preview reads the working tree; it authorizes nothing, the server checks again.
-  const preview = useQuery({ queryKey: ['git-switch-preview', prefix, target], queryFn: () => post<GitSwitchPreview>(`${prefix}git/switch/preview`, { branch: target }), retry: false, gcTime: 0 });
+  const preview = useQuery({ queryKey: ['git-switch-preview', prefix, target], queryFn: () => send<GitSwitchPreview>('POST', `${prefix}git/switch/preview`, { branch: target }), retry: false, gcTime: 0 });
   const p = preview.data;
   const run = useMutation({
-    mutationFn: () => post<{ git: GitContext }>(`${prefix}git/switch`, { branch: target, expectedBranch: p!.from.branch ?? '', expectedCommit: p!.from.commit ?? '' }),
+    mutationFn: () => send<{ git: GitContext }>('POST', `${prefix}git/switch`, { branch: target, expectedBranch: p!.from.branch ?? '', expectedCommit: p!.from.commit ?? '' }),
     onSuccess: () => {
       for (const key of sourceQueries) void client.invalidateQueries({ queryKey: [key] });
       notify(`Switched to ${target}. No Terraform/OpenTofu command ran; plans made before the switch must pass their checks again. Use Read again to re-inspect backend settings.`);
@@ -96,7 +94,7 @@ function SwitchDialog({ prefix, target, workspace, notify, onClose }: { prefix: 
    <div ref={dialog} className="dialog branch-dialog" role="dialog" aria-modal="true" aria-labelledby="branch-title" aria-describedby="branch-summary">
     <div className="dialog-header"><h2 id="branch-title">Switch Git branch?</h2><Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
     {preview.isPending ? <p id="branch-summary" role="status"><LoaderCircle className="spin" size={13} /> Checking the working tree with <code>git status</code>. Nothing is changed.</p>
-     : preview.error ? <p id="branch-summary" className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{message(preview.error)}</span></p>
+     : preview.error ? <p id="branch-summary" className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{errorMessage(preview.error)}</span></p>
      : p && <>
       <p id="branch-summary" className="branch-route"><strong className="mono">{from}</strong><ArrowRight size={14} aria-label="to" /><strong className="mono">{p.to.name}</strong></p>
       <dl className="branch-facts">
@@ -108,7 +106,7 @@ function SwitchDialog({ prefix, target, workspace, notify, onClose }: { prefix: 
       {p.warnings.map(w => <div className="info-note" role="note" key={w.code}><TriangleAlert size={15} /><span>{w.message}</span></div>)}
       <p className="muted small">Switching changes files in the working tree. It runs no init, plan, refresh or apply; plans made before the switch must pass their checks again.</p>
      </>}
-    {run.error && <div className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{message(run.error)}</span></div>}
+    {run.error && <div className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{errorMessage(run.error)}</span></div>}
     <div className="dialog-actions"><Button ref={cancel} variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={() => run.mutate()} disabled={!p?.canSwitch || run.isPending}>{run.isPending ? <LoaderCircle className="spin" size={13} /> : <GitBranch size={13} />}Switch to {target}</Button></div>
    </div>
   </div>;

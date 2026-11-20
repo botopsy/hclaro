@@ -16,7 +16,7 @@ const profile = (id: string, name: string, extra: Partial<ExecutionProfile> = {}
 const profiles = [profile(prodId, 'Production', { default: true, awsProfile: 'prod-sso', varFiles: ['env/prod.tfvars'] }), profile(devId, 'Development', { awsProfile: 'dev-sso' })];
 const summary = (fingerprint: string, issues: ExecutionSummary['issues'] = []): ExecutionSummary => ({
   projectId, alias: 'network', rootPath: '/work/network', status: 'ready', backend: 's3', executionMode: 'local-cli', engine: 'terraform', engineFound: true, engineVersion: '1.9.8', workspace: 'demo', workspaceSource: 'launch', dataDir: '.terraform',
-  context: { projectId, profileId: prodId, profileName: 'Production', profileRevision: 1, varFiles: [{ ref: 'env/prod.tfvars', path: 'env/prod.tfvars', size: 12, modifiedAt: '2026-11-05T09:00:00Z', linked: false }], options: { parallelism: 4 }, awsProfile: 'prod-sso', awsRegion: 'eu-west-1', env: [{ name: 'TF_VAR_db_password', present: true }], identity: 'not_verified', notices: [], issues, fingerprint },
+  context: { projectId, profileId: prodId, profileName: 'Production', profileRevision: 1, varFiles: [{ ref: 'env/prod.tfvars', path: 'env/prod.tfvars', size: 12, modifiedAt: '2026-11-05T09:00:00Z', linked: false }], options: { parallelism: 4 }, awsProfile: 'prod-sso', awsRegion: 'eu-west-1', env: [{ name: 'TF_VAR_db_password', present: true }], identity: 'not_verified', notices: [], issues, varFileIssues: [], fingerprint },
   issues
 });
 const options = (s?: ExecutionSummary): PlanOptions => ({ canPlan: true, canApply: true, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 's3', varFiles: ['prod.tfvars'], projectId, context: s });

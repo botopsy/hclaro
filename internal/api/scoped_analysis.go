@@ -124,11 +124,7 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		out := struct {
-			CanScan bool `json:"canScan"`
-			analysisOptions
-			VarFiles []string `json:"varFiles"`
-		}{analysisOptions: base, VarFiles: []string{}}
+		out := scopedDriftOptions{analysisOptions: base, VarFiles: []string{}}
 		if s != nil {
 			out.CanScan, out.Reason = s.DriftCapability()
 			out.VarFiles = s.VarFiles()
@@ -198,11 +194,7 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		out := struct {
-			CanGenerate bool `json:"canGenerate"`
-			analysisOptions
-			Command []string `json:"command"`
-		}{analysisOptions: base, Command: []string{}}
+		out := scopedGraphOptions{analysisOptions: base, Command: []string{}}
 		if s != nil {
 			out.CanGenerate, out.Reason = s.GraphCapability()
 			out.Command = append([]string{base.Engine}, engine.GraphArgs()...)
@@ -264,4 +256,16 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			serveGraphImpact(w, r, noScope{})
 		}
 	}))
+}
+
+type scopedDriftOptions struct {
+	CanScan bool `json:"canScan"`
+	analysisOptions
+	VarFiles []string `json:"varFiles"`
+}
+
+type scopedGraphOptions struct {
+	CanGenerate bool `json:"canGenerate"`
+	analysisOptions
+	Command []string `json:"command"`
 }

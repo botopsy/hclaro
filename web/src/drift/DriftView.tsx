@@ -1,20 +1,22 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Braces, CircleCheck, CircleDashed, CircleHelp, CircleX, CloudCog, Copy, History, LoaderCircle, LockKeyhole, Minus, Pencil, Play, ScanSearch, Search, ShieldCheck, TriangleAlert, X, type LucideIcon } from 'lucide-react';
-import { api, ApiError, post } from '../api';
+import { api, ApiError, send } from '../api';
 import type { DriftClassification, DriftDetail, DriftOptions, DriftResource, DriftScan, Operation } from '../types';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
 import { useModal } from '../components/useModal';
 import { OperationLog } from '../plans/OperationLog';
-import { clock, engineLabel } from '../plans/labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
 import { ScopeSummary } from '../plans/PreflightDialog';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
-import { activeOperation, operationsQuery } from '../plans/operations';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
+import { activeOperation, operationsQuery } from '../lib/queries';
 import { AskAI } from '../assist/AskAI';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
+import { clock, engineLabel } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
+import { ErrorState } from '../components/ErrorState';
 
 // Classifications are distinguished by icon and text, never by color alone.
 const classes: Record<DriftClassification, { label: string; icon: LucideIcon; tone: string }> = {
@@ -87,13 +89,13 @@ export function DriftView({
     try {
       // A Hub workspace's scan is bound to the scope its options described; it takes no profile.
       const body = scoped ? { acknowledgeProviderAccess: true, varFiles, contextFingerprint: options.data?.contextFingerprint ?? '' } : { acknowledgeProviderAccess: true, varFiles, ...(contextFingerprint ? { profileId, contextFingerprint } : {}) };
-      const started = await post<{ operation: Operation; scan: DriftScan }>(scopedPath(scope, 'drift-scans'), body);
+      const started = await send<{ operation: Operation; scan: DriftScan }>('POST', scopedPath(scope, 'drift-scans'), body);
       setPreflight(false);
       setScanId(started.scan.id);
       await client.invalidateQueries({ queryKey: ['operations'] });
       await client.invalidateQueries({ queryKey: ['drift-scans'] });
     } catch (e) {
-      setStartError(e instanceof Error ? e.message : 'The scan could not be started.');
+      setStartError(errorMessage(e, 'The scan could not be started.'));
       void options.refetch();
     } finally {
       setStarting(false);
@@ -101,7 +103,7 @@ export function DriftView({
   }
   const canScan = !!options.data?.canScan && !running;
   const latest = scans.data?.scans[0];
-  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{options.error.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing ran.</span></div>;
+  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <ErrorState icon={TriangleAlert} iconSize={26} title="Open this workspace again" message={options.error.message} retry={reopen} retryLabel="Open again" note="Nothing ran." />;
   return <div className="plans drift">
    <div className="plans-toolbar">
     <Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canScan} title={running && running.kind !== 'drift' ? 'Another operation is running.' : undefined}><ScanSearch size={14} />Check drift</Button>
@@ -113,7 +115,7 @@ export function DriftView({
    {workspaceStatus === 'loading' && !running ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace before scanning is available…</div> : options.data && !options.data.canScan && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Drift scans are unavailable here.</strong> {options.data.reason}</span></div>}
    {running && running.kind === 'drift' && <OperationLog key={running.id} scope={scope} operation={running} onFinished={finished} />}
    {running && running.kind !== 'drift' && <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Another operation is running in this project. Scanning is available when it finishes.</div>}
-   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <div className="empty-state error-state" role="alert"><p>{scan.error.message}</p></div> : scan.data && scan.data.status !== 'running' ? <ScanResult key={scan.data.id} scope={scope} scan={scan.data} openResource={openResource} runPlan={runPlan} rescan={() => setPreflight(true)} canScan={canScan} copy={copy} /> : !running && !shownId && <div className="empty-state"><ScanSearch size={30} /><h2>No drift scans yet</h2><p>Check drift to compare the objects recorded in state with what providers report. It may contact provider APIs and the backend, so it only runs when you ask.</p>{options.data?.canScan && <Button variant="outline" onClick={() => setPreflight(true)}><ScanSearch size={14} />Check drift</Button>}</div>}
+   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <ErrorState inline message={scan.error.message} /> : scan.data && scan.data.status !== 'running' ? <ScanResult key={scan.data.id} scope={scope} scan={scan.data} openResource={openResource} runPlan={runPlan} rescan={() => setPreflight(true)} canScan={canScan} copy={copy} /> : !running && !shownId && <div className="empty-state"><ScanSearch size={30} /><h2>No drift scans yet</h2><p>Check drift to compare the objects recorded in state with what providers report. It may contact provider APIs and the backend, so it only runs when you ask.</p>{options.data?.canScan && <Button variant="outline" onClick={() => setPreflight(true)}><ScanSearch size={14} />Check drift</Button>}</div>}
    {preflight && options.data && <DriftPreflight options={options.data} project={project} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={() => { setPreflight(false); setStartError(''); }} />}
   </div>;
 }
@@ -253,7 +255,7 @@ function DriftInspector({ scope, scanId, changeId, close, openResource, copy }: 
   const d = detail.data;
   return <Drawer label="Drift details" onClose={close}>
    <div className="inspector-header"><span><Braces size={15} />Drift details</span><Button variant="ghost" size="icon" aria-label="Close drift details" onClick={close}><X size={16} /></Button></div>
-   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <div className="empty-state error-state" role="alert"><p>{detail.error.message}</p></div> : d && <div className="inspector-body">
+   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : d && <div className="inspector-body">
     <div className="inspector-title"><ClassBadge value={d.classification} /><span className="mono muted">{d.actions.join(', ')}</span></div>
     <div className="address-box"><div className="label-row"><span>RESOURCE ADDRESS</span><Button variant="ghost" size="icon" aria-label="Copy resource address" onClick={() => void copy(d.address, 'Address')}><Copy size={13} /></Button></div><code>{d.address}</code></div>
     {d.classification === 'missing' && <p className="plan-warning"><TriangleAlert size={14} />The provider reported that this object no longer exists. State still records it until state is changed by a reviewed operation.</p>}

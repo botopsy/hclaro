@@ -7,13 +7,9 @@ import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { OperationLog } from '../plans/OperationLog';
 import { RecordedContext } from '../profiles/ContextSummary';
+import { errorMessage } from '../lib/errorMessage';
+import { engineLabel } from '../lib/format';
 
-function engineLabel(name?: string) {
-  return name === 'tofu' ? 'OpenTofu' : 'Terraform';
-}
-function message(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to reach the local Hclaro server. Check that it is still running, then retry.';
-}
 const outcomeTitle: Record<string, string> = {
   succeeded: 'Initialized',
   failed: 'Initialization failed',
@@ -60,7 +56,7 @@ export function InitWizard({ projectId, profileId = '', onClose, onFinished }: {
     try {
       setStarted(await send<Operation>('POST', `projects/${projectId}/operations/init`, { mode: 'standard', expectedContextId: s.contextId, ...(profileId ? { profileId } : {}) }));
     } catch (e) {
-      setError(message(e));
+      setError(errorMessage(e));
       void status.refetch();
     } finally {
       setStarting(false);
@@ -74,13 +70,13 @@ export function InitWizard({ projectId, profileId = '', onClose, onFinished }: {
     setError('');
     void status.refetch();
   }
-  const engine = engineLabel(s?.engine);
+  const engine = engineLabel(s?.engine, 'Terraform');
   const running = operation && !result;
   return <div className="dialog-backdrop">
    <div ref={dialog} className="dialog dialog-wide init-dialog" role="dialog" aria-modal="true" aria-labelledby="init-title">
     <div className="dialog-header"><h2 id="init-title">{operation ? `Initialize ${s?.alias || 'project'}` : `Review init for ${s?.alias || 'project'}`}</h2><Button ref={close} variant="ghost" size="icon" aria-label={running ? 'Close; init keeps running' : 'Close'} onClick={onClose}><X size={15} /></Button></div>
     {status.isPending ? <p className="muted" role="status"><LoaderCircle className="spin" size={13} /> Reading the project folder… No command runs.</p>
-      : status.error || !s ? <><p className="dialog-error" role="alert">{message(status.error)}</p><div className="dialog-actions"><Button variant="outline" onClick={() => void status.refetch()}>Try again</Button></div></>
+      : status.error || !s ? <><p className="dialog-error" role="alert">{errorMessage(status.error)}</p><div className="dialog-actions"><Button variant="outline" onClick={() => void status.refetch()}>Try again</Button></div></>
       : operation ? <>
        <OperationLog key={operation.id} operation={operation} onFinished={finished} />
        {running && <p className="muted">You can close this dialog; init keeps running and you can return to it from the project page.</p>}

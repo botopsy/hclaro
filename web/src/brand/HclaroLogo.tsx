@@ -4,7 +4,7 @@
 import type { CSSProperties } from 'react';
 
 // "auto" follows the active light/dark theme; the others pin one reference variant.
-export type LogoVariant = 'auto' | 'light' | 'dark' | 'inverse';
+type LogoVariant = 'auto' | 'light' | 'dark' | 'inverse';
 
 type Accessible = {
   // The accessible name. Pass decorative when a surrounding control already names it.

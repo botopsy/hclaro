@@ -62,7 +62,7 @@ func newScopedDiscovery(t *testing.T) (*scopedServer, *envRunner) {
 	return s, runner
 }
 
-type scopedDiscoveryOptions struct {
+type discoveryOptionsBody struct {
 	CanScan            bool                     `json:"canScan"`
 	Code               string                   `json:"code"`
 	Reason             string                   `json:"reason"`
@@ -76,13 +76,13 @@ type scopedDiscoveryOptions struct {
 	} `json:"scope"`
 }
 
-func (s *scopedServer) discoveryOptions(cid string) scopedDiscoveryOptions {
+func (s *scopedServer) discoveryOptions(cid string) discoveryOptionsBody {
 	s.t.Helper()
 	w := s.do("GET", "/api/v1/contexts/"+cid+"/discovery/options", "")
 	if w.Code != 200 {
 		s.t.Fatalf("discovery options: %d %s", w.Code, w.Body)
 	}
-	return decode[scopedDiscoveryOptions](s.t, w)
+	return decode[discoveryOptionsBody](s.t, w)
 }
 
 func (s *scopedServer) waitDiscovery(cid, id string) discovery.ScanView {
@@ -169,7 +169,7 @@ func TestScopedDiscoveryStaysInItsContext(t *testing.T) {
 	if o := s.discoveryOptions(c); o.Identity != nil {
 		t.Fatalf("platform sees %+v", o.Identity)
 	}
-	if launch := decode[scopedDiscoveryOptions](t, s.do("GET", "/api/v1/discovery/options", "")); launch.Identity != nil {
+	if launch := decode[discoveryOptionsBody](t, s.do("GET", "/api/v1/discovery/options", "")); launch.Identity != nil {
 		t.Fatalf("launch sees %+v", launch.Identity)
 	}
 	// A verification of one context cannot start a scan in another.

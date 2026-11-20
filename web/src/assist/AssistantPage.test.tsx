@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssistantPage } from './AssistantPage';
-import type { PlanScope } from '../plans/routes';
+import type { PlanScope } from '../lib/scope';
 
 // AI-01.09: the AI Assistant page. Fake server only.
 const hash = 'a'.repeat(64);

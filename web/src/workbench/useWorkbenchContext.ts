@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { api, post, sessionQuery } from '../api';
+import { api, send, sessionQuery } from '../api';
 import type { ContextInfo, Workspace } from '../types';
 import type { Route } from '../router';
-import { projectsQuery } from '../hub/HubView';
 import { useProfileSelection } from '../profiles/selection';
-import { launchScope, scopeKey, snapshotPath, type PlanScope } from '../plans/routes';
-import { operationsQuery } from '../plans/operations';
+import { launchScope, scopeKey, snapshotPath, type PlanScope } from '../lib/scope';
+import { operationsQuery, projectsQuery } from '../lib/queries';
 
 // The selected context of one workbench: which project and profile it reads, the Hub context
 // it opened, and where its reads, plans and operations go. A Hub workspace reads only through
@@ -24,7 +23,7 @@ export function useWorkbenchContext(route: Route, generation: number) {
   const profileReady = !profileProject || profile.profiles.isFetched;
   const opened = useQuery({
     queryKey: ['context-open', scoped?.projectId, scoped?.workspace, profile.selected, generation],
-    queryFn: () => post<ContextInfo>('contexts', {
+    queryFn: () => send<ContextInfo>('POST', 'contexts', {
       projectId: scoped!.projectId,
       workspace: scoped!.workspace,
       reload: generation > 0,

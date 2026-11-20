@@ -42,7 +42,7 @@ const report = (ws: string): PreflightReport => ({
   checks: [{ id: 'context.production', title: 'Not a production-like context', severity: 'warn', status: 'fail', evidence: `Production-like label: workspace ${ws}.`, source: 'policy' }],
   blocked: false, blockers: 0, acknowledge: ['context.production'],
   impact: { summary: { delete: 1 }, total: 1, destructive: 1, imports: 0, requested: [], extra: 0, highRisk: [], changes: [], truncated: false },
-  policy: { source: 'default', version: 1, valid: true }, identity: { state: 'not_requested' },
+  policy: { source: 'default', version: 1, valid: true, rules: { gitDirty: 'warn', productionLabels: { severity: 'warn', patterns: [] } } }, identity: { state: 'not_requested' },
   binding: 'f'.repeat(64), phrase: `apply ${ws}`, command: ['terraform', 'apply', '<reviewed saved plan>']
 });
 

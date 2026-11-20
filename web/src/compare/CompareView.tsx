@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ArrowLeftRight, ArrowRight, Braces, ChevronLeft, ChevronRight, CircleDashed, CircleHelp, Copy, Database, Download, Equal, ExternalLink, GitCompareArrows, History, Info, ListFilter, LoaderCircle, LockKeyhole, Network, Pencil, Plus, RefreshCcw, Search, ShieldCheck, Trash2, TriangleAlert, X, type LucideIcon } from 'lucide-react';
-import { api, download, openInNewTab, post } from '../api';
+import { api, download, openInNewTab, send } from '../api';
 import type { Comparison, ComparisonAttribute, ComparisonDetail, ComparisonMatch, ComparisonRule, ComparisonSide, ComparisonTarget, MatchStatus, Project, StatusCounts, TargetStatus } from '../types';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
 import { useModal } from '../components/useModal';
 import { contextPath, productionLike } from '../router';
-import { clock, engineLabel } from '../plans/labels';
-import { ProductionBadge, projectsQuery } from '../hub/HubView';
 import { profilesQuery } from '../profiles/selection';
 import { RecordedContext } from '../profiles/ContextSummary';
+import { clock, engineLabel } from '../lib/format';
+import { ProductionBadge } from '../components/ProductionBadge';
+import { projectsQuery } from '../lib/queries';
+import { errorMessage } from '../lib/errorMessage';
+import { useDebounced } from '../lib/useDebounced';
+import { readJSON, readStorage, storageKeys, writeStorage } from '../lib/storage';
+import { ErrorState } from '../components/ErrorState';
 
 const statuses: Record<MatchStatus, { label: string; short: string; icon: LucideIcon; tone: string; key: keyof StatusCounts }> = {
   'attribute-different': { label: 'Attribute differences', short: 'Different', icon: Pencil, tone: 'update', key: 'different' },
@@ -42,7 +47,7 @@ const workspacePattern = /^[A-Za-z0-9_-]{1,90}$/;
 // server refuses when it looks like a credential.
 function readDraft(): Draft {
   try {
-    const saved = JSON.parse(sessionStorage.getItem('hclaro.compare.draft') || 'null') as Draft | null;
+    const saved = readJSON('session', storageKeys.compareDraft) as Draft | null | undefined;
     if (!saved || typeof saved !== 'object' || !Array.isArray(saved.rules)) return emptyDraft;
     const target = (t?: TargetDraft): TargetDraft => ({
       projectId: t && hex.test(t.projectId) ? t.projectId : '',
@@ -58,23 +63,16 @@ function readDraft(): Draft {
 function str(v: unknown) {
   return typeof v === 'string' ? v.slice(0, 256) : '';
 }
+// Without storage the draft lasts until the page reloads.
 function writeDraft(draft: Draft) {
-  try {
-    sessionStorage.setItem('hclaro.compare.draft', JSON.stringify(draft));
-  } catch {/* Without storage the draft lasts until the page reloads. */}
+  writeStorage('session', storageKeys.compareDraft, JSON.stringify(draft));
 }
 function readComparisonId() {
-  try {
-    const id = sessionStorage.getItem('hclaro.compare.id') || '';
-    return hex.test(id) ? id : undefined;
-  } catch {
-    return undefined;
-  }
+  const id = readStorage('session', storageKeys.compareId) || '';
+  return hex.test(id) ? id : undefined;
 }
 function writeComparisonId(id: string) {
-  try {
-    sessionStorage.setItem('hclaro.compare.id', id);
-  } catch {/* Session only. */}
+  writeStorage('session', storageKeys.compareId, id);
 }
 // Rules are sent without empty optional fields.
 function cleanRules(rules: ComparisonRule[]): ComparisonRule[] {
@@ -118,14 +116,14 @@ export function CompareView({ copy }: { copy: (value: string, label: string) => 
     setStarting(true);
     setStartError('');
     try {
-      const started = await post<Comparison>('comparisons', { left, right, rules: cleanRules(draft.rules), reload, acknowledgeStateRead: true });
+      const started = await send<Comparison>('POST', 'comparisons', { left, right, rules: cleanRules(draft.rules), reload, acknowledgeStateRead: true });
       setPreflight(false);
       setComparisonId(started.id);
       client.setQueryData(['comparison', started.id], started);
       void client.invalidateQueries({ queryKey: ['comparisons'] });
       void client.invalidateQueries({ queryKey: ['compare-target'] });
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'The comparison could not be started.';
+      const message = errorMessage(e, 'The comparison could not be started.');
       const match = /^Rule (\d+):/.exec(message);
       if (match) setRuleError({ index: Number(match[1]) - 1, reason: message });
       setStartError(message);
@@ -175,10 +173,10 @@ function TargetCard({ side, draft, projects, onChange }: { side: 'left' | 'right
     setListing(true);
     setListError('');
     try {
-      await post(`projects/${project.id}/inspect`, {});
+      await send('POST', `projects/${project.id}/inspect`, {});
       await client.invalidateQueries({ queryKey: ['projects'] });
     } catch (e) {
-      setListError(e instanceof Error ? e.message : 'Workspaces could not be listed.');
+      setListError(errorMessage(e, 'Workspaces could not be listed.'));
     } finally {
       setListing(false);
     }
@@ -288,7 +286,7 @@ function ComparisonResult({ id, copy, compareAgain, canCompare }: { id: string; 
     if (settled) void client.invalidateQueries({ queryKey: ['compare-target'] });
   }, [settled, client]);
   if (comparison.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading comparison…</p></div>;
-  if (comparison.error || !c) return <div className="empty-state error-state" role="alert"><p>{comparison.error?.message ?? 'This comparison is not available.'}</p></div>;
+  if (comparison.error || !c) return <ErrorState inline message={comparison.error?.message ?? 'This comparison is not available.'} />;
   const s = c.summary;
   const counts = (status: MatchStatus) => s ? s.managed[statuses[status].key] + s.data[statuses[status].key] : 0;
   function toggle(status: MatchStatus) {
@@ -300,7 +298,7 @@ function ComparisonResult({ id, copy, compareAgain, canCompare }: { id: string; 
     try {
       await download(`comparisons/${id}/export?format=${format}`, `hclaro-comparison-${id.slice(0, 8)}.${format === 'json' ? 'json' : 'md'}`);
     } catch (e) {
-      setExportError(e instanceof Error ? e.message : 'The report could not be exported.');
+      setExportError(errorMessage(e, 'The report could not be exported.'));
     }
   }
   return <div className="plan-review compare-result">
@@ -358,7 +356,7 @@ const PAGE = 100;
 
 function MatchList({ comparison, filter, setFilter, module, setModule, copy }: { comparison: Comparison; filter: MatchStatus[]; setFilter: (f: MatchStatus[]) => void; module?: string; setModule: (m?: string) => void; copy: (value: string, label: string) => Promise<void> }) {
   const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
+  const query = useDebounced(search.trim(), 180);
   const [mode, setMode] = useState('');
   const [type, setType] = useState('');
   // The page resets whenever a filter changes.
@@ -367,10 +365,6 @@ function MatchList({ comparison, filter, setFilter, module, setModule, copy }: {
   const page = paging.key === filterKey ? paging.page : 0;
   const setPage = (next: number) => setPaging({ key: filterKey, page: next });
   const [selected, setSelected] = useState<string>();
-  useEffect(() => {
-    const timer = setTimeout(() => setQuery(search.trim()), 180);
-    return () => clearTimeout(timer);
-  }, [search]);
   const params = useMemo(() => {
     const p = new URLSearchParams();
     if (filter.length) p.set('status', filter.join(','));
@@ -396,7 +390,7 @@ function MatchList({ comparison, filter, setFilter, module, setModule, copy }: {
    </div>
    <div className={`explorer plan-explorer ${selected ? 'with-inspector' : ''}`}>
     <section className="resource-list" aria-label="Compared resources">
-     {matches.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading…</p></div> : matches.error ? <div className="empty-state error-state" role="alert"><p>{matches.error.message}</p></div> : total === 0 ? <div className="empty-state"><Braces size={26} /><h2>{filtered ? 'No matching resources' : 'Neither side records resources'}</h2></div> : <>
+     {matches.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading…</p></div> : matches.error ? <ErrorState inline message={matches.error.message} /> : total === 0 ? <div className="empty-state"><Braces size={26} /><h2>{filtered ? 'No matching resources' : 'Neither side records resources'}</h2></div> : <>
       <table className="resources-table changes-table compare-table"><thead><tr><th scope="col">Status</th><th scope="col">Resource</th><th scope="col">Detail</th></tr></thead><tbody>{matches.data!.matches.map(m => <tr key={m.id} className={selected === m.id ? 'selected' : ''}>
        <td><StatusBadge value={m.status} /></td>
        <td><button className="resource-button" aria-pressed={selected === m.id} onClick={() => setSelected(m.id)}><span className="resource-text"><strong className="mono change-address">{m.rightAddress || m.leftAddress}</strong><span className="resource-type">{m.type}{m.mode === 'data' && ' · data source'}{m.leftAddress && m.rightAddress && m.leftAddress !== m.rightAddress && <> · left <span className="mono">{m.leftAddress}</span></>}</span></span></button></td>
@@ -441,7 +435,7 @@ function MatchInspector({ comparison, matchId, close, copy }: { comparison: Comp
   const same = d?.attributes.filter(a => a.status === 'same' && !a.normalized).length ?? 0;
   return <Drawer label="Comparison details" onClose={close}>
    <div className="inspector-header"><span><GitCompareArrows size={15} />Comparison details</span><Button variant="ghost" size="icon" aria-label="Close comparison details" onClick={close}><X size={16} /></Button></div>
-   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <div className="empty-state error-state" role="alert"><p>{detail.error.message}</p></div> : d && <div className="inspector-body">
+   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : d && <div className="inspector-body">
     <div className="inspector-title"><StatusBadge value={d.status} /><span className="mono muted">{d.type}{d.mode === 'data' ? ' · data source' : ''}</span></div>
     {(['left', 'right'] as const).map(side => {
      const address = side === 'left' ? d.leftAddress : d.rightAddress;
