@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
@@ -45,7 +45,7 @@ func writeSource(t *testing.T, path, content string) {
 
 // sourceSetup is setup() with the project root at repo/app, a local module at repo/mod
 // (outside the root) and a gitctx service whose Git commands are recorded.
-func sourceSetup(t *testing.T, fake *engine.Fake) (*Manager, string, string, *[][]string) {
+func sourceSetup(t *testing.T, fake *enginetest.Fake) (*Manager, string, string, *[][]string) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
@@ -82,7 +82,7 @@ func sourceSetup(t *testing.T, fake *engine.Fake) (*Manager, string, string, *[]
 }
 
 func TestPlanRecordsSourceFingerprint(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, repo, _, calls := sourceSetup(t, fake)
 	head := gitFixture(t, repo, "rev-parse", "HEAD")
 	id := planned(t, m)
@@ -107,7 +107,7 @@ func TestPlanRecordsSourceFingerprint(t *testing.T) {
 }
 
 func TestModifiedTrackedFileAfterPlanBlocksApply(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _, root, _ := sourceSetup(t, fake)
 	id := planned(t, m)
 	approval, err := approve(m, id)
@@ -136,7 +136,7 @@ func TestModifiedTrackedFileAfterPlanBlocksApply(t *testing.T) {
 }
 
 func TestLocalModuleChangeOutsideRootBlocksApply(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, repo, _, _ := sourceSetup(t, fake)
 	id := planned(t, m)
 	approval, err := approve(m, id)
@@ -158,7 +158,7 @@ func TestLocalModuleChangeOutsideRootBlocksApply(t *testing.T) {
 }
 
 func TestHeadMoveWithSameFilesNeedsAcknowledgement(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, repo, _, _ := sourceSetup(t, fake)
 	id := planned(t, m)
 	writeSource(t, filepath.Join(repo, "README.md"), "docs\n")
@@ -187,7 +187,7 @@ func TestHeadMoveWithSameFilesNeedsAcknowledgement(t *testing.T) {
 }
 
 func TestNoSourceTrackingKeepsM14Checks(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	m.GitProbe = (&gitState{r: clean}).probe
 	id := planned(t, m)

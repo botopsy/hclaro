@@ -752,7 +752,17 @@ func TestConcurrencyLimitsAndCancellation(t *testing.T) {
 	r.delay = 200 * time.Millisecond
 	r.mu.Unlock()
 	c, _ := s.Start(pin(), nil, id.ID, scope)
-	time.Sleep(30 * time.Millisecond)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
+		r.mu.Lock()
+		reading := r.inFlight > 0
+		r.mu.Unlock()
+		if reading {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the scan never started a read")
+		}
+	}
 	if _, err := s.Cancel(c.ID, ""); err != nil {
 		t.Fatal(err)
 	}

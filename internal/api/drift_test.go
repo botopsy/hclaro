@@ -16,6 +16,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
@@ -47,7 +48,7 @@ func startScan(t *testing.T, s *planServer) (operations.Operation, scanView) {
 }
 
 // newDriftServer is newPlanServer that also returns the launch store.
-func newDriftServer(t *testing.T, fake *engine.Fake) (*planServer, *workspace.Store) {
+func newDriftServer(t *testing.T, fake *enginetest.Fake) (*planServer, *workspace.Store) {
 	t.Helper()
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
@@ -60,7 +61,7 @@ func newDriftServer(t *testing.T, fake *engine.Fake) (*planServer, *workspace.St
 }
 
 func TestDriftScanAPI(t *testing.T) {
-	fake := &engine.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed}
+	fake := &enginetest.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed}
 	s, store := newDriftServer(t, fake)
 	options := decode[struct {
 		CanScan   bool   `json:"canScan"`
@@ -152,7 +153,7 @@ func TestDriftScanAPI(t *testing.T) {
 }
 
 func TestDriftScanAPIFailuresAndUnsupported(t *testing.T) {
-	fake := &engine.Fake{Lines: lines(fixtures.DriftLogSSO), PlanErr: &engine.ExitError{Code: 1}}
+	fake := &enginetest.Fake{Lines: lines(fixtures.DriftLogSSO), PlanErr: &engine.ExitError{Code: 1}}
 	s := newPlanServer(t, fake)
 	op, scan := startScan(t, s)
 	if op.Status != "failed" || scan.Status != "failed" || scan.Outcome != "" || scan.Exhaustive || scan.Diagnostic == nil || scan.Diagnostic.Code != "credentials" {
@@ -160,7 +161,7 @@ func TestDriftScanAPIFailuresAndUnsupported(t *testing.T) {
 	}
 
 	// Remote execution: refused with a reason, nothing runs.
-	remote := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
+	remote := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"})
 	store.Load(context.Background(), remote, "terraform", nil)
 	manager := operations.NewManager(store, remote, t.TempDir())
@@ -186,7 +187,7 @@ func TestDriftScanAPIFailuresAndUnsupported(t *testing.T) {
 }
 
 func TestDriftScanRouteGuard(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.DriftNone})
+	s := newPlanServer(t, &enginetest.Fake{PlanJSON: fixtures.DriftNone})
 	for _, tc := range []struct {
 		name, method, path, origin, csrfHeader string
 		code                                   int
@@ -231,7 +232,7 @@ var updateGolden = flag.Bool("update", false, "rewrite golden files")
 // TestDriftGolden pins the scan and detail responses the UI consumes for the mixed fixture.
 // Times and IDs are fixed so the file is deterministic.
 func TestDriftGolden(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.DriftMixed}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftMixed}
 	s, _ := newDriftServer(t, fake)
 	n := 0
 	s.manager.NewID = func() string { n++; return fmt.Sprintf("%032x", n) }

@@ -8,12 +8,13 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/workspace"
 )
 
 // orderedFake records the shared pre-run steps in one order and can fail the workspace check.
 type orderedFake struct {
-	*engine.Fake
+	*enginetest.Fake
 	mu    sync.Mutex
 	order []string
 	name  string
@@ -77,7 +78,7 @@ func TestPrerunCodesAndOrderPerKind(t *testing.T) {
 			{"scope changed", "scope_changed", func(f *orderedFake) { f.scope = true }},
 		} {
 			t.Run(kind+"/"+tc.name, func(t *testing.T) {
-				fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, GraphDOT: []byte("digraph {}")}
+				fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, GraphDOT: []byte("digraph {}")}
 				m, _ := setup(t, fake, workspace.Info{})
 				f := &orderedFake{Fake: fake}
 				m.Verify = func(_ context.Context, got string) *Diagnostic {
@@ -117,7 +118,7 @@ func TestPrerunCodesAndOrderPerKind(t *testing.T) {
 // B08: ResolveProfile no longer fills in the fingerprint itself; an unreviewed profile is
 // refused, as for a plan.
 func TestResolveProfileRequiresReviewedFingerprint(t *testing.T) {
-	m, _ := setup(t, &engine.Fake{}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{}, workspace.Info{})
 	m.Binder = func(string) (Binding, error) {
 		return Binding{Context: ExecutionContext{ProfileID: "p", Fingerprint: "fp"}}, nil
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"hclaro/internal/drift"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 	"hclaro/internal/workspace"
@@ -85,7 +86,7 @@ type driftSource interface {
 
 func serveDriftScan(w http.ResponseWriter, r *http.Request, src driftSource) {
 	id := r.PathValue("id")
-	if !idPattern.MatchString(id) {
+	if !ids.Valid(id) {
 		errorJSON(w, 404, "scan_not_found")
 		return
 	}
@@ -99,7 +100,7 @@ func serveDriftScan(w http.ResponseWriter, r *http.Request, src driftSource) {
 
 func serveDriftDetail(w http.ResponseWriter, r *http.Request, src driftSource) {
 	id, change := r.PathValue("id"), r.PathValue("change")
-	if !idPattern.MatchString(id) || !idPattern.MatchString(change) {
+	if !ids.Valid(id) || !ids.Valid(change) {
 		errorJSON(w, 404, "change_not_found")
 		return
 	}

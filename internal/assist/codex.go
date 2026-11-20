@@ -409,24 +409,24 @@ func planClaim(claims map[string]json.RawMessage) (string, bool) {
 func (c *CodexCLI) prepare(ctx context.Context, st ProviderStatus) (Prepared, error) {
 	home, err := codexHome()
 	if err != nil {
-		return Prepared{}, &Failure{Kind: KindCodexAccount}
+		return Prepared{}, &failure{Kind: KindCodexAccount}
 	}
 	bin, err := filepath.EvalSymlinks(st.Path)
 	if err != nil {
-		return Prepared{}, &Failure{Kind: KindMissing}
+		return Prepared{}, &failure{Kind: KindMissing}
 	}
 	key, sum, err := c.binaryHash(bin)
 	if err != nil {
-		return Prepared{}, &Failure{Kind: KindCodexCheck}
+		return Prepared{}, &failure{Kind: KindCodexCheck}
 	}
 	catalog, cleanup, err := writeCatalog()
 	if err != nil {
-		return Prepared{}, &Failure{Kind: KindFailed}
+		return Prepared{}, &failure{Kind: KindFailed}
 	}
 	fail := func(err error) (Prepared, error) { cleanup(); return Prepared{}, err }
 	features, models, kind := c.effective(ctx, bin, home, catalog)
 	if kind != "" {
-		return fail(&Failure{Kind: kind})
+		return fail(&failure{Kind: kind})
 	}
 	binding := bindingOf(c.RunArgs, sum, st.Version, features, models)
 	c.mu.Lock()
@@ -439,7 +439,7 @@ func (c *CodexCLI) prepare(ctx context.Context, st ProviderStatus) (Prepared, er
 			if ctx.Err() != nil {
 				return fail(ctx.Err())
 			}
-			return fail(&Failure{Kind: kind})
+			return fail(&failure{Kind: kind})
 		}
 		c.passed, c.failedAt = binding, ""
 	}

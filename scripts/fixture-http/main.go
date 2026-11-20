@@ -7,24 +7,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hclaro/fixtures"
-	"hclaro/internal/api"
-	"hclaro/internal/cost"
-	"hclaro/internal/cost/costtest"
-	"hclaro/internal/discovery"
-	"hclaro/internal/discovery/discoverytest"
-	"hclaro/internal/engine"
-	"hclaro/internal/gitctx"
-	"hclaro/internal/imports"
-	"hclaro/internal/operations"
-	"hclaro/internal/ui"
-	"hclaro/internal/workspace"
 	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"hclaro/fixtures"
+	"hclaro/internal/api"
+	"hclaro/internal/cost"
+	"hclaro/internal/cost/costtest"
+	"hclaro/internal/discovery"
+	"hclaro/internal/discovery/discoverytest"
+	"hclaro/internal/engine/enginetest"
+	"hclaro/internal/gitctx"
+	"hclaro/internal/imports"
+	"hclaro/internal/operations"
+	"hclaro/internal/ui"
+	"hclaro/internal/workspace"
 )
 
 func main() {
@@ -44,7 +45,7 @@ func main() {
 		input, _ = json.Marshal(map[string]any{"format_version": "1.0", "values": map[string]any{"root_module": map[string]any{"resources": resources}}})
 	}
 	store := workspace.New(workspace.Info{Project: "platform-infra", Initialized: true, Backend: "local", ExecutionMode: "local-cli", Warnings: []string{"Synthetic fixture. Recorded state, not live cloud inventory."}})
-	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: input, PlanJSON: fixtures.PlanAllActions, Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n"))}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: input, PlanJSON: fixtures.PlanAllActions, Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n"))}
 	importing := os.Getenv("HCLARO_FIXTURE_IMPORT") == "1"
 	if importing {
 		fake.PlanJSON, fake.GeneratedConfig = fixtures.PlanImport, fixtures.ImportGenerated

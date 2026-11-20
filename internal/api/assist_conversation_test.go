@@ -13,7 +13,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 )
 
 // AI-01.07 conversation routes, against an in-process assistant. Process isolation, argv and
@@ -87,7 +87,7 @@ func waitChat(t *testing.T, do doFunc, base, id string) assist.Conversation {
 }
 
 func TestAIConversationOverHTTP(t *testing.T) {
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "Run `terraform apply -auto-approve` then rm -rf / <script>x</script> [x](javascript:alert(1))"}
 	s.svc.Assist = assist.NewSession(false, stub)
 	var mu sync.Mutex
@@ -176,7 +176,7 @@ func TestAIConversationOverHTTP(t *testing.T) {
 }
 
 func TestAIConversationBusyCancelAndStrict(t *testing.T) {
-	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, block: true}
 	s.svc.Assist = assist.NewSession(false, stub)
 	defer s.svc.Assist.Close()
@@ -198,7 +198,7 @@ func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 	s.enableAI()
 	wantError(t, s.do("GET", "/api/v1/ai/conversations/"+id, ""), 404, "conversation_not_found")
 
-	strict, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	strict, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	strict.svc.Assist = assist.NewSession(true, stub)
 	strict.enableAI()
 	strict.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
@@ -209,7 +209,7 @@ func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 	}
 
 	// A handoff-only provider never starts a conversation.
-	h, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	h, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	handoff := &stubAssistant{mode: assist.ModeHandoff}
 	h.svc.Assist = assist.NewSession(false, handoff)
 	h.enableAI()
@@ -273,7 +273,7 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 	if assist.DisclosureVersion != "10" {
 		t.Fatalf("disclosure version %s", assist.DisclosureVersion)
 	}
-	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
 	s.svc.Assist = assist.NewSession(false, stub)
 	s.enableAI()

@@ -159,15 +159,6 @@ func (r Resolved) Blocking() *Issue {
 	return &issue
 }
 
-// VarFilePaths returns the canonical root-relative paths passed to the engine.
-func (r Resolved) VarFilePaths() []string {
-	out := make([]string, 0, len(r.VarFiles))
-	for _, f := range r.VarFiles {
-		out = append(out, f.Path)
-	}
-	return out
-}
-
 // awsCredentialNames are inherited values that would take precedence over, or compete with,
 // the chosen AWS profile in the AWS credential chain: static keys, another profile, web
 // identity and role variables, container credential endpoints and an enclosing aws-vault

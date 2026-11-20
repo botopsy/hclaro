@@ -136,10 +136,10 @@ func (c *CLI) OutputsMetadata(ctx context.Context) (Outputs, error) {
 	if err != nil {
 		return Outputs{}, err
 	}
-	return outputsFrom(out)
+	return OutputsFrom(out)
 }
 
-func outputsFrom(out Capture) (Outputs, error) {
+func OutputsFrom(out Capture) (Outputs, error) {
 	if out.ExitCode != 0 {
 		return Outputs{}, &ExitError{Code: out.ExitCode, Hint: ClassifyTool(string(out.Stderr))}
 	}
@@ -255,52 +255,4 @@ func ClassifyTool(text string) string {
 		return shared
 	}
 	return ""
-}
-
-// Validate returns ValidateOut (JSON) or ValidateHumanOut, or ToolErr.
-func (m *Fake) Validate(ctx context.Context, json bool) (Capture, error) {
-	args := ToolArgs(ToolValidate, json, false)
-	m.record(strings.Join(args, " "))
-	if err := m.toolWait(ctx); err != nil {
-		return Capture{}, err
-	}
-	if json {
-		return m.ValidateOut, nil
-	}
-	return m.ValidateHumanOut, nil
-}
-
-// FormatCheck returns FormatOut, or ToolErr.
-func (m *Fake) FormatCheck(ctx context.Context, recursive bool) (Capture, error) {
-	m.record(strings.Join(ToolArgs(ToolFormat, false, recursive), " "))
-	if err := m.toolWait(ctx); err != nil {
-		return Capture{}, err
-	}
-	return m.FormatOut, nil
-}
-
-// Providers returns ProvidersOut, or ToolErr.
-func (m *Fake) Providers(ctx context.Context) (Capture, error) {
-	m.record("providers")
-	if err := m.toolWait(ctx); err != nil {
-		return Capture{}, err
-	}
-	return m.ProvidersOut, nil
-}
-
-// OutputsMetadata parses OutputsOut like the CLI adapter does.
-func (m *Fake) OutputsMetadata(ctx context.Context) (Outputs, error) {
-	m.record("output -json")
-	if err := m.toolWait(ctx); err != nil {
-		return Outputs{}, err
-	}
-	return outputsFrom(m.OutputsOut)
-}
-
-func (m *Fake) toolWait(ctx context.Context) error {
-	if m.BlockTool {
-		<-ctx.Done()
-		return ErrCancelled
-	}
-	return m.ToolErr
 }

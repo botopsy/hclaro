@@ -147,12 +147,12 @@ func TestParseOutputsKeepsMetadataOnly(t *testing.T) {
 }
 
 func TestOutputsFromNeverReturnsRawOutput(t *testing.T) {
-	_, err := outputsFrom(Capture{Stdout: fixtures.Outputs, Stderr: []byte("Error: Backend initialization required, please run \"terraform init\"\npassword=" + fixtures.Canary), ExitCode: 1})
+	_, err := OutputsFrom(Capture{Stdout: fixtures.Outputs, Stderr: []byte("Error: Backend initialization required, please run \"terraform init\"\npassword=" + fixtures.Canary), ExitCode: 1})
 	var exit *ExitError
 	if !errors.As(err, &exit) || exit.Hint != "init_required" || strings.Contains(err.Error(), fixtures.Canary) {
 		t.Fatalf("%v", err)
 	}
-	if _, err := outputsFrom(Capture{Stdout: fixtures.Outputs, Truncated: true}); !errors.Is(err, ErrUnreadableOutputs) {
+	if _, err := OutputsFrom(Capture{Stdout: fixtures.Outputs, Truncated: true}); !errors.Is(err, ErrUnreadableOutputs) {
 		t.Fatalf("truncated: %v", err)
 	}
 }
@@ -181,7 +181,7 @@ func TestClassifyToolLockReleaseAndAssociation(t *testing.T) {
 		"Error acquiring the state lock\nLock Info:":                  "state_locked",
 		"Error releasing the state lock\nLock Info:":                  "",
 		"Releasing state lock. This may take a few moments...\nError": "",
-		"Error: aws_route_table_association.a: InvalidRouteTableID":    "",
+		"Error: aws_route_table_association.a: InvalidRouteTableID":   "",
 	} {
 		if got := ClassifyTool(text); got != want {
 			t.Errorf("%q: %q want %q", text, got, want)

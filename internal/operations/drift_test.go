@@ -12,6 +12,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/profiles"
 	"hclaro/internal/workspace"
 )
@@ -56,7 +57,7 @@ func assertNoSecrets(t *testing.T, m *Manager, op Operation, view DriftScanView)
 }
 
 // Calls never include apply, and the only plan is the refresh-only one.
-func assertOnlyRefreshOnly(t *testing.T, fake *engine.Fake) {
+func assertOnlyRefreshOnly(t *testing.T, fake *enginetest.Fake) {
 	t.Helper()
 	for _, call := range fake.Calls() {
 		if call == "apply" {
@@ -84,7 +85,7 @@ func TestDriftScanFixtures(t *testing.T) {
 		{"mixed", fixtures.DriftMixed, OutcomeDrift, 2, 1, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fake := &engine.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: tc.doc}
+			fake := &enginetest.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: tc.doc}
 			m, _ := setup(t, fake, workspace.Info{})
 			op, view := scanAndWait(t, m, DriftStart{})
 			if op.Status != Succeeded || view.Status != ScanCompleted || !view.Exhaustive || view.Outcome != tc.outcome || !view.Current {
@@ -114,7 +115,7 @@ func TestDriftScanFixtures(t *testing.T) {
 }
 
 func TestDriftDeepLinksOnlyRecordedObjects(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.DriftMixed}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftMixed}
 	m, _ := setup(t, fake, workspace.Info{})
 	_, view := scanAndWait(t, m, DriftStart{})
 	links := map[string]string{}
@@ -145,19 +146,19 @@ func TestDriftDeepLinksOnlyRecordedObjects(t *testing.T) {
 func TestDriftScanFailures(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		fake   *engine.Fake
+		fake   *enginetest.Fake
 		status string
 		code   string
 	}{
-		{"backend lock conflict", &engine.Fake{Lines: lines(fixtures.DriftLogLocked), PlanErr: &engine.ExitError{Code: 1}}, ScanFailed, "state_locked"},
-		{"expired SSO", &engine.Fake{Lines: lines(fixtures.DriftLogSSO), PlanErr: &engine.ExitError{Code: 1}}, ScanFailed, "credentials"},
-		{"partial provider failure", &engine.Fake{Lines: lines(fixtures.DriftLogDenied), PlanErr: &engine.ExitError{Code: 1}, PlanJSON: fixtures.DriftInaccessible, WriteOnError: true}, ScanPartial, "credentials"},
-		{"partial without plan file", &engine.Fake{Lines: lines(fixtures.DriftLogDenied), PlanErr: &engine.ExitError{Code: 1}}, ScanFailed, "credentials"},
-		{"not a refresh-only result", &engine.Fake{PlanJSON: fixtures.DriftNotRefreshOnly}, ScanFailed, "not_refresh_only"},
-		{"undecodable result", &engine.Fake{PlanJSON: fixtures.State}, ScanFailed, "plan_format"},
-		{"show fails", &engine.Fake{PlanJSON: fixtures.DriftNone, ShowErr: errors.New("x")}, ScanFailed, "plan_read"},
-		{"plan too large", &engine.Fake{PlanJSON: fixtures.DriftNone, ShowErr: engine.ErrReadTooLarge}, ScanFailed, "plan_too_large"},
-		{"errored but exit 0", &engine.Fake{PlanJSON: fixtures.DriftInaccessible}, ScanPartial, "plan_failed"},
+		{"backend lock conflict", &enginetest.Fake{Lines: lines(fixtures.DriftLogLocked), PlanErr: &engine.ExitError{Code: 1}}, ScanFailed, "state_locked"},
+		{"expired SSO", &enginetest.Fake{Lines: lines(fixtures.DriftLogSSO), PlanErr: &engine.ExitError{Code: 1}}, ScanFailed, "credentials"},
+		{"partial provider failure", &enginetest.Fake{Lines: lines(fixtures.DriftLogDenied), PlanErr: &engine.ExitError{Code: 1}, PlanJSON: fixtures.DriftInaccessible, WriteOnError: true}, ScanPartial, "credentials"},
+		{"partial without plan file", &enginetest.Fake{Lines: lines(fixtures.DriftLogDenied), PlanErr: &engine.ExitError{Code: 1}}, ScanFailed, "credentials"},
+		{"not a refresh-only result", &enginetest.Fake{PlanJSON: fixtures.DriftNotRefreshOnly}, ScanFailed, "not_refresh_only"},
+		{"undecodable result", &enginetest.Fake{PlanJSON: fixtures.State}, ScanFailed, "plan_format"},
+		{"show fails", &enginetest.Fake{PlanJSON: fixtures.DriftNone, ShowErr: errors.New("x")}, ScanFailed, "plan_read"},
+		{"plan too large", &enginetest.Fake{PlanJSON: fixtures.DriftNone, ShowErr: engine.ErrReadTooLarge}, ScanFailed, "plan_too_large"},
+		{"errored but exit 0", &enginetest.Fake{PlanJSON: fixtures.DriftInaccessible}, ScanPartial, "plan_failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, _ := setup(t, tc.fake, workspace.Info{})
@@ -182,7 +183,7 @@ func TestDriftScanFailures(t *testing.T) {
 }
 
 func TestDriftScanCancel(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.DriftNone, Block: true}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftNone, Block: true}
 	m, _ := setup(t, fake, workspace.Info{})
 	op, scan, err := m.StartDriftScan(DriftStart{})
 	if err != nil {
@@ -211,7 +212,7 @@ func TestDriftScanCancel(t *testing.T) {
 }
 
 func TestDriftScanShutdown(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.DriftNone, Block: true}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftNone, Block: true}
 	m, _ := setup(t, fake, workspace.Info{})
 	op, scan, _ := m.StartDriftScan(DriftStart{})
 	waitStage(t, m, op.ID, "Scanning")
@@ -229,12 +230,12 @@ func TestDriftUnsupported(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		info workspace.Info
-		fake *engine.Fake
+		fake *enginetest.Fake
 		want string
 	}{
-		{"remote execution", workspace.Info{Project: "x", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"}, &engine.Fake{}, "remote"},
-		{"unknown backend", workspace.Info{Project: "x", Initialized: true, Backend: "unknown", ExecutionMode: "unsupported"}, &engine.Fake{}, "refresh-only plan"},
-		{"no state", workspace.Info{}, &engine.Fake{StateJSON: fixtures.Empty}, "No state"},
+		{"remote execution", workspace.Info{Project: "x", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"}, &enginetest.Fake{}, "remote"},
+		{"unknown backend", workspace.Info{Project: "x", Initialized: true, Backend: "unknown", ExecutionMode: "unsupported"}, &enginetest.Fake{}, "refresh-only plan"},
+		{"no state", workspace.Info{}, &enginetest.Fake{StateJSON: fixtures.Empty}, "No state"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, _ := setup(t, tc.fake, tc.info)
@@ -253,7 +254,7 @@ func TestDriftUnsupported(t *testing.T) {
 		})
 	}
 	loading := workspace.New(workspace.Info{Project: "x", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	if _, _, err := NewManager(loading, &engine.Fake{}, t.TempDir()).StartDriftScan(DriftStart{}); !errors.Is(err, ErrLoading) {
+	if _, _, err := NewManager(loading, &enginetest.Fake{}, t.TempDir()).StartDriftScan(DriftStart{}); !errors.Is(err, ErrLoading) {
 		t.Fatal(err)
 	}
 	if _, _, err := NewManager(loading, nil, "").StartDriftScan(DriftStart{}); err == nil {
@@ -264,7 +265,7 @@ func TestDriftUnsupported(t *testing.T) {
 // A scan of workspace A never returns its resources once the project reads workspace B, and
 // a context change withholds the result.
 func TestDriftWorkspaceIsolationAndInvalidation(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.DriftMixed}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftMixed}
 	m, root := setup(t, fake, workspace.Info{})
 	_, view := scanAndWait(t, m, DriftStart{})
 	if !view.Current || len(view.Resources) != 4 {
@@ -325,7 +326,7 @@ func scanAndWaitN(t *testing.T, m *Manager) (Operation, DriftScanView) {
 }
 
 func TestDriftScanWithProfile(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.DriftChangedTag}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftChangedTag}
 	m, root, store, rec := profileSetup(t, fake, []string{"PATH=/bin", "AWS_PROFILE=inherited"})
 	writeFile(t, root, "env/prod.tfvars", "region = \"eu-central-1\"\n")
 	p, err := store.Create(testProject, profiles.Input{Name: "prod", VarFiles: []string{"env/prod.tfvars"}, AWSProfile: "demo-profile"})
@@ -362,7 +363,7 @@ func TestDriftScanWithProfile(t *testing.T) {
 }
 
 func TestDriftRetentionIsBounded(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.DriftNone}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftNone}
 	m, _ := setup(t, fake, workspace.Info{})
 	for i := 0; i < maxScans+3; i++ {
 		scanAndWaitN(t, m)
@@ -379,7 +380,7 @@ func TestDriftRetentionIsBounded(t *testing.T) {
 }
 
 func TestSweepIncludesDriftDirectories(t *testing.T) {
-	m, _ := setup(t, &engine.Fake{}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{}, workspace.Info{})
 	old := time.Now().Add(-(m.PlanMaxAge + m.ApplyTimeout + time.Hour))
 	dir, _ := os.MkdirTemp(m.TempDir, "hclaro-drift-")
 	_ = os.Chtimes(dir, old, old)

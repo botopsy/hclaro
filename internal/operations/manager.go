@@ -180,8 +180,10 @@ type Manager struct {
 	// Deps are the services shared by every manager of a session (see New).
 	Deps
 	// chmod makes saved plan folders and files private; tests replace it to make it fail.
-	chmod   func(string, fs.FileMode) error
-	Timeout time.Duration
+	chmod func(string, fs.FileMode) error
+	// lockRetryDelays are the waits of the bounded locked-state re-read; tests shorten them.
+	lockRetryDelays []time.Duration
+	Timeout         time.Duration
 	// ApplyTimeout bounds an apply; PlanMaxAge bounds how long a saved plan stays
 	// applicable; ApprovalTTL bounds how long a confirmation token is valid.
 	ApplyTimeout time.Duration
@@ -279,7 +281,7 @@ func New(store *workspace.Store, planner engine.Planner, root string, deps Deps)
 	if deps.Locks == nil {
 		deps.Locks = rootlock.New()
 	}
-	return &Manager{store: store, planner: planner, applier: applier, root: root, Deps: deps, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, chmod: os.Chmod}
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Deps: deps, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, chmod: os.Chmod, lockRetryDelays: lockRetryDelays}
 }
 
 func newID() string {
@@ -853,14 +855,6 @@ func environOr(environ []string) []string {
 		return os.Environ()
 	}
 	return environ
-}
-
-// Fingerprint identifies the plan context: engine, version, workspace, variable file
-// selection, configuration files, engine data directory and planning environment.
-// It is "" when the configuration could not be read.
-func (m *Manager) Fingerprint(snap workspace.Snapshot, varFiles []string) string {
-	fp, _ := m.fingerprintExcept(snap, varFiles, "", os.Environ())
-	return fp
 }
 
 func (m *Manager) fingerprintExcept(snap workspace.Snapshot, varFiles []string, skip string, environ []string) (string, error) {

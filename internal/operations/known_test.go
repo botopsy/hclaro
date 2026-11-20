@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/workspace"
 )
 
@@ -57,7 +58,7 @@ func TestDiagnosticsScrubKnownInputs(t *testing.T) {
 	// A provider error echoing an input value that no line heuristic recognizes.
 	diag := `{"type":"diagnostic","diagnostic":{"severity":"error","summary":"Invalid value \"opaque-input-7731\"","detail":"The server rejected opaque-input-7731 for field name.\nother line"}}`
 	logLine := `{"type":"log","@level":"error","@message":"request with opaque-input-7731 failed"}`
-	fake := &engine.Fake{Lines: [][]byte{[]byte(diag), []byte(logLine)}, PlanErr: &engine.ExitError{Code: 1}}
+	fake := &enginetest.Fake{Lines: [][]byte{[]byte(diag), []byte(logLine)}, PlanErr: &engine.ExitError{Code: 1}}
 	m, root := setup(t, fake, workspace.Info{})
 	writeFiles(t, root, map[string]string{"prod.tfvars": `name = "opaque-input-7731"`})
 	op, err := m.StartPlan([]string{"prod.tfvars"}, nil)

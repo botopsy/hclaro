@@ -10,6 +10,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/graph"
 	"hclaro/internal/profiles"
 	"hclaro/internal/workspace"
@@ -44,7 +45,7 @@ func nodeNamed(t *testing.T, v GraphView, name string) graph.Node {
 }
 
 // A graph runs `graph` only: never plan, refresh, apply or a state command.
-func assertOnlyGraph(t *testing.T, fake *engine.Fake) {
+func assertOnlyGraph(t *testing.T, fake *enginetest.Fake) {
 	t.Helper()
 	for _, call := range fake.Calls() {
 		if call != "version" && call != "workspace" && call != "show" && call != "graph" && call != "plan" && call != "show-plan" {
@@ -66,7 +67,7 @@ func addresses(changes []graph.PlannedChange) []string {
 }
 
 func TestGraphGeneratesAnnotatesAndOverlaysAPlan(t *testing.T) {
-	fake := &engine.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	planOp, err := m.StartPlan(nil, nil)
 	if err != nil {
@@ -143,7 +144,7 @@ func assertTempEmptyExceptPlan(t *testing.T, m *Manager) {
 
 func TestGraphRefusesPlansThatAreNotFullAndCurrent(t *testing.T) {
 	// Exit 0 with an errored document: the plan is stored but is not a full plan.
-	fake := &engine.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanErrored}
+	fake := &enginetest.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanErrored}
 	m, root := setup(t, fake, workspace.Info{})
 	errored, _ := m.StartPlan(nil, nil)
 	errored = wait(t, m, errored.ID)
@@ -174,7 +175,7 @@ func TestGraphRefusesPlansThatAreNotFullAndCurrent(t *testing.T) {
 }
 
 func TestGraphStalenessAndWorkspaceIsolation(t *testing.T) {
-	fake := &engine.Fake{GraphDOT: fixtures.GraphTofu}
+	fake := &enginetest.Fake{GraphDOT: fixtures.GraphTofu}
 	m, root := setup(t, fake, workspace.Info{})
 	_, view := graphAndWait(t, m, GraphStart{})
 	if view.Format != "full" || len(view.Nodes) == 0 {
@@ -209,15 +210,15 @@ func TestGraphStalenessAndWorkspaceIsolation(t *testing.T) {
 func TestGraphFailures(t *testing.T) {
 	for _, tc := range []struct {
 		name, code string
-		fake       *engine.Fake
+		fake       *enginetest.Fake
 	}{
-		{"init required", "init_required", &engine.Fake{GraphErr: &engine.ExitError{Code: 1, Hint: "init_required"}}},
-		{"credentials", "credentials", &engine.Fake{GraphErr: &engine.ExitError{Code: 1, Hint: "credentials"}}},
-		{"unclassified", "graph_failed", &engine.Fake{GraphErr: &engine.ExitError{Code: 1}}},
-		{"malformed", "graph_format", &engine.Fake{GraphDOT: fixtures.GraphMalformed}},
-		{"plan JSON instead of DOT", "graph_format", &engine.Fake{GraphDOT: fixtures.PlanAllActions}},
-		{"too large", "graph_too_large", &engine.Fake{GraphErr: engine.ErrGraphTooLarge}},
-		{"unsafe args", "unsafe_cli_args", &engine.Fake{GraphErr: engine.ErrUnsafeArgs}},
+		{"init required", "init_required", &enginetest.Fake{GraphErr: &engine.ExitError{Code: 1, Hint: "init_required"}}},
+		{"credentials", "credentials", &enginetest.Fake{GraphErr: &engine.ExitError{Code: 1, Hint: "credentials"}}},
+		{"unclassified", "graph_failed", &enginetest.Fake{GraphErr: &engine.ExitError{Code: 1}}},
+		{"malformed", "graph_format", &enginetest.Fake{GraphDOT: fixtures.GraphMalformed}},
+		{"plan JSON instead of DOT", "graph_format", &enginetest.Fake{GraphDOT: fixtures.PlanAllActions}},
+		{"too large", "graph_too_large", &enginetest.Fake{GraphErr: engine.ErrGraphTooLarge}},
+		{"unsafe args", "unsafe_cli_args", &enginetest.Fake{GraphErr: engine.ErrUnsafeArgs}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, _ := setup(t, tc.fake, workspace.Info{})
@@ -233,7 +234,7 @@ func TestGraphFailures(t *testing.T) {
 }
 
 func TestGraphCancelAndBusy(t *testing.T) {
-	fake := &engine.Fake{BlockGraph: true, PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{BlockGraph: true, PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	op, run, err := m.StartGraph(GraphStart{})
 	if err != nil {
@@ -262,7 +263,7 @@ func TestGraphCancelAndBusy(t *testing.T) {
 	}
 
 	// Shutdown while generating.
-	blocked := &engine.Fake{BlockGraph: true}
+	blocked := &enginetest.Fake{BlockGraph: true}
 	m2, _ := setup(t, blocked, workspace.Info{})
 	op2, run2, _ := m2.StartGraph(GraphStart{})
 	waitStage(t, m2, op2.ID, "Generating graph")
@@ -282,7 +283,7 @@ func TestGraphUnsupported(t *testing.T) {
 		{"unknown backend", workspace.Info{Project: "x", Initialized: true, Backend: "unknown", ExecutionMode: "unsupported"}, "initialized working directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fake := &engine.Fake{GraphDOT: fixtures.GraphTerraform}
+			fake := &enginetest.Fake{GraphDOT: fixtures.GraphTerraform}
 			m, _ := setup(t, fake, tc.info)
 			ok, reason := m.GraphCapability()
 			if ok || !strings.Contains(reason, tc.want) {
@@ -299,7 +300,7 @@ func TestGraphUnsupported(t *testing.T) {
 		})
 	}
 	// An empty state still has a configuration graph.
-	m, _ := setup(t, &engine.Fake{StateJSON: fixtures.Empty, GraphDOT: fixtures.GraphTerraform}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{StateJSON: fixtures.Empty, GraphDOT: fixtures.GraphTerraform}, workspace.Info{})
 	if ok, reason := m.GraphCapability(); !ok {
 		t.Fatal(reason)
 	}
@@ -310,7 +311,7 @@ func TestGraphUnsupported(t *testing.T) {
 
 func TestGraphRedactsSecretShapedNodes(t *testing.T) {
 	dot := []byte(`digraph { "aws_instance.a[\"` + canary + `\"]" -> "aws_vpc.b"; "aws_vpc.b" -> "aws_secret.x[\"token=abc\"]" }`)
-	m, _ := setup(t, &engine.Fake{GraphDOT: dot}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{GraphDOT: dot}, workspace.Info{})
 	op, view := graphAndWait(t, m, GraphStart{})
 	if view.Summary.Redacted != 2 {
 		t.Fatalf("%+v", view.Summary)
@@ -328,7 +329,7 @@ func TestGraphRedactsSecretShapedNodes(t *testing.T) {
 }
 
 func TestGraphWithProfile(t *testing.T) {
-	fake := &engine.Fake{GraphDOT: fixtures.GraphTerraform}
+	fake := &enginetest.Fake{GraphDOT: fixtures.GraphTerraform}
 	m, _, store, rec := profileSetup(t, fake, []string{"PATH=/bin", "AWS_PROFILE=inherited"})
 	p, err := store.Create(testProject, profiles.Input{Name: "prod", AWSProfile: "demo-profile"})
 	if err != nil {
@@ -353,7 +354,7 @@ func TestGraphWithProfile(t *testing.T) {
 }
 
 func TestGraphRetentionIsBounded(t *testing.T) {
-	m, _ := setup(t, &engine.Fake{GraphDOT: fixtures.GraphCycle}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{GraphDOT: fixtures.GraphCycle}, workspace.Info{})
 	for i := 0; i < maxGraphs+2; i++ {
 		graphAndWait(t, m, GraphStart{})
 	}

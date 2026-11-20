@@ -7,24 +7,21 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/workspace"
 )
 
 // FU-WIN-STATE-READ: a state read blocked by another process's state lock is read again,
 // bounded and cancellable, and nothing is planned on unread state meanwhile.
 
-func shortRetries(t *testing.T, n int, d time.Duration) {
-	t.Helper()
-	old := lockRetryDelays
-	lockRetryDelays = make([]time.Duration, n)
-	for i := range lockRetryDelays {
-		lockRetryDelays[i] = d
+func shortRetries(m *Manager, n int, d time.Duration) {
+	m.lockRetryDelays = make([]time.Duration, n)
+	for i := range m.lockRetryDelays {
+		m.lockRetryDelays[i] = d
 	}
-	t.Cleanup(func() { lockRetryDelays = old })
 }
 
-func shows(f *engine.Fake) int {
+func shows(f *enginetest.Fake) int {
 	n := 0
 	for _, c := range f.Calls() {
 		if c == "show" {
@@ -47,9 +44,9 @@ func eventually(t *testing.T, what string, cond func() bool) {
 
 // lockedManager returns a manager whose workspace read is blocked by a lock (locked reads
 // left), with Reload and Reinspect wired as in the CLI.
-func lockedManager(t *testing.T, locked int) (*Manager, *engine.Fake) {
+func lockedManager(t *testing.T, locked int) (*Manager, *enginetest.Fake) {
 	t.Helper()
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog), LockedReads: 1 + locked}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog), LockedReads: 1 + locked}
 	m, _ := setup(t, fake, workspace.Info{})
 	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform", nil) }
 	info := m.store.Get().Info
@@ -62,9 +59,9 @@ func lockedManager(t *testing.T, locked int) (*Manager, *engine.Fake) {
 
 // Apply → the post-apply read is locked → bounded re-read → ready → a plan reaches the engine.
 func TestLockedReloadAfterApplyIsReadAgain(t *testing.T) {
-	shortRetries(t, 10, 20*time.Millisecond)
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, _ := setup(t, fake, workspace.Info{})
+	shortRetries(m, 10, 20*time.Millisecond)
 	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform", nil) }
 	id := planned(t, m)
 	fake.SetLockedReads(3) // the post-apply read and two re-reads
@@ -87,8 +84,8 @@ func TestLockedReloadAfterApplyIsReadAgain(t *testing.T) {
 
 // While locked, a plan is refused before the engine with ErrStateLocked.
 func TestPlanRefusedWhileStateLocked(t *testing.T) {
-	shortRetries(t, 1, time.Hour)
 	m, fake := lockedManager(t, 100)
+	shortRetries(m, 1, time.Hour)
 	m.RetryLockedRead()
 	before := len(fake.Requests())
 	if _, err := m.StartPlan(nil, nil); !errors.Is(err, ErrStateLocked) {
@@ -107,8 +104,8 @@ func TestPlanRefusedWhileStateLocked(t *testing.T) {
 
 // The re-read stops at its bound and the snapshot stays state_locked; no further reads.
 func TestLockedReadRetryIsBounded(t *testing.T) {
-	shortRetries(t, 4, 5*time.Millisecond)
 	m, fake := lockedManager(t, 100)
+	shortRetries(m, 4, 5*time.Millisecond)
 	before := shows(fake)
 	m.RetryLockedRead()
 	eventually(t, "the bound", func() bool { return shows(fake) == before+4 })
@@ -120,8 +117,8 @@ func TestLockedReadRetryIsBounded(t *testing.T) {
 
 // Close cancels a pending re-read promptly, and the manager waits for it (no leak).
 func TestLockedReadRetryStopsOnClose(t *testing.T) {
-	shortRetries(t, 3, time.Hour)
 	m, fake := lockedManager(t, 100)
+	shortRetries(m, 3, time.Hour)
 	before := shows(fake)
 	m.RetryLockedRead()
 	start := time.Now()
@@ -136,8 +133,8 @@ func TestLockedReadRetryStopsOnClose(t *testing.T) {
 
 // A user's Reread replaces the scheduled re-read: one read now, then one new bounded series.
 func TestLockedReadRetryReplacedByReread(t *testing.T) {
-	shortRetries(t, 3, 80*time.Millisecond)
 	m, fake := lockedManager(t, 100)
+	shortRetries(m, 3, 80*time.Millisecond)
 	before := shows(fake)
 	m.RetryLockedRead()
 	// Half a period later, so a series that kept running would not coincide with the new one.
@@ -154,8 +151,8 @@ func TestLockedReadRetryReplacedByReread(t *testing.T) {
 
 // A running operation stops the re-read without reading state alongside it.
 func TestLockedReadRetryStopsForAnOperation(t *testing.T) {
-	shortRetries(t, 3, 20*time.Millisecond)
 	m, fake := lockedManager(t, 100)
+	shortRetries(m, 3, 20*time.Millisecond)
 	before := shows(fake)
 	m.mu.Lock()
 	m.running = &entry{}
@@ -173,9 +170,9 @@ func TestLockedReadRetryStopsForAnOperation(t *testing.T) {
 
 // A read that fails for another reason is not retried.
 func TestUnlockedFailureIsNotRetried(t *testing.T) {
-	shortRetries(t, 3, 5*time.Millisecond)
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
+	shortRetries(m, 3, 5*time.Millisecond)
 	m.Reload = func(ctx context.Context) { m.store.Load(ctx, nil, "terraform", nil) }
 	m.Reload(context.Background())
 	before := shows(fake)

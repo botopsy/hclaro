@@ -13,13 +13,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
+	"hclaro/internal/ids"
 	"hclaro/internal/safefile"
 )
 
@@ -160,13 +160,13 @@ func (r *Registry) read() ([]Record, error) {
 	if len(doc.Projects) > MaxProjects {
 		return nil, &corruptError{"it lists too many projects"}
 	}
-	ids := map[string]bool{}
+	seen := map[string]bool{}
 	roots := map[string]bool{}
 	for _, p := range doc.Projects {
-		if !ValidID(p.ID) || ids[p.ID] || roots[p.RootPath] || !filepath.IsAbs(p.RootPath) || filepath.Clean(p.RootPath) != p.RootPath || validAlias(p.Alias) != nil || validEngine(p.EnginePreference) != nil || p.LastWorkspace != "" && !workspaceName.MatchString(p.LastWorkspace) {
+		if !ids.Valid(p.ID) || seen[p.ID] || roots[p.RootPath] || !filepath.IsAbs(p.RootPath) || filepath.Clean(p.RootPath) != p.RootPath || validAlias(p.Alias) != nil || validEngine(p.EnginePreference) != nil || p.LastWorkspace != "" && !ids.ValidWorkspace(p.LastWorkspace) {
 			return nil, &corruptError{"it contains an invalid project entry"}
 		}
-		ids[p.ID], roots[p.RootPath] = true, true
+		seen[p.ID], roots[p.RootPath] = true, true
 	}
 	if doc.Projects == nil {
 		doc.Projects = []Record{}
@@ -373,14 +373,6 @@ func (r *Registry) Reorder(ids []string) error {
 	})
 	return err
 }
-
-var (
-	idPattern     = regexp.MustCompile(`^[0-9a-f]{32}$`)
-	workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,90}$`)
-)
-
-// ValidID reports whether id has the registry ID format.
-func ValidID(id string) bool { return idPattern.MatchString(id) }
 
 // NewID returns a random registry ID.
 func NewID() string {

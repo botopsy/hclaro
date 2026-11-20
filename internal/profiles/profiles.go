@@ -23,6 +23,7 @@ import (
 	"time"
 	"unicode"
 
+	"hclaro/internal/ids"
 	"hclaro/internal/safefile"
 	"hclaro/internal/state"
 	"hclaro/internal/tfpolicy"
@@ -225,18 +226,18 @@ func (s *Store) read() (document, error) {
 	if len(doc.Profiles) > MaxProfiles {
 		return document{}, &corruptError{"it lists too many profiles"}
 	}
-	ids := map[string]bool{}
+	seen := map[string]bool{}
 	for _, p := range doc.Profiles {
 		// Schema 1 had no authentication binding.
 		v1Auth := doc.Version == 1 && (p.AWSAuth != "" || p.AWSExpectedAccount != "" || p.AWSExpectedRole != "")
-		if !validID(p.ID) || !validID(p.ProjectID) || ids[p.ID] || p.Revision < 1 || v1Auth || check(inputOf(p)) != nil {
+		if !ids.Valid(p.ID) || !ids.Valid(p.ProjectID) || seen[p.ID] || p.Revision < 1 || v1Auth || check(inputOf(p)) != nil {
 			return document{}, &corruptError{"it contains an invalid profile"}
 		}
-		ids[p.ID] = true
+		seen[p.ID] = true
 	}
 	for project, id := range doc.Defaults {
 		i := slices.IndexFunc(doc.Profiles, func(p Profile) bool { return p.ID == id })
-		if !validID(project) || i < 0 || doc.Profiles[i].ProjectID != project {
+		if !ids.Valid(project) || i < 0 || doc.Profiles[i].ProjectID != project {
 			return document{}, &corruptError{"it names an invalid default profile"}
 		}
 	}
@@ -532,7 +533,6 @@ func normalize(in Input) Input {
 }
 
 var (
-	idPattern      = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	awsProfileName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+=@,-]{0,63}$`)
 	awsRegion      = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$`)
 	envName        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
@@ -541,10 +541,8 @@ var (
 	awsRolePattern = regexp.MustCompile(`^arn:aws[a-z-]{0,20}:(sts|iam)::([0-9]{12}|\*):[A-Za-z0-9+=,.@/_*-]{1,400}$`)
 )
 
-func validID(id string) bool { return idPattern.MatchString(id) }
-
 // ValidID reports whether id has the profile ID format.
-func ValidID(id string) bool { return validID(id) }
+func ValidID(id string) bool { return ids.Valid(id) }
 
 // NewID returns a random profile ID.
 func NewID() string {

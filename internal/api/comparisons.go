@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"hclaro/internal/compare"
+	"hclaro/internal/ids"
 	"hclaro/internal/projects"
 )
 
@@ -26,7 +27,7 @@ func comparisonRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	mux.HandleFunc("GET /api/v1/comparisons/target", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		t := projects.ComparisonTarget{ProjectID: q.Get("projectId"), Workspace: q.Get("workspace"), ProfileID: q.Get("profileId")}
-		if !idPattern.MatchString(t.ProjectID) || !validProfileParam(t.ProfileID) {
+		if !ids.Valid(t.ProjectID) || !validProfileParam(t.ProfileID) {
 			errorJSON(w, 400, "invalid_request")
 			return
 		}
@@ -80,7 +81,7 @@ func comparisonRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	})
 	lookup := func(w http.ResponseWriter, r *http.Request) (projects.ComparisonView, bool) {
 		id := r.PathValue("id")
-		if !idPattern.MatchString(id) {
+		if !ids.Valid(id) {
 			errorJSON(w, 404, "comparison_not_found")
 			return projects.ComparisonView{}, false
 		}

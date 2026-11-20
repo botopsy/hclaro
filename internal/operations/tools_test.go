@@ -12,6 +12,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 )
 
 const unflagged = "plain-unflagged-secret-7f3a"
@@ -29,7 +30,7 @@ func newToolHarness(t *testing.T) *toolHarness {
 	return h
 }
 
-func (h *toolHarness) request(tool engine.Tool, fake *engine.Fake) ToolRequest {
+func (h *toolHarness) request(tool engine.Tool, fake *enginetest.Fake) ToolRequest {
 	return ToolRequest{
 		ProjectID: "p1", ContextID: "c1", Root: h.root, Engine: "terraform", Workspace: "dev", Tool: tool, Tools: fake,
 		Environ:    []string{"AWS_SECRET_ACCESS_KEY=AKIAFAKESECRETVALUE123"},
@@ -70,7 +71,7 @@ func capture(stdout []byte, exit int, stderr string) engine.Capture {
 
 func TestValidateValidAndInvalid(t *testing.T) {
 	h := newToolHarness(t)
-	fake := &engine.Fake{VersionValue: "1.9.8", ValidateOut: capture(fixtures.ValidateValid, 0, "")}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", ValidateOut: capture(fixtures.ValidateValid, 0, "")}
 	op, text := h.run(t, h.request(engine.ToolValidate, fake))
 	r := op.Tool
 	if op.Kind != "tool" || op.Status != Succeeded || r.Outcome != "passed" || r.Valid == nil || !*r.Valid || r.Output != "json" || r.Warnings != 1 || r.Errors != 0 || *op.ExitCode != 0 {
@@ -105,7 +106,7 @@ func TestValidateValidAndInvalid(t *testing.T) {
 
 func TestValidateThatCannotRunIsNotValidated(t *testing.T) {
 	h := newToolHarness(t)
-	fake := &engine.Fake{VersionValue: "1.9.8", ValidateOut: capture(fixtures.ValidateNoInit, 1, "")}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", ValidateOut: capture(fixtures.ValidateNoInit, 1, "")}
 	op, _ := h.run(t, h.request(engine.ToolValidate, fake))
 	if op.Status != Failed || op.Diagnostic.Code != "plugins_missing" || op.Tool.Outcome != "not_checked" || op.Tool.Valid != nil {
 		t.Fatalf("%+v %+v", op, op.Tool)
@@ -123,7 +124,7 @@ func TestValidateThatCannotRunIsNotValidated(t *testing.T) {
 
 func TestValidateFallsBackToHumanOutput(t *testing.T) {
 	h := newToolHarness(t)
-	fake := &engine.Fake{
+	fake := &enginetest.Fake{
 		VersionValue:     "1.9.8",
 		ValidateOut:      capture(nil, 1, "flag provided but not defined: -json"),
 		ValidateHumanOut: capture(nil, 1, "╷\n│ Error: Unsupported argument\n│\n│   on main.tf line 3, in resource \"aws_s3_bucket\" \"logs\":\n│    3:   bucket_name = \""+unflagged+"\"\n│\n│ An argument named \"bucket_name\" is not expected here.\n╵"),
@@ -146,7 +147,7 @@ func TestValidateFallsBackToHumanOutput(t *testing.T) {
 
 func TestFormatCheckListsOnlyEnumeratedFiles(t *testing.T) {
 	h := newToolHarness(t)
-	fake := &engine.Fake{VersionValue: "1.9.8", FormatOut: capture([]byte("main.tf\n../outside.tf\nunknown.tf\n"), 3, "")}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", FormatOut: capture([]byte("main.tf\n../outside.tf\nunknown.tf\n"), 3, "")}
 	req := h.request(engine.ToolFormat, fake)
 	req.Recursive, req.Skipped = true, []string{"linked"}
 	op, text := h.run(t, req)
@@ -184,7 +185,7 @@ func TestProvidersTreeAndFailures(t *testing.T) {
 	}
 
 	h := newToolHarness(t)
-	fake := &engine.Fake{VersionValue: "1.9.8", ProvidersOut: capture(fixtures.Providers, 0, "")}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", ProvidersOut: capture(fixtures.Providers, 0, "")}
 	op, _ := h.run(t, h.request(engine.ToolProviders, fake))
 	if op.Status != Succeeded || len(op.Tool.Providers.Configuration) != 4 || !op.Tool.UsesWorkspace || op.Tool.Workspace != "dev" {
 		t.Fatalf("%+v", op.Tool)
@@ -202,7 +203,7 @@ func TestProvidersTreeAndFailures(t *testing.T) {
 
 func TestOutputsMetadataNeverLeaksValues(t *testing.T) {
 	h := newToolHarness(t)
-	fake := &engine.Fake{VersionValue: "1.9.8", OutputsOut: capture(fixtures.Outputs, 0, "")}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", OutputsOut: capture(fixtures.Outputs, 0, "")}
 	op, text := h.run(t, h.request(engine.ToolOutputs, fake))
 	o := op.Tool.Outputs
 	if op.Status != Succeeded || len(o.Items) != 4 || o.Hidden != 1 || !o.Items[2].Sensitive || !strings.Contains(text, "Values were discarded") {
@@ -220,20 +221,20 @@ func TestOutputsMetadataNeverLeaksValues(t *testing.T) {
 
 func TestToolRefusalsCancellationAndConflicts(t *testing.T) {
 	h := newToolHarness(t)
-	fake := &engine.Fake{VersionValue: "1.9.8", ToolErr: engine.ErrUnsafeArgs}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", ToolErr: engine.ErrUnsafeArgs}
 	if op, _ := h.run(t, h.request(engine.ToolValidate, fake)); op.Diagnostic.Code != "unsafe_cli_args" || op.ExitCode != nil {
 		t.Fatalf("%+v", op)
 	}
-	req := h.request(engine.ToolValidate, &engine.Fake{VersionValue: "1.9.8"})
+	req := h.request(engine.ToolValidate, &enginetest.Fake{VersionValue: "1.9.8"})
 	req.Revalidate = func() string { return "path_changed" }
 	if op, _ := h.run(t, req); op.Diagnostic.Code != "path_changed" {
 		t.Fatalf("%+v", op)
 	}
-	if calls := req.Tools.(*engine.Fake).Calls(); slices.Contains(calls, "validate -json") {
+	if calls := req.Tools.(*enginetest.Fake).Calls(); slices.Contains(calls, "validate -json") {
 		t.Fatalf("ran after a failed revalidation: %v", calls)
 	}
 
-	blocked := &engine.Fake{VersionValue: "1.9.8", BlockTool: true}
+	blocked := &enginetest.Fake{VersionValue: "1.9.8", BlockTool: true}
 	op, err := h.runner.StartTool(h.request(engine.ToolProviders, blocked))
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +243,7 @@ func TestToolRefusalsCancellationAndConflicts(t *testing.T) {
 	if _, err := h.runner.StartTool(h.request(engine.ToolProviders, blocked)); !errors.Is(err, ErrToolRunning) || h.released.Load() != released+1 {
 		t.Fatalf("duplicate run: %v", err)
 	}
-	other := h.request(engine.ToolProviders, &engine.Fake{VersionValue: "1.9.8", ProvidersOut: capture(fixtures.Providers, 0, "")})
+	other := h.request(engine.ToolProviders, &enginetest.Fake{VersionValue: "1.9.8", ProvidersOut: capture(fixtures.Providers, 0, "")})
 	other.ContextID, other.Workspace = "c2", "prod"
 	if done, _ := h.run(t, other); done.Status != Succeeded || done.Tool.Workspace != "prod" {
 		t.Fatalf("another context must run: %+v", done)
@@ -267,11 +268,11 @@ func TestToolRefusalsCancellationAndConflicts(t *testing.T) {
 
 func TestHistoryNeverEvictsRunningOperations(t *testing.T) {
 	h := newToolHarness(t)
-	blocked, err := h.runner.StartTool(h.request(engine.ToolProviders, &engine.Fake{VersionValue: "1.9.8", BlockTool: true}))
+	blocked, err := h.runner.StartTool(h.request(engine.ToolProviders, &enginetest.Fake{VersionValue: "1.9.8", BlockTool: true}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	quick := &engine.Fake{VersionValue: "1.9.8", ValidateOut: capture(fixtures.ValidateValid, 0, "")}
+	quick := &enginetest.Fake{VersionValue: "1.9.8", ValidateOut: capture(fixtures.ValidateValid, 0, "")}
 	for i := 0; i < maxInits+5; i++ {
 		req := h.request(engine.ToolValidate, quick)
 		req.ContextID = fmt.Sprintf("c%d", i)

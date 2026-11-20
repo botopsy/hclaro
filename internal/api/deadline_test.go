@@ -14,7 +14,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/awscli"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/preflight"
 )
@@ -23,7 +23,7 @@ import (
 // server here allows 100 ms and the identity probe takes 400 ms, as a slow STS call would
 // outlast the real 20 s timeout.
 func TestSlowPreflightOutlastsWriteTimeout(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s := newPlanServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	s.manager.GitProbe = func(context.Context, string) preflight.GitResult {
 		return preflight.GitResult{State: preflight.GitClean, Paths: []string{}}
 	}
@@ -48,7 +48,7 @@ func TestSlowPreflightOutlastsWriteTimeout(t *testing.T) {
 // Under an AWS account policy, apply asks STS again; a slow answer must not cut off the 202.
 func TestSlowApplyIdentityRecheckOutlastsWriteTimeout(t *testing.T) {
 	const account = "123456789012"
-	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: [][]byte{}})
+	s := newPlanServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: [][]byte{}})
 	s.manager.Reload = func(context.Context) {}
 	s.manager.GitProbe = func(context.Context, string) preflight.GitResult {
 		return preflight.GitResult{State: preflight.GitClean, Paths: []string{}}

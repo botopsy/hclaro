@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
 	"hclaro/internal/workspace"
@@ -194,7 +194,7 @@ func TestExecutionContextSummaryAndVarFiles(t *testing.T) {
 func TestLaunchPlanWithProfileOverHTTP(t *testing.T) {
 	s := profileServer(t)
 	network := s.add("network")
-	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "dev", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "dev", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
 	store := workspace.New(workspace.Info{Project: "network", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, network.RootPath)

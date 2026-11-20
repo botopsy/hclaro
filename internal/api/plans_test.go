@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
@@ -31,12 +31,12 @@ const (
 type planServer struct {
 	t       *testing.T
 	handler http.Handler
-	fake    *engine.Fake
+	fake    *enginetest.Fake
 	manager *operations.Manager
 	svc     *Services
 }
 
-func newPlanServer(t *testing.T, fake *engine.Fake) *planServer {
+func newPlanServer(t *testing.T, fake *enginetest.Fake) *planServer {
 	t.Helper()
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
@@ -131,7 +131,7 @@ func parseSSE(body string) []sseEvent {
 }
 
 func TestPlanFlowOverHTTP(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n")), PlanJSON: fixtures.PlanAllActions})
+	s := newPlanServer(t, &enginetest.Fake{Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n")), PlanJSON: fixtures.PlanAllActions})
 	session := decode[map[string]any](t, s.do("GET", "/api/v1/session", ""))
 	if session["csrfToken"] != csrf {
 		t.Fatal("csrf token not delivered to the authorized client")
@@ -254,7 +254,7 @@ func TestPlanFlowOverHTTP(t *testing.T) {
 }
 
 func TestReplacePlanOverHTTP(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanCollateral})
+	s := newPlanServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanCollateral})
 	resources := decode[struct {
 		Resources []struct{ ID, Address, Mode string } `json:"resources"`
 	}](t, s.do("GET", "/api/v1/resources?query=compute.aws_instance.main%5B1&limit=5", ""))
@@ -296,7 +296,7 @@ func TestReplacePlanOverHTTP(t *testing.T) {
 }
 
 func TestCancelOverHTTP(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{Block: true})
+	s := newPlanServer(t, &enginetest.Fake{Block: true})
 	op := decode[operations.Operation](t, s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`))
 	if w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`); w.Code != 409 {
 		t.Fatalf("concurrent plan: %d", w.Code)
@@ -325,7 +325,7 @@ func TestCancelOverHTTP(t *testing.T) {
 
 func TestPlanningUnavailable(t *testing.T) {
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "cloud", ExecutionMode: "remote-exec"})
-	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store.Load(context.Background(), fake, "terraform", nil)
 	services := &Services{}
 	s := &planServer{t, Handler(store, operations.NewManager(store, fake, t.TempDir()), nil, services, fstest.MapFS{}, host, session, csrf, "test"), fake, nil, services}
@@ -339,7 +339,7 @@ func TestPlanningUnavailable(t *testing.T) {
 }
 
 func TestPreflightOverHTTP(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s := newPlanServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	s.manager.GitProbe = func(context.Context, string) preflight.GitResult {
 		return preflight.GitResult{State: preflight.GitDirty, Modified: 1, Paths: []string{"main.tf"}}
 	}
@@ -388,7 +388,7 @@ func TestPreflightOverHTTP(t *testing.T) {
 // unavailable with a stable code, and approval and apply are refused even with the
 // destructive confirmation phrase. The engine's apply never runs and no values leak.
 func TestUnknownActionsRefusedOverHTTP(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanUnknownActions})
+	s := newPlanServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanUnknownActions})
 	w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`)
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
@@ -431,7 +431,7 @@ func TestUnknownActionsRefusedOverHTTP(t *testing.T) {
 // lock, a plan is refused with 409 state_locked (not planning_unavailable) and never reaches
 // the engine; the workspace names the lock, not credentials or the network.
 func TestPlanRefusedWhileStateLocked(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions, LockedReads: 1})
+	s := newPlanServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, LockedReads: 1})
 	ws := decode[map[string]any](t, s.do("GET", "/api/v1/workspace", ""))
 	diag, _ := ws["diagnostic"].(map[string]any)
 	if ws["status"] != "error" || diag["code"] != "state_locked" || strings.Contains(fmt.Sprint(diag["message"]), "VPN") {

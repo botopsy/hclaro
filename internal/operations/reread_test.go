@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/rootlock"
 	"hclaro/internal/workspace"
 )
@@ -25,7 +25,7 @@ func waitStatus(t *testing.T, m *Manager) workspace.Snapshot {
 // A launch project read before init stays "uninitialized" until it is inspected and read
 // again; Reread does both, and planning becomes available.
 func TestRereadPicksUpAnInitializedProject(t *testing.T) {
-	fake := &engine.Fake{}
+	fake := &enginetest.Fake{}
 	m, _ := setup(t, fake, workspace.Info{Project: "demo", Backend: "unknown", ExecutionMode: "unsupported"})
 	if s := m.store.Get(); s.Diagnostic == nil || s.Diagnostic.Code != "uninitialized" || s.Info.Capabilities.CanPlan {
 		t.Fatalf("%+v", s)
@@ -50,7 +50,7 @@ func TestRereadPicksUpAnInitializedProject(t *testing.T) {
 }
 
 func TestRereadIsRefusedWhileBusy(t *testing.T) {
-	fake := &engine.Fake{Block: true}
+	fake := &enginetest.Fake{Block: true}
 	m, root := setup(t, fake, workspace.Info{})
 	m.Reload = func(ctx context.Context) { m.store.Load(ctx, fake, "terraform", nil) }
 	m.Reinspect = func() workspace.Info {

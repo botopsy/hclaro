@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"hclaro/internal/discovery"
+	"hclaro/internal/ids"
 	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
@@ -84,7 +85,7 @@ func importExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, svc 
 		defer cancel()
 		discoveries := svc()
 		if body.DiscoveryToken != "" {
-			stale := discoveries == nil || !idPattern.MatchString(body.DiscoveryToken)
+			stale := discoveries == nil || !ids.Valid(body.DiscoveryToken)
 			if !stale {
 				pin, _, err := src.DiscoveryPin(ctx, false, profileID, body.ContextFingerprint)
 				var rejected *operations.RejectError

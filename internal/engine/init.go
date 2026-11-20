@@ -174,36 +174,3 @@ func ClassifyInit(text string) string {
 	}
 	return ""
 }
-
-// Init emulates init for tests. It writes nothing unless InitDataDir is set, in which case
-// that directory is created on success, like the engine's data directory.
-func (m *Fake) Init(ctx context.Context, request InitRequest, line func(stream string, b []byte)) error {
-	m.record("init")
-	m.mu.Lock()
-	m.inits = append(m.inits, InitArgs(request.JSON))
-	m.mu.Unlock()
-	for _, l := range m.InitLines {
-		line("stdout", l)
-	}
-	for _, l := range m.InitStderr {
-		line("stderr", l)
-	}
-	if m.BlockInit {
-		<-ctx.Done()
-		return ErrCancelled
-	}
-	if m.InitErr != nil {
-		return m.InitErr
-	}
-	if m.InitDataDir != "" {
-		return mkdirAll(m.InitDataDir)
-	}
-	return nil
-}
-
-// InitCalls returns the argv of each Init call.
-func (m *Fake) InitCalls() [][]string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([][]string(nil), m.inits...)
-}

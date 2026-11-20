@@ -69,6 +69,7 @@ func TestDefaultOnDetectsOnlyOnRequest(t *testing.T) {
 			t.Fatalf("%+v", st)
 		}
 	}
+	// A negative check: give a wrongly started background detection time to show up.
 	time.Sleep(20 * time.Millisecond)
 	if claude.detects.Load() != 0 {
 		t.Fatal("Settings started detection")
@@ -102,10 +103,10 @@ func TestStaleBackgroundDetectionIsDiscarded(t *testing.T) {
 	claude := &counting{stub: stub{id: "claude", mode: ModeHeadless}, release: make(chan struct{})}
 	s := NewSession(false, claude)
 	s.Detect()
-	go func() { time.Sleep(50 * time.Millisecond); close(claude.release) }()
 	if _, err := s.SetEnabled(false); err != nil {
 		t.Fatal(err)
 	}
+	close(claude.release) // the detection finishes only after AI was turned off
 	s.Close()
 	if st := s.Settings(); st.Enabled || len(st.Providers) != 0 || st.DefaultProvider != "" {
 		t.Fatalf("%+v", st)

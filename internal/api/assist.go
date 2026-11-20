@@ -13,6 +13,7 @@ import (
 	"hclaro/internal/cost"
 	"hclaro/internal/drift"
 	"hclaro/internal/gitctx"
+	"hclaro/internal/ids"
 	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
@@ -359,7 +360,7 @@ func assistRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, ma
 	}
 	conversationID := func(w http.ResponseWriter, r *http.Request) (string, bool) {
 		id := r.PathValue("id")
-		if !idPattern.MatchString(id) {
+		if !ids.Valid(id) {
 			aiRefusal(w, &assist.Refusal{Code: assist.RefuseNoChat})
 			return "", false
 		}
@@ -761,7 +762,7 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 	case assist.KindPlan:
 		var pl *operations.Plan
 		found := false
-		if src.plan != nil && idPattern.MatchString(body.PlanID) {
+		if src.plan != nil && ids.Valid(body.PlanID) {
 			pl, found = src.plan(body.PlanID)
 		}
 		if !found {
@@ -777,7 +778,7 @@ func buildPackage(w http.ResponseWriter, r *http.Request, sess *assist.Session, 
 	case assist.KindDrift:
 		var scan operations.DriftScanView
 		found := false
-		if src.scan != nil && idPattern.MatchString(body.ScanID) {
+		if src.scan != nil && ids.Valid(body.ScanID) {
 			scan, found = src.scan(body.ScanID)
 		}
 		switch {

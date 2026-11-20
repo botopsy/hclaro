@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"encoding/json"
-	"hclaro/internal/history"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,7 +14,8 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/awscli"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
+	"hclaro/internal/history"
 	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
 )
@@ -72,7 +72,7 @@ var (
 )
 
 func TestPreflightPassesAndBindsApproval(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	m.GitProbe = (&gitState{r: clean}).probe
 	id := planned(t, m)
@@ -129,7 +129,7 @@ func TestPreflightDirtyGitFollowsPolicy(t *testing.T) {
 		"policy off":    {`{"version":1,"rules":{"gitDirty":"off"}}`, "", false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+			fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 			m, root := setup(t, fake, workspace.Info{})
 			m.GitProbe = (&gitState{r: dirty}).probe
 			id := planned(t, m)
@@ -181,7 +181,7 @@ func TestPreflightDirtyGitFollowsPolicy(t *testing.T) {
 
 func TestPreflightBlocksContextAndPlanChanges(t *testing.T) {
 	t.Run("configuration changed", func(t *testing.T) {
-		m, root := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+		m, root := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 		id := planned(t, m)
 		if err := os.WriteFile(filepath.Join(root, "extra.tf"), []byte("# changed\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -192,7 +192,7 @@ func TestPreflightBlocksContextAndPlanChanges(t *testing.T) {
 		}
 	})
 	t.Run("plan expired", func(t *testing.T) {
-		m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+		m, _ := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 		m.PlanMaxAge = 150 * time.Millisecond
 		id := planned(t, m)
 		time.Sleep(200 * time.Millisecond)
@@ -202,7 +202,7 @@ func TestPreflightBlocksContextAndPlanChanges(t *testing.T) {
 		}
 	})
 	t.Run("preflight binding expired", func(t *testing.T) {
-		m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+		m, _ := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 		m.PreflightTTL = 50 * time.Millisecond
 		id := planned(t, m)
 		r := runPreflight(t, m, id, PreflightRequest{})
@@ -212,7 +212,7 @@ func TestPreflightBlocksContextAndPlanChanges(t *testing.T) {
 		}
 	})
 	t.Run("invalid policy fails closed", func(t *testing.T) {
-		m, root := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+		m, root := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 		id := planned(t, m)
 		writePolicy(t, root, `{"version":1,"rules":{"gitDirty":"warn","script":"rm -rf /"}}`)
 		r := runPreflight(t, m, id, PreflightRequest{})
@@ -221,7 +221,7 @@ func TestPreflightBlocksContextAndPlanChanges(t *testing.T) {
 		}
 	})
 	t.Run("operation running", func(t *testing.T) {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 		m, _ := setup(t, fake, workspace.Info{})
 		id := planned(t, m)
 		fake.Block = true
@@ -251,7 +251,7 @@ func TestPreflightBlocksUnsupportedBackendAndEngine(t *testing.T) {
 		"unrecognized version": {workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"}, "2.0.0", preflight.CheckEngine},
 	} {
 		t.Run(name, func(t *testing.T) {
-			fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+			fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 			m, _ := setup(t, fake, workspace.Info{})
 			id := planned(t, m)
 			fake.VersionValue = tc.version
@@ -280,7 +280,7 @@ func TestPreflightBlocksUnsupportedBackendAndEngine(t *testing.T) {
 
 // Context changes between preflight and apply are refused; nothing is re-planned.
 func TestContextChangeBetweenPreflightAndApplyIsRejected(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	plans := countCalls(fake, "plan")
@@ -302,7 +302,7 @@ func TestContextChangeBetweenPreflightAndApplyIsRejected(t *testing.T) {
 // Warnings and blockers that appear after the approval refuse the apply.
 func TestApplyReevaluatesPreflight(t *testing.T) {
 	t.Run("new warning", func(t *testing.T) {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 		m, _ := setup(t, fake, workspace.Info{})
 		git := &gitState{r: clean}
 		m.GitProbe = git.probe
@@ -320,7 +320,7 @@ func TestApplyReevaluatesPreflight(t *testing.T) {
 		}
 	})
 	t.Run("new blocker", func(t *testing.T) {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 		m, root := setup(t, fake, workspace.Info{})
 		m.GitProbe = (&gitState{r: dirty}).probe
 		id := planned(t, m)
@@ -345,7 +345,7 @@ func TestApplyReevaluatesPreflight(t *testing.T) {
 // A two-instance replacement lists every other change in the plan, and that scope warning
 // must be acknowledged.
 func TestReplacePreflightIncludesCollateralChanges(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanCollateral}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanCollateral}
 	m, _ := setup(t, fake, workspace.Info{})
 	var managed []string
 	for _, r := range m.store.Get().Index.Resources {
@@ -383,7 +383,7 @@ func TestReplacePreflightIncludesCollateralChanges(t *testing.T) {
 // The identity probe runs only on request; its account never reaches logs or records.
 func TestIdentityProbeIsExplicitAndNotLogged(t *testing.T) {
 	const account = "123456789012"
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, root := setup(t, fake, workspace.Info{})
 	m.Reload = func(context.Context) {}
 	var probes atomic.Int32
@@ -481,7 +481,7 @@ func TestApplyRechecksTheAccountPolicy(t *testing.T) {
 		"warn rule, never checked":   {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, false, verifiedAs(other), "", 0},
 	} {
 		t.Run(name, func(t *testing.T) {
-			fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+			fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 			m, root := setup(t, fake, workspace.Info{})
 			m.Reload = func(context.Context) {}
 			sts := &identityAt{id: verifiedAs(allowed)}
@@ -544,7 +544,7 @@ func (r *records) all() []history.Event {
 
 // Only the reviewed saved plan reaches the engine's apply, after preflight.
 func TestApplyUsesOnlyTheReviewedArtifact(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	m.Reload = func(context.Context) {}
 	id := planned(t, m)
@@ -562,7 +562,7 @@ func TestApplyUsesOnlyTheReviewedArtifact(t *testing.T) {
 	}
 }
 
-func countCalls(f *engine.Fake, name string) int {
+func countCalls(f *enginetest.Fake, name string) int {
 	n := 0
 	for _, c := range f.Calls() {
 		if c == name {

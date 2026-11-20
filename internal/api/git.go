@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
-	"regexp"
 	"time"
 
 	"hclaro/internal/gitctx"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 	"hclaro/internal/workspace"
@@ -16,8 +16,6 @@ import (
 
 // gitTimeout bounds one Git status or diff request.
 const gitTimeout = 20 * time.Second
-
-var fileIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 // gitRoutes serve the Git context of the launch project and of Hub projects. The browser
 // names a project (the launch project or a Hub ID) and an opaque file ID from the latest
@@ -95,7 +93,7 @@ func gitRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.M
 			if !decodeBody(w, r, &body) {
 				return
 			}
-			if !fileIDPattern.MatchString(body.FileID) {
+			if !ids.Valid(body.FileID) {
 				reasonJSON(w, 400, "invalid_file", "Choose a changed file from the list.")
 				return
 			}
@@ -183,7 +181,7 @@ func gitRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.M
 			if !decodeBody(w, r, &body) {
 				return
 			}
-			if !fileIDPattern.MatchString(body.FileID) {
+			if !ids.Valid(body.FileID) {
 				reasonJSON(w, 400, "invalid_file", "Choose a file Hclaro listed.")
 				return
 			}

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
 )
@@ -41,7 +41,7 @@ func logText(t *testing.T, m *Manager, id string) string {
 }
 
 func TestUnreadableConfigurationAfterPlanIsItsOwnReason(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	lockDir(t, root)
@@ -64,7 +64,7 @@ func TestUnreadableConfigurationAfterPlanIsItsOwnReason(t *testing.T) {
 }
 
 func TestUnreadableConfigurationAtPlanTimeIsReviewableNotApplicable(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	lockDir(t, root)
 	op, err := m.StartPlan(nil, nil)
@@ -87,7 +87,7 @@ func TestUnreadableConfigurationAtPlanTimeIsReviewableNotApplicable(t *testing.T
 }
 
 func TestUnreadableConfigurationFailsADriftScanBeforeTheEngine(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.DriftMixed}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftMixed}
 	m, root := setup(t, fake, workspace.Info{})
 	_, view := scanAndWait(t, m, DriftStart{})
 	lockDir(t, root)
@@ -112,7 +112,7 @@ func TestUnreadableConfigurationFailsADriftScanBeforeTheEngine(t *testing.T) {
 }
 
 func TestUnreadableConfigurationRefusesAtTheApplyTimeRecheck(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("directory permissions are not enforced here")
@@ -144,7 +144,7 @@ func TestUnreadableConfigurationRefusesAtTheApplyTimeRecheck(t *testing.T) {
 }
 
 func TestUnreadableReasonSurvivesAnEarlierRefusal(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	planned(t, m) // supersedes id: its saved file is no longer kept
@@ -156,7 +156,7 @@ func TestUnreadableReasonSurvivesAnEarlierRefusal(t *testing.T) {
 }
 
 func TestUnreadableConfigurationRefusesAGraph(t *testing.T) {
-	fake := &engine.Fake{GraphDOT: fixtures.GraphTerraform}
+	fake := &enginetest.Fake{GraphDOT: fixtures.GraphTerraform}
 	m, root := setup(t, fake, workspace.Info{})
 	lockDir(t, root)
 	done, _ := graphAndWait(t, m, GraphStart{})

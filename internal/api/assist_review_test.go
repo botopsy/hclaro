@@ -8,7 +8,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 )
 
@@ -28,7 +28,7 @@ func reviewBody(hash, prompt string) string {
 
 // review builds a package of kind under base, checks the preview and export, starts the review,
 // asks one follow-up and cancels a third turn. The fake engine sees no call throughout.
-func review(t *testing.T, do doFunc, fake *engine.Fake, stub *stubAssistant, base, request, kind string) (reviewPackage, assist.Conversation) {
+func review(t *testing.T, do doFunc, fake *enginetest.Fake, stub *stubAssistant, base, request, kind string) (reviewPackage, assist.Conversation) {
 	t.Helper()
 	calls := len(fake.Calls())
 	ran := stub.ran()
@@ -107,7 +107,7 @@ func reviewReady(s *planServer) *stubAssistant {
 
 func TestAIReviewPerKind(t *testing.T) {
 	t.Run("destroy plan", func(t *testing.T) {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 		s, _ := newImportServer(t, fake)
 		stub := reviewReady(s)
 		p, _ := review(t, s.do, fake, stub, "/api/v1", `{"kind":"plan","planId":"`+s.plan()+`"}`, assist.KindPlan)
@@ -116,10 +116,12 @@ func TestAIReviewPerKind(t *testing.T) {
 		}
 	})
 	t.Run("replace plan", func(t *testing.T) {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanCollateral}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanCollateral}
 		s := newPlanServer(t, fake)
 		stub := reviewReady(s)
-		res := decode[struct{ Resources []struct{ ID, Address string } }](t, s.do("GET", "/api/v1/resources?query=compute.aws_instance.main%5B1&limit=5", ""))
+		res := decode[struct {
+			Resources []struct{ ID, Address string }
+		}](t, s.do("GET", "/api/v1/resources?query=compute.aws_instance.main%5B1&limit=5", ""))
 		w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true,"replace":["`+res.Resources[0].ID+`","`+res.Resources[1].ID+`"]}`)
 		op := s.wait(decode[operations.Operation](t, w).ID)
 		p, _ := review(t, s.do, fake, stub, "/api/v1", `{"kind":"plan","planId":"`+op.PlanID+`"}`, assist.KindPlan)
@@ -128,7 +130,7 @@ func TestAIReviewPerKind(t *testing.T) {
 		}
 	})
 	t.Run("drift with sensitive attributes", func(t *testing.T) {
-		fake := &engine.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed}
+		fake := &enginetest.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed}
 		s, _ := newDriftServer(t, fake)
 		stub := reviewReady(s)
 		_, scan := startScan(t, s)
@@ -138,13 +140,13 @@ func TestAIReviewPerKind(t *testing.T) {
 		}
 	})
 	t.Run("import with missing config", func(t *testing.T) {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport}
 		s, _ := newImportServer(t, fake)
 		stub := reviewReady(s)
 		review(t, s.do, fake, stub, "/api/v1", `{"kind":"import","import":{"address":"aws_s3_bucket.missing","id":"bucket-x","file":"imports.tf"}}`, assist.KindImport)
 	})
 	t.Run("resource", func(t *testing.T) {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 		s, _ := newDriftServer(t, fake)
 		stub := reviewReady(s)
 		page := decode[struct{ Resources []struct{ ID string } }](t, s.do("GET", "/api/v1/resources?limit=1", ""))
@@ -165,7 +167,7 @@ func TestAIHubReviewStaysInItsContext(t *testing.T) {
 	done := s.waitScoped(a, s.plan(a).ID)
 	do := func(m, p, body string) *httptest.ResponseRecorder { return s.do(m, p, body) }
 	calls := len(s.planCalls())
-	_, c := review(t, do, &engine.Fake{}, stub, "/api/v1/contexts/"+a, `{"kind":"plan","planId":"`+done.PlanID+`"}`, assist.KindPlan)
+	_, c := review(t, do, &enginetest.Fake{}, stub, "/api/v1/contexts/"+a, `{"kind":"plan","planId":"`+done.PlanID+`"}`, assist.KindPlan)
 	for _, elsewhere := range []string{"/api/v1/contexts/" + b, "/api/v1"} {
 		wantError(t, s.do("POST", elsewhere+"/ai/conversations/"+c.ID+"/messages", `{"text":"hi"}`), 404, "conversation_not_found")
 	}

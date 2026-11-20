@@ -3,7 +3,6 @@ package operations
 import (
 	"context"
 	"errors"
-	"hclaro/internal/discovery"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +10,9 @@ import (
 	"time"
 
 	"hclaro/fixtures"
+	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/imports"
 	"hclaro/internal/rootlock"
 	"hclaro/internal/workspace"
@@ -24,7 +25,7 @@ const legacyBlock = `resource "aws_s3_bucket" "legacy_logs" {
 
 // importSetup is setup with a symlink-resolved project root containing files, as
 // workspace.Root provides at launch.
-func importSetup(t *testing.T, fake *engine.Fake, files map[string]string) (*Manager, string) {
+func importSetup(t *testing.T, fake *enginetest.Fake, files map[string]string) (*Manager, string) {
 	t.Helper()
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
@@ -55,7 +56,7 @@ func reviewed(t *testing.T, m *Manager, req imports.Request) ImportRequest {
 }
 
 func TestImportWritesReviewedBlockPlansAndApplies(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport}
 	m, root := importSetup(t, fake, map[string]string{"main.tf": legacyBlock})
 	req := imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"}
 	preview := m.PreviewImport(req)
@@ -106,7 +107,7 @@ func TestImportWritesReviewedBlockPlansAndApplies(t *testing.T) {
 }
 
 func TestImportGeneratesConfigurationForReview(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanImport, GeneratedConfig: fixtures.ImportGenerated}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport, GeneratedConfig: fixtures.ImportGenerated}
 	m, root := importSetup(t, fake, map[string]string{"main.tf": "terraform {}\n"})
 	op, err := m.StartImport(reviewed(t, m, imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "legacy.tf", GenerateConfig: true}))
 	if err != nil {
@@ -142,7 +143,7 @@ func TestImportGeneratesConfigurationForReview(t *testing.T) {
 }
 
 func TestImportEditDuringPlanIsAContextChange(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanImport, GeneratedConfig: fixtures.ImportGenerated, Lines: lines(fixtures.PlanLog), Delay: 20 * time.Millisecond}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport, GeneratedConfig: fixtures.ImportGenerated, Lines: lines(fixtures.PlanLog), Delay: 20 * time.Millisecond}
 	m, root := importSetup(t, fake, map[string]string{"main.tf": "terraform {}\n"})
 	op, err := m.StartImport(reviewed(t, m, imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "legacy.tf", GenerateConfig: true}))
 	if err != nil {
@@ -159,7 +160,7 @@ func TestImportEditDuringPlanIsAContextChange(t *testing.T) {
 }
 
 func TestImportRefusalsWriteNothingAndRunNothing(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport}
 	m, root := importSetup(t, fake, map[string]string{"main.tf": legacyBlock})
 	good := imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"}
 	sha := m.PreviewImport(good).SHA256
@@ -203,7 +204,7 @@ func TestImportRefusalsWriteNothingAndRunNothing(t *testing.T) {
 // hashicorp/aws v5 records an RDS resource ID (db-…) as the id and the import ID as the
 // identifier; the collision check must compare the identifier.
 func TestImportRefusesAnRDSInstanceManagedUnderAWSv5(t *testing.T) {
-	fake := &engine.Fake{}
+	fake := &enginetest.Fake{}
 	m, _ := importSetup(t, fake, map[string]string{"main.tf": `resource "aws_db_instance" "copy" {}` + "\n"})
 	m.StateIDs = discovery.StateIDs
 	fake.StateJSON = []byte(`{"format_version": "1.0", "values": {"root_module": {"resources": [{"address": "aws_db_instance.orders", "mode": "managed", "type": "aws_db_instance", "name": "orders", "provider_name": "registry.terraform.io/hashicorp/aws", "values": {"id": "db-ABCDEFGHIJKLMNOPQRSTUVWXYZ", "identifier": "orders"}, "sensitive_values": {}}]}}}`)
@@ -219,7 +220,7 @@ func TestImportRefusesAnRDSInstanceManagedUnderAWSv5(t *testing.T) {
 }
 
 func TestImportUnavailableWithoutLocalPlanning(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport}
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"})
 	store.Load(context.Background(), fake, "terraform", nil)
@@ -241,7 +242,7 @@ func TestImportUnavailableWithoutLocalPlanning(t *testing.T) {
 }
 
 func TestImportPlanThatDoesNotImportWarnsAndFailedPlanKeepsFile(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanCollateral}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanCollateral}
 	m, root := importSetup(t, fake, map[string]string{"main.tf": legacyBlock})
 	op, err := m.StartImport(reviewed(t, m, imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"}))
 	if err != nil {
@@ -276,7 +277,7 @@ func TestImportPlanThatDoesNotImportWarnsAndFailedPlanKeepsFile(t *testing.T) {
 // before writing: a refusal writes nothing, runs nothing and releases the root. Its preview
 // digests are bound to the context, so a launch or other-context digest is refused.
 func TestImportVerifiedBeforeWritingAndBoundToItsContext(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport}
 	m, root := importSetup(t, fake, map[string]string{"main.tf": legacyBlock})
 	m.Locks = rootlock.New()
 	req := imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"}
@@ -337,7 +338,7 @@ func rejectedWith(err error, code string) bool {
 // busy meanwhile, and a close during it refuses the import without writing.
 func TestImportVerifiesWithoutTheManagerLock(t *testing.T) {
 	for _, closeDuring := range []bool{false, true} {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanImport}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport}
 		m, root := importSetup(t, fake, map[string]string{"main.tf": legacyBlock})
 		req := reviewed(t, m, imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "imports.tf"})
 		entered, proceed := make(chan struct{}), make(chan struct{})

@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"hclaro/internal/history"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,8 +16,9 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/gitctx"
+	"hclaro/internal/history"
 	"hclaro/internal/operations"
 	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
@@ -82,7 +82,7 @@ func newBranchServer(t *testing.T) (*planServer, string, *switchRecords) {
 		gitSetup(t, root, "commit", "-q", "-am", b)
 	}
 	gitSetup(t, root, "switch", "-q", "main")
-	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, root)

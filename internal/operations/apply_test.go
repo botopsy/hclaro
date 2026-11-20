@@ -13,6 +13,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
 )
@@ -52,10 +53,10 @@ func approveAndApply(t *testing.T, m *Manager, id string) Operation {
 	return op
 }
 
-func applyCalls(f *engine.Fake) int { return strings.Count(strings.Join(f.Calls(), ","), "apply") }
+func applyCalls(f *enginetest.Fake) int { return strings.Count(strings.Join(f.Calls(), ","), "apply") }
 
 func TestApplyAppliesReviewedArtifactOnceAndReloads(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, _ := setup(t, fake, workspace.Info{})
 	var reloads atomic.Int32
 	m.Reload = func(context.Context) { reloads.Add(1) }
@@ -96,7 +97,7 @@ func TestApplyAppliesReviewedArtifactOnceAndReloads(t *testing.T) {
 // A state read that fails after an apply is reported, not hidden behind "reloaded". The
 // apply outcome stays what the engine reported; applied state is not service health.
 func TestApplyReportsAFailedStateReload(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, _ := setup(t, fake, workspace.Info{})
 	m.Reload = func(ctx context.Context) { m.store.Load(ctx, nil, "terraform", nil) }
 	id := planned(t, m)
@@ -122,9 +123,9 @@ func TestApplyReportsAFailedStateReload(t *testing.T) {
 
 // A read after an apply that finds no recorded state succeeded; it is not a failed reload.
 func TestApplyReloadWithoutRecordedStateIsNotAFailure(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, _ := setup(t, fake, workspace.Info{})
-	absent := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: []byte(`{"format_version":"1.0"}`)}
+	absent := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: []byte(`{"format_version":"1.0"}`)}
 	m.Reload = func(ctx context.Context) { m.store.Load(ctx, absent, "terraform", nil) }
 	id := planned(t, m)
 	done := wait(t, m, approveAndApply(t, m, id).ID)
@@ -137,7 +138,7 @@ func TestApplyReloadWithoutRecordedStateIsNotAFailure(t *testing.T) {
 }
 
 func TestApplyRefusedWithoutValidApproval(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	if _, err := m.StartApply(id, "", "apply demo"); rejected(err) != "approval_required" {
@@ -172,7 +173,7 @@ func TestApplyRefusedWithoutValidApproval(t *testing.T) {
 }
 
 func TestApplyRejectsChangedContext(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	approval, _ := approve(m, id)
@@ -191,7 +192,7 @@ func TestApplyRejectsChangedContext(t *testing.T) {
 }
 
 func TestApplyRechecksWorkspaceAndArtifact(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	fake.SetWorkspace("prod")
@@ -268,7 +269,7 @@ func TestApplyFailureOutcomes(t *testing.T) {
 		"finished after cancel": {blockAndCancel: true, finishes: true, code: "applied", outcome: "applied", status: Succeeded, expectReloaded: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyErr: tc.err, BlockApply: tc.blockAndCancel, ApplyFinishesAfterCancel: tc.finishes}
+			fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyErr: tc.err, BlockApply: tc.blockAndCancel, ApplyFinishesAfterCancel: tc.finishes}
 			m, _ := setup(t, fake, workspace.Info{})
 			m.Reload = func(context.Context) {}
 			id := planned(t, m)
@@ -299,7 +300,7 @@ func TestApplyFailureOutcomes(t *testing.T) {
 // Shutdown interrupts a running apply and waits for the engine to stop, however short the
 // wait the caller passed.
 func TestCloseWaitsForARunningApply(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, BlockApply: true, ApplyStopDelay: 500 * time.Millisecond}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, BlockApply: true, ApplyStopDelay: 500 * time.Millisecond}
 	m, _ := setup(t, fake, workspace.Info{})
 	op := approveAndApply(t, m, planned(t, m))
 	waitStage(t, m, op.ID, "Applying")
@@ -315,7 +316,7 @@ func TestCloseWaitsForARunningApply(t *testing.T) {
 }
 
 func TestOnlyLatestApplicablePlanIsKept(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	first := planned(t, m)
 	approval, _ := approve(m, first)
@@ -340,7 +341,7 @@ func TestOnlyLatestApplicablePlanIsKept(t *testing.T) {
 }
 
 func TestExpiryTimerDeletesArtifact(t *testing.T) {
-	m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 	m.PlanMaxAge = 50 * time.Millisecond
 	planned(t, m)
 	deadline := time.Now().Add(5 * time.Second)
@@ -358,7 +359,7 @@ func TestExpiryTimerDeletesArtifact(t *testing.T) {
 func TestIneligiblePlansKeepNoArtifact(t *testing.T) {
 	for name, document := range map[string][]byte{"errored": fixtures.PlanErrored, "no changes": fixtures.PlanNoChanges} {
 		t.Run(name, func(t *testing.T) {
-			m, _ := setup(t, &engine.Fake{PlanJSON: document}, workspace.Info{})
+			m, _ := setup(t, &enginetest.Fake{PlanJSON: document}, workspace.Info{})
 			id := planned(t, m)
 			assertTempEmpty(t, m)
 			if _, err := approve(m, id); rejected(err) != "not_applicable" {
@@ -369,7 +370,7 @@ func TestIneligiblePlansKeepNoArtifact(t *testing.T) {
 }
 
 func TestApplyBlockedWhileBusy(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	approval, _ := approve(m, id)
@@ -386,7 +387,7 @@ func TestApplyBlockedWhileBusy(t *testing.T) {
 }
 
 func TestReplacePlanRequest(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanCollateral}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanCollateral}
 	m, _ := setup(t, fake, workspace.Info{})
 	snap := m.store.Get()
 	var managed, data []string
@@ -417,7 +418,7 @@ func TestReplacePlanRequest(t *testing.T) {
 // Remote execution keeps plans review-only: no artifact is retained.
 func TestRemoteExecutionNeverRetainsArtifact(t *testing.T) {
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "cloud", ExecutionMode: "remote-exec"})
-	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store.Load(context.Background(), fake, "terraform", nil)
 	caps := store.Get().Info.Capabilities
 	if caps.CanApply || !strings.Contains(caps.ApplyReason, "Remote execution") {
@@ -426,7 +427,7 @@ func TestRemoteExecutionNeverRetainsArtifact(t *testing.T) {
 }
 
 func TestSweepStaleRemovesOnlyOldPlanDirectories(t *testing.T) {
-	m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 	now := time.Now()
 	old := now.Add(-(m.PlanMaxAge + m.ApplyTimeout + engine.ApplyGracePeriod + time.Minute))
 	mk := func(name string, mod time.Time) string {
@@ -469,7 +470,7 @@ func TestSweepStaleRemovesOnlyOldPlanDirectories(t *testing.T) {
 }
 
 func TestSweepStaleKeepsARetainedPlan(t *testing.T) {
-	m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 	op, err := m.StartPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -491,7 +492,7 @@ func TestUnknownActionsFailClosed(t *testing.T) {
 	outputOnly := []byte(`{"format_version":"1.2","terraform_version":"1.9.8","planned_values":{"root_module":{}},"applyable":true,"complete":true,"resource_changes":[{"address":"aws_vpc.main","mode":"managed","type":"aws_vpc","name":"main","change":{"actions":["update"],"before":{"id":"vpc-1"},"after":{"id":"vpc-2"}}}],"output_changes":{"vpc":{"actions":["update","delete"],"before":"vpc-1","after":"vpc-2"}}}`)
 	for name, document := range map[string][]byte{"resource and output": fixtures.PlanUnknownActions, "output only": outputOnly} {
 		t.Run(name, func(t *testing.T) {
-			fake := &engine.Fake{PlanJSON: document}
+			fake := &enginetest.Fake{PlanJSON: document}
 			m, _ := setup(t, fake, workspace.Info{})
 			id := planned(t, m)
 			assertTempEmpty(t, m)
@@ -537,7 +538,7 @@ func TestUnknownActionsFailClosed(t *testing.T) {
 // A plan whose recorded actions change after approval (for example, a corrupted in-memory
 // record) is refused at apply time, and again immediately before the engine runs.
 func TestUnknownActionsRecheckedBeforeEngine(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	approval, err := approve(m, id)
@@ -594,7 +595,7 @@ func TestUnsafeArgsRefusalNamesFlagsNotValues(t *testing.T) {
 	}
 	t.Run("plan", func(t *testing.T) {
 		t.Setenv("TF_CLI_ARGS_plan", "-no-color -target=aws_db_instance.secret -var=password=hunter2 s3cr3t-value")
-		m, _ := setup(t, &engine.Fake{PlanErr: engine.ErrUnsafeArgs}, workspace.Info{})
+		m, _ := setup(t, &enginetest.Fake{PlanErr: engine.ErrUnsafeArgs}, workspace.Info{})
 		op, err := m.StartPlan(nil, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -606,7 +607,7 @@ func TestUnsafeArgsRefusalNamesFlagsNotValues(t *testing.T) {
 		check(t, done.Diagnostic.Message, "TF_CLI_ARGS_plan", "-target, -var, 1 other argument(s)")
 	})
 	t.Run("apply", func(t *testing.T) {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyErr: engine.ErrUnsafeArgs}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyErr: engine.ErrUnsafeArgs}
 		m, _ := setup(t, fake, workspace.Info{})
 		id := planned(t, m)
 		t.Setenv("TF_CLI_ARGS_apply", "-auto-approve -var=token=hunter2")
@@ -634,7 +635,7 @@ func TestCredentialHints(t *testing.T) {
 			t.Fatalf("%q: %q", text, hint)
 		}
 	}
-	fake := &engine.Fake{PlanErr: &engine.ExitError{Code: 1}, Lines: [][]byte{[]byte(`{"@level":"error","@message":"Error: SSO session expired","type":"diagnostic","diagnostic":{"severity":"error","summary":"refresh failed: the SSO session associated with this profile has expired","detail":""}}`)}}
+	fake := &enginetest.Fake{PlanErr: &engine.ExitError{Code: 1}, Lines: [][]byte{[]byte(`{"@level":"error","@message":"Error: SSO session expired","type":"diagnostic","diagnostic":{"severity":"error","summary":"refresh failed: the SSO session associated with this profile has expired","detail":""}}`)}}
 	m, _ := setup(t, fake, workspace.Info{})
 	op, err := m.StartPlan(nil, nil)
 	if err != nil {
@@ -648,7 +649,7 @@ func TestCredentialHints(t *testing.T) {
 // M26.08: the context fingerprint is recomputed with the root claim held, immediately before
 // the engine applies; a configuration edit after the start checks refuses the apply.
 func TestApplyRecomputesTheFingerprintUnderTheClaim(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	id := planned(t, m)
 	// The Verify hook runs with the claim held, after StartApply checked the fingerprint.

@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -16,28 +14,21 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/testutil"
 	"hclaro/internal/workspace"
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	testutil.Cleanup()
+	os.Exit(code)
+}
 
 // fakeEngines builds the synthetic CLI (scripts/fake-engine) as terraform and tofu and
 // returns a factory that uses them with the real CLI adapter.
 func fakeEngines(t *testing.T) (EngineFactory, string) {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("builds the synthetic engine")
-	}
-	bin := t.TempDir()
-	exe := ""
-	if runtime.GOOS == "windows" {
-		exe = ".exe"
-	}
-	for _, name := range []string{"terraform", "tofu"} {
-		build := exec.Command("go", "build", "-o", filepath.Join(bin, name+exe), "hclaro/scripts/fake-engine")
-		build.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("%v %s", err, out)
-		}
-	}
+	bin, exe := testutil.FakeEngine(t), testutil.Exe()
 	spy := filepath.Join(t.TempDir(), "argv")
 	t.Setenv("HCLARO_FAKE_SPY", spy)
 	t.Setenv("HCLARO_FAKE_SPY_ENV", "1")

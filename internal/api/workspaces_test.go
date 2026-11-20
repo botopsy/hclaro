@@ -8,13 +8,14 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 )
 
-// workspaceServer is a Hub server whose workspace commands run engine.Fake. The test binary
+// workspaceServer is a Hub server whose workspace commands run enginetest.Fake. The test binary
 // stands in for the executable so its identity can be pinned.
-func workspaceServer(t *testing.T, fake *engine.Fake) (*hubServer, projects.Summary) {
+func workspaceServer(t *testing.T, fake *enginetest.Fake) (*hubServer, projects.Summary) {
 	t.Helper()
 	t.Setenv("TF_CLI_ARGS", "")
 	t.Setenv("TF_CLI_ARGS_workspace", "")
@@ -39,8 +40,8 @@ func (s *hubServer) review(id, action, name string) (int, projects.WorkspaceRevi
 	return w.Code, decode[projects.WorkspaceReview](s.t, w)
 }
 
-func newFake() *engine.Fake {
-	return &engine.Fake{VersionValue: "1.9.8", Workspaces: []string{"default", "dev", "prod"}, CLIDefault: "dev", WorkspaceStates: map[string][]byte{
+func newFake() *enginetest.Fake {
+	return &enginetest.Fake{VersionValue: "1.9.8", Workspaces: []string{"default", "dev", "prod"}, CLIDefault: "dev", WorkspaceStates: map[string][]byte{
 		"prod": fixtures.HubState("network", "prod"), "empty": []byte(`{"format_version":"1.0"}`),
 	}}
 }

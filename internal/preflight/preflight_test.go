@@ -321,8 +321,8 @@ func TestGitStatusDisposableRepository(t *testing.T) {
 	}
 	cmd := exec.Command("git", "init", "-q", repo)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
-	if err := cmd.Run(); err != nil {
-		t.Skip("git init failed")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out) // a broken setup is a failure, not a skip
 	}
 	if r := GitStatus(context.Background(), repo, gitctx.Exec{}.Run); r.State != GitClean {
 		t.Fatalf("%+v", r)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -228,7 +229,7 @@ func TestConversationCancelFailureAndRetry(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 	// A failed turn keeps earlier turns, returns the message as a draft and says why.
-	good.set(false, &Failure{Kind: KindAuth})
+	good.set(false, &failure{Kind: KindAuth})
 	if _, err := s.Send("a", c.ID, "again"); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +237,7 @@ func TestConversationCancelFailureAndRetry(t *testing.T) {
 	if c.State != StateFailed || len(c.Turns) != 2 || *c.Draft != "again" || c.Error.Code != KindAuth || strings.Contains(c.Error.Message, "again") {
 		t.Fatalf("%+v", c)
 	}
-	good.set(false, &Failure{Kind: KindTimeout})
+	good.set(false, &failure{Kind: KindTimeout})
 	_, _ = s.Send("a", c.ID, "again")
 	if c = settle(t, s, "a", c.ID); c.Error.Code != KindTimeout {
 		t.Fatalf("%+v", c)
@@ -340,6 +341,8 @@ func TestConversationIsolation(t *testing.T) {
 func TestConversationCapAndShutdown(t *testing.T) {
 	good := &stub{id: "good", mode: ModeHeadless}
 	s := ready(t, good)
+	base, tick := time.Now(), atomic.Int64{}
+	s.Now = func() time.Time { return base.Add(time.Duration(tick.Add(1)) * time.Millisecond) } // strictly increasing lastUsed
 	var ids []string
 	for i := 0; i < MaxConversations; i++ {
 		c, err := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, "")
@@ -348,7 +351,6 @@ func TestConversationCapAndShutdown(t *testing.T) {
 		}
 		settle(t, s, "a", c.ID)
 		ids = append(ids, c.ID)
-		time.Sleep(2 * time.Millisecond) // distinct lastUsed
 	}
 	// The oldest idle conversation makes room.
 	if _, err := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, ""); err != nil {

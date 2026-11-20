@@ -70,8 +70,8 @@ browser-test: binary bin/mock/terraform$(EXE) bin/mock/tofu$(EXE) bin/mock/infra
 	go build -trimpath -o bin/fixture-http$(EXE) ./scripts/fixture-http
 	node scripts/browser-smoke.mjs
 	node scripts/browser-hub.mjs
-	node tests/e2e/quick-actions.mjs
-	node tests/e2e/saved-conversations.mjs
+	# Exit 77 means the check did not run on this platform: reported as SKIP, not as a pass.
+	for t in quick-actions saved-conversations; do node tests/e2e/$$t.mjs; s=$$?; [ $$s -eq 77 ] && echo "SKIPPED $$t e2e" || [ $$s -eq 0 ] || exit $$s; done
 
 cross:
 	mkdir -p dist

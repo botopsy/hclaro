@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"hclaro/internal/cost"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
@@ -139,7 +140,7 @@ func costRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, mana
 		writeJSON(w, 202, view(est, b))
 	})
 	mux.HandleFunc("GET /api/v1/plans/{id}/cost-estimate", func(w http.ResponseWriter, r *http.Request) {
-		if !idPattern.MatchString(r.PathValue("id")) {
+		if !ids.Valid(r.PathValue("id")) {
 			errorJSON(w, 404, "plan_not_found")
 			return
 		}
@@ -155,7 +156,7 @@ func costRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, mana
 		writeJSON(w, 200, view(est, b))
 	})
 	mux.HandleFunc("GET /api/v1/cost-estimates/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if !idPattern.MatchString(r.PathValue("id")) {
+		if !ids.Valid(r.PathValue("id")) {
 			errorJSON(w, 404, "estimate_not_found")
 			return
 		}
@@ -175,7 +176,7 @@ func costRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, mana
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		if !idPattern.MatchString(r.PathValue("id")) {
+		if !ids.Valid(r.PathValue("id")) {
 			errorJSON(w, 404, "estimate_not_found")
 			return
 		}

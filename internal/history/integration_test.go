@@ -2,7 +2,6 @@ package history_test
 
 import (
 	"context"
-	. "hclaro/internal/history"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +10,8 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
+	. "hclaro/internal/history"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
@@ -21,7 +22,7 @@ const knownValue = "orchid-lantern-meadow-4417"
 
 type harness struct {
 	t     *testing.T
-	fake  *engine.Fake
+	fake  *enginetest.Fake
 	m     *operations.Manager
 	ws    *workspace.Store
 	store *Store
@@ -29,7 +30,7 @@ type harness struct {
 	root  string
 }
 
-func newHarness(t *testing.T, fake *engine.Fake, dir string) *harness {
+func newHarness(t *testing.T, fake *enginetest.Fake, dir string) *harness {
 	t.Helper()
 	if fake.VersionValue == "" {
 		fake.VersionValue = "1.9.8"
@@ -97,7 +98,7 @@ func (h *harness) assertClean() {
 
 func TestPlanThenRestartNeverReappliesHistory(t *testing.T) {
 	dir := t.TempDir()
-	h := newHarness(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, dir)
+	h := newHarness(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, dir)
 	op, err := h.m.StartPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +116,7 @@ func TestPlanThenRestartNeverReappliesHistory(t *testing.T) {
 
 	// Restart: a new process opens the same history with a fresh operation runner.
 	h.m.Close(5 * time.Second)
-	restarted := newHarness(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, dir)
+	restarted := newHarness(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, dir)
 	e, ok := restarted.store.Get(op.ID)
 	if !ok || e.Plan == nil || e.Plan.PlanID != done.PlanID {
 		t.Fatal("history did not survive a restart")
@@ -135,7 +136,7 @@ func TestPlanThenRestartNeverReappliesHistory(t *testing.T) {
 }
 
 func TestCancelledReplaceAndFailedPlanAreRecordedHonestly(t *testing.T) {
-	h := newHarness(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions, Block: true}, t.TempDir())
+	h := newHarness(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, Block: true}, t.TempDir())
 	var ids []string
 	for _, r := range h.ws.Get().Index.Resources {
 		if r.Mode == "managed" {
@@ -195,7 +196,7 @@ func TestCancelledReplaceAndFailedPlanAreRecordedHonestly(t *testing.T) {
 }
 
 func TestCancelledApplyIsPartialAndLinkedToItsPlan(t *testing.T) {
-	h := newHarness(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions, BlockApply: true}, t.TempDir())
+	h := newHarness(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, BlockApply: true}, t.TempDir())
 	op, err := h.m.StartPlan(nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +233,7 @@ func TestHubInitIsRecordedWithProject(t *testing.T) {
 	inits := operations.NewInits()
 	inits.Recorder = store
 	t.Cleanup(func() { inits.Close(5 * time.Second) })
-	fake := &engine.Fake{VersionValue: "1.9.8", BlockInit: true, InitStderr: [][]byte{[]byte("Error: " + canary)}}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", BlockInit: true, InitStderr: [][]byte{[]byte("Error: " + canary)}}
 	op, err := inits.Start(operations.InitRequest{
 		ProjectID: id(77), Root: root, Engine: "terraform", Initer: fake,
 		Revalidate: func() string { return "" }, Initialized: func() bool { return false }, Lockfile: func() []byte { return nil }, Release: func() {},

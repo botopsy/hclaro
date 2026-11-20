@@ -140,13 +140,9 @@ func envHash(environ []string, fields ...string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// InitStatus returns the preflight for a project. No engine command runs.
-func (h *Hub) InitStatus(id string) (InitStatus, error) {
-	return h.InitStatusFor(id, "")
-}
-
-// InitStatusFor is the preflight with an optional execution profile: init then runs with
-// the profile's environment and engine preference, and the context ID covers the profile.
+// InitStatusFor is the preflight for a project, with an optional execution profile: init then
+// runs with the profile's environment and engine preference, and the context ID covers the
+// profile. No engine command runs.
 func (h *Hub) InitStatusFor(id, profileID string) (InitStatus, error) {
 	p, err := h.Registry.Get(id)
 	if err != nil {
@@ -221,15 +217,10 @@ func (h *Hub) InitStatusFor(id, profileID string) (InitStatus, error) {
 	return s, nil
 }
 
-// StartInit starts a standard init after the user reviewed the preflight identified by
-// expected. The root is claimed exclusively until the operation ends; the engine, its
-// executable, the root, the data directory and the environment are pinned now and checked
-// again just before the engine starts.
-func (h *Hub) StartInit(id, expected string) (operations.Operation, error) {
-	return h.StartInitWith(id, expected, "")
-}
-
 // StartInitWith starts init bound to an optional execution profile reviewed in the preflight.
+// The root is claimed exclusively until the operation ends; the engine, its executable, the
+// root, the data directory and the environment are pinned now and checked again just before
+// the engine starts.
 func (h *Hub) StartInitWith(id, expected, profileID string) (operations.Operation, error) {
 	status, err := h.InitStatusFor(id, profileID)
 	if err != nil {

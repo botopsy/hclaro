@@ -9,8 +9,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"hclaro/internal/ids"
 )
 
 var (
@@ -143,7 +144,7 @@ func RemoveAt(root, rel string, current func([]byte) bool, keep string) error {
 // existing runs the checks before a move: a safe path, a regular file current accepts (an early
 // check, so a plainly changed file is never moved), a valid keep ID and working hard links.
 func existing(root, rel string, current func([]byte) bool, keep string) (dir, target string, mode fs.FileMode, err error) {
-	if !keepID.MatchString(keep) {
+	if !ids.Valid(keep) {
 		return "", "", 0, ErrUnsafePath
 	}
 	if dir, err = SafeDir(root, rel); err != nil {
@@ -165,8 +166,6 @@ func existing(root, rel string, current func([]byte) bool, keep string) (dir, ta
 	}
 	return dir, target, info.Mode().Perm(), nil
 }
-
-var keepID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 // AsideName is the name of the recovery artifact of record id, in the folder of the file it
 // replaced. The prefix and the 32-hex ID are Hclaro's ownership marks; it never ends in .tf or

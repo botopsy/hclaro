@@ -5,14 +5,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"hclaro/internal/tfpolicy"
@@ -88,7 +85,7 @@ var (
 	ApplyGracePeriod = 10 * time.Minute
 )
 
-func planArgs(request PlanRequest) ([]string, error) {
+func PlanArgs(request PlanRequest) ([]string, error) {
 	if !filepath.IsAbs(request.Out) {
 		return nil, errors.New("plan output must be an absolute private path")
 	}
@@ -162,7 +159,7 @@ func optionArgs(args []string, parallelism, lockTimeout int) ([]string, error) {
 	return args, nil
 }
 
-func applyArgs(request ApplyRequest) ([]string, error) {
+func ApplyArgs(request ApplyRequest) ([]string, error) {
 	if !filepath.IsAbs(request.Path) {
 		return nil, errors.New("saved plan path must be absolute")
 	}
@@ -178,7 +175,7 @@ func applyArgs(request ApplyRequest) ([]string, error) {
 // Plan streams machine-readable UI lines to line. Lines longer than 1 MiB are truncated,
 // which makes them invalid JSON for the consumer rather than buffering without bound.
 func (c *CLI) Plan(ctx context.Context, request PlanRequest, line func([]byte)) error {
-	args, err := planArgs(request)
+	args, err := PlanArgs(request)
 	if err != nil {
 		return err
 	}
@@ -190,7 +187,7 @@ func (c *CLI) Plan(ctx context.Context, request PlanRequest, line func([]byte)) 
 
 // Apply applies the saved plan at request.Path and streams machine-readable UI lines.
 func (c *CLI) Apply(ctx context.Context, request ApplyRequest, line func([]byte)) error {
-	args, err := applyArgs(request)
+	args, err := ApplyArgs(request)
 	if err != nil {
 		return err
 	}
@@ -336,219 +333,3 @@ func (t *boundedTail) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 func (t *boundedTail) String() string { return string(t.b) }
-
-// Fake implements Adapter and Planner for tests and synthetic helpers. It is never
-// selectable through the API or CLI flags.
-type Fake struct {
-	mu             sync.Mutex
-	VersionValue   string
-	WorkspaceValue string
-	StateJSON      []byte
-	Lines          [][]byte
-	PlanJSON       []byte
-	PlanErr        error
-	// WriteOnError writes PlanJSON even when PlanErr is returned, like an engine that saves an
-	// errored plan.
-	WriteOnError bool
-	ShowErr      error
-	ApplyLines   [][]byte
-	ApplyErr     error
-	// Root and GeneratedConfig emulate -generate-config-out: the content is written to the
-	// requested file name inside Root.
-	Root            string
-	GeneratedConfig []byte
-	// Block makes Plan wait for cancellation, to exercise cancel paths.
-	Block bool
-	// BlockApply makes Apply wait for cancellation, then take ApplyStopDelay to stop and
-	// return ErrCancelled, or nil with ApplyFinishesAfterCancel.
-	BlockApply               bool
-	ApplyStopDelay           time.Duration
-	ApplyFinishesAfterCancel bool
-	Delay                    time.Duration
-	// InitLines and InitStderr are emitted by Init on stdout and stderr; InitErr is its
-	// result, BlockInit makes it wait for cancellation and InitDataDir is created on success.
-	InitLines   [][]byte
-	InitStderr  [][]byte
-	InitErr     error
-	BlockInit   bool
-	InitDataDir string
-	// Workspaces, CLIDefault and WorkspaceStates back the WorkspaceManager methods.
-	// WorkspaceErr fails ChangeWorkspace, BlockWorkspace makes it wait for cancellation,
-	// ListErr fails listings and ListErrAfter sets it after a successful change.
-	Workspaces      []string
-	CLIDefault      string
-	WorkspaceStates map[string][]byte
-	WorkspaceLines  [][]byte
-	WorkspaceErr    error
-	BlockWorkspace  bool
-	ListErr         error
-	ListErrAfter    bool
-	StateErr        error
-	// LockedReads makes that many State calls fail with ErrReadStateLocked, as a Windows
-	// local-backend read does while another process holds the lock (FU-WIN-STATE-READ).
-	LockedReads int
-	// ValidateOut, ValidateHumanOut, FormatOut, ProvidersOut and OutputsOut are the captured
-	// output of the project utilities; ToolErr fails them and BlockTool makes them wait for
-	// cancellation.
-	ValidateOut      Capture
-	ValidateHumanOut Capture
-	FormatOut        Capture
-	ProvidersOut     Capture
-	OutputsOut       Capture
-	ToolErr          error
-	BlockTool        bool
-	// GraphDOT is the `graph` output; GraphErr fails it and BlockGraph makes it wait for
-	// cancellation.
-	GraphDOT      []byte
-	GraphErr      error
-	BlockGraph    bool
-	calls         []string
-	requests      []PlanRequest
-	applied       [][]byte
-	applyRequests []ApplyRequest
-	inits         [][]string
-}
-
-func (m *Fake) record(call string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.calls = append(m.calls, call)
-}
-
-// SetLockedReads sets LockedReads while other goroutines may read state.
-func (m *Fake) SetLockedReads(n int) { m.mu.Lock(); m.LockedReads = n; m.mu.Unlock() }
-
-// Calls returns the engine methods invoked so far.
-func (m *Fake) Calls() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]string(nil), m.calls...)
-}
-
-// Requests returns the validated plan requests received so far.
-func (m *Fake) Requests() []PlanRequest {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]PlanRequest(nil), m.requests...)
-}
-
-// ApplyRequests returns the validated apply requests received so far.
-func (m *Fake) ApplyRequests() []ApplyRequest {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]ApplyRequest(nil), m.applyRequests...)
-}
-
-// Applied returns the saved plan contents passed to each Apply call.
-func (m *Fake) Applied() [][]byte {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([][]byte(nil), m.applied...)
-}
-
-// SetWorkspace changes the workspace reported from now on.
-func (m *Fake) SetWorkspace(name string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.WorkspaceValue = name
-}
-
-func (m *Fake) Version(context.Context) (string, error) {
-	m.record("version")
-	return m.VersionValue, nil
-}
-func (m *Fake) State(context.Context) ([]byte, error) {
-	m.record("show")
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.LockedReads > 0 {
-		m.LockedReads--
-		return nil, ErrReadStateLocked
-	}
-	return m.StateJSON, nil
-}
-func (m *Fake) Workspace(context.Context) (string, error) {
-	m.record("workspace")
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.WorkspaceValue, nil
-}
-func (m *Fake) Plan(ctx context.Context, request PlanRequest, line func([]byte)) error {
-	m.record("plan")
-	m.mu.Lock()
-	m.requests = append(m.requests, request)
-	m.mu.Unlock()
-	if _, err := planArgs(request); err != nil {
-		return err
-	}
-	for _, l := range m.Lines {
-		line(l)
-		if m.Delay > 0 {
-			select {
-			case <-time.After(m.Delay):
-			case <-ctx.Done():
-				return ErrCancelled
-			}
-		}
-	}
-	if m.Block {
-		<-ctx.Done()
-		return ErrCancelled
-	}
-	if request.GenerateConfigOut != "" && m.Root != "" {
-		path := filepath.Join(m.Root, request.GenerateConfigOut)
-		if f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644); err == nil {
-			_, _ = f.Write(m.GeneratedConfig)
-			_ = f.Close()
-		}
-	}
-	if m.PlanErr != nil {
-		if m.WriteOnError {
-			_ = os.WriteFile(request.Out, m.PlanJSON, 0o600)
-		}
-		return m.PlanErr
-	}
-	// A real engine writes a binary artifact; the mock writes the JSON it will show.
-	return os.WriteFile(request.Out, m.PlanJSON, 0o600)
-}
-func (m *Fake) ShowPlan(_ context.Context, path string) ([]byte, error) {
-	m.record("show-plan")
-	if m.ShowErr != nil {
-		return nil, m.ShowErr
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return io.ReadAll(io.LimitReader(f, 64<<20))
-}
-
-func (m *Fake) Apply(ctx context.Context, request ApplyRequest, line func([]byte)) error {
-	m.record("apply")
-	if _, err := applyArgs(request); err != nil {
-		return err
-	}
-	b, err := os.ReadFile(request.Path)
-	if err != nil {
-		return err
-	}
-	m.mu.Lock()
-	m.applyRequests = append(m.applyRequests, request)
-	m.applied = append(m.applied, b)
-	m.mu.Unlock()
-	for _, l := range m.ApplyLines {
-		line(l)
-	}
-	if m.BlockApply {
-		<-ctx.Done()
-		time.Sleep(m.ApplyStopDelay)
-		if m.ApplyFinishesAfterCancel {
-			return nil
-		}
-		return ErrCancelled
-	}
-	return m.ApplyErr
-}
-
-func mkdirAll(path string) error { return os.MkdirAll(path, 0o755) }

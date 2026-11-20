@@ -8,6 +8,7 @@ import (
 
 	"hclaro/internal/compare"
 	"hclaro/internal/engine"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
@@ -100,7 +101,7 @@ func (h *Hub) StartComparison(left, right ComparisonTarget, rules []compare.Rule
 		return nil, err
 	}
 	for _, t := range []ComparisonTarget{left, right} {
-		if !idPattern.MatchString(t.ProjectID) || t.ProfileID != "" && !idPattern.MatchString(t.ProfileID) {
+		if !ids.Valid(t.ProjectID) || t.ProfileID != "" && !ids.Valid(t.ProfileID) {
 			return nil, ErrNotFound
 		}
 		if !engine.ValidWorkspace(t.Workspace) {

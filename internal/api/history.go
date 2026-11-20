@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,10 +10,9 @@ import (
 	"unicode"
 
 	"hclaro/internal/history"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 )
-
-var historyWorkspace = regexp.MustCompile(`^[A-Za-z0-9_-]{1,90}$`)
 
 // historyFilter reads and validates the filter query parameters. Unknown parameters, such as
 // a file path, are refused rather than ignored.
@@ -29,8 +27,8 @@ func historyFilter(w http.ResponseWriter, r *http.Request, allowed ...string) (h
 	}
 	f := history.Filter{ProjectID: q.Get("projectId"), Workspace: q.Get("workspace"), Kind: q.Get("kind"), Status: q.Get("status"), Query: q.Get("query")}
 	switch {
-	case f.ProjectID != "" && !history.ValidID(f.ProjectID),
-		f.Workspace != "" && !historyWorkspace.MatchString(f.Workspace),
+	case f.ProjectID != "" && !ids.Valid(f.ProjectID),
+		f.Workspace != "" && !ids.ValidWorkspace(f.Workspace),
 		f.Kind != "" && !slices.Contains(history.Kinds, f.Kind),
 		f.Status != "" && !slices.Contains([]string{history.StatusRunning, history.StatusSucceeded, history.StatusFailed, history.StatusCancelled, history.StatusUnknown}, f.Status),
 		len(f.Query) > 200 || strings.ContainsFunc(f.Query, unicode.IsControl):
@@ -123,7 +121,7 @@ func historyRoutes(mux *http.ServeMux, store *history.Store, manager *operations
 			}
 		}
 		left, right := q.Get("left"), q.Get("right")
-		if !history.ValidID(left) || !history.ValidID(right) {
+		if !ids.Valid(left) || !ids.Valid(right) {
 			errorJSON(w, 400, "invalid_request")
 			return
 		}
@@ -188,7 +186,7 @@ func historyRoutes(mux *http.ServeMux, store *history.Store, manager *operations
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		if !body.Confirm || body.ProjectID != "" && !history.ValidID(body.ProjectID) || body.Workspace != "" && (!historyWorkspace.MatchString(body.Workspace) || body.ProjectID == "") {
+		if !body.Confirm || body.ProjectID != "" && !ids.Valid(body.ProjectID) || body.Workspace != "" && (!ids.ValidWorkspace(body.Workspace) || body.ProjectID == "") {
 			errorJSON(w, 400, "invalid_request")
 			return
 		}
@@ -212,7 +210,7 @@ func historyRoutes(mux *http.ServeMux, store *history.Store, manager *operations
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		if !history.ValidID(r.PathValue("id")) {
+		if !ids.Valid(r.PathValue("id")) {
 			errorJSON(w, 404, "history_not_found")
 			return
 		}

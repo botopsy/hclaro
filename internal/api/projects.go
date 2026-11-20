@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 )
@@ -397,8 +398,6 @@ func workspaceRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	})
 }
 
-var hubIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
-
 // toolRoutes serve the read-only project utilities and the project's operation history. The
 // server builds the argv from the tool name; the request names only an open workspace
 // context and, for fmt -check, whether the check is recursive.
@@ -425,7 +424,7 @@ func toolRoutes(mux *http.ServeMux, hub *projects.Hub) {
 				errorJSON(w, 400, "invalid_request")
 				return
 			}
-			if !hubIDPattern.MatchString(body.ContextID) {
+			if !ids.Valid(body.ContextID) {
 				reasonJSON(w, 400, "invalid_context", "Open a workspace of this project, then run the tool from it.")
 				return
 			}
