@@ -541,9 +541,6 @@ var (
 	awsRolePattern = regexp.MustCompile(`^arn:aws[a-z-]{0,20}:(sts|iam)::([0-9]{12}|\*):[A-Za-z0-9+=,.@/_*-]{1,400}$`)
 )
 
-// ValidID reports whether id has the profile ID format.
-func ValidID(id string) bool { return ids.Valid(id) }
-
 // NewID returns a random profile ID.
 func NewID() string {
 	b := make([]byte, 16)
