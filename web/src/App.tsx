@@ -92,7 +92,9 @@ function Workbench({
   const [mode, setMode] = useState('');
   const [sort, setSort] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
-  const query = useDebounced(search, 180);
+  // Clearing the search (Reset, choosing a type or provider) applies at once; typing is debounced.
+  const debounced = useDebounced(search, 180);
+  const query = search ? debounced : '';
   // A new search starts at the first page.
   const [pagedQuery, setPagedQuery] = useState(query);
   if (pagedQuery !== query) {

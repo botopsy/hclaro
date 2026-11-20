@@ -1,4 +1,4 @@
-// Wire types of the local API, one file per feature. internal/ui/wire_test.go checks them
+// Wire types of the local API, one file per feature. internal/api/wire_test.go checks them
 // against the Go structs the server encodes.
 export * from './workspace';
 export * from './plans';
