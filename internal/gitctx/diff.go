@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"hclaro/internal/imports"
+	"hclaro/internal/redact"
 )
 
 // DiffLine is one displayed diff line. Old and New are 1-based line numbers.
@@ -124,17 +124,17 @@ func newFileHunk(text string, d *GitDiff) GitDiffHunk {
 		lines = lines[:len(lines)-1]
 	}
 	h := GitDiffHunk{OldStart: 0, NewStart: 1, Lines: []DiffLine{}}
-	r := &LineRedactor{}
-	forced := imports.SecretLines(lines)
+	r := &redact.LineRedactor{}
+	forced := redact.SecretLines(lines)
 	if d.Truncated {
-		forced = imports.SecretLinesTruncated(lines)
+		forced = redact.SecretLinesTruncated(lines)
 	}
 	for i, l := range lines {
 		if len(h.Lines) == maxDiffLines {
 			d.Truncated = true
 			break
 		}
-		t, red := r.line(l, forced[i])
+		t, red := r.Next(l, forced[i])
 		if red {
 			d.Redacted++
 		}
@@ -287,7 +287,7 @@ func parseDiff(raw []byte, overflow bool, d *GitDiff) error {
 
 // display redacts the parsed full-context hunks and cuts them to displayContext lines
 // around each change. Each side (context and deleted lines; context and added lines) is
-// analysed whole with imports.SecretLines, so a line inside a secret block is hidden even
+// analysed whole with redact.SecretLines, so a line inside a secret block is hidden even
 // when the block opens far above it. A side that does not start at line 1 or skips lines
 // (Git did not give full context) has no known enclosing block: all of it is withheld.
 func display(d *GitDiff) {
@@ -297,10 +297,10 @@ func display(d *GitDiff) {
 		var seg []pos
 		var texts []string
 		flush := func(known bool) {
-			marks := imports.SecretLines(texts)
+			marks := redact.SecretLines(texts)
 			if d.Truncated {
 				// Output cut at maxDiffOutput: a pair name may be past the cut.
-				marks = imports.SecretLinesTruncated(texts)
+				marks = redact.SecretLinesTruncated(texts)
 			}
 			for i, p := range seg {
 				forced[p] = forced[p] || marks[i] || !known
@@ -330,7 +330,7 @@ func display(d *GitDiff) {
 	d.Hunks, d.Added, d.Removed, d.Redacted = []GitDiffHunk{}, 0, 0, 0
 	shown := 0
 	for hi, h := range parsed {
-		oldR, newR := &LineRedactor{}, &LineRedactor{}
+		oldR, newR := &redact.LineRedactor{}, &redact.LineRedactor{}
 		near := make([]bool, len(h.Lines))
 		for li, l := range h.Lines {
 			if l.Kind == "add" || l.Kind == "delete" {
@@ -347,16 +347,16 @@ func display(d *GitDiff) {
 			text, red := l.Text, false
 			switch l.Kind {
 			case "context":
-				o, ored := oldR.line(l.Text, f)
-				n, nred := newR.line(l.Text, f)
+				o, ored := oldR.Next(l.Text, f)
+				n, nred := newR.Next(l.Text, f)
 				text, red = n, nred
 				if ored && !nred {
 					text, red = o, true
 				}
 			case "delete":
-				text, red = oldR.line(l.Text, f)
+				text, red = oldR.Next(l.Text, f)
 			case "add":
-				text, red = newR.line(l.Text, f)
+				text, red = newR.Next(l.Text, f)
 			}
 			keep := near[li] || l.Kind == "note" && cur != nil
 			if keep && shown == maxDiffLines {

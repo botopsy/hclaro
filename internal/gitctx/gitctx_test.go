@@ -12,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"hclaro/internal/state"
 )
 
 const canary = "DO_NOT_LEAK_canary_6f1e"
@@ -560,42 +558,6 @@ func TestParseDiff(t *testing.T) {
 	}
 }
 
-func TestLineRedactor(t *testing.T) {
-	cases := map[string]string{
-		`  password = "hunter2"`:                       `  password = "[redacted]"`,
-		`  name     = "web"`:                           `  name     = "web"`,
-		`  "client_secret": "abc",`:                    `  "client_secret": "[redacted]",`,
-		`  key = "AKIAABCDEFGHIJKLMNOP"`:               `  key = "[redacted]"`,
-		`  url = "https://user:pa55@example.com/db"`:   `  url = "[redacted]"`,
-		`  db_password = var.db_password`:              `  db_password = var.db_password`,
-		`  api_token = 12345`:                          `  api_token = [redacted]`,
-		"  description = \"x\x1b[31m\u202ey\"":         `  description = "x[31my"`,
-		`# export TOKEN=abc`:                           `[redacted]`,
-		`  token_ref = aws_secretsmanager_secret.x.id`: `  token_ref = aws_secretsmanager_secret.x.id`,
-	}
-	for in, want := range cases {
-		got, _ := (&LineRedactor{}).Line(in)
-		if got != want {
-			t.Errorf("%q: got %q want %q", in, got, want)
-		}
-	}
-	// Heredocs under a secret-like name are withheld until the marker.
-	r := &LineRedactor{}
-	lines := []string{"  private_key = <<-EOT", "abc", "def", "  EOT", `  name = "x"`}
-	got := []string{}
-	for _, l := range lines {
-		out, _ := r.Line(l)
-		got = append(got, out)
-	}
-	if got[1] != Redacted || got[2] != Redacted || got[3] != "  EOT" || got[4] != `  name = "x"` {
-		t.Fatalf("heredoc %q", got)
-	}
-	long, _ := (&LineRedactor{}).Line(strings.Repeat("a", 1000))
-	if len([]rune(long)) != maxLineRunes+1 {
-		t.Fatalf("long %d", len(long))
-	}
-}
-
 func TestSourceFingerprint(t *testing.T) {
 	s, _, _ := service(t)
 	dir := repo(t)
@@ -760,38 +722,5 @@ func TestOpenEditor(t *testing.T) {
 	}
 	if _, err := EditorURL("vscode", "relative/main.tf", 2); err == nil {
 		t.Fatal("relative path accepted")
-	}
-}
-
-// A random string inside a template sits between two quotes the plain literal regex would
-// pair up wrongly; the line redactor reads strings the way SecretLines does.
-func TestLineRedactorReadsTemplates(t *testing.T) {
-	const secret = "Xy9kQ2mL8pZ4rT7vB3nW6hJ1"
-	if !state.LooksSecret(secret) {
-		t.Fatal("fixture is not random-looking")
-	}
-	for _, in := range []string{
-		`  description = "${"` + secret + `"}"`,
-		`  description = "a-${upper("` + secret + `")}-b"`,
-		`  description = "open ${"` + secret, // unterminated: the rest is still checked
-	} {
-		got, red := (&LineRedactor{}).Line(in)
-		if strings.Contains(got, secret) || !red {
-			t.Errorf("%q: shown as %q", in, got)
-		}
-	}
-	// A template secret does not stop the whole-line check for other credentials.
-	for _, in := range []string{
-		`  description = "${"` + secret + `"}" # ghp_abcdefghijklmnopqrstuv`,
-		`  description = "${"` + secret + `"}" # see https://u:p@h/x`,
-		`  tags = { "note": "${"` + secret + `"}", "db_password": "hunter2" }`,
-	} {
-		if got, _ := (&LineRedactor{}).Line(in); got != "  "+Redacted {
-			t.Errorf("%q: shown as %q", in, got)
-		}
-	}
-	// Each literal of a line is still judged on its own.
-	if got, _ := (&LineRedactor{}).Line(`  tags = { a = "web", b = "` + secret + `" }`); got != `  tags = { a = "web", b = "[redacted]" }` {
-		t.Errorf("got %q", got)
 	}
 }

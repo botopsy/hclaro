@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"hclaro/internal/bounded"
+	"hclaro/internal/redact"
 )
 
 // Runner runs one read-only Git command in dir and returns its standard output, at most
@@ -67,14 +68,14 @@ func Allowed(args []string) bool {
 		return slices.Equal(args, ConfigFilesArgs)
 	case "check-ignore":
 		// check-ignore -- <path>: one plain relative path (Git refuses pathspec magic here).
-		return len(args) == 3 && args[1] == "--" && validRepoPath(args[2]) && !hasControl(args[2]) && !strings.HasPrefix(args[2], ":") && !strings.HasPrefix(args[2], "-")
+		return len(args) == 3 && args[1] == "--" && validRepoPath(args[2]) && !redact.HasControl(args[2]) && !strings.HasPrefix(args[2], ":") && !strings.HasPrefix(args[2], "-")
 	case "cat-file":
 		// cat-file -t <commit>:<path>
 		if len(args) != 3 || args[1] != "-t" {
 			return false
 		}
 		commit, p, ok := strings.Cut(args[2], ":")
-		return ok && commitPattern.MatchString(commit) && validRepoPath(p) && !hasControl(p)
+		return ok && commitPattern.MatchString(commit) && validRepoPath(p) && !redact.HasControl(p)
 	}
 	for i := 1; i < len(args); i++ {
 		a := args[i]

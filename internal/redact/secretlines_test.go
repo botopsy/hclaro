@@ -1,4 +1,4 @@
-package imports
+package redact
 
 import (
 	"strings"
@@ -61,7 +61,7 @@ func TestSecretLines(t *testing.T) {
 	}
 }
 
-func TestRedactGeneratedMultiline(t *testing.T) {
+func TestGeneratedMultiline(t *testing.T) {
 	text := strings.Join([]string{
 		`resource "aws_db_instance" "x" {`,
 		`  master_password = {`,
@@ -77,7 +77,7 @@ func TestRedactGeneratedMultiline(t *testing.T) {
 		`  engine = "postgres"`,
 		`}`,
 	}, "\n")
-	got := RedactGenerated(text, false)
+	got := Generated(text, false)
 	for _, leak := range []string{"hunter2", "hunter3", "hunter4"} {
 		if strings.Contains(got, leak) {
 			t.Errorf("%s shown:\n%s", leak, got)

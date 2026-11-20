@@ -2,14 +2,14 @@ package cost
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"hclaro/internal/safefile"
 )
 
 const (
@@ -60,10 +60,7 @@ func OpenStore(dir string) *AggregateStore {
 }
 
 // ProjectKey derives a stable key from a project root without keeping the path.
-func ProjectKey(root string) string {
-	h := sha256.Sum256([]byte("hclaro-cost\x00" + root))
-	return hex.EncodeToString(h[:8])
-}
+func ProjectKey(root string) string { return safefile.ProjectKey("hclaro-cost", root) }
 
 func aggregateOf(e CostEstimate, in Input) AggregateRecord {
 	b := e.Breakdown
@@ -120,24 +117,7 @@ func (s *AggregateStore) write(records []AggregateRecord) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".cost-estimates-*.tmp")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	_, werr := tmp.Write(b)
-	serr := tmp.Sync()
-	cerr := tmp.Close()
-	if err := errors.Join(werr, serr, cerr); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	_ = os.Chmod(name, 0o600)
-	if err := os.Rename(name, s.path); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	return nil
+	return safefile.WriteAtomic(filepath.Dir(s.path), filepath.Base(s.path), ".cost-estimates-", b)
 }
 
 // Add appends a record, keeping the last 50.

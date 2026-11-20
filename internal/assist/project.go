@@ -17,7 +17,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"hclaro/internal/imports"
+	"hclaro/internal/redact"
 	"hclaro/internal/state"
 )
 
@@ -415,7 +415,7 @@ func (p *projectScan) hclFile(dir, text string) (string, string) {
 	if p.b.hit(out) {
 		return undo("may contain a secret or a local path")
 	}
-	return imports.RedactGenerated(strings.Join(out, "\n"), false), ""
+	return redact.Generated(strings.Join(out, "\n"), false), ""
 }
 
 // attrValue is the value of a one-line name = value at depth 1 of a block, or "".

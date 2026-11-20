@@ -1,4 +1,4 @@
-package imports
+package redact
 
 import (
 	"encoding/json"
@@ -12,8 +12,6 @@ import (
 )
 
 var (
-	// An HCL anchor may hold dashes (<<-EO-F).
-	heredocOpen = regexp.MustCompile(`^<<-?\s*([A-Za-z_][A-Za-z0-9_-]*)\s*$`)
 	// commentKey is a `name =` or `"name":` inside comment text (names may hold look-alike
 	// letters or escapes).
 	commentKey = regexp.MustCompile(`"?([^\s"=:#/]+)"?\s*[=:]`)
@@ -148,14 +146,14 @@ func secretLines(lines []string, truncated bool) []bool {
 			case strings.HasPrefix(line[j:], "/*"):
 				inComment, j = true, j+2
 			case strings.HasPrefix(line[j:], "<<"):
-				m := heredocOpen.FindStringSubmatch(line[j:])
-				if m == nil {
+				m := heredoc.FindStringSubmatchIndex(line[j:])
+				if m == nil || m[0] != 0 {
 					// "<<" means nothing else in HCL or JSON: an opener HCL rejects
 					// (<<EOF # c) leaves the body's extent unknown.
 					broken, out[i] = true, true
 					continue
 				}
-				heredocEnd, heredocStart, haveCand = m[1], i, false
+				heredocEnd, heredocStart, haveCand = line[j+m[4]:j+m[5]], i, false
 				heredocValueOf = top.valueOf
 				if heredocValueOf < 0 && strings.EqualFold(top.key, "value") {
 					heredocValueOf = top.id

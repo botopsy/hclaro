@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"unicode"
+
+	"hclaro/internal/state"
 )
 
 var (
@@ -150,12 +151,5 @@ func readSmall(path string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(f, maxGitFile))
 }
 
-// hasControl reports control or format characters (bidi overrides included).
-func hasControl(s string) bool {
-	for _, r := range s {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
-			return true
-		}
-	}
-	return false
-}
+// SuspiciousText reports credential-shaped text (see state.Suspicious).
+func SuspiciousText(s string) bool { return state.Suspicious(s) }

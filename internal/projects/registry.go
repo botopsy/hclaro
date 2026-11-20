@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"hclaro/internal/safefile"
 )
 
 // SchemaVersion is the registry file format written by this build.
@@ -199,25 +201,7 @@ func (r *Registry) write(records []Record) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".projects-*.tmp")
-	if err != nil {
-		return errors.New("the project registry cannot be written")
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	_ = tmp.Chmod(0o600)
-	if _, err := tmp.Write(append(b, '\n')); err != nil {
-		tmp.Close()
-		return errors.New("the project registry cannot be written")
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return errors.New("the project registry cannot be written")
-	}
-	if err := tmp.Close(); err != nil {
-		return errors.New("the project registry cannot be written")
-	}
-	if err := os.Rename(name, r.path); err != nil {
+	if err := safefile.WriteAtomic(dir, filepath.Base(r.path), ".projects-", append(b, '\n')); err != nil {
 		return errors.New("the project registry cannot be written")
 	}
 	return nil

@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"hclaro/internal/redact"
 )
 
 // ConfigFilesArgs lists the configuration files Git does not ignore under the working
@@ -39,7 +41,7 @@ func (s *Service) ConfigFiles(ctx context.Context, root string) (files map[strin
 		if p == "" {
 			continue
 		}
-		if !validRepoPath(p) || hasControl(p) {
+		if !validRepoPath(p) || redact.HasControl(p) {
 			return nil, true, false
 		}
 		files[p] = true

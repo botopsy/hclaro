@@ -176,7 +176,7 @@ func TestSchemaUpgradeWithoutBackupLeavesFileUnchanged(t *testing.T) {
 func TestOlderSchemaWrittenDuringSessionIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
 	s := OpenWith(dir, t0, upgradeFrom0())
-	s.Now, s.Sync = func() time.Time { return t0 }, false
+	s.Now = func() time.Time { return t0 }
 	finished(s, 1, "plan", operations.Succeeded, t0)
 	_ = os.WriteFile(s.path, []byte(legacy), 0o600)
 	finished(s, 2, "plan", operations.Succeeded, t0)

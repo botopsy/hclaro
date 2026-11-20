@@ -481,3 +481,28 @@ func TestSavedStoreSurvivesLinkSwaps(t *testing.T) {
 	}
 	untouched(t, outside)
 }
+
+// ai.json is written in the configuration folder through the same temporary files; one left
+// there by an interrupted settings write is deleted at startup once it is an hour old, and
+// nothing else is.
+func TestStrayTempInConfigRootIsSwept(t *testing.T) {
+	dir := t.TempDir()
+	stray, other := filepath.Join(dir, ".conversation-left.tmp"), filepath.Join(dir, "other.tmp")
+	for _, p := range []string{stray, other} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A fresh one may be another process's write in progress: it stays.
+	OpenStore(dir, time.Now())
+	if _, err := os.Stat(stray); err != nil {
+		t.Fatalf("temporary file of a running write removed: %v", err)
+	}
+	OpenStore(dir, time.Now().Add(2*time.Hour))
+	if _, err := os.Stat(stray); !os.IsNotExist(err) {
+		t.Fatalf("stray temporary file kept: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("unrelated file removed: %v", err)
+	}
+}

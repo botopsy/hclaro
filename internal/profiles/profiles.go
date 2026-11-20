@@ -24,6 +24,7 @@ import (
 	"unicode"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/safefile"
 	"hclaro/internal/state"
 )
 
@@ -251,25 +252,7 @@ func (s *Store) write(doc document) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".profiles-*.tmp")
-	if err != nil {
-		return errors.New("the execution profile file cannot be written")
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	_ = tmp.Chmod(0o600)
-	if _, err := tmp.Write(append(b, '\n')); err != nil {
-		tmp.Close()
-		return errors.New("the execution profile file cannot be written")
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return errors.New("the execution profile file cannot be written")
-	}
-	if err := tmp.Close(); err != nil {
-		return errors.New("the execution profile file cannot be written")
-	}
-	if err := os.Rename(name, s.path); err != nil {
+	if err := safefile.WriteAtomic(dir, filepath.Base(s.path), ".profiles-", append(b, '\n')); err != nil {
 		return errors.New("the execution profile file cannot be written")
 	}
 	return nil

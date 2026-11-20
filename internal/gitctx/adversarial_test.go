@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"hclaro/internal/imports"
+	"hclaro/internal/redact"
 )
 
 var (
@@ -42,7 +42,7 @@ func views(t *testing.T, text string) map[string]string {
 	for _, l := range newFileHunk(text, &nd).Lines {
 		added.WriteString(l.Text + "\n")
 	}
-	return map[string]string{"diff": diff.String(), "new file": added.String(), "import preview": imports.RedactGenerated(text, false)}
+	return map[string]string{"diff": diff.String(), "new file": added.String(), "import preview": redact.Generated(text, false)}
 }
 
 // Adversarial configuration: every literal marked leakNN must be hidden in every view and
@@ -338,7 +338,7 @@ func cutViews(t *testing.T, kept string) map[string]string {
 	for _, l := range newFileHunk(kept, &nd).Lines {
 		added.WriteString(l.Text + "\n")
 	}
-	return map[string]string{"diff overflow": diff.String(), "new file": added.String(), "import preview": imports.RedactGenerated(kept, true)}
+	return map[string]string{"diff overflow": diff.String(), "new file": added.String(), "import preview": redact.Generated(kept, true)}
 }
 
 // A size limit can cut between the value of a name/value pair and its secret-like name, at
@@ -372,7 +372,7 @@ func TestTopLevelCutHidesPairValues(t *testing.T) {
 			}
 		}
 	}
-	if got := imports.RedactGenerated("value = \"leak01\"\n", false); !strings.Contains(got, "leak01") {
+	if got := redact.Generated("value = \"leak01\"\n", false); !strings.Contains(got, "leak01") {
 		t.Errorf("whole text: an ordinary top-level value is shown, got %q", got)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"hclaro/fixtures"
+	"hclaro/internal/safefile"
 	"hclaro/internal/state"
 )
 
@@ -281,17 +282,17 @@ func TestWriteNewNeverOverwrites(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(root, "imports.tf")); string(b) != "import {}\n" {
 		t.Fatalf("%q", b)
 	}
-	if err := WriteNew(root, "imports.tf", []byte("other")); !errors.Is(err, ErrFileExists) {
+	if err := WriteNew(root, "imports.tf", []byte("other")); !errors.Is(err, safefile.ErrFileExists) {
 		t.Fatal(err)
 	}
-	if err := WriteNew(root, "main.tf", []byte("other")); !errors.Is(err, ErrFileExists) {
+	if err := WriteNew(root, "main.tf", []byte("other")); !errors.Is(err, safefile.ErrFileExists) {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(root, "main.tf")); string(b) != "# keep\n" {
 		t.Fatal("existing file changed")
 	}
 	for _, name := range []string{"../escape.tf", "sub/x.tf", "x.tfvars", ".hidden.tf", ""} {
-		if err := WriteNew(root, name, []byte("x")); !errors.Is(err, ErrUnsafePath) {
+		if err := WriteNew(root, name, []byte("x")); !errors.Is(err, safefile.ErrUnsafePath) {
 			t.Fatalf("%q: %v", name, err)
 		}
 	}
@@ -313,7 +314,7 @@ func TestWriteNewRefusesSymlinks(t *testing.T) {
 	if err := os.Symlink(filepath.Join(outside, "target.tf"), filepath.Join(root, "link.tf")); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteNew(root, "link.tf", []byte("x")); !errors.Is(err, ErrFileExists) {
+	if err := WriteNew(root, "link.tf", []byte("x")); !errors.Is(err, safefile.ErrFileExists) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(outside, "target.tf")); !errors.Is(err, os.ErrNotExist) {
@@ -324,28 +325,10 @@ func TestWriteNewRefusesSymlinks(t *testing.T) {
 	if err := os.Symlink(root, alias); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteNew(alias, "x.tf", []byte("x")); !errors.Is(err, ErrUnsafePath) {
+	if err := WriteNew(alias, "x.tf", []byte("x")); !errors.Is(err, safefile.ErrUnsafePath) {
 		t.Fatal(err)
 	}
 	if _, _, err := ReadGenerated(root, "link.tf"); err == nil {
 		t.Fatal("generated config read through a symlink")
-	}
-}
-
-func TestRedactGenerated(t *testing.T) {
-	got := RedactGenerated(string(fixtures.ImportGenerated), false)
-	if strings.Contains(got, canary) {
-		t.Fatalf("canary shown:\n%s", got)
-	}
-	for _, want := range []string{`bucket        = "hclaro-legacy-logs"`, `replication_token = "[redacted]"`, "# [redacted heredoc line]", "env = \"demo\""} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("missing %q in\n%s", want, got)
-		}
-	}
-	if got := RedactGenerated(`  password = null`, false); got != `  password = null` {
-		t.Fatal(got)
-	}
-	if got := RedactGenerated(`  description = "AKIAIOSFODNN7EXAMPLE"`, false); strings.Contains(got, "AKIA") {
-		t.Fatal(got)
 	}
 }

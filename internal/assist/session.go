@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"hclaro/internal/safefile"
 )
 
 // DisclosureVersion changes whenever the disclosure text changes.
@@ -203,7 +205,7 @@ func (s *Session) savePrefs(on bool, chosen string) error {
 		return err
 	}
 	defer r.Close()
-	return writeAtomic(r, ".", prefsFile, append(b, '\n'))
+	return safefile.WriteAtomicIn(r, prefsFile, tempPrefix, append(b, '\n'))
 }
 
 // ErrPrefs is returned when a settings change could not be saved; nothing changed.

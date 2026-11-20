@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"hclaro/internal/redact"
 )
 
 // fullDiff builds Git's full-context diff of old -> new for one changed line, the shape
@@ -193,7 +195,7 @@ func TestSecretLineText(t *testing.T) {
 		`  password = var.db_password`:  `  password = var.db_password`,
 		`  "client_secret": "abc",`:     `  "client_secret": "[redacted]",`,
 	} {
-		got, _ := (&LineRedactor{}).Line(in)
+		got, _ := (&redact.LineRedactor{}).Line(in)
 		if got != want {
 			t.Errorf("%q: got %q want %q", in, got, want)
 		}

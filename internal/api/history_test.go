@@ -42,7 +42,6 @@ func newHistoryServer(t *testing.T, config string) *historyServer {
 	hub := projects.NewHub(projects.Open(config, time.Now()), root)
 	t.Cleanup(hub.Close)
 	store := history.Open(config, time.Now())
-	store.Sync = false
 	hub.UseHistory(store)
 	manager := operations.NewManager(ws, fake, root)
 	manager.TempDir = t.TempDir()
