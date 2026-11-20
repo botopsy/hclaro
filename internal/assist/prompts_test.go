@@ -86,13 +86,13 @@ func TestStartReview(t *testing.T) {
 	var records []RunRecord
 	s.Record = func(r RunRecord) { mu.Lock(); records = append(records, r); mu.Unlock() }
 	for _, id := range []string{"review-drift@1", "review-plan@9", "x", ""} {
-		_, err := s.StartReview("a", "h1", "good", DisclosureVersion, RunScope{}, id)
+		_, err := s.StartReview("a", "h1", DisclosureVersion, RunScope{}, id)
 		refused(t, err, RefuseInvalidArgs)
 	}
 	if len(good.calls()) != 0 {
 		t.Fatal("a refused review reached the assistant")
 	}
-	c, err := s.StartReview("a", "h1", "good", DisclosureVersion, RunScope{}, "review-plan@1")
+	c, err := s.StartReview("a", "h1", DisclosureVersion, RunScope{}, "review-plan@1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestReviewStale(t *testing.T) {
 	var mu sync.Mutex
 	current := true
 	s.Put("a", Package{Kind: KindDrift, Markdown: "drift", SHA256: "h2"}, func() bool { mu.Lock(); defer mu.Unlock(); return current })
-	c, err := s.StartReview("a", "h2", "good", DisclosureVersion, RunScope{}, "review-drift@1")
+	c, err := s.StartReview("a", "h2", DisclosureVersion, RunScope{}, "review-drift@1")
 	if err != nil {
 		t.Fatal(err)
 	}

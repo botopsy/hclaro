@@ -17,8 +17,8 @@ import (
 // AI-01.09 over HTTP: project packages, conversation-only start, attaching a previewed project
 // package as a turn, and the session conversation list.
 
-func chatBody(provider, message string) string {
-	return fmt.Sprintf(`{"provider":%q,"disclosureVersion":%q,"message":%q}`, provider, assist.DisclosureVersion, message)
+func chatBody(message string) string {
+	return fmt.Sprintf(`{"disclosureVersion":%q,"message":%q}`, assist.DisclosureVersion, message)
 }
 
 func TestAIProjectContextOverHTTP(t *testing.T) {
@@ -49,8 +49,8 @@ func TestAIProjectContextOverHTTP(t *testing.T) {
 	exportSame(t, s.do("POST", "/api/v1/ai/packages/"+p.SHA256+"/export", `{}`), p)
 
 	// Conversation only: a message is required and stdin carries no project data.
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", chatBody("stub", "")), 400, "message_required")
-	w := s.do("POST", "/api/v1/ai/conversations", chatBody("stub", "How do moved blocks work?"))
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", chatBody("")), 400, "message_required")
+	w := s.do("POST", "/api/v1/ai/conversations", chatBody("How do moved blocks work?"))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -87,14 +87,14 @@ func TestAIHubProjectContextStaysInItsContext(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
 	s.launch.Assist = assist.NewSession(false, stub)
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
 	b := s.openLoaded("platform", "staging", "")
 	do := func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) }
 
 	p := build(t, s.do("POST", "/api/v1/contexts/"+a+"/ai/packages", `{"kind":"project"}`))
-	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations", chatBody("stub", "hello"))
+	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations", chatBody("hello"))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -124,7 +124,7 @@ func TestAIProjectConversationGoesStaleOnFileChange(t *testing.T) {
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"project"}`))
-	w := s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"provider":"stub","disclosureVersion":%q,"message":"Summarize"}`, p.SHA256, assist.DisclosureVersion))
+	w := s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"disclosureVersion":%q,"message":"Summarize"}`, p.SHA256, assist.DisclosureVersion))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -187,9 +187,9 @@ func TestAIProjectPackageRefusedWhenIgnoreRulesChange(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("main.tf\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"provider":"stub","disclosureVersion":%q,"message":"x"}`, p.SHA256, assist.DisclosureVersion)), 409, "context_changed")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"disclosureVersion":%q,"message":"x"}`, p.SHA256, assist.DisclosureVersion)), 409, "context_changed")
 	wantError(t, s.do("POST", "/api/v1/ai/packages/"+p.SHA256+"/export", `{}`), 409, "context_changed")
-	w := s.do("POST", "/api/v1/ai/conversations", chatBody("stub", "hello"))
+	w := s.do("POST", "/api/v1/ai/conversations", chatBody("hello"))
 	id := decode[assist.Conversation](t, w).ID
 	waitChat(t, s.do, "/api/v1", id)
 	wantError(t, s.do("POST", "/api/v1/ai/conversations/"+id+"/context", `{"packageSha256":"`+p.SHA256+`"}`), 409, "context_changed")

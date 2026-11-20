@@ -60,8 +60,8 @@ func doWith(h http.Handler, method, path, body string, opts ...opt) *httptest.Re
 
 func (s *planServer) enableAI() {
 	s.t.Helper()
-	if w := s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`); w.Code != 200 || !decode[assist.Settings](s.t, w).Enabled {
-		s.t.Fatalf("%d %s", w.Code, w.Body)
+	if st := turnOnAI(s.t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) }); !st.Enabled {
+		s.t.Fatalf("%+v", st)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestAISettingsPersistOverHTTP(t *testing.T) {
 		t.Fatalf("off did not survive a restart: %+v", st)
 	}
 	wantError(t, next.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+next.plan()+`"}`), 409, "ai_disabled")
-	if st := decode[assist.Settings](t, next.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)); st.DefaultProvider != "codex" {
+	if st := turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return next.do(m, p, b) }); st.DefaultProvider != "codex" {
 		t.Fatalf("the assistant did not survive a restart: %+v", st)
 	}
 	if err := os.Remove(filepath.Join(dir, "ai.json")); err != nil {
@@ -169,7 +169,7 @@ func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 		"/api/v1/ai/detect":                              `{}`,
 		"/api/v1/ai/packages":                            `{"kind":"plan","planId":"` + planID + `"}`,
 		"/api/v1/ai/packages/" + p.SHA256 + "/export":    `{}`,
-		"/api/v1/ai/conversations":                       `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
+		"/api/v1/ai/conversations":                       `{"packageSha256":"` + p.SHA256 + `","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
 		"/api/v1/ai/conversations/" + chat + "/messages": `{"text":"hi"}`,
 		"/api/v1/ai/conversations/" + chat + "/cancel":   `{}`,
 		"/api/v1/ai/conversations/" + chat + "/close":    `{}`,
@@ -323,9 +323,7 @@ func TestAIDriftHandoff(t *testing.T) {
 func TestAIHubHandoffStaysInItsContext(t *testing.T) {
 	s := newScopedServer(t)
 	s.launch.Assist = assist.NewSession(false)
-	if w := s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`); w.Code != 200 {
-		t.Fatalf("%d %s", w.Code, w.Body)
-	}
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	a := s.openLoaded("network", "dev", "")
 	b := s.openLoaded("network", "prod", "")
 	done := s.waitScoped(a, s.plan(a).ID)
@@ -393,13 +391,13 @@ func TestAIPackagesBelongToTheirProcess(t *testing.T) {
 func TestAIHubRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 	s := newScopedServer(t)
 	s.launch.Assist = assist.NewSession(false)
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	cid := s.openLoaded("network", "dev", "")
 	page := decode[struct{ Resources []struct{ ID string } }](t, s.do("GET", "/api/v1/contexts/"+cid+"/resources?limit=1", ""))
 	body := `{"kind":"resource","resourceId":"` + page.Resources[0].ID + `"}`
 	p := build(t, s.do("POST", "/api/v1/contexts/"+cid+"/ai/packages", body))
 	routes := map[string]string{"/api/v1/contexts/" + cid + "/ai/packages": body, "/api/v1/contexts/" + cid + "/ai/packages/" + p.SHA256 + "/export": `{}`,
-		"/api/v1/contexts/" + cid + "/ai/conversations":                                          `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
+		"/api/v1/contexts/" + cid + "/ai/conversations":                                          `{"packageSha256":"` + p.SHA256 + `","disclosureVersion":"` + assist.DisclosureVersion + `"}`,
 		"/api/v1/contexts/" + cid + "/ai/conversations/" + strings.Repeat("a", 32) + "/messages": `{"text":"hi"}`,
 		"/api/v1/contexts/" + cid + "/ai/conversations/" + strings.Repeat("a", 32) + "/close":    `{}`}
 	for path, b := range routes {
@@ -432,7 +430,7 @@ func TestAIHubEvictedScopePackageIsStale(t *testing.T) {
 	s := newScopedServer(t)
 	s.hub.MaxScopes = 1
 	s.launch.Assist = assist.NewSession(false)
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	a := s.openLoaded("network", "dev", "")
 	b := s.openLoaded("network", "prod", "")
 	scan := s.scan(a)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -17,6 +16,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
+	"hclaro/internal/assist/claudefake"
 	"hclaro/internal/assist/codexfake"
 	"hclaro/internal/engine"
 	"hclaro/internal/history"
@@ -31,15 +31,11 @@ import (
 // or environment, history, or the server's log, stdout or stderr.
 
 // The fake assistant CLI is this test binary: when HOME holds aiFakeMarker, TestMain acts as
-// `claude` and records exactly what it was given. No real assistant runs.
-const aiFakeMarker = "hclaro-api-fake-assistant"
+// `claude` (claudefake) and records exactly what it was given, or as `codex` (codexfake). No
+// real assistant runs.
+const aiFakeMarker = claudefake.Marker
 
-type aiFakeRecord struct {
-	Args    []string `json:"args"`
-	Entries int      `json:"entries"`
-	Env     []string `json:"env"`
-	Stdin   string   `json:"stdin"`
-}
+type aiFakeRecord = claudefake.Record
 
 func TestMain(m *testing.M) {
 	// Hclaro's Codex self-check runs with a fresh HOME, so it is recognized by its argv.
@@ -53,33 +49,20 @@ func TestMain(m *testing.M) {
 }
 
 func fakeAssistant() int {
-	// Every start is logged (AI-01.14: no process may start before an explicit request).
+	// Only the Claude Code adapter passes ANTHROPIC_API_KEY: without it this run is codex, which
+	// codexfake answers (HOME/codex-mode picks its behaviour). Every start is logged (AI-01.14:
+	// no process may start before an explicit request); claudefake logs its own.
+	if os.Getenv("ANTHROPIC_API_KEY") != "" {
+		// A hostile reply: it comes back only as text (see TestAIHeadlessRun), plus a proposed
+		// rewrite of main.tf, the file holding HCL canaries (AI-01.12).
+		return claudefake.Main("", aiFakeReply())
+	}
 	if f, err := os.OpenFile(filepath.Join(os.Getenv("HOME"), "starts.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
 		fmt.Fprintln(f, strings.Join(os.Args[1:], " "))
 		f.Close()
 	}
-	// Only the Claude Code adapter passes ANTHROPIC_API_KEY: without it this run is codex, which
-	// codexfake answers (HOME/codex-mode picks its behaviour).
-	if os.Getenv("ANTHROPIC_API_KEY") == "" {
-		mode, _ := os.ReadFile(filepath.Join(os.Getenv("HOME"), "codex-mode"))
-		return codexfake.Main(strings.TrimSpace(string(mode)), aiFakeReply())
-	}
-	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Println("2.1.326 (Claude Code)")
-		return 0
-	}
-	in, _ := io.ReadAll(os.Stdin)
-	dir, _ := os.Getwd()
-	entries, _ := os.ReadDir(dir)
-	rec, _ := json.Marshal(aiFakeRecord{Args: os.Args[1:], Entries: len(entries), Env: os.Environ(), Stdin: string(in)})
-	// One record per turn: run-1.json, run-2.json, ...
-	runs, _ := filepath.Glob(filepath.Join(os.Getenv("HOME"), "run-*.json"))
-	_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), fmt.Sprintf("run-%d.json", len(runs)+1)), rec, 0o600)
-	// A hostile reply: it comes back only as text (see TestAIHeadlessRun), plus a proposed
-	// rewrite of main.tf, the file holding HCL canaries (AI-01.12).
-	b, _ := json.Marshal(map[string]any{"type": "result", "is_error": false, "result": aiFakeReply()})
-	os.Stdout.Write(b)
-	return 0
+	mode, _ := os.ReadFile(filepath.Join(os.Getenv("HOME"), "codex-mode"))
+	return codexfake.Main(strings.TrimSpace(string(mode)), aiFakeReply())
 }
 
 func aiFakeReply() string {
@@ -223,7 +206,7 @@ resource "aws_s3_bucket" "legacy_logs" {}
 	// Headless: a conversation about the plan package through the real runner, two turns.
 	// Built again: the session keeps a bounded number of packages and the resources evicted it.
 	planPkg, _ = pkg(`{"kind":"plan","planId":"` + op.PlanID + `"}`)
-	w = s.do("POST", "/api/v1/ai/conversations", startBody(planPkg.SHA256, "claude", "Is this plan safe to apply?"))
+	w = s.do("POST", "/api/v1/ai/conversations", startBody(planPkg.SHA256, "Is this plan safe to apply?"))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -274,7 +257,7 @@ resource "aws_s3_bucket" "legacy_logs" {}
 
 	// Project context (AI-01.09): conversation only, then the previewed project package
 	// attached, then a quick action (AI-01.10). Saved (AI-01.11) and continued after a restart.
-	w = s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"provider":"claude","disclosureVersion":%q,"message":"Describe this project."}`, assist.DisclosureVersion))
+	w = s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"disclosureVersion":%q,"message":"Describe this project."}`, assist.DisclosureVersion))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -294,7 +277,7 @@ resource "aws_s3_bucket" "legacy_logs" {}
 	if !ok {
 		t.Fatal("quick action package blocked")
 	}
-	w = s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"provider":"claude","disclosureVersion":%q,"prompt":"qa-describe@1"}`, quick.SHA256, assist.DisclosureVersion))
+	w = s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"disclosureVersion":%q,"prompt":"qa-describe@1"}`, quick.SHA256, assist.DisclosureVersion))
 	if w.Code != 202 {
 		t.Fatalf("quick action: %d %s", w.Code, w.Body)
 	}

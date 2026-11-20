@@ -3,12 +3,8 @@ package assist
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -19,20 +15,17 @@ import (
 	"testing"
 	"time"
 
+	"hclaro/internal/assist/claudefake"
 	"hclaro/internal/assist/codexfake"
 )
 
 // The fake assistant CLI is this test binary: when HOME holds fakeMarker, TestMain acts as
-// `claude` in the mode written there and records what it was given. No real assistant runs.
-const fakeMarker = "hclaro-fake-assistant-mode"
+// `claude` (claudefake) or `codex` (codexfake) in the mode written there. No real assistant runs.
+const fakeMarker = claudefake.Marker
 
-type fakeRecord struct {
-	Args    []string `json:"args"`
-	Dir     string   `json:"dir"`
-	Entries int      `json:"entries"`
-	Env     []string `json:"env"`
-	Stdin   string   `json:"stdin"`
-}
+type fakeRecord = claudefake.Record
+
+const fakeReply = "Reply: terraform apply -auto-approve; rm -rf /"
 
 func TestMain(m *testing.M) {
 	// Hclaro's Codex self-check runs with a fresh HOME, so it is recognized by its argv.
@@ -43,67 +36,9 @@ func TestMain(m *testing.M) {
 		if strings.HasPrefix(string(mode), "codex") {
 			os.Exit(codexfake.Main(string(mode), codexHostileReply))
 		}
-		os.Exit(fakeCLI(string(mode)))
+		os.Exit(claudefake.Main(string(mode), fakeReply))
 	}
 	os.Exit(m.Run())
-}
-
-func fakeCLI(mode string) int {
-	in, _ := io.ReadAll(os.Stdin)
-	dir, _ := os.Getwd()
-	entries, _ := os.ReadDir(dir)
-	sum := sha256.Sum256(in)
-	rec, _ := json.Marshal(fakeRecord{Args: os.Args[1:], Dir: dir, Entries: len(entries), Env: os.Environ(), Stdin: hex.EncodeToString(sum[:])})
-	name := "run.json"
-	if slices.Equal(os.Args[1:], []string{"--version"}) {
-		name = "version.json"
-		switch mode {
-		case "old":
-			os.Stdout.WriteString("2.0.9 (Claude Code)\n")
-		case "garbage":
-			os.Stdout.WriteString("something else\n")
-		case "codex":
-			os.Stdout.WriteString("codex-cli 0.166.0\n")
-		default:
-			os.Stdout.WriteString("2.1.326 (Claude Code)\n")
-		}
-		_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), name), rec, 0o600)
-		return 0
-	}
-	_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), name), rec, 0o600)
-	switch mode {
-	case "auth":
-		os.Stdout.WriteString(`{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login"}`)
-		return 1
-	case "fail":
-		os.Stderr.WriteString("boom: " + string(in))
-		return 3
-	case "big":
-		os.Stdout.WriteString(`{"is_error":false,"result":"` + strings.Repeat("x", maxReply) + `"}`)
-		return 0
-	case "malformed":
-		os.Stdout.WriteString("not json")
-		return 0
-	case "hang":
-		time.Sleep(time.Minute)
-		return 0
-	case "spawn":
-		// Start a grandchild that hangs; cancellation must kill it with the assistant.
-		child := filepath.Join(os.Getenv("HOME"), "child")
-		_ = os.MkdirAll(child, 0o700)
-		_ = os.WriteFile(filepath.Join(child, fakeMarker), []byte("hang"), 0o600)
-		exe, _ := os.Executable()
-		cmd := exec.Command(exe, "--version-not")
-		cmd.Env = append(os.Environ(), "HOME="+child)
-		if cmd.Start() == nil {
-			_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), "grandchild.pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600)
-		}
-		time.Sleep(time.Minute)
-		return 0
-	}
-	b, _ := json.Marshal(map[string]any{"type": "result", "subtype": "success", "is_error": false, "result": "Reply: terraform apply -auto-approve; rm -rf /", "session_id": "s", "total_cost_usd": 0.01})
-	os.Stdout.Write(b)
-	return 0
 }
 
 // fake returns a CLI whose configured path is this test binary, with HOME set to a fresh
@@ -276,7 +211,7 @@ func TestRunArgvStdinAndIsolation(t *testing.T) {
 	if !slices.Equal(r.Args, Claude.RunArgs) {
 		t.Fatalf("argv %q", r.Args)
 	}
-	if sum := sha256.Sum256([]byte(payload)); r.Stdin != hex.EncodeToString(sum[:]) {
+	if r.Stdin != payload {
 		t.Fatal("stdin differs from the payload")
 	}
 	wd, _ := os.Getwd()
@@ -416,5 +351,19 @@ func TestCancelKillsProcessesTheAssistantStarted(t *testing.T) {
 			_ = p.Kill()
 			t.Fatal("the assistant's child survived cancellation")
 		}
+	}
+}
+
+// A run uses only its own provider's argv, even one the shared allowlist accepts for another.
+func TestRunRefusesAnotherProvidersArgv(t *testing.T) {
+	c, home := fake(t, "ok")
+	c.Prepare = func(_ context.Context, st ProviderStatus) (Prepared, error) {
+		return Prepared{Bin: st.Path, Args: c.VersionArgs}, nil
+	}
+	if _, err := c.Run(context.Background(), []byte("hi")); KindOf(err) != KindRefusedArgs {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "run.json")); err == nil {
+		t.Fatal("the assistant ran")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,10 +31,17 @@ func (c *counting) Run(ctx context.Context, payload []byte) (string, error) {
 	return c.stub.Run(ctx, payload)
 }
 
-// settled asks for detection, as opening an AI surface does, and waits for it.
-func settled(t *testing.T, s *Session) Settings {
+// enable turns AI on and waits for the background detection it starts.
+func enable(t *testing.T, s *Session) Settings {
 	t.Helper()
-	s.Detect()
+	if _, err := s.SetEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	return waitChecked(t, s)
+}
+
+func waitChecked(t *testing.T, s *Session) Settings {
+	t.Helper()
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
 		if st := s.Settings(); !st.Checking {
 			return st
@@ -41,6 +49,13 @@ func settled(t *testing.T, s *Session) Settings {
 	}
 	t.Fatal("detection did not finish")
 	return Settings{}
+}
+
+// settled asks for detection, as opening an AI surface does, and waits for it.
+func settled(t *testing.T, s *Session) Settings {
+	t.Helper()
+	s.Detect()
+	return waitChecked(t, s)
 }
 
 // OD-AI-13: on by default, but nothing is started until asked: Settings never detects, Detect
@@ -189,7 +204,7 @@ func TestPrefsPersistAcrossSessions(t *testing.T) {
 	if st := next.Settings(); st.Enabled || st.Checking {
 		t.Fatalf("off did not survive a restart: %+v", st)
 	}
-	if st, err := next.SetEnabled(true); err != nil || st.DefaultProvider != "codex" {
+	if st := enable(t, next); st.DefaultProvider != "codex" {
 		t.Fatalf("the assistant did not survive a restart: %+v %v", st, err)
 	}
 }
@@ -212,5 +227,25 @@ func TestPrefsWriteFailureLeavesState(t *testing.T) {
 	}
 	if st := s.Settings(); !st.Enabled || st.DefaultProvider != "claude" {
 		t.Fatalf("state changed after a failed write: %+v", st)
+	}
+}
+
+// An acceptance during detection would not cover the lines detection adds, so it is refused
+// until detection finishes (B07 review: SetEnabled detects in the background).
+func TestAcceptRefusedWhileChecking(t *testing.T) {
+	claude := &counting{stub: stub{id: "claude", mode: ModeHeadless}, release: make(chan struct{})}
+	s := NewSession(false, claude)
+	defer s.Close()
+	if st, err := s.SetEnabled(true); err != nil || !st.Checking {
+		t.Fatalf("%+v %v", st, err)
+	}
+	refused(t, s.Accept(DisclosureVersion), RefuseChecking)
+	close(claude.release)
+	waitChecked(t, s)
+	if err := s.Accept(DisclosureVersion); err != nil {
+		t.Fatal(err)
+	}
+	if st := s.Settings(); !st.Accepted || !strings.Contains(strings.Join(st.Disclosure.Lines, "\n"), "Anthropic") {
+		t.Fatalf("%+v", st)
 	}
 }

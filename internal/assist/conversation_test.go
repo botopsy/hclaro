@@ -85,7 +85,7 @@ func ready(t *testing.T, providers ...Assistant) *Session {
 	t.Helper()
 	s := NewSession(false, providers...)
 	t.Cleanup(s.Close)
-	s.SetEnabled(true)
+	enable(t, s)
 	if err := s.Accept(DisclosureVersion); err != nil {
 		t.Fatal(err)
 	}
@@ -98,37 +98,41 @@ func TestConversationRefusals(t *testing.T) {
 	s := NewSession(false, handoff, good)
 	defer s.Close()
 	scope := RunScope{Project: "net", Root: "/synthetic/net"}
-	start := func(key, hash, provider, version string) error {
-		_, err := s.StartConversation(key, hash, provider, version, scope, "")
+	start := func(key, hash, version string) error {
+		_, err := s.StartConversation(key, hash, version, scope, "")
 		return err
 	}
-	refused(t, start("a", "h1", "good", DisclosureVersion), RefuseDisclosure) // on by default, not accepted
+	refused(t, start("a", "h1", DisclosureVersion), RefuseDisclosure) // on by default, not accepted
 	s.SetEnabled(false)
-	refused(t, start("a", "h1", "good", DisclosureVersion), RefuseDisabled)
-	s.SetEnabled(true)
+	refused(t, start("a", "h1", DisclosureVersion), RefuseDisabled)
+	enable(t, s)
 	s.Put("a", Package{Kind: KindPlan, Markdown: pkgText, SHA256: "h1"}, nil)
-	refused(t, start("a", "h1", "good", DisclosureVersion), RefuseDisclosure)
+	refused(t, start("a", "h1", DisclosureVersion), RefuseDisclosure)
 	// A v3 acceptance (before conversations) no longer counts.
 	refused(t, s.Accept("3"), RefuseDisclosure)
 	if err := s.Accept(DisclosureVersion); err != nil {
 		t.Fatal(err)
 	}
-	refused(t, start("a", "h1", "good", "3"), RefuseDisclosure)
-	refused(t, start("a", "h1", "copy", DisclosureVersion), RefuseProvider)
-	refused(t, start("a", "h1", "nope", DisclosureVersion), RefuseProvider)
-	refused(t, start("b", "h1", "good", DisclosureVersion), RefuseNotFound)
+	refused(t, start("a", "h1", "3"), RefuseDisclosure)
+	refused(t, start("b", "h1", DisclosureVersion), RefuseNotFound)
 	s.Put("a", Package{Kind: KindPlan, Markdown: "OLD", SHA256: "h2"}, func() bool { return false })
-	refused(t, start("a", "h2", "good", DisclosureVersion), RefuseStale)
+	refused(t, start("a", "h2", DisclosureVersion), RefuseStale)
+	// The server picks the assistant: a chosen copy-only one is never run, and no request can
+	// name another.
+	if err := s.SetDefault("copy"); err != nil {
+		t.Fatal(err)
+	}
+	refused(t, start("a", "h1", DisclosureVersion), RefuseProvider)
 	if len(good.calls())+len(handoff.calls()) != 0 {
 		t.Fatal("a refused conversation ran an assistant")
 	}
 
 	strict := NewSession(true, &stub{id: "good", mode: ModeHeadless})
 	defer strict.Close()
-	strict.SetEnabled(true)
+	enable(t, strict)
 	_ = strict.Accept(DisclosureVersion)
 	strict.Put("a", Package{Kind: KindPlan, Markdown: "x", SHA256: "h"}, nil)
-	_, err := strict.StartConversation("a", "h", "good", DisclosureVersion, RunScope{}, "")
+	_, err := strict.StartConversation("a", "h", DisclosureVersion, RunScope{}, "")
 	refused(t, err, RefuseStrict)
 }
 
@@ -140,7 +144,7 @@ func TestConversationLifecycleAndContinuity(t *testing.T) {
 	var records []RunRecord
 	var mu sync.Mutex
 	s.Record = func(r RunRecord) { mu.Lock(); records = append(records, r); mu.Unlock() }
-	c, err := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{Project: "net"}, "")
+	c, err := s.StartConversation("a", "h1", DisclosureVersion, RunScope{Project: "net"}, "")
 	if err != nil || c.State != StateRunning || c.Kind != KindPlan || c.SHA256 != "h1" || c.LimitBytes != MaxTranscript {
 		t.Fatal(c, err)
 	}
@@ -193,7 +197,7 @@ func TestConversationOutlivesThePackageStore(t *testing.T) {
 	s := ready(t, good)
 	now := time.Now()
 	s.Now = func() time.Time { return now }
-	c, _ := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{}, "")
+	c, _ := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, "")
 	settle(t, s, "a", c.ID)
 	now = now.Add(PackageTTL + time.Minute)
 	if _, err := s.Send("a", c.ID, "still there?"); err != nil {
@@ -208,7 +212,7 @@ func TestConversationOutlivesThePackageStore(t *testing.T) {
 func TestConversationCancelFailureAndRetry(t *testing.T) {
 	good := &stub{id: "good", mode: ModeHeadless}
 	s := ready(t, good)
-	c, _ := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{}, "first")
+	c, _ := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, "first")
 	c = settle(t, s, "a", c.ID)
 	good.set(true, nil)
 	if _, err := s.Send("a", c.ID, "slow one"); err != nil {
@@ -253,7 +257,7 @@ func TestConversationCancelFailureAndRetry(t *testing.T) {
 func TestConversationLimits(t *testing.T) {
 	good := &stub{id: "good", mode: ModeHeadless}
 	s := ready(t, good)
-	c, _ := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{}, "")
+	c, _ := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, "")
 	c = settle(t, s, "a", c.ID)
 	calls := len(good.calls())
 	_, err := s.Send("a", c.ID, strings.Repeat("a", MaxMessage+1))
@@ -294,10 +298,10 @@ func TestConversationMessagesAreScanned(t *testing.T) {
 		`{"secret_key":"x"`,
 		"bell \x07",
 	} {
-		_, err := s.StartConversation("a", "h1", "good", DisclosureVersion, scope, m)
+		_, err := s.StartConversation("a", "h1", DisclosureVersion, scope, m)
 		refused(t, err, RefuseMessageUnsafe)
 	}
-	c, err := s.StartConversation("a", "h1", "good", DisclosureVersion, scope, "Is this plan safe?")
+	c, err := s.StartConversation("a", "h1", DisclosureVersion, scope, "Is this plan safe?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +318,7 @@ func TestConversationIsolation(t *testing.T) {
 	s := ready(t, good)
 	current := true
 	s.Put("b", Package{Kind: KindDrift, Markdown: "DRIFT", SHA256: "h3"}, func() bool { return current })
-	c, _ := s.StartConversation("b", "h3", "good", DisclosureVersion, RunScope{}, "")
+	c, _ := s.StartConversation("b", "h3", DisclosureVersion, RunScope{}, "")
 	settle(t, s, "b", c.ID)
 	// Another scope cannot read, continue, cancel or close it.
 	_, err := s.Conversation("a", c.ID)
@@ -338,7 +342,7 @@ func TestConversationCapAndShutdown(t *testing.T) {
 	s := ready(t, good)
 	var ids []string
 	for i := 0; i < MaxConversations; i++ {
-		c, err := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{}, "")
+		c, err := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -347,7 +351,7 @@ func TestConversationCapAndShutdown(t *testing.T) {
 		time.Sleep(2 * time.Millisecond) // distinct lastUsed
 	}
 	// The oldest idle conversation makes room.
-	if _, err := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{}, ""); err != nil {
+	if _, err := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Conversation("a", ids[0]); err == nil {
@@ -360,20 +364,20 @@ func TestConversationCapAndShutdown(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	c, _ := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{}, "")
+	c, _ := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, "")
 	_ = c
-	_, err := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{}, "")
+	_, err := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, "")
 	refused(t, err, RefuseTooMany)
 	// Turning AI off cancels every turn and drops every conversation.
 	s.SetEnabled(false)
-	s.SetEnabled(true)
+	enable(t, s)
 	if _, err := s.Conversation("a", ids[1]); err == nil {
 		t.Fatal("a conversation survived AI off")
 	}
 	// Close cancels running turns and waits for them.
 	_ = s.Accept(DisclosureVersion)
 	s.Put("a", Package{Kind: KindPlan, Markdown: pkgText, SHA256: "h1"}, nil)
-	if _, err := s.StartConversation("a", "h1", "good", DisclosureVersion, RunScope{}, ""); err != nil {
+	if _, err := s.StartConversation("a", "h1", DisclosureVersion, RunScope{}, ""); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
@@ -392,12 +396,12 @@ func TestDropScopeReleasesItsConversations(t *testing.T) {
 	s := ready(t, good)
 	s.Put("hub-a", Package{Kind: KindResource, Markdown: "A", SHA256: "ha"}, nil)
 	s.Put("hub-b", Package{Kind: KindResource, Markdown: "B", SHA256: "hb"}, nil)
-	idle, _ := s.StartConversation("hub-a", "ha", "good", DisclosureVersion, RunScope{}, "")
+	idle, _ := s.StartConversation("hub-a", "ha", DisclosureVersion, RunScope{}, "")
 	settle(t, s, "hub-a", idle.ID)
-	kept, _ := s.StartConversation("hub-b", "hb", "good", DisclosureVersion, RunScope{}, "")
+	kept, _ := s.StartConversation("hub-b", "hb", DisclosureVersion, RunScope{}, "")
 	settle(t, s, "hub-b", kept.ID)
 	good.set(true, nil)
-	running, _ := s.StartConversation("hub-a", "ha", "good", DisclosureVersion, RunScope{}, "")
+	running, _ := s.StartConversation("hub-a", "ha", DisclosureVersion, RunScope{}, "")
 
 	s.DropScope("hub-a")
 	for _, id := range []string{idle.ID, running.ID} {
@@ -417,7 +421,7 @@ func TestDropScopeReleasesItsConversations(t *testing.T) {
 	if _, err := s.Conversation("hub-b", kept.ID); err != nil {
 		t.Fatal("another scope's conversation was dropped")
 	}
-	_, err := s.StartConversation("hub-a", "ha", "good", DisclosureVersion, RunScope{}, "")
+	_, err := s.StartConversation("hub-a", "ha", DisclosureVersion, RunScope{}, "")
 	refused(t, err, RefuseNotFound)
 	// The running turn was cancelled, and its late result does not bring the conversation back.
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(2 * time.Millisecond) {
@@ -446,4 +450,13 @@ func (s *Session) wgDone() bool {
 	case <-time.After(10 * time.Millisecond):
 		return false
 	}
+}
+
+// Package starts need a package: an empty hash is not found, never a chat without a binding.
+func TestPackageStartNeedsHash(t *testing.T) {
+	s := ready(t, &stub{id: "good", mode: ModeHeadless})
+	_, err := s.StartConversation("a", "", DisclosureVersion, RunScope{}, "hi")
+	refused(t, err, RefuseNotFound)
+	_, err = s.StartReview("a", "", DisclosureVersion, RunScope{}, "review-plan@1")
+	refused(t, err, RefuseNotFound)
 }

@@ -66,9 +66,10 @@ func (a *stubAssistant) Run(ctx context.Context, payload []byte) (string, error)
 	return a.reply, nil
 }
 
-// startBody names a previewed package, the assistant and the current disclosure version.
-func startBody(hash, provider, message string) string {
-	return fmt.Sprintf(`{"packageSha256":%q,"provider":%q,"disclosureVersion":%q,"message":%q}`, hash, provider, assist.DisclosureVersion, message)
+// startBody names a previewed package and the current disclosure version; the server picks the
+// assistant.
+func startBody(hash, message string) string {
+	return fmt.Sprintf(`{"packageSha256":%q,"disclosureVersion":%q,"message":%q}`, hash, assist.DisclosureVersion, message)
 }
 
 // waitChat polls a conversation under base until its turn has finished.
@@ -95,7 +96,7 @@ func TestAIConversationOverHTTP(t *testing.T) {
 	planID := s.plan()
 	zero := strings.Repeat("0", 64)
 	s.manager.Assist.SetEnabled(false) // on by default (AI-01.14); these checks start from off
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "stub", "")), 409, "ai_disabled")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "")), 409, "ai_disabled")
 	wantError(t, s.do("GET", "/api/v1/ai/conversations/"+strings.Repeat("a", 32), ""), 409, "ai_disabled")
 
 	s.enableAI()
@@ -104,22 +105,27 @@ func TestAIConversationOverHTTP(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+planID+`"}`))
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 409, "disclosure_required")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "")), 409, "disclosure_required")
 	// The browser cannot set an executable path.
 	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"path":"/bin/sh"}`), 400, "invalid_request")
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"10"}`)
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"7"}`), 409, "disclosure_required")
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "other", "")), 409, "provider_unavailable")
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "stub", "")), 404, "package_not_found")
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256+"x", "stub", "")), 404, "package_not_found")
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"5","payload":"x"}`), 400, "invalid_request")
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "key AKIAIOSFODNN7EXAMPLE")), 422, "message_blocked")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","disclosureVersion":"7"}`), 409, "disclosure_required")
+	// The server picks the assistant (B07): a request naming another one than the chosen one
+	// (the UI names the one it showed) is refused and runs nothing.
+	for _, provider := range []string{"other", "claude"} {
+		wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"`+provider+`","disclosureVersion":"`+assist.DisclosureVersion+`"}`), 409, "provider_unavailable")
+		wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"provider":"`+provider+`","disclosureVersion":"`+assist.DisclosureVersion+`","message":"hi"}`), 409, "provider_unavailable")
+	}
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(zero, "")), 404, "package_not_found")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256+"x", "")), 404, "package_not_found")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","disclosureVersion":"5","payload":"x"}`), 400, "invalid_request")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "key AKIAIOSFODNN7EXAMPLE")), 422, "message_blocked")
 	if stub.ran() != 0 {
 		t.Fatal("a refused request reached the assistant")
 	}
 
 	// Start, follow up twice; each turn replays the conversation.
-	w := s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", ""))
+	w := s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, ""))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -177,7 +183,7 @@ func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+s.plan()+`"}`))
-	id := decode[assist.Conversation](t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "first"))).ID
+	id := decode[assist.Conversation](t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "first"))).ID
 	wantError(t, s.do("POST", "/api/v1/ai/conversations/"+id+"/messages", `{"text":"again"}`), 409, "turn_in_progress")
 	if w := s.do("POST", "/api/v1/ai/conversations/"+id+"/cancel", `{}`); w.Code != 200 || !strings.Contains(w.Body.String(), "true") {
 		t.Fatalf("%d %s", w.Code, w.Body)
@@ -197,7 +203,7 @@ func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 	strict.enableAI()
 	strict.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	sp := build(t, strict.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+strict.plan()+`"}`))
-	wantError(t, strict.do("POST", "/api/v1/ai/conversations", startBody(sp.SHA256, "stub", "")), 409, "strict_local")
+	wantError(t, strict.do("POST", "/api/v1/ai/conversations", startBody(sp.SHA256, "")), 409, "strict_local")
 	if st := decode[assist.Settings](t, strict.do("GET", "/api/v1/ai/settings", "")); st.Headless || !st.Handoff {
 		t.Fatalf("%+v", st)
 	}
@@ -209,7 +215,7 @@ func TestAIConversationBusyCancelAndStrict(t *testing.T) {
 	h.enableAI()
 	h.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	hp := build(t, h.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+h.plan()+`"}`))
-	wantError(t, h.do("POST", "/api/v1/ai/conversations", startBody(hp.SHA256, "stub", "")), 409, "provider_unavailable")
+	wantError(t, h.do("POST", "/api/v1/ai/conversations", startBody(hp.SHA256, "")), 409, "provider_unavailable")
 	if handoff.ran() != 0 {
 		t.Fatal("a handoff-only assistant was run")
 	}
@@ -221,16 +227,16 @@ func TestAIHubConversationStaysInItsContext(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
 	s.launch.Assist = assist.NewSession(false, stub)
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
 	b := s.openLoaded("network", "prod", "")
 	other := s.openLoaded("platform", "staging", "")
 	page := decode[struct{ Resources []struct{ ID string } }](t, s.do("GET", "/api/v1/contexts/"+a+"/resources?limit=1", ""))
 	p := build(t, s.do("POST", "/api/v1/contexts/"+a+"/ai/packages", `{"kind":"resource","resourceId":"`+page.Resources[0].ID+`"}`))
-	wantError(t, s.do("POST", "/api/v1/contexts/"+b+"/ai/conversations", startBody(p.SHA256, "stub", "")), 404, "package_not_found")
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 404, "package_not_found")
-	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations", startBody(p.SHA256, "stub", ""))
+	wantError(t, s.do("POST", "/api/v1/contexts/"+b+"/ai/conversations", startBody(p.SHA256, "")), 404, "package_not_found")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "")), 404, "package_not_found")
+	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations", startBody(p.SHA256, ""))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -282,8 +288,8 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 		t.Fatalf("v9 lacks the proposed changes line: %q", st.Disclosure.Lines)
 	}
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+s.plan()+`"}`))
-	old := `{"packageSha256":"` + p.SHA256 + `","provider":"stub","disclosureVersion":"7"}`
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 409, "disclosure_required")
+	old := `{"packageSha256":"` + p.SHA256 + `","disclosureVersion":"7"}`
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "")), 409, "disclosure_required")
 	wantError(t, s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"7"}`), 409, "disclosure_required")
 	if decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", "")).Accepted {
 		t.Fatal("a v7 acceptance was recorded")
@@ -293,7 +299,7 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 		t.Fatal("v10 not accepted")
 	}
 	wantError(t, s.do("POST", "/api/v1/ai/conversations", old), 409, "disclosure_required")
-	if w := s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")); w.Code != 202 {
+	if w := s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "")); w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	s.do("POST", "/api/v1/ai/settings", `{"enabled":false}`)
@@ -302,7 +308,7 @@ func TestAIDisclosureVersionGatesConversations(t *testing.T) {
 		t.Fatal("acceptance survived AI off")
 	}
 	p = build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+s.plan()+`"}`))
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "stub", "")), 409, "disclosure_required")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "")), 409, "disclosure_required")
 }
 
 // Reopening (or closing) a Hub context drops its conversations: a running turn is cancelled,
@@ -312,13 +318,13 @@ func TestAIHubContextCloseDropsConversations(t *testing.T) {
 	stub := &stubAssistant{mode: assist.ModeHeadless, block: true}
 	s.launch.Assist = assist.NewSession(false, stub)
 	defer s.launch.Assist.Close()
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	for _, how := range []string{"reopen", "close"} {
 		cid := s.openLoaded("network", "dev", "")
 		page := decode[struct{ Resources []struct{ ID string } }](t, s.do("GET", "/api/v1/contexts/"+cid+"/resources?limit=1", ""))
 		p := build(t, s.do("POST", "/api/v1/contexts/"+cid+"/ai/packages", `{"kind":"resource","resourceId":"`+page.Resources[0].ID+`"}`))
-		id := decode[assist.Conversation](t, s.do("POST", "/api/v1/contexts/"+cid+"/ai/conversations", startBody(p.SHA256, "stub", ""))).ID
+		id := decode[assist.Conversation](t, s.do("POST", "/api/v1/contexts/"+cid+"/ai/conversations", startBody(p.SHA256, ""))).ID
 		before := stub.cancelledCount()
 		var next string
 		if how == "reopen" {

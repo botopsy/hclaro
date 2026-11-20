@@ -23,7 +23,7 @@ type reviewPackage struct {
 }
 
 func reviewBody(hash, prompt string) string {
-	return fmt.Sprintf(`{"packageSha256":%q,"provider":"stub","disclosureVersion":%q,"prompt":%q}`, hash, assist.DisclosureVersion, prompt)
+	return fmt.Sprintf(`{"packageSha256":%q,"disclosureVersion":%q,"prompt":%q}`, hash, assist.DisclosureVersion, prompt)
 }
 
 // review builds a package of kind under base, checks the preview and export, starts the review,
@@ -53,7 +53,7 @@ func review(t *testing.T, do doFunc, fake *engine.Fake, stub *stubAssistant, bas
 	}
 	wantError(t, do("POST", base+"/ai/conversations", reviewBody(p.SHA256, other)), 400, "invalid_request")
 	wantError(t, do("POST", base+"/ai/conversations", reviewBody(p.SHA256, "review-"+kind+"@99")), 400, "invalid_request")
-	wantError(t, do("POST", base+"/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"`+assist.DisclosureVersion+`","prompt":"`+prompt.ID+`","message":"hi"}`), 400, "invalid_request")
+	wantError(t, do("POST", base+"/ai/conversations", `{"packageSha256":"`+p.SHA256+`","disclosureVersion":"`+assist.DisclosureVersion+`","prompt":"`+prompt.ID+`","message":"hi"}`), 400, "invalid_request")
 	if stub.ran() != ran {
 		t.Fatalf("%s: a refused review reached the assistant", kind)
 	}
@@ -158,7 +158,7 @@ func TestAIHubReviewStaysInItsContext(t *testing.T) {
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
 	s.launch.Assist = assist.NewSession(false, stub)
 	t.Cleanup(s.launch.Assist.Close)
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
 	b := s.openLoaded("platform", "staging", "")

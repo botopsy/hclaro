@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -662,14 +661,6 @@ func titleOf(turns []Turn) string {
 	return title
 }
 
-func major(version string) string {
-	m, _, _ := strings.Cut(strings.TrimPrefix(version, "v"), ".")
-	if _, err := strconv.Atoi(m); err != nil {
-		return ""
-	}
-	return m
-}
-
 // docOf is what a saved conversation writes. Callers hold mu.
 func (s *Session) docOf(c *conversation) savedDoc {
 	doc := savedDoc{Version: savedVersion, ID: c.view.ID, Title: titleOf(c.view.Turns), ProjectKey: c.scope.ProjectKey, Project: c.scope.Project,
@@ -934,7 +925,7 @@ func (s *Session) Reopen(key, id string, r Resume) (Conversation, error) {
 		c.view.ReadOnly = refusalMessages[RefuseStrict]
 	case status == nil || !s.eligible(doc.Provider) || !s.providerKnown(doc.Provider):
 		c.view.ReadOnly = name + " cannot run headless here now, so this conversation cannot continue. You can still read it."
-	case major(status.Version) == "" || major(status.Version) != major(doc.ProviderVersion):
+	case !sameVersion(doc.Provider, doc.ProviderVersion, status.Version):
 		c.view.ReadOnly = "This conversation was saved with " + name + " " + doc.ProviderVersion + "; version " + status.Version + " is installed now. You can read it; start a new conversation to continue."
 	}
 	if err := s.evict(); err != nil {

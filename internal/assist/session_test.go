@@ -20,7 +20,7 @@ func TestSessionScopesCapAndFreshness(t *testing.T) {
 	if _, _, found, _ := s.Get("a", "h0"); found {
 		t.Fatal("a package is readable while AI is off")
 	}
-	s.SetEnabled(true)
+	enable(t, s)
 	// Strict local-only mode keeps handoff (OD-AI-4) and never headless.
 	if st := s.Settings(); !st.Handoff || st.Headless {
 		t.Fatalf("%+v", st)
@@ -71,7 +71,7 @@ func TestDisclosureFollowsDetectedProviders(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := NewSession(tc.strict, tc.providers...)
-			st, _ := s.SetEnabled(true)
+			st := enable(t, s)
 			d := st.Disclosure
 			text := strings.Join(d.Lines, "\n")
 			if d.Version != DisclosureVersion || len(d.Lines) < 3 || strings.Contains(text, "\x00") {
@@ -80,7 +80,7 @@ func TestDisclosureFollowsDetectedProviders(t *testing.T) {
 			if strings.Contains(text, "OpenAI Codex runs only") != tc.codex || strings.Contains(text, "Anthropic") != tc.anthropic || strings.Contains(text, "quick actions start a conversation") != tc.send || strings.Contains(text, CostLine) != tc.send || strings.Contains(text, "resends the whole conversation") != tc.send || strings.Contains(text, "unverified AI output") != tc.send {
 				t.Fatalf("lines %q", d.Lines)
 			}
-			if tc.anthropic && tc.codex && len(d.Lines) != len(disclosure.Lines) {
+			if tc.anthropic && tc.codex && len(d.Lines) != len(disclosure.Lines)-1+len(adapters) {
 				t.Fatalf("headless Claude and Codex must see the full disclosure: %q", d.Lines)
 			}
 		})
@@ -91,19 +91,19 @@ func TestDisclosureFollowsDetectedProviders(t *testing.T) {
 func TestAcceptanceResetsWhenDisclosureGrows(t *testing.T) {
 	claude := &stub{id: "claude", mode: ModeUnsupported}
 	s := NewSession(false, claude, &stub{id: "codex", mode: ModeHandoff})
-	s.SetEnabled(true)
+	enable(t, s)
 	if err := s.Accept(DisclosureVersion); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := s.SetEnabled(true); !st.Accepted {
+	if st := enable(t, s); !st.Accepted {
 		t.Fatal("re-detecting the same providers dropped the acceptance")
 	}
 	claude.mode = ModeHeadless
-	st, _ := s.SetEnabled(true)
+	st := enable(t, s)
 	if st.Accepted || !strings.Contains(strings.Join(st.Disclosure.Lines, "\n"), "Anthropic") {
 		t.Fatalf("acceptance carried over to new lines: %+v", st)
 	}
 	s.Put("k", Package{Kind: KindPlan, Markdown: "plan", SHA256: "h"}, nil)
-	_, err := s.StartConversation("k", "h", "claude", DisclosureVersion, RunScope{}, "")
+	_, err := s.StartConversation("k", "h", DisclosureVersion, RunScope{}, "")
 	refused(t, err, RefuseDisclosure)
 }

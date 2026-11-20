@@ -31,8 +31,7 @@ var disclosure = Disclosure{Version: DisclosureVersion, Lines: []string{
 	sendLine + "Review with an assistant and the AI Assistant's quick actions start a conversation: Hclaro sends the previewed text, the context followed by a fixed review request or quick action prompt. The AI Assistant sends your message, with no project data unless you preview and attach the project context. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the conversation to its cloud model, signed in as you.",
 	sendLine + CostLine,
 	sendLine + "Every follow-up resends the whole conversation (the context, your messages and the replies), so usage and cost grow with each message. A conversation stops at a size limit; Hclaro then asks you to start a new one and never drops messages silently.",
-	claudeLine + "Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.",
-	codexLine + "OpenAI Codex runs only on macOS, signed in with a personal ChatGPT plan (Free, Go, Plus or Pro), after Hclaro's local check that it offers no tools; its messages count against your plan's usage limits. Hclaro reads only the sign-in type, plan and expiry from Codex's auth.json to decide, and never stores or shares them. Hclaro does not cap, control or guarantee the cost of any request.",
+	providerLines,
 	sendLine + "The reply is unverified AI output. Hclaro shows it as text and never runs, applies or approves anything it suggests. A reply can propose a whole .tf or .tofu file: Hclaro shows its own diff and writes that file only when you apply that one proposal, keeping a backup for Undo; it never runs a plan or apply for it. It keeps the conversation in memory for this session only, unless you tick Save conversation: then the context, your messages and the replies are stored as plain text in your Hclaro configuration folder on this machine until you delete them or they are unused for 30 days (set retentionDays in ai-conversations/settings.json there).",
 }}
 
@@ -44,34 +43,32 @@ const CostLine = "Cost analysis can attach this session's existing Infracost est
 	"A line that looks secret is hidden and the summary is marked incomplete."
 
 // Line markers, stripped before display: sendLine lines apply only when an assistant can be run
-// headless, claudeLine and codexLine lines only when that assistant is Claude Code or Codex. The version stays the
-// same; SetEnabled drops an acceptance when the shown lines change.
+// headless; providerLines is replaced by the Disclosure line of each headless-eligible
+// registered provider, in preference order. The version stays the same; SetEnabled drops an
+// acceptance when the shown lines change.
 const (
-	sendLine   = "\x00send\x00"
-	claudeLine = "\x00claude\x00"
-	codexLine  = "\x00codex\x00"
+	sendLine      = "\x00send\x00"
+	providerLines = "\x00providers\x00"
 )
 
 // shownDisclosure is the disclosure without the lines that do not apply to detected.
 func shownDisclosure(detected []ProviderStatus) Disclosure {
-	send, claude, codex := false, false, false
+	headless := map[string]bool{}
 	for _, d := range detected {
 		if d.Mode == ModeHeadless {
-			send, claude, codex = true, claude || d.ID == Claude.ID, codex || d.ID == codexAdapter.ID
+			headless[d.ID] = true
 		}
 	}
 	out := Disclosure{Version: disclosure.Version, Lines: []string{}}
 	for _, l := range disclosure.Lines {
-		if line, ok := strings.CutPrefix(l, claudeLine); ok {
-			if claude {
-				out.Lines = append(out.Lines, line)
-			}
-		} else if line, ok := strings.CutPrefix(l, codexLine); ok {
-			if codex {
-				out.Lines = append(out.Lines, line)
+		if l == providerLines {
+			for _, a := range adapters {
+				if headless[a.ID] && a.Disclosure != "" {
+					out.Lines = append(out.Lines, a.Disclosure)
+				}
 			}
 		} else if line, ok := strings.CutPrefix(l, sendLine); ok {
-			if send {
+			if len(headless) > 0 {
 				out.Lines = append(out.Lines, line)
 			}
 		} else {
@@ -99,6 +96,8 @@ type Settings struct {
 	Checking bool `json:"checking"`
 	// Warning is set when the saved AI settings could not be read and defaults apply.
 	Warning string `json:"warning,omitempty"`
+	// MaxMessage is the byte limit of one typed message, so the UI keeps no copy of it.
+	MaxMessage int `json:"maxMessage"`
 }
 
 const (
@@ -209,13 +208,17 @@ func (s *Session) savePrefs(on bool, chosen string) error {
 }
 
 // ErrPrefs is returned when a settings change could not be saved; nothing changed.
-var ErrPrefs = errors.New("the AI settings could not be saved in the configuration folder, so nothing changed")
+var ErrPrefs error = &Refusal{Code: RefusePrefs}
 
 func (s *Session) Settings() Settings {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := Settings{Enabled: s.enabled, StrictLocal: s.strict, Handoff: s.enabled, Disclosure: shownDisclosure(s.detected), Accepted: s.accepted,
-		Providers: append([]ProviderStatus{}, s.detected...), DefaultProvider: s.preferred, Checked: s.checked, Checking: s.checking, Warning: s.warning}
+		Providers: append([]ProviderStatus{}, s.detected...), DefaultProvider: s.preferred, Checked: s.checked, Checking: s.checking, Warning: s.warning,
+		MaxMessage: MaxMessage}
+	for i, p := range st.Providers {
+		st.Providers[i].Send, st.Providers[i].Usable, st.Providers[i].Installed = p.Mode == ModeHeadless, p.Mode != ModeUnsupported, p.Reason != KindMissing
+	}
 	st.Headless = s.enabled && !s.strict && s.eligible(s.preferred)
 	return st
 }
@@ -257,12 +260,13 @@ func (s *Session) detect() []ProviderStatus {
 	for _, p := range s.providers {
 		found = append(found, p.Detect(ctx))
 	}
+	slices.SortStableFunc(found, func(a, b ProviderStatus) int { return rank(a.ID) - rank(b.ID) })
 	return found
 }
 
 // applyDetected records a detection and picks the effective assistant: the chosen one when
-// installed, else Claude Code, else Codex when headless-eligible, else the first installed.
-// Callers hold mu.
+// installed, else the first headless-eligible one in preference order (adapters), else the
+// first installed. found is already in preference order. Callers hold mu.
 func (s *Session) applyDetected(found []ProviderStatus) {
 	// Acceptance covers the lines that were shown; new ones (e.g. Claude Code installed since)
 	// must be accepted again.
@@ -298,20 +302,15 @@ func (s *Session) Enabled() bool {
 }
 
 // SetEnabled turns AI on or off and saves the choice. Turning it on re-detects the providers
-// (unless strict local-only). Turning it off drops every package, conversation and the
-// acceptance, and cancels running turns. When saving fails nothing changes.
+// in the background (unless strict local-only); Settings reports checking meanwhile. Turning it
+// off drops every package, conversation and the acceptance, and cancels running turns. When
+// saving fails nothing changes.
 func (s *Session) SetEnabled(on bool) (Settings, error) {
 	s.mu.Lock()
-	err := s.savePrefs(on, s.chosen)
-	s.mu.Unlock()
-	if err != nil {
+	if err := s.savePrefs(on, s.chosen); err != nil {
+		s.mu.Unlock()
 		return s.Settings(), ErrPrefs
 	}
-	var found []ProviderStatus
-	if on && !s.strict {
-		found = s.detect()
-	}
-	s.mu.Lock()
 	s.enabled, s.warning = on, ""
 	s.gen++
 	s.checking = false
@@ -319,7 +318,7 @@ func (s *Session) SetEnabled(on bool) (Settings, error) {
 		if s.strict {
 			s.checked = true
 		} else {
-			s.applyDetected(found)
+			s.detectInBackground()
 		}
 	} else {
 		s.packages, s.accepted, s.detected, s.preferred, s.checked = map[string]stored{}, false, nil, "", false

@@ -177,7 +177,7 @@ function entryPoints(scope: PlanScope) {
 describe('No-AI baseline: AI off', () => {
   // What the server sends with no assistant session at all (assist.Settings{}).
   const absent = { enabled: false, strictLocal: false, handoff: false, headless: false, disclosure: { version: '', lines: null }, disclosureAccepted: false, providers: null };
-  const offWithAssistants = { ...settings(false), providers: [{ id: 'codex', name: 'OpenAI Codex', mode: 'handoff-only' }] };
+  const offWithAssistants = { ...settings(false), providers: [{ id: 'codex', name: 'OpenAI Codex', mode: 'handoff-only', send: false, usable: true, installed: true }] };
   const baselines: [string, Route][] = [
     ['no assistant session', u => (u.endsWith('/ai/settings') ? Response.json(absent) : undefined)],
     ['switched off', () => undefined],

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"hclaro/internal/proc"
 )
 
 // Initer runs the standard, non-interactive init and nothing else: there is no way to pass
@@ -122,10 +124,10 @@ func (c *CLI) streamLines(ctx context.Context, limit time.Duration, dropWorkspac
 // started, and the group is killed only if it is still running after grace. Call the returned
 // func once Wait has returned.
 func startGroup(ctx context.Context, cmd *exec.Cmd, grace time.Duration) (func(), error) {
-	prepareGroup(cmd)
+	proc.PrepareGroup(cmd)
 	cmd.Cancel = func() error {
-		if err := interruptGroup(cmd.Process); err != nil {
-			return killGroup(cmd.Process)
+		if err := proc.InterruptGroup(cmd.Process); err != nil {
+			return proc.KillGroup(cmd.Process)
 		}
 		return nil
 	}
@@ -140,7 +142,7 @@ func startGroup(ctx context.Context, cmd *exec.Cmd, grace time.Duration) (func()
 			select {
 			case <-exited:
 			case <-time.After(grace):
-				_ = killGroup(cmd.Process)
+				_ = proc.KillGroup(cmd.Process)
 			}
 		case <-exited:
 		}

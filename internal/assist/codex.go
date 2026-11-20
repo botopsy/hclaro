@@ -55,6 +55,72 @@ const (
 	codexAuthLimit  = 64 << 10
 )
 
+// OpenAI Codex 0.166.0, runnable only through CodexCLI (codex.go), which adds the gates and
+// the self-check of tasks/AI/CODEX-INVESTIGATION.md §6–7. The argv is the verified hardened
+// argv: --ignore-user-config and --ignore-rules drop user config and rules; the --disable list
+// and -c settings turn off every tool-capable feature found in 0.166.0; the model catalog
+// (codex_catalog.json, gpt-5.6-luna with shell, apply_patch, code mode, multi-agent and tool
+// search removed) leaves no tool; --strict-config fails on a misspelt key; project docs, skill
+// instructions, environment context and analytics are off; credentials come only from
+// CODEX_HOME/auth.json, the file the gates read. codexCatalogArg is replaced by the catalog path.
+var codexAdapter = Adapter{
+	ID: "codex", Name: "OpenAI Codex", Command: "codex",
+	VersionArgs: []string{"--version"},
+	RunArgs: []string{"exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+		"--disable", "shell_tool", "--disable", "unified_exec", "--disable", "apps", "--disable", "plugins", "--disable", "browser_use",
+		"--disable", "computer_use", "--disable", "view_image", "--disable", "hooks", "-c", "web_search=disabled", "--json",
+		"-m", codexModel, "-c", "model_catalog_json=" + codexCatalogArg, "-c", "tools.experimental_request_user_input.enabled=false",
+		"--disable", "multi_agent", "--disable", "multi_agent_v2", "--disable", "sleep_tool", "--disable", "goals",
+		"--disable", "code_mode_host", "--disable", "image_generation", "--disable", "tool_suggest", "--disable", "skill_search",
+		"--strict-config", "-c", "project_doc_max_bytes=0", "-c", "skills.include_instructions=false",
+		"-c", "include_environment_context=false", "-c", "analytics.enabled=false", "--disable", "shell_snapshot",
+		"-c", `cli_auth_credentials_store="file"`, "-"},
+	ParseVersion: codexVersion,
+	Reply:        codexReply,
+	Stop:         codexStop,
+	Helpers:      map[string][]string{osascriptPath: osascriptArgs},
+	// Only the verified version runs, so a saved conversation continues only on that same version.
+	SameVersion: func(saved, now string) bool { return saved == now },
+	Disclosure:  "OpenAI Codex runs only on macOS, signed in with a personal ChatGPT plan (Free, Go, Plus or Pro), after Hclaro's local check that it offers no tools; its messages count against your plan's usage limits. Hclaro reads only the sign-in type, plan and expiry from Codex's auth.json to decide, and never stores or shares them. Hclaro does not cap, control or guarantee the cost of any request.",
+	Kinds: map[string]string{
+		KindCodexPlatform: "Hclaro runs OpenAI Codex only on macOS for now; here it is copy only. Copy or Download still work.",
+		KindCodexAgents:   "Hclaro does not run OpenAI Codex while AGENTS.md or AGENTS.override.md exists in your Codex folder (~/.codex): Codex would send that file to OpenAI with every message. Move or rename it to send from Hclaro; Copy or Download still work.",
+		KindCodexManaged:  "OpenAI Codex has organization-managed settings on this Mac, or Hclaro could not check for them. They can turn Codex tools back on, so Hclaro does not run it. Copy or Download still work.",
+		KindCodexAccount:  "Hclaro runs OpenAI Codex only when it is signed in with a personal ChatGPT plan (Free, Go, Plus or Pro). Team, Business, Enterprise and Education workspaces, API keys and sign-ins Hclaro cannot read are copy only.",
+		KindCodexToken:    "OpenAI Codex's sign-in expires within 15 minutes, or Hclaro could not tell when it expires. Use Codex once in your terminal to refresh it, then try again.",
+		KindCodexSettings: "OpenAI Codex's effective settings differ from the ones Hclaro verified (a tool feature or the model list changed). Hclaro does not run it; Copy or Download still work.",
+		KindCodexCheck:    "OpenAI Codex did not pass Hclaro's local security check (no tools offered, every tool call refused). Hclaro does not run it; Copy or Download still work.",
+	},
+}
+
+// codexArgv reads codexAdapter.RunArgs, so it is attached here to avoid an initialization cycle.
+func init() { codexAdapter.Argvs = codexArgv }
+
+// OpenAI Codex refusals (CODEX-INVESTIGATION.md §6–7). None names a plan, account or path read
+// from the sign-in.
+const (
+	KindCodexPlatform = "codex_platform"
+	KindCodexAgents   = "codex_agents_file"
+	KindCodexManaged  = "codex_managed"
+	KindCodexAccount  = "codex_account"
+	KindCodexToken    = "codex_sign_in_expiring"
+	KindCodexSettings = "codex_settings_changed"
+	KindCodexCheck    = "codex_self_check"
+)
+
+var codexVersionRe = regexp.MustCompile(`^codex-cli ([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6})$`)
+
+// codexVersion accepts exactly the verified 0.166.0 (OD-CODEX-2): any other version needs a
+// new assessment.
+func codexVersion(out []byte) (string, bool) {
+	first, _, _ := bytes.Cut(bytes.TrimSpace(out), []byte("\n"))
+	m := codexVersionRe.FindSubmatch(bytes.TrimSpace(first))
+	if m == nil {
+		return "", false
+	}
+	return string(m[1]), string(m[1]) == codexVerified
+}
+
 //go:embed codex_catalog.json
 var codexCatalog []byte
 
@@ -105,7 +171,9 @@ type CodexCLI struct {
 
 // NewCodexCLI is the Codex provider; path is the --codex-path flag ("" looks codex up on PATH).
 func NewCodexCLI(path string) *CodexCLI {
-	return &CodexCLI{CLI: CLI{Adapter: codexAdapter, Path: path}}
+	c := &CodexCLI{CLI: CLI{Adapter: codexAdapter, Path: path}}
+	c.Gate, c.Prepare = c.gateStatus, c.prepare
+	return c
 }
 
 func (c *CodexCLI) now() time.Time {
@@ -120,12 +188,8 @@ func handoff(st ProviderStatus, kind string) ProviderStatus {
 	return st
 }
 
-// Detect reports the version and every gate that needs no Codex process beyond --version.
-func (c *CodexCLI) Detect(ctx context.Context) ProviderStatus {
-	st := c.CLI.Detect(ctx)
-	if st.Mode != ModeHeadless {
-		return st
-	}
+// gateStatus checks every gate that needs no Codex process beyond --version (Detect and Run).
+func (c *CodexCLI) gateStatus(ctx context.Context, st ProviderStatus) ProviderStatus {
 	if kind := c.gate(ctx); kind != "" {
 		return handoff(st, kind)
 	}
@@ -223,7 +287,7 @@ const osascriptPath = "/usr/bin/osascript"
 var osascriptArgs = []string{"-l", "JavaScript", "-e", profileScript}
 
 func osascriptProfile(ctx context.Context) (string, error) {
-	r, err := runProc(ctx, proc{path: osascriptPath, args: osascriptArgs, env: []string{"PATH=/usr/bin:/bin", "HOME=" + os.Getenv("HOME")},
+	r, err := runProc(ctx, command{path: osascriptPath, args: osascriptArgs, env: []string{"PATH=/usr/bin:/bin", "HOME=" + os.Getenv("HOME")},
 		limit: 4 << 10, timeout: 10 * time.Second})
 	if err != nil {
 		return "", err
@@ -340,32 +404,29 @@ func planClaim(claims map[string]json.RawMessage) (string, bool) {
 	return *auth.Plan, true
 }
 
-// Run re-checks everything before every send and runs Codex once.
-func (c *CodexCLI) Run(ctx context.Context, payload []byte) (string, error) {
-	st := c.Detect(ctx)
-	if st.Mode != ModeHeadless {
-		return "", &Failure{Kind: st.Reason}
-	}
+// prepare re-checks the effective settings and the self-check before every send; the shared
+// run pipeline then runs Codex once with the catalog, CODEX_HOME and a Git ceiling.
+func (c *CodexCLI) prepare(ctx context.Context, st ProviderStatus) (Prepared, error) {
 	home, err := codexHome()
 	if err != nil {
-		return "", &Failure{Kind: KindCodexAccount}
+		return Prepared{}, &Failure{Kind: KindCodexAccount}
 	}
 	bin, err := filepath.EvalSymlinks(st.Path)
 	if err != nil {
-		return "", &Failure{Kind: KindMissing}
+		return Prepared{}, &Failure{Kind: KindMissing}
 	}
 	key, sum, err := c.binaryHash(bin)
 	if err != nil {
-		return "", &Failure{Kind: KindCodexCheck}
+		return Prepared{}, &Failure{Kind: KindCodexCheck}
 	}
 	catalog, cleanup, err := writeCatalog()
 	if err != nil {
-		return "", &Failure{Kind: KindFailed}
+		return Prepared{}, &Failure{Kind: KindFailed}
 	}
-	defer cleanup()
+	fail := func(err error) (Prepared, error) { cleanup(); return Prepared{}, err }
 	features, models, kind := c.effective(ctx, bin, home, catalog)
 	if kind != "" {
-		return "", &Failure{Kind: kind}
+		return fail(&Failure{Kind: kind})
 	}
 	binding := bindingOf(c.RunArgs, sum, st.Version, features, models)
 	c.mu.Lock()
@@ -376,58 +437,23 @@ func (c *CodexCLI) Run(ctx context.Context, payload []byte) (string, error) {
 			}
 			c.mu.Unlock()
 			if ctx.Err() != nil {
-				return "", ctx.Err()
+				return fail(ctx.Err())
 			}
-			return "", &Failure{Kind: kind}
+			return fail(&Failure{Kind: kind})
 		}
 		c.passed, c.failedAt = binding, ""
 	}
 	c.mu.Unlock()
-
-	dir, err := privateDir()
-	if err != nil {
-		return "", &Failure{Kind: KindFailed}
-	}
-	defer os.RemoveAll(dir)
-	timeout := c.Timeout
-	if timeout <= 0 {
-		timeout = runTimeout
-	}
-	r, err := runProc(ctx, proc{path: bin, args: codexArgs(c.RunArgs, catalog), dir: dir, env: c.codexEnv(home, dir),
-		stdin: payload, limit: maxReply, timeout: timeout, stop: codexStop})
-	if err != nil {
-		return "", err
-	}
-	if r.overflow {
-		return "", &Failure{Kind: KindOutputTooLarge}
-	}
-	reply, kind := codexReply(r.stdout, r.stderr, r.exitOK && !r.stopped)
-	if kind == "" && r.stopped {
-		kind = KindFailed
-	}
-	if kind != "" {
-		return "", &Failure{Kind: kind}
-	}
-	return reply, nil
+	return Prepared{Bin: bin, Args: codexArgs(c.RunArgs, catalog), Env: func(dir string) []string { return codexExtraEnv(home, dir) }, Cleanup: cleanup}, nil
 }
 
 // codexEnv is the allowlisted environment plus CODEX_HOME and a Git ceiling at dir's parent.
 func (c *CodexCLI) codexEnv(home, dir string) []string {
-	return append(c.Environ(os.Environ()), "CODEX_HOME="+home, "GIT_CEILING_DIRECTORIES="+filepath.Dir(dir))
+	return append(c.Environ(os.Environ()), codexExtraEnv(home, dir)...)
 }
 
-// privateDir is a fresh empty folder with symbolic links resolved, so the Git ceiling matches.
-func privateDir() (string, error) {
-	dir, err := os.MkdirTemp("", "hclaro-ai-")
-	if err != nil {
-		return "", err
-	}
-	real, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		os.RemoveAll(dir)
-		return "", err
-	}
-	return real, nil
+func codexExtraEnv(home, dir string) []string {
+	return []string{"CODEX_HOME=" + home, "GIT_CEILING_DIRECTORIES=" + filepath.Dir(dir)}
 }
 
 var selfCheckURL = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]{1,5}/v1$`)
@@ -572,11 +598,11 @@ func (c *CodexCLI) effective(ctx context.Context, bin, home, catalog string) (st
 	}
 	defer os.RemoveAll(dir)
 	env := append(c.codexEnv(home, dir), proxy.env()...)
-	fr, err := runProc(ctx, proc{path: bin, args: codexFeatureArgs(), dir: dir, env: env, limit: codexProbeLimit, timeout: codexProbeTime})
+	fr, err := runProc(ctx, command{path: bin, args: codexFeatureArgs(), dir: dir, env: env, limit: codexProbeLimit, timeout: codexProbeTime})
 	if err != nil {
 		return "", "", KindOf(err)
 	}
-	mr, err := runProc(ctx, proc{path: bin, args: []string{"debug", "models", "-c", "model_catalog_json=" + strconv.Quote(catalog)},
+	mr, err := runProc(ctx, command{path: bin, args: []string{"debug", "models", "-c", "model_catalog_json=" + strconv.Quote(catalog)},
 		dir: dir, env: env, limit: codexProbeLimit, timeout: codexProbeTime})
 	if err != nil {
 		return "", "", KindOf(err)

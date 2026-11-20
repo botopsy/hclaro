@@ -3,12 +3,10 @@ package assist
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -16,11 +14,38 @@ import (
 	"time"
 
 	"hclaro/internal/bounded"
+	"hclaro/internal/proc"
 )
 
 // Headless providers (AI-01.04). An Assistant is detected and run through one
-// provider-independent path; an Adapter holds the only provider-specific parts: the argv
-// recorded in tasks/AI/FEASIBILITY.md, version parsing and reply/failure classification.
+// provider-independent path; an Adapter (the provider profile) holds the only provider-specific
+// parts: the argv recorded in tasks/AI/FEASIBILITY.md, gates, version parsing, reply/failure
+// classification, its failure kinds and its disclosure line. Each provider lives in its own
+// file (claude.go, codex.go) and is registered once in adapters.
+
+// adapters are the registered provider profiles, in preference order: with no saved choice,
+// the first headless-eligible one is used. Their argv shapes form the process allowlist.
+var adapters = []*Adapter{&Claude, &codexAdapter}
+
+// adapterOf is the registered profile with id, or nil (e.g. a test fake).
+func adapterOf(id string) *Adapter {
+	for _, a := range adapters {
+		if a.ID == id {
+			return a
+		}
+	}
+	return nil
+}
+
+// rank is id's place in the preference order; unknown providers come last.
+func rank(id string) int {
+	for i, a := range adapters {
+		if a.ID == id {
+			return i
+		}
+	}
+	return len(adapters)
+}
 
 // Provider modes (tasks/AI/README.md, "Provider eligibility").
 const (
@@ -42,15 +67,6 @@ const (
 	KindCancelled      = "cancelled"
 	KindOutputTooLarge = "output_too_large"
 	KindRefusedArgs    = "refused"
-	// OpenAI Codex refusals (AI-01.14, tasks/AI/CODEX-INVESTIGATION.md §6–7). None names a plan,
-	// account or path read from the sign-in.
-	KindCodexPlatform = "codex_platform"
-	KindCodexAgents   = "codex_agents_file"
-	KindCodexManaged  = "codex_managed"
-	KindCodexAccount  = "codex_account"
-	KindCodexToken    = "codex_sign_in_expiring"
-	KindCodexSettings = "codex_settings_changed"
-	KindCodexCheck    = "codex_self_check"
 )
 
 var kindMessages = map[string]string{
@@ -65,19 +81,17 @@ var kindMessages = map[string]string{
 	KindCancelled:      "The request was cancelled.",
 	KindOutputTooLarge: "The assistant returned more output than Hclaro reads.",
 	KindRefusedArgs:    "Hclaro refused to run this command because it is not on the allowlist.",
-	KindCodexPlatform:  "Hclaro runs OpenAI Codex only on macOS for now; here it is copy only. Copy or Download still work.",
-	KindCodexAgents:    "Hclaro does not run OpenAI Codex while AGENTS.md or AGENTS.override.md exists in your Codex folder (~/.codex): Codex would send that file to OpenAI with every message. Move or rename it to send from Hclaro; Copy or Download still work.",
-	KindCodexManaged:   "OpenAI Codex has organization-managed settings on this Mac, or Hclaro could not check for them. They can turn Codex tools back on, so Hclaro does not run it. Copy or Download still work.",
-	KindCodexAccount:   "Hclaro runs OpenAI Codex only when it is signed in with a personal ChatGPT plan (Free, Go, Plus or Pro). Team, Business, Enterprise and Education workspaces, API keys and sign-ins Hclaro cannot read are copy only.",
-	KindCodexToken:     "OpenAI Codex's sign-in expires within 15 minutes, or Hclaro could not tell when it expires. Use Codex once in your terminal to refresh it, then try again.",
-	KindCodexSettings:  "OpenAI Codex's effective settings differ from the ones Hclaro verified (a tool feature or the model list changed). Hclaro does not run it; Copy or Download still work.",
-	KindCodexCheck:     "OpenAI Codex did not pass Hclaro's local security check (no tools offered, every tool call refused). Hclaro does not run it; Copy or Download still work.",
 }
 
 // Message returns the user-facing explanation of a failure kind.
 func Message(kind string) string {
 	if m, ok := kindMessages[kind]; ok {
 		return m
+	}
+	for _, a := range adapters {
+		if m, ok := a.Kinds[kind]; ok {
+			return m
+		}
 	}
 	return kindMessages[KindFailed]
 }
@@ -110,6 +124,11 @@ type ProviderStatus struct {
 	Path    string `json:"path,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message,omitempty"`
+	// Set by Settings from Mode and Reason, so the UI copies no mode or reason string: Send is
+	// headless-eligible, Usable is anything but unsupported, Installed is found on PATH.
+	Send      bool `json:"send"`
+	Usable    bool `json:"usable"`
+	Installed bool `json:"installed"`
 }
 
 // Assistant is one provider: Detect reports its version and mode, Run sends payload on stdin
@@ -135,6 +154,50 @@ type Adapter struct {
 	ParseVersion func(out []byte) (version string, supported bool)
 	// Reply returns the reply text, or a failure kind. Provider text never goes into a kind.
 	Reply func(stdout, stderr []byte, exitOK bool) (reply, kind string)
+
+	// Optional profile parts; nil or empty means none.
+	// Gate refines a headless-eligible status with checks that start no run (Detect and Run).
+	Gate func(ctx context.Context, st ProviderStatus) ProviderStatus
+	// Prepare readies one run of the eligible st: binary, argv, extra environment and cleanup.
+	// Without it a run is RunArgs on st.Path.
+	Prepare func(ctx context.Context, st ProviderStatus) (Prepared, error)
+	// Stop sees every stdout line of a run; true stops it at once as failed.
+	Stop func(line []byte) bool
+	// Argvs, when set, replaces RunArgs in the allowlist: it reports every run-time argv shape
+	// this provider uses (RunArgs is then a template).
+	Argvs func(args []string) bool
+	// Helpers are fixed helper programs (absolute path) and their one allowed argv.
+	Helpers map[string][]string
+	// SameVersion reports whether a conversation saved with one version may continue on another
+	// (default: same major version).
+	SameVersion func(saved, now string) bool
+	// Disclosure is shown when this provider can run headless; Kinds are its own failure kinds.
+	Disclosure string
+	Kinds      map[string]string
+}
+
+// Prepared is one run's binary, argv, extra environment for its private folder and cleanup.
+type Prepared struct {
+	Bin     string
+	Args    []string
+	Env     func(dir string) []string
+	Cleanup func()
+}
+
+// sameVersion applies id's version policy; unknown providers compare major versions.
+func sameVersion(id, saved, now string) bool {
+	if a := adapterOf(id); a != nil && a.SameVersion != nil {
+		return a.SameVersion(saved, now)
+	}
+	return major(now) != "" && major(now) == major(saved)
+}
+
+func major(version string) string {
+	m, _, _ := strings.Cut(strings.TrimPrefix(version, "v"), ".")
+	if _, err := strconv.Atoi(m); err != nil {
+		return ""
+	}
+	return m
 }
 
 // CLI runs an Adapter's executable from PATH or from Path, set only by a CLI flag (OD-AI-3).
@@ -192,6 +255,9 @@ func (c *CLI) Detect(ctx context.Context) ProviderStatus {
 			st.Version, st.Mode = version, ModeHeadless
 		}
 	}
+	if kind == "" && c.Gate != nil {
+		return c.Gate(ctx, st)
+	}
 	if kind != "" {
 		st.Reason, st.Message = kind, Message(kind)
 	}
@@ -201,24 +267,52 @@ func (c *CLI) Detect(ctx context.Context) ProviderStatus {
 	return st
 }
 
-// Run re-detects first, so a provider removed or updated since Settings showed it is refused.
+// Run is the one run pipeline for every provider. It re-detects first (gates included), so a
+// provider removed, updated or no longer passing a gate since Settings showed it is refused;
+// then it prepares the run and starts it once in a fresh private folder.
 func (c *CLI) Run(ctx context.Context, payload []byte) (string, error) {
 	st := c.Detect(ctx)
 	if st.Mode != ModeHeadless {
 		return "", &Failure{Kind: st.Reason}
 	}
+	p := Prepared{Bin: st.Path, Args: c.RunArgs}
+	if c.Prepare != nil {
+		var err error
+		if p, err = c.Prepare(ctx, st); err != nil {
+			return "", err
+		}
+	}
+	if p.Cleanup != nil {
+		defer p.Cleanup()
+	}
+	// The global allowlist accepts every registered provider's shapes; a run must use its own.
+	if own := c.Argvs; (own == nil && !slices.Equal(p.Args, c.RunArgs)) || (own != nil && !own(p.Args)) {
+		return "", &Failure{Kind: KindRefusedArgs}
+	}
+	dir, err := privateDir()
+	if err != nil {
+		return "", &Failure{Kind: KindFailed}
+	}
+	defer os.RemoveAll(dir)
+	env := c.Environ(os.Environ())
+	if p.Env != nil {
+		env = append(env, p.Env(dir)...)
+	}
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = runTimeout
 	}
-	out, errOut, ok, overflow, err := c.exec(ctx, st.Path, c.RunArgs, payload, maxReply, timeout)
+	r, err := runProc(ctx, command{path: p.Bin, args: p.Args, dir: dir, env: env, stdin: payload, limit: maxReply, timeout: timeout, stop: c.Stop})
 	switch {
 	case err != nil:
 		return "", err
-	case overflow:
+	case r.overflow:
 		return "", &Failure{Kind: KindOutputTooLarge}
 	}
-	reply, kind := c.Reply(out, errOut, ok)
+	reply, kind := c.Reply(r.stdout, r.stderr, r.exitOK && !r.stopped)
+	if kind == "" && r.stopped {
+		kind = KindFailed
+	}
 	if kind != "" {
 		return "", &Failure{Kind: kind}
 	}
@@ -232,18 +326,18 @@ func (c *CLI) exec(ctx context.Context, path string, args []string, stdin []byte
 	if !slices.Equal(args, c.VersionArgs) && !slices.Equal(args, c.RunArgs) {
 		return nil, nil, false, false, &Failure{Kind: KindRefusedArgs}
 	}
-	dir, err := os.MkdirTemp("", "hclaro-ai-")
+	dir, err := privateDir()
 	if err != nil {
 		return nil, nil, false, false, &Failure{Kind: KindFailed}
 	}
 	defer os.RemoveAll(dir)
-	r, err := runProc(ctx, proc{path: path, args: args, dir: dir, env: c.Environ(os.Environ()), stdin: stdin, limit: limit, timeout: timeout})
+	r, err := runProc(ctx, command{path: path, args: args, dir: dir, env: c.Environ(os.Environ()), stdin: stdin, limit: limit, timeout: timeout})
 	return r.stdout, r.stderr, r.exitOK, r.overflow, err
 }
 
-// proc is one process start. stop, when set, sees every complete stdout line; returning true
+// command is one process start. stop, when set, sees every complete stdout line; returning true
 // kills the process group at once and the result is marked stopped.
-type proc struct {
+type command struct {
 	path    string
 	args    []string
 	dir     string
@@ -259,18 +353,42 @@ type procResult struct {
 	exitOK, overflow, stopped bool
 }
 
-// allowedArgv is the allowlist every process start passes: the exact argv shapes Hclaro runs.
-// Substituted values (catalog path, self-check URL) are validated in codexArgv.
+// allowedArgv is the allowlist every process start passes: the exact argv shapes the registered
+// providers run. A helper path allows only its one argv. Substituted values (e.g. Codex's
+// catalog path and self-check URL) are validated by the provider's Argvs.
 func allowedArgv(path string, args []string) bool {
-	if path == osascriptPath {
-		return slices.Equal(args, osascriptArgs)
+	for _, a := range adapters {
+		if want, ok := a.Helpers[path]; ok {
+			return slices.Equal(args, want)
+		}
 	}
-	return slices.Equal(args, Claude.VersionArgs) || slices.Equal(args, Claude.RunArgs) ||
-		slices.Equal(args, codexAdapter.VersionArgs) || codexArgv(args)
+	for _, a := range adapters {
+		// A provider with Argvs has a RunArgs template (e.g. a placeholder to fill), so only Argvs
+		// may accept its run shapes.
+		if slices.Equal(args, a.VersionArgs) || (a.Argvs == nil && slices.Equal(args, a.RunArgs)) || (a.Argvs != nil && a.Argvs(args)) {
+			return true
+		}
+	}
+	return false
+}
+
+// privateDir is a fresh empty folder with symbolic links resolved (so a Git ceiling at its
+// parent matches what the child sees). Every provider process runs in one.
+func privateDir() (string, error) {
+	dir, err := os.MkdirTemp("", "hclaro-ai-")
+	if err != nil {
+		return "", err
+	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		os.RemoveAll(dir)
+		return "", err
+	}
+	return real, nil
 }
 
 // runProc starts one allowlisted process; anything else is refused before exec.
-func runProc(ctx context.Context, p proc) (procResult, error) {
+func runProc(ctx context.Context, p command) (procResult, error) {
 	if !allowedArgv(p.path, p.args) {
 		return procResult{}, &Failure{Kind: KindRefusedArgs}
 	}
@@ -283,8 +401,8 @@ func runProc(ctx context.Context, p proc) (procResult, error) {
 	cmd.Env = p.env
 	cmd.Stdin = bytes.NewReader(p.stdin)
 	// Own process group: cancel, timeout and stop kill the assistant and anything it started.
-	prepareGroup(cmd)
-	cmd.Cancel = func() error { return killGroup(cmd.Process) }
+	proc.PrepareGroup(cmd)
+	cmd.Cancel = func() error { return proc.KillGroup(cmd.Process) }
 	cmd.WaitDelay = 5 * time.Second
 	out, errOut := &bounded.Buffer{Limit: p.limit}, &bounded.Buffer{Limit: maxStderr}
 	watch := &lineWatch{out: out, stop: p.stop, hit: stopRun, max: p.limit}
@@ -355,100 +473,6 @@ func (c *CLI) Environ(environ []string) []string {
 		}
 	}
 	return append(out, "TERM=dumb")
-}
-
-// Claude Code, headless-eligible at 2.1.326 (FEASIBILITY.md, 2026-11-17). The argv is the
-// probe argv without --max-budget-usd and with --restricted (security review 2026-11-17). The
-// CLI checks the budget only after a turn, so it billed requests and withheld their replies;
-// Anthropic bills usage directly and Hclaro imposes no cost limit. --safe-mode alone still loads the
-// user's installed plugins and user settings files (permission rules, env, apiKeyHelper);
-// --restricted ignores those files and refuses bypassPermissions. --tools "" leaves no
-// built-in tool and --strict-mcp-config without --mcp-config no MCP server (verified from the
-// CLI's own init record: tools [] and mcp_servers []).
-var Claude = Adapter{
-	ID: "claude", Name: "Claude Code", Command: "claude",
-	VersionArgs: []string{"--version"},
-	RunArgs: []string{"-p", "--restricted", "--safe-mode", "--tools", "", "--strict-mcp-config", "--permission-mode", "dontAsk",
-		"--permission-prompts", "none", "--no-session-persistence", "--output-format", "json"},
-	AuthEnv:      []string{"ANTHROPIC_API_KEY"},
-	ParseVersion: claudeVersion,
-	Reply:        claudeReply,
-}
-
-var claudeVersionRe = regexp.MustCompile(`^([0-9]{1,4})\.([0-9]{1,4})\.([0-9]{1,6}) \(Claude Code\)$`)
-
-// claudeVersion accepts 2.1.x from the probed 2.1.326 on. shortcut: patch releases are
-// trusted to keep the probed flags; re-run the probe and widen or pin this on a minor bump.
-func claudeVersion(out []byte) (string, bool) {
-	m := claudeVersionRe.FindSubmatch(bytes.TrimSpace(out))
-	if m == nil {
-		return "", false
-	}
-	patch, _ := strconv.Atoi(string(m[3]))
-	return string(m[1]) + "." + string(m[2]) + "." + string(m[3]), string(m[1]) == "2" && string(m[2]) == "1" && patch >= 326
-}
-
-// claudeReply reads the single JSON result object. Failure is is_error or a non-zero exit;
-// subtype stays "success" even when not logged in, so it is never used.
-func claudeReply(stdout, stderr []byte, exitOK bool) (string, string) {
-	var r struct {
-		IsError *bool   `json:"is_error"`
-		Result  *string `json:"result"`
-	}
-	if json.Unmarshal(bytes.TrimSpace(stdout), &r) != nil || r.IsError == nil {
-		if !exitOK {
-			return "", classify(string(stderr))
-		}
-		return "", KindMalformed
-	}
-	if !exitOK || *r.IsError {
-		text := string(stderr)
-		if r.Result != nil {
-			text += *r.Result
-		}
-		return "", classify(text)
-	}
-	if r.Result == nil {
-		return "", KindMalformed
-	}
-	return *r.Result, ""
-}
-
-// OpenAI Codex 0.166.0, runnable only through CodexCLI (codex.go), which adds the gates and
-// the self-check of tasks/AI/CODEX-INVESTIGATION.md §6–7. The argv is the verified hardened
-// argv: --ignore-user-config and --ignore-rules drop user config and rules; the --disable list
-// and -c settings turn off every tool-capable feature found in 0.166.0; the model catalog
-// (codex_catalog.json, gpt-5.6-luna with shell, apply_patch, code mode, multi-agent and tool
-// search removed) leaves no tool; --strict-config fails on a misspelt key; project docs, skill
-// instructions, environment context and analytics are off; credentials come only from
-// CODEX_HOME/auth.json, the file the gates read. codexCatalogArg is replaced by the catalog path.
-var codexAdapter = Adapter{
-	ID: "codex", Name: "OpenAI Codex", Command: "codex",
-	VersionArgs: []string{"--version"},
-	RunArgs: []string{"exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules",
-		"--disable", "shell_tool", "--disable", "unified_exec", "--disable", "apps", "--disable", "plugins", "--disable", "browser_use",
-		"--disable", "computer_use", "--disable", "view_image", "--disable", "hooks", "-c", "web_search=disabled", "--json",
-		"-m", codexModel, "-c", "model_catalog_json=" + codexCatalogArg, "-c", "tools.experimental_request_user_input.enabled=false",
-		"--disable", "multi_agent", "--disable", "multi_agent_v2", "--disable", "sleep_tool", "--disable", "goals",
-		"--disable", "code_mode_host", "--disable", "image_generation", "--disable", "tool_suggest", "--disable", "skill_search",
-		"--strict-config", "-c", "project_doc_max_bytes=0", "-c", "skills.include_instructions=false",
-		"-c", "include_environment_context=false", "-c", "analytics.enabled=false", "--disable", "shell_snapshot",
-		"-c", `cli_auth_credentials_store="file"`, "-"},
-	ParseVersion: codexVersion,
-	Reply:        codexReply,
-}
-
-var codexVersionRe = regexp.MustCompile(`^codex-cli ([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6})$`)
-
-// codexVersion accepts exactly the verified 0.166.0 (OD-CODEX-2): any other version needs a
-// new assessment.
-func codexVersion(out []byte) (string, bool) {
-	first, _, _ := bytes.Cut(bytes.TrimSpace(out), []byte("\n"))
-	m := codexVersionRe.FindSubmatch(bytes.TrimSpace(first))
-	if m == nil {
-		return "", false
-	}
-	return string(m[1]), string(m[1]) == codexVerified
 }
 
 func classify(text string) string {

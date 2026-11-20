@@ -61,7 +61,7 @@ func proposing(t *testing.T, root, reply string) (*Session, string, RunScope, *r
 	t.Helper()
 	s := NewSession(false, &proposer{reply: reply})
 	t.Cleanup(s.Close)
-	s.SetEnabled(true)
+	enable(t, s)
 	if err := s.Accept(DisclosureVersion); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func proposing(t *testing.T, root, reply string) (*Session, string, RunScope, *r
 	rec := &recorded{}
 	s.RecordChange = rec.add
 	scope := RunScope{Project: "net", Root: root, Workspace: "default", ProjectKey: ProjectKey(root)}
-	c, err := s.StartChat("launch", "good", DisclosureVersion, scope, "propose a change", nil)
+	c, err := s.StartChat("launch", DisclosureVersion, scope, "propose a change", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

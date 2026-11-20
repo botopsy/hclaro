@@ -53,7 +53,7 @@ function AssistSetting() {
      : <>
       <p><label>Assistant <select aria-label="Assistant" value={s.defaultProvider ?? ''} onChange={e => void change({ defaultProvider: e.target.value })}>
        {!s.defaultProvider && <option value="">None installed</option>}
-       {providers.map(p => <option key={p.id} value={p.id} disabled={p.mode === 'unsupported'}>{p.name}{p.mode === 'unsupported' ? (p.reason === 'cli_missing' ? ' (not installed)' : ' (not usable)') : p.mode === 'handoff-only' ? ' (copy only)' : ''}</option>)}
+       {providers.map(p => <option key={p.id} value={p.id} disabled={!p.usable}>{p.name}{!p.usable ? (p.installed ? ' (not usable)' : ' (not installed)') : !p.send ? ' (copy only)' : ''}</option>)}
       </select></label></p>
       <details className="muted"><summary>Details</summary><ul className="assist-providers" aria-label="Assistants">{providers.map(p => <ProviderRow key={p.id} p={p} />)}</ul></details>
      </>)}
@@ -63,7 +63,7 @@ function AssistSetting() {
 // ProviderRow is one assistant's status, version, read-only path (OD-AI-3) and, when Hclaro
 // cannot run it, the reason.
 function ProviderRow({ p }: { p: AssistProvider }) {
-  const status = p.mode === 'headless-eligible' ? 'Send and copy' : p.mode === 'handoff-only' ? 'Copy only' : p.reason === 'cli_missing' ? 'Not installed' : 'Not usable';
+  const status = p.send ? 'Send and copy' : p.usable ? 'Copy only' : p.installed ? 'Not usable' : 'Not installed';
   return <li><strong>{p.name}</strong> · {status}{p.version && <> · <span className="mono">{p.version}</span></>}{p.path && <> · <code title="Set with a command-line flag when starting Hclaro; it cannot be changed here.">{p.path}</code></>}
-   {p.mode !== 'headless-eligible' && p.message && p.reason !== 'cli_missing' && <> · {p.message}</>}</li>;
+   {!p.send && p.message && p.installed && <> · {p.message}</>}</li>;
 }
