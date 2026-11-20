@@ -5,7 +5,7 @@ import type { PlanAction, PlanKind, ScopeView } from './plans';
 export type GraphNodeKind = 'resource' | 'data' | 'module' | 'provider' | 'variable' | 'local' | 'output' | 'check' | 'ephemeral' | 'unknown';
 // exact: mapped to recorded instances by address; configuration: a resource with no recorded
 // instance; internal: not a resource; unknown: never mapped.
-export type GraphConfidence = 'exact' | 'configuration' | 'internal' | 'unknown';
+type GraphConfidence = 'exact' | 'configuration' | 'internal' | 'unknown';
 export type PlannedChange = {
   changeId: string;
   address: string;
@@ -34,7 +34,7 @@ export type GraphEdge = {
   edgeKind: 'depends_on';
   confidence: 'declared' | 'derived';
 };
-export type GraphSummary = {
+type GraphSummary = {
   nodes: number;
   edges: number;
   resources: number;
@@ -78,7 +78,7 @@ export type DependencyGraph = {
     unmapped: PlannedChange[];
   };
 };
-export type GraphReach = { node: string; distance: number };
+type GraphReach = { node: string; distance: number };
 export type GraphImpact = {
   node: string;
   directDependencies: string[];

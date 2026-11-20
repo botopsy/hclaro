@@ -1,11 +1,11 @@
 import type { ExecutionContext } from './profiles';
 import type { Operation } from './plans';
 // Workspace Hub
-export type Diagnostic = {
+type Diagnostic = {
   code: string;
   message: string;
 };
-export type Inspection = {
+type Inspection = {
   engine?: string;
   version?: string;
   workspaces: string[];
@@ -38,7 +38,7 @@ export type Project = {
 };
 export type WorkspaceAction = 'new' | 'select' | 'delete';
 // Which workspace commands the project's backend allows in Hclaro.
-export type WorkspaceSupport = {
+type WorkspaceSupport = {
   change: boolean;
   reason?: string;
   delete: boolean;

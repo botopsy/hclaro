@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Boxes, CircleAlert, CircleX, Copy, FileDiff, History, List, LoaderCircle, Maximize, Play, Repeat, Search, ShieldCheck, Target, TriangleAlert, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react';
-import { api, ApiError, post } from '../api';
+import { api, ApiError, send } from '../api';
 import type { DependencyGraph, GraphImpact, GraphNode, GraphOptions, Operation, PlannedChange, PlanSummary } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
@@ -14,6 +14,7 @@ import { activeOperation, operationsQuery } from '../lib/queries';
 import { internalKinds, layout, moduleAncestors, NODE_H, NODE_W, nodeForAddress, project, typePrefix, type Point, type Projection, type VisEdge, type VisNode } from './layout';
 import { clock, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
+import { ErrorState } from '../components/ErrorState';
 
 const kindLabels: Record<string, string> = {
   resource: 'Resource',
@@ -94,7 +95,7 @@ export function GraphView({
     try {
       // A Hub workspace's graph is bound to the scope its options described; it takes no profile.
       const body = scoped ? { acknowledgeEngineRun: true, contextFingerprint: options.data?.contextFingerprint ?? '' } : { acknowledgeEngineRun: true, ...(contextFingerprint ? { profileId, contextFingerprint } : {}) };
-      const started = await post<{ operation: Operation; graph: DependencyGraph }>(scopedPath(scope, 'graphs'), body);
+      const started = await send<{ operation: Operation; graph: DependencyGraph }>('POST', scopedPath(scope, 'graphs'), body);
       setPreflight(false);
       setGraphId(started.graph.id);
       await client.invalidateQueries({ queryKey: ['operations'] });
@@ -110,7 +111,7 @@ export function GraphView({
   const latest = graphs.data?.graphs[0];
   const shown = graphs.data?.graphs.find(g => g.id === shownId);
   const planChoices = (plans.data?.plans ?? []).filter(p => !shown || p.workspace === shown.workspace);
-  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{options.error.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing ran.</span></div>;
+  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <ErrorState icon={TriangleAlert} iconSize={26} title="Open this workspace again" message={options.error.message} retry={reopen} retryLabel="Open again" note="Nothing ran." />;
   return <div className="plans graph-page">
    <div className="plans-toolbar">
     <Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canGenerate} title={running && running.kind !== 'graph' ? 'Another operation is running.' : undefined}><Waypoints size={14} />Generate graph</Button>
@@ -124,7 +125,7 @@ export function GraphView({
    {workspaceStatus === 'loading' && !running ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace…</div> : options.data && !options.data.canGenerate && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Graphs are unavailable here.</strong> {options.data.reason}</span></div>}
    {running && running.kind === 'graph' && <OperationLog key={running.id} scope={scope} operation={running} onFinished={finished} />}
    {running && running.kind !== 'graph' && <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Another operation is running in this project. Generating a graph is available when it finishes.</div>}
-   {graph.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading graph…</p></div> : graph.error ? <div className="empty-state error-state" role="alert"><p>{graph.error.message}</p>{planId && <Button variant="outline" size="small" onClick={() => setPlanId('')}>Show dependencies without the plan</Button>}</div> : graph.data && graph.data.status !== 'running' ? <GraphResult key={`${graph.data.id}:${planId}`} scope={scope} graph={graph.data} planId={planId} focus={focus} regenerate={() => setPreflight(true)} canGenerate={canGenerate} openResource={openResource} openPlan={openPlan} copy={copy} /> : !running && !shownId && <div className="empty-state"><Waypoints size={30} /><h2>No dependency graph yet</h2><p>Generate a graph to explore how resources, modules and data sources depend on each other. It runs <code>graph</code> only when you ask.</p>{options.data?.canGenerate && <Button variant="outline" onClick={() => setPreflight(true)}><Waypoints size={14} />Generate graph</Button>}</div>}
+   {graph.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading graph…</p></div> : graph.error ? <ErrorState inline message={graph.error.message}>{planId && <Button variant="outline" size="small" onClick={() => setPlanId('')}>Show dependencies without the plan</Button>}</ErrorState> : graph.data && graph.data.status !== 'running' ? <GraphResult key={`${graph.data.id}:${planId}`} scope={scope} graph={graph.data} planId={planId} focus={focus} regenerate={() => setPreflight(true)} canGenerate={canGenerate} openResource={openResource} openPlan={openPlan} copy={copy} /> : !running && !shownId && <div className="empty-state"><Waypoints size={30} /><h2>No dependency graph yet</h2><p>Generate a graph to explore how resources, modules and data sources depend on each other. It runs <code>graph</code> only when you ask.</p>{options.data?.canGenerate && <Button variant="outline" onClick={() => setPreflight(true)}><Waypoints size={14} />Generate graph</Button>}</div>}
    {preflight && options.data && <GraphPreflight options={options.data} project={projectName} busy={starting} error={startError} onConfirm={fp => void start(fp)} onClose={() => { setPreflight(false); setStartError(''); }} />}
   </div>;
 }

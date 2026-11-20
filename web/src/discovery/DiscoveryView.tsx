@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, BadgeCheck, CircleCheck, CircleDashed, CircleHelp, CircleSlash, CircleX, Cloud, CloudCog, Copy, History, Import, LoaderCircle, Play, Radar, Search, ShieldCheck, Square, TriangleAlert, X, type LucideIcon } from 'lucide-react';
-import { api, ApiError, post } from '../api';
+import { api, ApiError, send } from '../api';
 import type { CloudIdentity, CloudResourceCandidate, DiscoveryMatchStatus, DiscoveryOptions, DiscoveryPrefill, DiscoveryScan, DiscoveryScope } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
@@ -10,6 +10,7 @@ import { ScopeSummary } from '../plans/PreflightDialog';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { clock } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
+import { ErrorState } from '../components/ErrorState';
 
 // Labels are distinguished by icon and text, never by color alone.
 const labels: Record<DiscoveryMatchStatus, { label: string; icon: LucideIcon; tone: string; hint: string }> = {
@@ -20,7 +21,7 @@ const labels: Record<DiscoveryMatchStatus, { label: string; icon: LucideIcon; to
 };
 const order: DiscoveryMatchStatus[] = ['possibly_untracked', 'unknown', 'already_tracked', 'unresolved'];
 
-export function MatchBadge({ value }: { value: DiscoveryMatchStatus }) {
+function MatchBadge({ value }: { value: DiscoveryMatchStatus }) {
   const { label, icon: Icon, tone, hint } = labels[value] ?? labels.unknown;
   return <span className={`action-badge tone-${tone}`} title={hint}><Icon size={12} aria-hidden="true" />{label}</span>;
 }
@@ -92,7 +93,7 @@ export function DiscoveryView({
     setVerifying(true);
     setVerifyError('');
     try {
-      await post<CloudIdentity>(at(scope, 'identity'), bound(o, profileId, scope));
+      await send<CloudIdentity>('POST', at(scope, 'identity'), bound(o, profileId, scope));
       await options.refetch();
     } catch (e) {
       setVerifyError(errorMessage(e, 'The AWS context could not be verified.'));
@@ -102,14 +103,14 @@ export function DiscoveryView({
   }
   async function cancel(id: string) {
     try {
-      await post(at(scope, `scans/${id}/cancel`), {});
+      await send('POST', at(scope, `scans/${id}/cancel`), {});
     } finally {
       void scan.refetch();
     }
   }
-  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{options.error.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing ran.</span></div>;
+  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <ErrorState icon={TriangleAlert} iconSize={26} title="Open this workspace again" message={options.error.message} retry={reopen} retryLabel="Open again" note="Nothing ran." />;
   if (options.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading cloud discovery…</p></div>;
-  if (options.error || !o) return <div className="empty-state error-state" role="alert"><p>{options.error?.message || 'Cloud discovery is unavailable.'}</p></div>;
+  if (options.error || !o) return <ErrorState inline message={options.error?.message || 'Cloud discovery is unavailable.'} />;
   return <div className="plans discovery">
    <p className="info-line drift-explainer"><ShieldCheck size={13} />Cloud discovery lists existing AWS objects of {o.types.length} supported types only ({o.types.map((t, i) => <Fragment key={t.type}>{i ? ', ' : ''}<code>{t.type}</code></Fragment>)}) in the account your credentials belong to, at most {o.limits.maxRegions} regions, {o.limits.maxPerType.toLocaleString()} objects per type and region and {o.limits.maxObjects.toLocaleString()} objects per scan. Other AWS types, Azure and Google Cloud are not discovered. It compares them with <strong>this workspace’s recorded state</strong>. It never creates, changes or deletes cloud objects, and never writes state. Nothing is contacted until you ask.</p>
    {!o.canScan && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Cloud discovery is unavailable here.</strong> {o.reason}</span></div>}
@@ -119,7 +120,7 @@ export function DiscoveryView({
     <label className="history-select"><History size={14} /><span className="sr-only">Scan history</span><select aria-label="Scan history" value={shownId} onChange={e => setScanId(e.target.value)}>{scans.data.scans.map((s, i) => <option key={s.id} value={s.id}>{i === 0 ? 'Latest · ' : ''}{clock(s.startedAt)} · {s.identity.account} · {s.scope.regions.join(', ')} · {s.status}</option>)}</select></label>
     {running && scan.data && <Button variant="outline" size="small" onClick={() => void cancel(scan.data!.id)}><Square size={12} />Cancel scan</Button>}
    </div>}
-   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <div className="empty-state error-state" role="alert"><p>{scan.error.message}</p></div> : scan.data ? <ScanResult key={scan.data.id} scope={scope} scan={scan.data} options={o} profileId={profileId} onPrepared={onPrepared} openResource={openResource} copy={copy} /> : o.canScan && <div className="empty-state"><Radar size={30} /><h2>No discovery scan yet</h2><p>Verify the AWS context, then choose regions and resource types to scan. Each scan calls AWS list APIs with your local credentials, only when you ask.</p></div>}
+   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <ErrorState inline message={scan.error.message} /> : scan.data ? <ScanResult key={scan.data.id} scope={scope} scan={scan.data} options={o} profileId={profileId} onPrepared={onPrepared} openResource={openResource} copy={copy} /> : o.canScan && <div className="empty-state"><Radar size={30} /><h2>No discovery scan yet</h2><p>Verify the AWS context, then choose regions and resource types to scan. Each scan calls AWS list APIs with your local credentials, only when you ask.</p></div>}
    {preview && identity && <ScanPreview target={scope} options={o} identity={identity} profileId={profileId} onClose={() => setPreview(false)} onStarted={s => {
      setPreview(false);
      setScanId(s.id);
@@ -178,7 +179,7 @@ function ScanPreview({ target, options, identity, profileId, onClose, onStarted 
     setBusy(true);
     setError('');
     try {
-      onStarted(await post<DiscoveryScan>(at(target, 'scans'), { identityId: identity.id, scope, acknowledgeApiCalls: true, ...bound(options, profileId, target) }));
+      onStarted(await send<DiscoveryScan>('POST', at(target, 'scans'), { identityId: identity.id, scope, acknowledgeApiCalls: true, ...bound(options, profileId, target) }));
     } catch (e) {
       setError(errorMessage(e, 'The scan could not be started.'));
     } finally {
@@ -245,7 +246,7 @@ function ScanResult({ scope, scan, options, profileId, onPrepared, openResource,
     setPreparing(c.id);
     setError('');
     try {
-      onPrepared(await post<DiscoveryPrefill>(at(scope, `scans/${scan.id}/candidates/${c.id}/prepare`), { ...bound(options, profileId, scope), acknowledgeUnknownMapping }));
+      onPrepared(await send<DiscoveryPrefill>('POST', at(scope, `scans/${scan.id}/candidates/${c.id}/prepare`), { ...bound(options, profileId, scope), acknowledgeUnknownMapping }));
     } catch (e) {
       setError(errorMessage(e, 'The import could not be prepared.'));
     } finally {

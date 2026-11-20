@@ -11,7 +11,7 @@ import { errorMessage } from '../lib/errorMessage';
 
 // The names Hclaro passes to a workspace command: never starting with "-", so a name can
 // never be read as a flag. The server applies the same rule.
-export const workspaceNamePattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,89}$/;
+const workspaceNamePattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,89}$/;
 
 const titles: Record<WorkspaceAction, (name: string) => string> = {
   new: () => 'Create a workspace',

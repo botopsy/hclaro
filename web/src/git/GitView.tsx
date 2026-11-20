@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CircleHelp, FileCode2, FileLock2, FolderGit2, GitBranch, GitCommitHorizontal, LoaderCircle, LockKeyhole, RefreshCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
-import { api, post } from '../api';
+import { api, send } from '../api';
 import { EditorButtons } from './editor';
 import type { EditorName, GitContext, GitDiff, GitFileStatus } from '../types';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { errorMessage } from '../lib/errorMessage';
+import { ErrorState } from '../components/ErrorState';
 
 // gitPrefix is the API prefix of a project's Git routes: the launch project's are at the
 // API root, a Hub project's under projects/<id>/.
@@ -27,7 +28,7 @@ export function shortCommit(commit?: string) {
 }
 
 // The HEAD badge reads .git files on the server; it runs no Git command.
-export function useGitHead(prefix: string | undefined) {
+function useGitHead(prefix: string | undefined) {
   return useQuery({
     queryKey: ['git-head', prefix],
     queryFn: () => api<GitContext>(`${prefix}git/head`),
@@ -39,7 +40,7 @@ export function GitBadge({ prefix, onOpen }: { prefix: string | undefined; onOpe
   const head = useGitHead(prefix);
   // Shares the Git view's status query: the badge shows clean or dirty once it has run, and
   // never runs Git itself.
-  const status = useQuery({ queryKey: ['git-status', prefix], queryFn: () => post<GitContext>(`${prefix}git/status`, {}), enabled: false, staleTime: Infinity });
+  const status = useQuery({ queryKey: ['git-status', prefix], queryFn: () => send<GitContext>('POST', `${prefix}git/status`, {}), enabled: false, staleTime: Infinity });
   const h = head.data?.head;
   if (!head.data) return null;
   if (head.data.state === 'not_repository') return <div className="context-item muted" title="This project is not inside a Git repository.">No Git</div>;
@@ -55,7 +56,7 @@ export function GitView({ projectId, editor, notify }: { projectId?: string; edi
   // Opening this view is the explicit request: it runs one read-only `git status`.
   const status = useQuery({
     queryKey: ['git-status', prefix],
-    queryFn: () => post<GitContext>(`${prefix}git/status`, {}),
+    queryFn: () => send<GitContext>('POST', `${prefix}git/status`, {}),
     retry: false,
     staleTime: Infinity
   });
@@ -63,7 +64,7 @@ export function GitView({ projectId, editor, notify }: { projectId?: string; edi
   const file = c?.files.find(f => f.id === selected);
   const diff = useQuery({
     queryKey: ['git-diff', prefix, selected, c?.checkedAt],
-    queryFn: () => post<GitDiff>(`${prefix}git/diff`, { fileId: selected }),
+    queryFn: () => send<GitDiff>('POST', `${prefix}git/diff`, { fileId: selected }),
     enabled: !!file?.diffable,
     retry: false
   });
@@ -72,7 +73,7 @@ export function GitView({ projectId, editor, notify }: { projectId?: string; edi
     void status.refetch();
   };
   if (status.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Reading the Git working tree with <code>git status</code>. Nothing is changed.</p></div>;
-  if (status.error) return <div className="empty-state error-state" role="alert"><CircleHelp size={28} /><h2>Git context unavailable</h2><p>{errorMessage(status.error)}</p><Button variant="outline" onClick={refresh}>Try again</Button></div>;
+  if (status.error) return <ErrorState inline icon={CircleHelp} title="Git context unavailable" message={errorMessage(status.error)} retry={refresh} retryLabel="Try again" />;
   if (!c) return null;
   if (c.state !== 'repository') return <div className="empty-state" role="status"><FolderGit2 size={28} /><h2>{c.state === 'not_repository' ? 'Not a Git repository' : 'Git context unavailable'}</h2><p>{c.message}</p>{c.state !== 'not_repository' && <Button variant="outline" onClick={refresh}><RefreshCcw size={13} />Read again</Button>}</div>;
   const h = c.head!;

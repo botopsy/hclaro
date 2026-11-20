@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, Command, Database, ExternalLink, Folder, FolderTree, Layers3, LoaderCircle, LockKeyhole, Menu, Moon, Network, Search, ShieldCheck, SlidersHorizontal, Sun, X } from 'lucide-react';
-import { ApiError, api, openInNewTab, post } from './api';
+import { ApiError, api, openInNewTab, send } from './api';
 import type { ReplaceTarget, Resource, ResourcePage } from './types';
 import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
 import { HubView, ProjectView } from './hub/HubView';
@@ -27,7 +27,7 @@ import { ConfirmSwitch } from './navigation/ConfirmSwitch';
 import type { DiscoveryPrefill } from './types';
 import { useWorkbenchContext } from './workbench/useWorkbenchContext';
 import { useMedia, usePreferences } from './workbench/preferences';
-import { ErrorState } from './workbench/ErrorState';
+import { ErrorState } from './components/ErrorState';
 import { Inspector, ModuleTree, ResourceRow } from './workbench/Explorer';
 import { Overview } from './workbench/Overview';
 import { SettingsPanel } from './workbench/SettingsPanel';
@@ -214,7 +214,7 @@ function Workbench({
   async function rereadLaunch() {
     setRereading(true);
     try {
-      await post('workspace/reload', {});
+      await send('POST', 'workspace/reload', {});
       await workspace.refetch();
     } catch (e) {
       setNotice(errorMessage(e, 'Unable to read the project again.'));

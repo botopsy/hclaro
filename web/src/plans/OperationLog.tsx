@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CircleStop, LoaderCircle, Terminal } from 'lucide-react';
-import { post, streamEvents } from '../api';
+import { send, streamEvents } from '../api';
 import { operationActive, type Operation, type OperationEvent } from '../types';
 import { Button } from '../components/ui/button';
 import { launchScope, scopedPath, type PlanScope } from '../lib/scope';
@@ -72,7 +72,7 @@ export function OperationLog({
   async function cancel() {
     setCancelling(true);
     try {
-      setOperation(await post<Operation>(`${route}/cancel`, {}));
+      setOperation(await send<Operation>('POST', `${route}/cancel`, {}));
     } catch (e) {
       setError(errorMessage(e, 'Cancellation failed.'));
       setCancelling(false);

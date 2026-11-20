@@ -2,7 +2,7 @@ import { Ban, BookOpen, CircleHelp, Equal, Minus, Pencil, Plus, RefreshCw, Unlin
 import type { PlanAction } from '../types';
 
 // Actions are distinguished by icon and text, never by color alone.
-export const actionMeta: Record<PlanAction, { label: string; icon: LucideIcon; tone: string }> = {
+const actionMeta: Record<PlanAction, { label: string; icon: LucideIcon; tone: string }> = {
   create: { label: 'Create', icon: Plus, tone: 'create' },
   update: { label: 'Update', icon: Pencil, tone: 'update' },
   replace: { label: 'Replace', icon: RefreshCw, tone: 'destroy' },

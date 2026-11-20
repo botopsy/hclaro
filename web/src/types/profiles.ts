@@ -22,13 +22,13 @@ export type ExecutionProfile = {
   default: boolean;
 };
 export type ProfileInput = Pick<ExecutionProfile, 'name' | 'engine' | 'workspace' | 'varFiles' | 'parallelism' | 'lockTimeoutSeconds' | 'awsProfile' | 'awsRegion' | 'awsAuth' | 'awsExpectedAccount' | 'awsExpectedRole' | 'envNames'>;
-export type AWSAuthMethod = 'aws-cli' | 'aws-vault';
+type AWSAuthMethod = 'aws-cli' | 'aws-vault';
 // AWS authentication state of one execution profile (M20). Names, the STS account and ARN,
 // timestamps and codes only: never credentials, sign-in URLs, codes or CLI output.
 export type AuthState = 'not_configured' | 'tool_missing' | 'not_checked' | 'checking' | 'verified' | 'auth_required' | 'access_denied_or_error' | 'identity_mismatch' | 'unknown';
-export type AuthTool = { available: boolean; version?: string; supported: boolean; message?: string };
-export type AuthTools = { aws: AuthTool; awsVault: AuthTool; ssoLogin: boolean; login: boolean; loginMessage?: string; detectedAt: string };
-export type AuthLogin = { id: string; mode: 'sso' | 'login'; state: 'running' | 'completed' | 'failed' | 'cancelled' | 'timed_out'; code?: string; message: string; startedAt: string; finishedAt?: string };
+type AuthTool = { available: boolean; version?: string; supported: boolean; message?: string };
+type AuthTools = { aws: AuthTool; awsVault: AuthTool; ssoLogin: boolean; login: boolean; loginMessage?: string; detectedAt: string };
+type AuthLogin = { id: string; mode: 'sso' | 'login'; state: 'running' | 'completed' | 'failed' | 'cancelled' | 'timed_out'; code?: string; message: string; startedAt: string; finishedAt?: string };
 export type AuthStatus = {
   projectId: string;
   profileId: string;
@@ -66,12 +66,12 @@ export type VarFile = {
   modifiedAt: string;
   linked: boolean;
 };
-export type ContextIssue = {
+type ContextIssue = {
   code: string;
   message: string;
 };
 // A profile resolved at one revision, as the server will use it.
-export type ResolvedContext = {
+type ResolvedContext = {
   projectId: string;
   profileId?: string;
   profileName?: string;

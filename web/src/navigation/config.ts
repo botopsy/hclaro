@@ -25,11 +25,11 @@ export const groupLabels: Record<NavGroup, string | undefined> = {
 //              applies, drift scans and graphs run in that workspace only);
 // - global:  a page of its own, independent of the open project;
 // - app:     application preferences, always available.
-export type NavScope = 'project' | 'launch' | 'execution' | 'global' | 'app';
+type NavScope = 'project' | 'launch' | 'execution' | 'global' | 'app';
 
 // The page table: one row per view. Adding a page adds a row here and its component in App.
 // segment: the view's URL segment in a Hub workspace; badge: the safety note in its heading.
-export type Page = { segment?: string; title: string; description: string; badge: string; scope: NavScope };
+type Page = { segment?: string; title: string; description: string; badge: string; scope: NavScope };
 const confirm = 'Confirm before apply';
 export const pages: Record<View, Page> = {
   Overview: { segment: 'overview', title: 'Workspace overview', description: 'The shape of your infrastructure, at a glance.', badge: 'Read-only', scope: 'project' },
@@ -59,7 +59,7 @@ export const globalPages = {
   history: { path: '/history', eyebrow: 'ON THIS MACHINE', title: 'Operation history', description: 'What ran, when, against which workspace, and what each reviewed plan proposed. Redacted metadata only.', badge: 'Never re-runs' }
 } as const;
 
-export type NavTarget = {
+type NavTarget = {
   kind: 'view';
   view: View;
   // Child views that keep this item active (for example the Import & discovery tabs).
@@ -69,7 +69,7 @@ export type NavTarget = {
   route: 'compare' | 'history';
 };
 
-export type NavBadge = 'resources' | 'operations';
+type NavBadge = 'resources' | 'operations';
 
 export type NavItem = {
   id: string;
@@ -100,7 +100,7 @@ export const navItems: readonly NavItem[] = [
 ];
 
 // Items shown only while AI assistance is on for this session (AI-01.09): hidden, not disabled.
-export const aiNavItems: readonly NavItem[] = [
+const aiNavItems: readonly NavItem[] = [
   { id: 'assistant', label: 'AI Assistant', icon: Sparkles, group: 'analyze', target: { kind: 'view', view: 'Assistant' }, description: 'Ask an AI assistant, with or without previewed project context' }
 ];
 
@@ -129,7 +129,7 @@ export type NavContext = {
   ai?: boolean;
 };
 
-export type NavState = {
+type NavState = {
   enabled: boolean;
   active: boolean;
   // Why an item is unavailable, or what it does when that is not obvious.

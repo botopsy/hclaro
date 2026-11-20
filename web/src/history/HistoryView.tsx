@@ -12,6 +12,7 @@ import { actionOrder } from '../plans/labels';
 import { dayTime, duration, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
 import { useDebounced } from '../lib/useDebounced';
+import { ErrorState } from '../components/ErrorState';
 
 const PAGE = 50;
 const kinds: Record<HistoryKind, string> = {
@@ -156,7 +157,7 @@ export function HistoryView({ copy }: { copy: (value: string, label: string) => 
     <span className="toolbar-note">Exports are redacted and leave out log lines.</span>
    </div>
    {error && <p className="dialog-error" role="alert">{error}</p>}
-   {list.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading history…</p></div> : list.error ? <div className="empty-state error-state" role="alert"><p>{list.error.message}</p><Button variant="outline" size="small" onClick={() => void list.refetch()}>Retry</Button></div> : !data!.stored ? <div className="empty-state"><History size={30} /><h2>No operations recorded yet</h2><p>{data!.status === 'ready' ? 'Plans, applies, drift scans, graphs, initializations, workspace commands and project tools you run appear here, also after Hclaro restarts. Only redacted metadata is kept: no plan files, state, variable values or credentials.' : 'Operation history is not being recorded in this session.'}</p></div> : !data!.total ? <div className="empty-state"><Search size={26} /><h2>No matching operations</h2><p>Change or reset the filters.</p></div> : <>
+   {list.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading history…</p></div> : list.error ? <ErrorState inline message={list.error.message}><Button variant="outline" size="small" onClick={() => void list.refetch()}>Retry</Button></ErrorState> : !data!.stored ? <div className="empty-state"><History size={30} /><h2>No operations recorded yet</h2><p>{data!.status === 'ready' ? 'Plans, applies, drift scans, graphs, initializations, workspace commands and project tools you run appear here, also after Hclaro restarts. Only redacted metadata is kept: no plan files, state, variable values or credentials.' : 'Operation history is not being recorded in this session.'}</p></div> : !data!.total ? <div className="empty-state"><Search size={26} /><h2>No matching operations</h2><p>Change or reset the filters.</p></div> : <>
     <div className="table-scroll"><table className="resources-table history-table">
      <thead><tr><th scope="col"><span className="sr-only">Compare</span></th><th scope="col">Started</th><th scope="col">Operation</th><th scope="col">Project · workspace</th><th scope="col">Status</th><th scope="col">Changes</th><th scope="col">Result</th></tr></thead>
      <tbody>{data!.entries.map(e => <tr key={e.id} className={selected === e.id ? 'selected' : ''}>
@@ -209,7 +210,7 @@ function HistoryDetails({ id, copy, writable, onClose, onDeleted }: { id: string
   const sortedCounts = e?.plan ? Object.entries(e.plan.counts).sort(([a], [b]) => actionOrder.indexOf(a as never) - actionOrder.indexOf(b as never)) : [];
   return <Drawer label="Operation details" onClose={onClose}>
    <div className="inspector-header"><span><History size={15} />Operation details</span><Button variant="ghost" size="icon" aria-label="Close operation details" onClick={onClose}><X size={16} /></Button></div>
-   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <div className="empty-state error-state" role="alert"><p>{detail.error.message}</p></div> : e && <div className="inspector-body history-details">
+   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : e && <div className="inspector-body history-details">
     <div className="inspector-title"><StatusBadge status={e.status} /><strong>{label(e)}</strong></div>
     <dl className="metadata">
      <div><dt>Project</dt><dd>{e.projectName}{!e.registered && <span className="muted"> · not in the Hub</span>}</dd></div>
@@ -272,7 +273,7 @@ function CompareDialog({ left, right, onClose }: { left: HistoryEntry; right: Hi
    <div ref={ref} className="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="history-compare-title">
     <div className="dialog-header"><h2 id="history-compare-title">Compare plan summaries</h2><Button ref={close} variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
     <p className="muted">{older.projectName} · {older.workspace || 'no workspace'}: plan of {dayTime(older.startedAt)} → plan of {dayTime(newer.startedAt)}. Addresses and actions only; values were never kept.</p>
-    {result.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Comparing…</div> : result.error ? <div className="empty-state error-state" role="alert"><p>{result.error.message}</p></div> : c && <>
+    {result.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Comparing…</div> : result.error ? <ErrorState inline message={result.error.message} /> : c && <>
      {c.notices.map(n => <div className="plan-warning" key={n} role="note"><Info size={15} />{n}</div>)}
      <p className="info-line compare-facts"><span>{c.added.length} newly planned</span><span>{c.removed.length} no longer planned</span><span>{c.changed.length} with a different action</span><span>{c.same} unchanged</span></p>
      <div className="history-compare">

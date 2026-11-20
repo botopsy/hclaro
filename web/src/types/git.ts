@@ -1,14 +1,14 @@
 // Git context (M15). The server never returns file contents except redacted diffs of .tf and
 // .tf.json files, and never absolute repository paths.
-export type GitHead = {
+type GitHead = {
   commit?: string;
   branch?: string;
   detached: boolean;
   unborn: boolean;
   worktree: boolean;
 };
-export type GitState = 'repository' | 'not_repository' | 'unavailable' | 'error';
-export type GitFileKind = 'hcl' | 'json' | 'vars' | 'lock';
+type GitState = 'repository' | 'not_repository' | 'unavailable' | 'error';
+type GitFileKind = 'hcl' | 'json' | 'vars' | 'lock';
 export type GitFileStatus = {
   id: string;
   path: string;
@@ -45,7 +45,7 @@ export type GitBranchList = {
   incomplete: boolean;
   checkedAt: string;
 };
-export type GitNotice = { code: string; message: string };
+type GitNotice = { code: string; message: string };
 export type GitSwitchPreview = {
   from: GitHead;
   to: GitBranch;
@@ -56,8 +56,8 @@ export type GitSwitchPreview = {
   warnings: GitNotice[];
   checkedAt: string;
 };
-export type DiffLine = { kind: 'context' | 'add' | 'delete' | 'note'; old?: number; new?: number; text: string; redacted?: boolean };
-export type GitDiffHunk = { oldStart: number; oldLines: number; newStart: number; newLines: number; section?: string; lines: DiffLine[] };
+type DiffLine = { kind: 'context' | 'add' | 'delete' | 'note'; old?: number; new?: number; text: string; redacted?: boolean };
+type GitDiffHunk = { oldStart: number; oldLines: number; newStart: number; newLines: number; section?: string; lines: DiffLine[] };
 export type GitDiff = {
   file: GitFileStatus;
   base: 'HEAD' | 'none';

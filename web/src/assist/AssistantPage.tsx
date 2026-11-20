@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileCode2, FolderOpen, LoaderCircle, MessageSquarePlus, Send, Sparkles, Trash2, Zap } from 'lucide-react';
-import { api, post } from '../api';
+import { api, send } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
-import { ErrorState } from '../workbench/ErrorState';
+import { ErrorState } from '../components/ErrorState';
 import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve } from './AskAI';
 import type { AssistListed, AssistSaved, Conversation } from '../types';
 import { errorMessage } from '../lib/errorMessage';
@@ -64,7 +64,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   async function onSaved(action: string, id?: string) {
     setFailed(undefined);
     try {
-      const c = await post<{ id?: string }>(scopedPath(scope!, id ? `ai/saved/${id}/${action}` : `ai/saved/${action}`), {});
+      const c = await send<{ id?: string }>('POST', scopedPath(scope!, id ? `ai/saved/${id}/${action}` : `ai/saved/${action}`), {});
       if (action === 'open' && c.id) setSelected(c.id);
       setConfirmAll(false);
     } catch (err) {
@@ -77,7 +77,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   async function start(packageSha256?: string, prompt?: string) {
     if (!provider || !settings) return;
     // A quick action's first message is its prompt; the typed text stays in the box.
-    const c = await post<Conversation>(scopedPath(scope!, 'ai/conversations'), { provider: provider.id, disclosureVersion: settings.disclosure.version, ...(prompt ? { prompt } : { message: text }), ...(packageSha256 ? { packageSha256 } : {}) });
+    const c = await send<Conversation>('POST', scopedPath(scope!, 'ai/conversations'), { provider: provider.id, disclosureVersion: settings.disclosure.version, ...(prompt ? { prompt } : { message: text }), ...(packageSha256 ? { packageSha256 } : {}) });
     if (!prompt) setText('');
     setSelected(c.id);
     setPreview(undefined);
@@ -100,7 +100,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
     : preview === 'action' && action ? { label: `Start ${action.label.toLowerCase()}`, run: p => start(p.sha256, p.prompt) }
     : preview === 'attach' && selected ? {
       label: 'Attach to conversation', run: async p => {
-        await post(scopedPath(scope, `ai/conversations/${selected}/context`), { packageSha256: p.sha256 });
+        await send('POST', scopedPath(scope, `ai/conversations/${selected}/context`), { packageSha256: p.sha256 });
         setPreview(undefined);
         // The open panel polls only while a turn runs: show the attached turn and the cleared stale state now.
         await client.invalidateQueries({ queryKey: ['ai-conversation', scopeKey(scope), selected] });

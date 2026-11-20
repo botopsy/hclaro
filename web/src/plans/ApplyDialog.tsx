@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CircleCheck, CircleHelp, CircleX, Fingerprint, Info, LoaderCircle, RefreshCw, Rocket, ShieldCheck, Terminal, TriangleAlert, UserCheck, X } from 'lucide-react';
-import { post } from '../api';
+import { send } from '../api';
 import type { Approval, Operation, Plan, PreflightCheck, PreflightReport, PreflightResource } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
@@ -84,7 +84,7 @@ export function ApplyDialog({ plan, scope, project, onStarted, onClose }: { plan
     const request = ++latest.current;
     const current = () => request === latest.current;
     Promise.resolve()
-      .then(() => post<PreflightReport>(target('preflight'), { verifyIdentity }))
+      .then(() => send<PreflightReport>('POST', target('preflight'), { verifyIdentity }))
       .then(r => {
         if (!current()) return;
         setReport(r);
@@ -132,8 +132,8 @@ export function ApplyDialog({ plan, scope, project, onStarted, onClose }: { plan
     setBusy(true);
     setError('');
     try {
-      const approval = await post<Approval>(target('approval'), { preflightBinding: report.binding, acknowledged: [...acked] });
-      onStarted(await post<Operation>(target('apply'), { confirmationToken: approval.confirmationToken, confirmation: typed }));
+      const approval = await send<Approval>('POST', target('approval'), { preflightBinding: report.binding, acknowledged: [...acked] });
+      onStarted(await send<Operation>('POST', target('apply'), { confirmationToken: approval.confirmationToken, confirmation: typed }));
     } catch (e) {
       setError(errorText(e, 'The apply could not be started.'));
       setBusy(false);

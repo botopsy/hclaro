@@ -13,7 +13,7 @@ export type ExternalDataDisclosure = {
   storage: string;
   documentation: string;
 };
-export type CostProviderState = 'strict_local' | 'cli_missing' | 'off' | 'ready' | 'unavailable';
+type CostProviderState = 'strict_local' | 'cli_missing' | 'off' | 'ready' | 'unavailable';
 export type CostProviderCapabilities = {
   provider: string;
   state: CostProviderState;
@@ -28,7 +28,7 @@ export type CostProviderCapabilities = {
   disclosure?: ExternalDataDisclosure;
 };
 export type CostItemStatus = 'estimated' | 'partial' | 'usage_unknown' | 'unsupported' | 'free' | 'not_estimated';
-export type CostComponent = { name: string; unit: string; monthlyQuantity: string | null; price: string | null; monthlyCost: string | null; usageBased?: boolean };
+type CostComponent = { name: string; unit: string; monthlyQuantity: string | null; price: string | null; monthlyCost: string | null; usageBased?: boolean };
 export type CostLineItem = {
   address: string;
   resourceType: string;
@@ -41,8 +41,8 @@ export type CostLineItem = {
   components: CostComponent[];
   note?: string;
 };
-export type CostTypeSummary = { resourceType: string; count: number; estimated: number; notEstimated: number; delta: string | null };
-export type EstimateCoverage = {
+type CostTypeSummary = { resourceType: string; count: number; estimated: number; notEstimated: number; delta: string | null };
+type EstimateCoverage = {
   changed: number;
   costBearing: number;
   estimated: number;
@@ -54,8 +54,8 @@ export type EstimateCoverage = {
   percent: number | null;
   unsupportedTypes: Record<string, number>;
 };
-export type CostCaveat = { code: string; message: string; count?: number };
-export type CostBreakdown = {
+type CostCaveat = { code: string; message: string; count?: number };
+type CostBreakdown = {
   currency: string;
   monthlyDelta: string;
   addedMonthly: string;

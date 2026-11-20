@@ -6,7 +6,7 @@ import { JsonTree } from '../components/JsonTree';
 import { AskAI } from '../assist/AskAI';
 import type { PlanScope } from '../lib/scope';
 import type { EditorName, Module, Resource } from '../types';
-import { ErrorState } from './ErrorState';
+import { ErrorState } from '../components/ErrorState';
 import { moduleName, providerName } from '../lib/format';
 import { SourceLink } from '../git/editor';
 export function ResourceRow({

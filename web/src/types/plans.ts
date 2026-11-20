@@ -209,7 +209,7 @@ export type Plan = {
   source?: PlanSourceFingerprint;
   sourceStatus?: SourceStatus;
 };
-export type ApplyStatus = {
+type ApplyStatus = {
   available: boolean;
   reason?: string;
   // Stable refusal code when unavailable, such as unknown_actions.
@@ -241,8 +241,8 @@ export type Approval = {
 };
 // M14: server-side apply preflight. Checks are evaluated on the server; the UI only shows
 // them and returns the acknowledged warning IDs with the opaque binding.
-export type PreflightSeverity = 'block' | 'warn' | 'info';
-export type PreflightStatus = 'pass' | 'fail' | 'unknown';
+type PreflightSeverity = 'block' | 'warn' | 'info';
+type PreflightStatus = 'pass' | 'fail' | 'unknown';
 export type PreflightCheck = {
   id: string;
   title: string;
@@ -260,7 +260,7 @@ export type PreflightResource = {
   requested?: boolean;
   importing?: boolean;
 };
-export type PreflightIdentity = {
+type PreflightIdentity = {
   state: 'not_requested' | 'verified' | 'unavailable' | 'failed';
   account?: string;
   arn?: string;

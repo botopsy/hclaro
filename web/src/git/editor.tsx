@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Code2, LoaderCircle } from 'lucide-react';
-import { ApiError, api, post } from '../api';
+import { ApiError, api, send } from '../api';
 import type { EditorName, SourceReference } from '../types';
 import { Button } from '../components/ui/button';
 import { errorMessage } from '../lib/errorMessage';
@@ -14,7 +14,7 @@ export function EditorButtons({ prefix, fileId, line, editor, onDone }: { prefix
   async function open() {
     setBusy(true);
     try {
-      const r = await post<{ path: string; line: number }>(`${prefix}editor/open`, { fileId, line, editor });
+      const r = await send<{ path: string; line: number }>('POST', `${prefix}editor/open`, { fileId, line, editor });
       onDone(`Asked ${editorLabels[editor]} to open ${r.path}:${r.line}`);
     } catch (e) {
       onDone(errorMessage(e));

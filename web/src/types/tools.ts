@@ -32,7 +32,7 @@ export type ToolResult = {
     hidden: number;
   };
 };
-export type ToolFinding = {
+type ToolFinding = {
   severity: 'error' | 'warning';
   summary: string;
   detail?: string;
@@ -40,12 +40,12 @@ export type ToolFinding = {
   line?: number;
   column?: number;
 };
-export type ProviderRequirement = {
+type ProviderRequirement = {
   source: string;
   constraint?: string;
   module?: string;
 };
-export type OutputMeta = {
+type OutputMeta = {
   name: string;
   type: string;
   sensitive: boolean;

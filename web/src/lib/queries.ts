@@ -3,7 +3,7 @@ import { api } from '../api';
 import { operationActive, type Operation, type ProjectList } from '../types';
 import { scopeKey, scopedPath, type PlanScope } from './scope';
 
-export type OperationList = { operations: Operation[] };
+type OperationList = { operations: Operation[] };
 
 // operationsQuery lists a scope's operations (none when scope is undefined) and polls while any
 // is queued, running or cancelling, so a queued operation moves on without a reload.

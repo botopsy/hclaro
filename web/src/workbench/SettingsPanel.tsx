@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Monitor, Moon, ShieldCheck, Sun } from 'lucide-react';
-import { post } from '../api';
+import { send } from '../api';
 import { assistSettingsQuery } from '../assist/AskAI';
 import type { AssistProvider, AssistSettings } from '../types';
 import { HclaroLogo } from '../brand/HclaroLogo';
@@ -42,7 +42,7 @@ function AssistSetting() {
   async function change(body: { enabled?: boolean; defaultProvider?: string }, path = 'ai/settings') {
     setError(undefined);
     try {
-      client.setQueryData(assistSettingsQuery.queryKey, await post<AssistSettings>(path, body));
+      client.setQueryData(assistSettingsQuery.queryKey, await send<AssistSettings>('POST', path, body));
     } catch (e) {
       setError(errorMessage(e, 'AI assistance could not be changed.'));
     }

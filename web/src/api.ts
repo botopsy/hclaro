@@ -87,7 +87,7 @@ async function failure(response: Response): Promise<ApiError> {
   } catch {/* Non-JSON errors use the generic message. */}
   return new ApiError(code, reason || messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.', fields);
 }
-export type Session = { csrfToken: string; capabilities?: { scopedExecution?: boolean } };
+type Session = { csrfToken: string; capabilities?: { scopedExecution?: boolean } };
 // The one /session read: it serves the capabilities query and the CSRF header of mutations.
 // Concurrent callers share the request in flight; nothing is kept after it settles.
 let pendingSession: Promise<Session> | undefined;
@@ -121,9 +121,6 @@ async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: str
 export function api<T>(path: string): Promise<T> {
   return request<T>('GET', path);
 }
-export function post<T>(path: string, body: unknown): Promise<T> {
-  return request<T>('POST', path, body);
-}
 export function send<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body: unknown): Promise<T> {
   return request<T>(method, path, body);
 }
@@ -132,7 +129,7 @@ export function send<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body:
 export function openInNewTab(path: string) {
   window.open(`${path}#session=${token}`, '_blank', 'noopener');
 }
-export type StreamHandlers = {
+type StreamHandlers = {
   log: (event: OperationEvent) => void;
   status: (operation: Operation) => void;
   truncated: () => void;

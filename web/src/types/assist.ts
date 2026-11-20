@@ -1,6 +1,6 @@
 import type { ImportRequest } from './imports';
 // AI assistance (AI-01.03 onward): settings, context packages, conversations and proposed changes.
-export type AssistDisclosure = { version: string; lines: string[] };
+type AssistDisclosure = { version: string; lines: string[] };
 // send: Hclaro can run it; usable: it can at least be copied to; installed: found on PATH.
 export type AssistProvider = { id: string; name: string; mode: string; send: boolean; usable: boolean; installed: boolean; version?: string; path?: string; reason?: string; message?: string };
 export type AssistSettings = {
@@ -12,7 +12,7 @@ export type AssistSettings = {
   // The server's byte limit for one typed message.
   maxMessage: number;
 };
-export type AssistTurn = { role: 'user' | 'assistant' | 'context'; text: string; at: string; prompt?: string; sha256?: string; hidden?: boolean };
+type AssistTurn = { role: 'user' | 'assistant' | 'context'; text: string; at: string; prompt?: string; sha256?: string; hidden?: boolean };
 export type Conversation = {
   id: string; provider: string; kind: string; packageSha256: string; state: 'ready' | 'running' | 'failed' | 'cancelled'; stale?: boolean;
   turns: AssistTurn[]; draft?: string; error?: { code: string; message: string }; usedBytes: number; limitBytes: number; startedAt: string;

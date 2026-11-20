@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, initializeSession, post } from './api';
+import { api, ApiError, initializeSession, send } from './api';
 
 // M24.12: the bearer token arrives only in the private URL's fragment. It must leave the
 // address bar and history at once and never travel in a request URL.
@@ -68,11 +68,11 @@ describe('request path', () => {
       if (call.url.endsWith('/session')) return Response.json({ csrfToken: token });
       return call.csrf === 'new' ? Response.json({ ok: true }) : refusal(403, 'csrf_invalid', 'Reload the page.');
     });
-    await expect(post('plans', {})).rejects.toMatchObject({ code: 'csrf_invalid' }); // old token cached, refetch still old
+    await expect(send('POST', 'plans', {})).rejects.toMatchObject({ code: 'csrf_invalid' }); // old token cached, refetch still old
     expect(calls.map(c => c.method + ' ' + c.url.slice(8))).toEqual(['GET session', 'POST plans', 'GET session', 'POST plans']);
     token = 'new';
     calls = [];
-    await expect(post('plans', {})).resolves.toEqual({ ok: true });
+    await expect(send('POST', 'plans', {})).resolves.toEqual({ ok: true });
     expect(calls.map(c => c.method + ' ' + (c.csrf ?? ''))).toEqual(['POST old', 'GET ', 'POST new']);
   });
 
@@ -80,14 +80,14 @@ describe('request path', () => {
     vi.resetModules();
     const fresh = await import('./api');
     stub(call => call.url.endsWith('/session') ? Response.json({ csrfToken: 'z' }) : Response.json({}));
-    await Promise.all([fresh.sessionQuery.queryFn(), fresh.post('plans', {})]);
+    await Promise.all([fresh.sessionQuery.queryFn(), fresh.send('POST', 'plans', {})]);
     expect(calls.filter(c => c.url.endsWith('/session'))).toHaveLength(1);
     expect(calls.find(c => c.method === 'POST')?.csrf).toBe('z');
   });
 
   it('does not retry other refusals', async () => {
     stub(call => call.url.endsWith('/session') ? Response.json({ csrfToken: 'x' }) : refusal(403, 'forbidden_origin', 'Wrong page.'));
-    await expect(post('plans', {})).rejects.toMatchObject({ code: 'forbidden_origin', message: 'Wrong page.' });
+    await expect(send('POST', 'plans', {})).rejects.toMatchObject({ code: 'forbidden_origin', message: 'Wrong page.' });
     expect(calls.filter(c => c.method === 'POST')).toHaveLength(1);
   });
 });

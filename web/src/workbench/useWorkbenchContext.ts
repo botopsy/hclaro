@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api, post, sessionQuery } from '../api';
+import { api, send, sessionQuery } from '../api';
 import type { ContextInfo, Workspace } from '../types';
 import type { Route } from '../router';
 import { useProfileSelection } from '../profiles/selection';
@@ -23,7 +23,7 @@ export function useWorkbenchContext(route: Route, generation: number) {
   const profileReady = !profileProject || profile.profiles.isFetched;
   const opened = useQuery({
     queryKey: ['context-open', scoped?.projectId, scoped?.workspace, profile.selected, generation],
-    queryFn: () => post<ContextInfo>('contexts', {
+    queryFn: () => send<ContextInfo>('POST', 'contexts', {
       projectId: scoped!.projectId,
       workspace: scoped!.workspace,
       reload: generation > 0,

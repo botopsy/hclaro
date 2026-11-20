@@ -8,13 +8,14 @@ import { globalPages } from '../navigation/config';
 import { launchScope, type PlanScope } from '../lib/scope';
 import { operationsQuery } from '../lib/queries';
 import { clock, duration } from '../lib/format';
+import { ErrorState } from '../components/ErrorState';
 
 // scope names the project or Hub workspace whose operations are listed.
 export function OperationsView({ openPlan, scope = launchScope }: { openPlan: (id: string) => void; scope?: PlanScope }) {
   const [selected, setSelected] = useState<string>();
   const operations = useQuery(operationsQuery(scope));
   if (operations.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading operations…</p></div>;
-  if (operations.error) return <div className="empty-state error-state" role="alert"><p>{operations.error.message}</p></div>;
+  if (operations.error) return <ErrorState inline message={operations.error.message} />;
   const list = operations.data.operations;
   const current = list.find(o => o.id === selected);
   if (!list.length) return <div className="empty-state"><Terminal size={28} /><h2>No operations yet</h2><p>Plans and applies you run appear here with their status, duration and sanitized output while Hclaro runs. Redacted metadata is also kept in <button className="link-button" onClick={() => navigate(globalPages.history.path)}>History</button> after Hclaro stops.</p></div>;

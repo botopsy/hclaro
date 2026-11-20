@@ -37,7 +37,7 @@ export type StatusCounts = {
   unknown: number;
   uncomparable: number;
 };
-export type ComparisonSummary = {
+type ComparisonSummary = {
   managed: StatusCounts;
   data: StatusCounts;
   mapped: number;
@@ -48,7 +48,7 @@ export type ComparisonSummary = {
   left: { managed: number; data: number; modules: number; providers: number };
   right: { managed: number; data: number; modules: number; providers: number };
 };
-export type ComparisonModule = {
+type ComparisonModule = {
   address: string;
   leftAddress?: string;
   left: number;
@@ -56,7 +56,7 @@ export type ComparisonModule = {
   status: 'both' | 'only-left' | 'only-right';
   counts: StatusCounts;
 };
-export type ComparisonProvider = {
+type ComparisonProvider = {
   source: string;
   leftSource?: string;
   rightSource?: string;

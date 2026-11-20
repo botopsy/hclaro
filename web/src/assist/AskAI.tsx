@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, Copy, Download, LoaderCircle, MessageSquareX, Send, Sparkles, Square, TriangleAlert, X } from 'lucide-react';
-import { api, ApiError, post } from '../api';
+import { api, ApiError, send } from '../api';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
@@ -10,6 +10,7 @@ import type { AssistExport, AssistPackage, AssistProvider, AssistRequest, Assist
 import { hasProposal, ProposedChanges, useChanges } from './ProposedChanges';
 import { errorMessage } from '../lib/errorMessage';
 import { saveFile } from '../lib/download';
+import { ErrorState } from '../components/ErrorState';
 
 // AI handoff (AI-01.03) and conversations (AI-01.04, AI-01.07): the server builds a sanitized
 // context package; the user previews it and only Copy, Download or Review with an assistant hands it over.
@@ -39,17 +40,17 @@ export function useDetectAssistants(settings?: AssistSettings) {
   const client = useQueryClient();
   const due = !!settings?.enabled && !settings.strictLocal && settings.checked === false && !settings.checking;
   useEffect(() => {
-    if (due) void post<AssistSettings>('ai/detect', {}).then(s => client.setQueryData(assistSettingsQuery.queryKey, s), () => undefined);
+    if (due) void send<AssistSettings>('POST', 'ai/detect', {}).then(s => client.setQueryData(assistSettingsQuery.queryKey, s), () => undefined);
   }, [due, client]);
 }
 
-// useAcceptThen runs send after accepting the disclosure the user was shown, when this session
+// useAcceptThen runs next after accepting the disclosure the user was shown, when this session
 // has not accepted it yet: the first Send is "Accept and send" (AI-01.14). The server checks the version.
 export function useAcceptThen() {
   const client = useQueryClient();
-  return async (settings: AssistSettings, send: () => Promise<void>) => {
-    if (!settings.disclosureAccepted) client.setQueryData(assistSettingsQuery.queryKey, await post<AssistSettings>('ai/settings', { acceptDisclosure: settings.disclosure.version }));
-    await send();
+  return async (settings: AssistSettings, next: () => Promise<void>) => {
+    if (!settings.disclosureAccepted) client.setQueryData(assistSettingsQuery.queryKey, await send<AssistSettings>('POST', 'ai/settings', { acceptDisclosure: settings.disclosure.version }));
+    await next();
   };
 }
 
@@ -79,7 +80,7 @@ export type Approve = { label: string; run: (p: AssistPackage, provider: AssistP
 export function AssistDrawer({ scope, request, title, onClose, approve, onCost }: { scope: PlanScope; request: AssistRequest; title: string; onClose: () => void; approve?: Approve; onCost?: (attach: boolean) => void }) {
   const pkg = useQuery({
     queryKey: ['ai-package', scopeKey(scope), JSON.stringify(request)],
-    queryFn: () => post<AssistPackage>(scopedPath(scope, 'ai/packages'), request),
+    queryFn: () => send<AssistPackage>('POST', scopedPath(scope, 'ai/packages'), request),
     retry: false,
     gcTime: 0,
     staleTime: 0
@@ -95,7 +96,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
   const [handed, setHanded] = useState<{ how: 'copied' | 'downloaded'; to?: string }>();
   const [failed, setFailed] = useState<string>();
   // Send names the previewed hash, the assistant and the disclosure version the user accepted.
-  async function send() {
+  async function startChat() {
     const p = pkg.data;
     if (!p || !provider || !settings) return;
     setBusy(true);
@@ -103,7 +104,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
     try {
       await acceptThen(settings, async () => {
         if (approve) return approve.run(p, provider);
-        const chat = await post<Conversation>(scopedPath(scope, 'ai/conversations'), { packageSha256: p.sha256, provider: provider.id, disclosureVersion: settings.disclosure.version, prompt: p.prompt });
+        const chat = await send<Conversation>('POST', scopedPath(scope, 'ai/conversations'), { packageSha256: p.sha256, provider: provider.id, disclosureVersion: settings.disclosure.version, prompt: p.prompt });
         setChatId(chat.id);
       });
     } catch (err) {
@@ -119,7 +120,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
     setBusy(true);
     setFailed(undefined);
     try {
-      const e = await post<AssistExport>(scopedPath(scope, `ai/packages/${p.sha256}/export`), {});
+      const e = await send<AssistExport>('POST', scopedPath(scope, `ai/packages/${p.sha256}/export`), {});
       if (e.sha256 !== p.sha256 || e.review !== p.review || e.prompt !== p.prompt) throw new Error('The package changed since the preview. Open the preview again.');
       if (how === 'copy') {
         try {
@@ -146,8 +147,8 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
    <div className="inspector-header"><span><Sparkles size={15} />{title}</span><Button variant="ghost" size="icon" aria-label="Close AI context preview" onClick={onClose}><X size={16} /></Button></div>
    <div className="inspector-body assist-preview">
     {pkg.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Building the context package on this machine…</p></div>
-      : error?.code === 'package_blocked' ? <div className="empty-state error-state" role="alert"><Ban size={26} /><h2>Sharing blocked</h2><p>{error.message}</p>{error.fields.length > 0 && <><p>Fields that still look secret or local (values are not shown):</p><ul className="assist-fields">{error.fields.map(f => <li key={f}><code>{f}</code></li>)}</ul></>}</div>
-      : pkg.error ? <div className="empty-state error-state" role="alert"><p>{pkg.error.message}</p>{onCost && attached && <Button variant="outline" onClick={() => onCost(false)}>Continue without cost data</Button>}</div>
+      : error?.code === 'package_blocked' ? <ErrorState inline icon={Ban} iconSize={26} title="Sharing blocked" message={error.message}>{error.fields.length > 0 && <><p>Fields that still look secret or local (values are not shown):</p><ul className="assist-fields">{error.fields.map(f => <li key={f}><code>{f}</code></li>)}</ul></>}</ErrorState>
+      : pkg.error ? <ErrorState inline message={pkg.error.message}>{onCost && attached && <Button variant="outline" onClick={() => onCost(false)}>Continue without cost data</Button>}</ErrorState>
       : p && p.sections.length === 0 ? <div className="empty-state"><h2>Nothing to share</h2><p>This context package has no content.</p></div>
       : p && <>
        {disclosure && <ul className="assist-disclosure" aria-label="Before you share">{disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
@@ -174,7 +175,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
       {!quick && <>{handoffs.length ? handoffs.map(h => <Button key={h.id} variant="outline" disabled={busy} onClick={() => void handOver('copy', h.name)}><Copy size={14} />Copy for {h.name}</Button>)
         : <Button variant="outline" disabled={busy} onClick={() => void handOver('copy')}><Copy size={14} />Copy</Button>}
       <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button></>}
-      {provider && settings && <Button disabled={busy || !!chatId} onClick={() => void send()}><Send size={14} />{!settings.disclosureAccepted ? 'Accept and send' : approve ? approve.label : `Review with ${provider.name}`}</Button>}
+      {provider && settings && <Button disabled={busy || !!chatId} onClick={() => void startChat()}><Send size={14} />{!settings.disclosureAccepted ? 'Accept and send' : approve ? approve.label : `Review with ${provider.name}`}</Button>}
      </>}
     </div>
     {p && p.sections.length > 0 && handoffs.length > 0 && !quick && <p className="muted assist-note">{handoffs.map(h => h.name).join(' and ')} {handoffs.length > 1 ? 'are' : 'is'} handoff-only: copy or download the context and give it to the assistant yourself. Hclaro never runs {handoffs.length > 1 ? 'them' : 'it'}.</p>}
@@ -216,7 +217,7 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
     setBusy(true);
     setRefused(undefined);
     try {
-      const request = () => post(`${path}/${action}`, action === 'messages' ? { text } : action === 'save' ? { saved } : {}).then(() => undefined);
+      const request = () => send('POST', `${path}/${action}`, action === 'messages' ? { text } : action === 'save' ? { saved } : {}).then(() => undefined);
       await (settings && action === 'messages' ? acceptThen(settings, request) : request());
       if (action === 'close') return onClosed();
       if (action === 'messages') setText('');

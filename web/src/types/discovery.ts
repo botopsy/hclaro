@@ -3,7 +3,7 @@ import type { ScopeView } from './plans';
 // Cloud discovery (M16): existing AWS objects listed on request and labelled against the
 // launch workspace's recorded state. Labels are conservative; see docs/architecture.md.
 export type DiscoveryMatchStatus = 'already_tracked' | 'possibly_untracked' | 'unresolved' | 'unknown';
-export type DiscoveryResourceType = {
+type DiscoveryResourceType = {
   type: string;
   service: string;
   label: string;
@@ -12,7 +12,7 @@ export type DiscoveryResourceType = {
   importIdFormat: string;
   permission: string;
 };
-export type DiscoveryPin = {
+type DiscoveryPin = {
   contextId?: string;
   projectId?: string;
   profileId?: string;
@@ -65,7 +65,7 @@ export type DiscoveryOptions = {
   contextFingerprint?: string;
 };
 export type DiscoveryScope = { regions: string[]; types: string[]; maxPerType: number; concurrency: number };
-export type DiscoveryTask = {
+type DiscoveryTask = {
   type: string;
   region: string;
   status: 'pending' | 'running' | 'done' | 'failed' | 'cancelled';

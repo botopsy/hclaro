@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CircleCheck, CircleHelp, CloudCog, Radar, Unlink, Copy, Eye, EyeOff, FilePlus2, FileSearch, Import, Layers3, LoaderCircle, LockKeyhole, Play, ShieldCheck, Terminal, TriangleAlert } from 'lucide-react';
-import { api, ApiError, post } from '../api';
+import { api, ApiError, send } from '../api';
 import type { DiscoveryPrefill, ImportOptions, ImportPreview, ImportRequest, Operation, PlanOptions } from '../types';
 import { ContextSummary } from '../profiles/ContextSummary';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
@@ -11,6 +11,7 @@ import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope'
 import { AskAI } from '../assist/AskAI';
 import { engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
+import { ErrorState } from '../components/ErrorState';
 
 // addressType returns the resource type of an instance address (the server parses it exactly).
 function addressType(address: string) {
@@ -80,7 +81,7 @@ export function ImportView({
     setChecking(true);
     setError('');
     try {
-      setPreview(await post<ImportPreview>(scopedPath(scope, 'imports/preview'), { ...request, address: request.address.trim() }));
+      setPreview(await send<ImportPreview>('POST', scopedPath(scope, 'imports/preview'), { ...request, address: request.address.trim() }));
     } catch (e) {
       setError(errorMessage(e, 'The import could not be checked.'));
     } finally {
@@ -97,10 +98,10 @@ export function ImportView({
       // refuses it if anything in that scope changed since. It takes no profile; a discovery
       // link must come from this same workspace's discovery (M24.09).
       let operation: Operation;
-      if (scoped) operation = await post<Operation>(scopedPath(scope, 'imports'), { ...reviewed, contextFingerprint: o?.contextFingerprint ?? '', ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });
+      if (scoped) operation = await send<Operation>('POST', scopedPath(scope, 'imports'), { ...reviewed, contextFingerprint: o?.contextFingerprint ?? '', ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });
       else {
         const bound = summary?.context.profileId ? { profileId, contextFingerprint: summary.context.fingerprint } : {};
-        operation = await post<Operation>('imports', { ...reviewed, ...bound, ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });
+        operation = await send<Operation>('POST', 'imports', { ...reviewed, ...bound, ...(linked && prefill ? { discoveryToken: prefill.token } : {}) });
       }
       setRequest(blank);
       clearPrefill?.();
@@ -120,7 +121,7 @@ export function ImportView({
   const warnings = preview?.issues.filter(i => i.severity === 'warning') ?? [];
   const ready = !!preview && !preview.blocked && !!o?.canImport;
   // A Hub workspace whose context changed or closed is never retargeted: open it again.
-  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{options.error.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing was written.</span></div>;
+  if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <ErrorState icon={TriangleAlert} iconSize={26} title="Open this workspace again" message={options.error.message} retry={reopen} retryLabel="Open again" note="Nothing was written." />;
   return <div className="import-wizard">
    {workspaceStatus === 'loading' ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace before imports can be checked…</div> : o && !o.canImport && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span>{o.reason || 'Importing through Hclaro is unavailable for this workspace.'} You can still check an import here and copy a manual recipe.</span></div>}
    {prefill && <section className={`discovery-link ${linked ? '' : 'unlinked'}`} aria-label="Discovered object">

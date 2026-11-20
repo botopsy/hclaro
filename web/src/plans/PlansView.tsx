@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, CircleX, FileDiff, History, LoaderCircle, Play, ShieldCheck, TriangleAlert } from 'lucide-react';
-import { api, ApiError, post } from '../api';
+import { api, ApiError, send } from '../api';
 import { operationActive, type ImportTarget, type Operation, type Plan, type PlanOptions, type PlanSummary, type ReplaceTarget, type ScopedPlanOptions } from '../types';
 import { Button } from '../components/ui/button';
 import { ApplyDialog } from './ApplyDialog';
@@ -12,6 +12,7 @@ import { PlanReview } from './PlanReview';
 import { PreflightDialog } from './PreflightDialog';
 import { clock } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
+import { ErrorState } from '../components/ErrorState';
 
 export function PlansView({
   project,
@@ -99,8 +100,8 @@ export function PlansView({
       const ids = (replace ?? []).map(r => r.id);
       // A Hub workspace's plan is bound to the scope the options described; the server
       // refuses it if anything in that scope changed since.
-      if (scoped) await post<Operation>(scopedPath(scope, 'plans'), { acknowledgeBackendAccess: true, varFiles, replace: ids, contextFingerprint: options.data?.contextFingerprint ?? '' });
-      else await post<Operation>('plans', { acknowledgeBackendAccess: true, varFiles, replace: ids, ...(contextFingerprint ? { profileId, contextFingerprint } : {}) });
+      if (scoped) await send<Operation>('POST', scopedPath(scope, 'plans'), { acknowledgeBackendAccess: true, varFiles, replace: ids, contextFingerprint: options.data?.contextFingerprint ?? '' });
+      else await send<Operation>('POST', 'plans', { acknowledgeBackendAccess: true, varFiles, replace: ids, ...(contextFingerprint ? { profileId, contextFingerprint } : {}) });
       closePreflight();
       choosePlan(undefined);
       await client.invalidateQueries({ queryKey: ['operations'] });
@@ -119,7 +120,7 @@ export function PlansView({
   const canPlan = !!options.data?.canPlan && !running;
   // A Hub workspace whose context changed or closed is never retargeted: open it again.
   const closedError = [options.error, plans.error, plan.error].find(e => e instanceof ApiError && (e.code === 'context_closed' || e.code === 'scope_changed'));
-  if (scoped && closedError) return <div className="empty-state error-state" role="alert"><TriangleAlert size={26} /><h2>Open this workspace again</h2><p>{closedError.message}</p>{reopen && <Button variant="outline" onClick={reopen}>Open again</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing ran. Plans and approvals of the closed view were discarded.</span></div>;
+  if (scoped && closedError) return <ErrorState icon={TriangleAlert} iconSize={26} title="Open this workspace again" message={closedError.message} retry={reopen} retryLabel="Open again" note="Nothing ran. Plans and approvals of the closed view were discarded." />;
   return <div className="plans">
    <div className="plans-toolbar">
     <Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canPlan}><Play size={14} />Run plan</Button>
@@ -131,7 +132,7 @@ export function PlansView({
    {failed && <FailedOperation operation={failed} />}
    {applied && <ApplyResult operation={applied} />}
    {failed && plan.data && <p className="info-line">Below is the previous successful plan, created at {clock(plan.data.createdAt)}. It does not reflect the run above.</p>}
-   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <div className="empty-state error-state" role="alert"><p>{plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}</p>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</div> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} copy={copy} busy={!!running} onApply={() => setApplying(true)} onInspectImpact={inspectImpact} /> : !running && !failed && <div className="empty-state"><FileDiff size={30} /><h2>No plans yet</h2><p>Run a plan to see every proposed change: creates, updates, replacements, deletions, data reads and output changes. Nothing runs until you confirm.</p>{options.data?.canPlan && <Button variant="outline" onClick={() => setPreflight(true)}><Play size={14} />Run plan</Button>}</div>}
+   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} copy={copy} busy={!!running} onApply={() => setApplying(true)} onInspectImpact={inspectImpact} /> : !running && !failed && <div className="empty-state"><FileDiff size={30} /><h2>No plans yet</h2><p>Run a plan to see every proposed change: creates, updates, replacements, deletions, data reads and output changes. Nothing runs until you confirm.</p>{options.data?.canPlan && <Button variant="outline" onClick={() => setPreflight(true)}><Play size={14} />Run plan</Button>}</div>}
    {preflightOpen && options.data && <PreflightDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
    {applying && plan.data && <ApplyDialog plan={plan.data} scope={scope} project={project} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
   </div>;

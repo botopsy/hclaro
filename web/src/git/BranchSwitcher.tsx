@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, ChevronDown, GitBranch, LoaderCircle, ShieldCheck, TriangleAlert, X } from 'lucide-react';
-import { post } from '../api';
+import { send } from '../api';
 import type { GitBranchList, GitContext, GitSwitchPreview } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
@@ -21,7 +21,7 @@ export function BranchSwitcher({ prefix, workspace, notify }: { prefix: string; 
   const wrapper = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   // Listing runs one read-only git for-each-ref, only when the selector is opened.
-  const list = useQuery({ queryKey: ['git-branches', prefix], queryFn: () => post<GitBranchList>(`${prefix}git/branches`, {}), enabled: open, retry: false });
+  const list = useQuery({ queryKey: ['git-branches', prefix], queryFn: () => send<GitBranchList>('POST', `${prefix}git/branches`, {}), enabled: open, retry: false });
   useEffect(() => {
     if (!open) return;
     function key(event: KeyboardEvent) {
@@ -77,10 +77,10 @@ function SwitchDialog({ prefix, target, workspace, notify, onClose }: { prefix: 
   useModal(dialog, cancel, onClose);
   const client = useQueryClient();
   // The preview reads the working tree; it authorizes nothing, the server checks again.
-  const preview = useQuery({ queryKey: ['git-switch-preview', prefix, target], queryFn: () => post<GitSwitchPreview>(`${prefix}git/switch/preview`, { branch: target }), retry: false, gcTime: 0 });
+  const preview = useQuery({ queryKey: ['git-switch-preview', prefix, target], queryFn: () => send<GitSwitchPreview>('POST', `${prefix}git/switch/preview`, { branch: target }), retry: false, gcTime: 0 });
   const p = preview.data;
   const run = useMutation({
-    mutationFn: () => post<{ git: GitContext }>(`${prefix}git/switch`, { branch: target, expectedBranch: p!.from.branch ?? '', expectedCommit: p!.from.commit ?? '' }),
+    mutationFn: () => send<{ git: GitContext }>('POST', `${prefix}git/switch`, { branch: target, expectedBranch: p!.from.branch ?? '', expectedCommit: p!.from.commit ?? '' }),
     onSuccess: () => {
       for (const key of sourceQueries) void client.invalidateQueries({ queryKey: [key] });
       notify(`Switched to ${target}. No Terraform/OpenTofu command ran; plans made before the switch must pass their checks again. Use Read again to re-inspect backend settings.`);

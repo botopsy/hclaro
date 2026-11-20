@@ -37,7 +37,7 @@ export type DriftResource = {
   // The explorer ID of the same address in the current snapshot, when recorded there.
   resourceId?: string;
 };
-export type AttributeObservation = {
+type AttributeObservation = {
   path: string;
   recorded: unknown;
   observed: unknown;

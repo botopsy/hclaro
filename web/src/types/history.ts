@@ -2,7 +2,7 @@
 // never be applied; it has no plan file.
 export type HistoryKind = 'plan' | 'replace' | 'import' | 'apply' | 'drift' | 'graph' | 'init' | 'workspace' | 'tool' | 'branch' | 'assist' | 'assist-change' | 'unknown';
 export type HistoryStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
-export type HistoryPlan = {
+type HistoryPlan = {
   planId: string;
   kind: string;
   counts: Record<string, number>;

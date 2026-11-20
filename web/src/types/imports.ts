@@ -33,7 +33,7 @@ export type ImportRequest = {
   file: string;
   generateConfig: boolean;
 };
-export type ImportIssue = {
+type ImportIssue = {
   code: string;
   severity: 'error' | 'warning';
   message: string;

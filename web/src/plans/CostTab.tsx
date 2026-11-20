@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleDollarSign, CircleHelp, CircleSlash, CloudOff, Gift, LoaderCircle, LockKeyhole, Play, Power, ShieldCheck, Square, TriangleAlert, X, type LucideIcon } from 'lucide-react';
-import { api, ApiError, post } from '../api';
+import { api, ApiError, send } from '../api';
 import type { CostAggregate, CostEstimate, CostItemStatus, CostLineItem, CostProviderCapabilities, ExternalDataDisclosure, Plan } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
@@ -9,6 +9,7 @@ import { ActionBadge } from './PlanReview';
 import type { PlanScope } from '../lib/scope';
 import { clock } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
+import { ErrorState } from '../components/ErrorState';
 
 // Amounts arrive as decimal strings rounded to cents. They are shown as received, with an
 // explicit sign and currency code, so no floating-point rounding is added in the browser.
@@ -71,14 +72,14 @@ function LaunchCostTab({ plan }: { plan: Plan }) {
     }
   }
   const start = () => run(async () => {
-    const started = await post<CostEstimate>(`plans/${plan.id}/cost-estimates`, {});
+    const started = await send<CostEstimate>('POST', `plans/${plan.id}/cost-estimates`, {});
     client.setQueryData(['cost-estimate', plan.id], started);
   });
   const cancel = (id: string) => run(async () => {
-    client.setQueryData(['cost-estimate', plan.id], await post<CostEstimate>(`cost-estimates/${id}/cancel`, {}));
+    client.setQueryData(['cost-estimate', plan.id], await send<CostEstimate>('POST', `cost-estimates/${id}/cancel`, {}));
   });
   const optOut = () => run(async () => {
-    client.setQueryData(['cost-provider'], await post<CostProviderCapabilities>('cost/opt-out', {}));
+    client.setQueryData(['cost-provider'], await send<CostProviderCapabilities>('POST', 'cost/opt-out', {}));
   });
 
   const finished = estimate.data?.status === 'completed' ? estimate.data.id : '';
@@ -86,7 +87,7 @@ function LaunchCostTab({ plan }: { plan: Plan }) {
     if (finished) void client.invalidateQueries({ queryKey: ['cost-history'] });
   }, [finished, client]);
   if (provider.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" />Checking cost estimation…</div>;
-  if (provider.error || !caps) return <div className="empty-state error-state" role="alert"><p>{provider.error?.message ?? 'Cost estimation status is unavailable.'}</p></div>;
+  if (provider.error || !caps) return <ErrorState inline message={provider.error?.message ?? 'Cost estimation status is unavailable.'} />;
   const current = estimate.data ?? undefined;
   return <section className="cost-tab" aria-label="Cost estimate">
    <p className="cost-disclaimer"><LockKeyhole size={13} aria-hidden="true" />Estimates are approximate list-price figures for this plan’s changes, not your cloud bill and not billed amounts.</p>
@@ -131,7 +132,7 @@ function DisclosureDialog({ disclosure: d, onClose, onEnabled }: { disclosure: E
     setBusy(true);
     setError('');
     try {
-      onEnabled(await post<CostProviderCapabilities>('cost/opt-in', { acknowledged: true, disclosureVersion: d.version }));
+      onEnabled(await send<CostProviderCapabilities>('POST', 'cost/opt-in', { acknowledged: true, disclosureVersion: d.version }));
     } catch (e) {
       setError(errorMessage(e, 'Cost estimation could not be turned on.'));
     } finally {
@@ -213,7 +214,7 @@ function SavedEstimates() {
   return <details className="cost-saved">
    <summary>Earlier estimates for this project ({records.length}, saved locally as totals only)</summary>
    <table className="resources-table"><thead><tr><th scope="col">When</th><th scope="col">Workspace</th><th scope="col">Monthly change</th><th scope="col">Coverage</th></tr></thead><tbody>{records.map(r => <tr key={r.id}><td>{clock(r.createdAt)}</td><td>{r.workspace}</td><td>{signed(r.monthlyDelta)} {r.currency}</td><td>{r.coveragePercent === null ? '—' : `${r.coveragePercent}%`}</td></tr>)}</tbody></table>
-   <Button variant="ghost" size="small" onClick={() => { setError(''); post('cost/history/clear', {}).then(() => client.invalidateQueries({ queryKey: ['cost-history'] }), (e: Error) => setError(e.message)); }}>Clear saved estimates</Button>
+   <Button variant="ghost" size="small" onClick={() => { setError(''); send('POST', 'cost/history/clear', {}).then(() => client.invalidateQueries({ queryKey: ['cost-history'] }), (e: Error) => setError(e.message)); }}>Clear saved estimates</Button>
    {error && <p className="dialog-error" role="alert">{error}</p>}
   </details>;
 }

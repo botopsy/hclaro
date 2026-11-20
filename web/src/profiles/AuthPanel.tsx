@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, CircleHelp, CircleX, KeyRound, LoaderCircle, LogIn, RefreshCw, ShieldAlert, Terminal, UserCheck, X } from 'lucide-react';
-import { api, post } from '../api';
+import { api, send } from '../api';
 import type { AuthState, AuthStatus } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
@@ -35,7 +35,7 @@ function StateIcon({ state }: { state: AuthState }) {
 
 const errorText = (e: unknown) => (errorMessage(e, 'The request failed.'));
 
-export const authQuery = (projectId: string, profileId: string) => ({
+const authQuery = (projectId: string, profileId: string) => ({
   queryKey: ['aws-auth', projectId, profileId],
   // Reading the status is local: it never contacts AWS. While a sign-in runs, the status is
   // read again so its end shows; STS is never polled.
@@ -45,7 +45,7 @@ export const authQuery = (projectId: string, profileId: string) => ({
 });
 
 // AuthStateBadge says the state in words, never by color alone.
-export function AuthStateBadge({ status }: { status: AuthStatus }) {
+function AuthStateBadge({ status }: { status: AuthStatus }) {
   return <span className={`auth-badge auth-${tone(status.state)}`}><StateIcon state={status.state} />{labels[status.state]}</span>;
 }
 
@@ -91,10 +91,10 @@ export function AuthPanel({ projectId, profileId }: { projectId: string; profile
    <p className={`auth-message auth-${tone(s.state)}`} role="status">{s.message}</p>
    {s.login && <p className="auth-message" role="status"><LogIn size={12} aria-hidden="true" /> {s.login.mode === 'sso' ? 'aws sso login' : 'aws login'}: {s.login.message}</p>}
    {s.awsProfile && <div className="auth-actions">
-    <Button variant="outline" size="small" onClick={() => void act('verify', () => post(`${base}/verify`, {}))} disabled={!!busy || running || s.state === 'tool_missing'}><UserCheck size={13} />{busy === 'verify' ? 'Verifying…' : s.checkedAt ? 'Verify again' : 'Verify identity'}</Button>
-    {s.canSsoLogin && <Button size="small" onClick={() => void act('sso', () => post(`${base}/login`, { mode: 'sso' }))} disabled={!!busy || running}><LogIn size={13} />Sign in with AWS (SSO)</Button>}
-    {s.canLogin && <Button variant="outline" size="small" onClick={() => void act('login', () => post(`${base}/login`, { mode: 'login' }))} disabled={!!busy || running}><KeyRound size={13} />Sign in with aws login</Button>}
-    {running && <Button variant="ghost" size="small" onClick={() => void act('cancel', () => post(`${base}/login/cancel`, {}))} disabled={busy === 'cancel'}><X size={13} />Cancel sign-in</Button>}
+    <Button variant="outline" size="small" onClick={() => void act('verify', () => send('POST', `${base}/verify`, {}))} disabled={!!busy || running || s.state === 'tool_missing'}><UserCheck size={13} />{busy === 'verify' ? 'Verifying…' : s.checkedAt ? 'Verify again' : 'Verify identity'}</Button>
+    {s.canSsoLogin && <Button size="small" onClick={() => void act('sso', () => send('POST', `${base}/login`, { mode: 'sso' }))} disabled={!!busy || running}><LogIn size={13} />Sign in with AWS (SSO)</Button>}
+    {s.canLogin && <Button variant="outline" size="small" onClick={() => void act('login', () => send('POST', `${base}/login`, { mode: 'login' }))} disabled={!!busy || running}><KeyRound size={13} />Sign in with aws login</Button>}
+    {running && <Button variant="ghost" size="small" onClick={() => void act('cancel', () => send('POST', `${base}/login/cancel`, {}))} disabled={busy === 'cancel'}><X size={13} />Cancel sign-in</Button>}
     <Button variant="ghost" size="small" onClick={() => void act('tools', async () => { await api(`auth/aws/tools?refresh=1`); })} disabled={!!busy} title="Detect aws and aws-vault again (local only)"><RefreshCw size={13} />Detect tools</Button>
    </div>}
    {s.awsProfile && s.tools.aws.available && !s.tools.aws.supported && <p className="muted">{s.tools.aws.message} Verify identity still works; sign-in needs AWS CLI v2.</p>}

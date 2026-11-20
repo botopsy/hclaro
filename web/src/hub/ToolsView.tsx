@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, CircleX, FileCheck2, FileCode2, Info, KeyRound, LoaderCircle, Play, ShieldCheck, Terminal } from 'lucide-react';
-import { api, ApiError, post } from '../api';
+import { api, ApiError, send } from '../api';
 import { operationActive, type ContextInfo, type Operation, type ToolName, type ToolResult } from '../types';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { Button } from '../components/ui/button';
@@ -47,7 +47,7 @@ export const tools: ToolInfo[] = [{
 const toolTitle = Object.fromEntries(tools.map(t => [t.name, t.title])) as Record<ToolName, string>;
 const readsState = (tool: ToolName) => tool === 'providers' || tool === 'outputs-metadata';
 
-export function operationLabel(op: Operation) {
+function operationLabel(op: Operation) {
   if (op.kind === 'tool' && op.tool) return toolTitle[op.tool.tool] || 'Project tool';
   if (op.kind === 'init') return 'Init';
   if (op.kind === 'workspace' && op.workspace) return `Workspace ${op.workspace.action} ${op.workspace.name}`;
@@ -85,7 +85,7 @@ export function ToolsView({ context }: { context: ContextInfo }) {
     setError(undefined);
     try {
       const body = tool === 'fmt-check' ? { contextId: context.id, recursive } : { contextId: context.id };
-      const op = await post<Operation>(`projects/${context.projectId}/operations/${tool}`, body);
+      const op = await send<Operation>('POST', `projects/${context.projectId}/operations/${tool}`, body);
       setSelected(op.id);
       refresh();
     } catch (e) {

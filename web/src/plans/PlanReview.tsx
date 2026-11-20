@@ -12,6 +12,7 @@ import { CostTab } from './CostTab';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { AskAI } from '../assist/AskAI';
 import { clock, engineLabel } from '../lib/format';
+import { ErrorState } from '../components/ErrorState';
 
 type Tab = 'changes' | 'outputs' | 'drift' | 'cost';
 const pageSize = 200;
@@ -30,7 +31,7 @@ function Value({ value, unknown, empty = '—' }: { value: unknown; unknown?: bo
 }
 
 // sourceLabel describes the Git source a plan was made from.
-export function sourceLabel(source?: PlanSourceFingerprint) {
+function sourceLabel(source?: PlanSourceFingerprint) {
   if (!source) return 'Not recorded';
   if (!source.repository) return 'Not in Git';
   const at = source.commit ? source.commit.slice(0, 7) : 'no commits';
@@ -163,7 +164,7 @@ function ChangeInspector({ scope, planId, changeId, close, copy }: { scope: Plan
   const order = d && replaceOrder(d.actions);
   return <Drawer label="Change details" onClose={close}>
    <div className="inspector-header"><span><Braces size={15} />Change details</span><Button variant="ghost" size="icon" aria-label="Close change details" onClick={close}><X size={16} /></Button></div>
-   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading change…</div> : detail.error ? <div className="empty-state error-state" role="alert"><p>{detail.error.message}</p></div> : d && <div className="inspector-body">
+   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading change…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : d && <div className="inspector-body">
     <div className="inspector-title"><ActionBadge action={d.action} /><span className="mono muted">{d.actions.join(', ')}</span></div>
     <div className="address-box"><div className="label-row"><span>RESOURCE ADDRESS</span><Button variant="ghost" size="icon" aria-label="Copy change address" onClick={() => void copy(d.address, 'Address')}><Copy size={13} /></Button></div><code>{d.address}</code></div>
     {order && <p className="order-note"><TriangleAlert size={13} aria-hidden="true" />{order}.</p>}

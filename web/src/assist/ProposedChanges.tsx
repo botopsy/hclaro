@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, FilePen, LoaderCircle, Undo2, X } from 'lucide-react';
-import { api, post } from '../api';
+import { api, send } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import type { ChangeView } from '../types';
@@ -46,7 +46,7 @@ function ChangeCard({ scope, id, change }: { scope: PlanScope; id: string; chang
     setRefused(undefined);
     try {
       const body = { turn: c.turn, index: c.index, baseSha256: c.baseSha256 ?? '', newSha256: c.newSha256 ?? '' };
-      setResult(await post<ChangeView>(scopedPath(scope, `ai/conversations/${id}/changes/${action}`), body));
+      setResult(await send<ChangeView>('POST', scopedPath(scope, `ai/conversations/${id}/changes/${action}`), body));
       // A written file changes plans, the Git view and the project context.
       if (action !== 'reject') void client.invalidateQueries();
     } catch (err) {

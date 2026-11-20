@@ -84,12 +84,12 @@ func TestWireTypesMatchGo(t *testing.T) {
 var (
 	lineComment  = regexp.MustCompile(`(?m)//.*$`)
 	blockComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
-	declStart    = regexp.MustCompile(`export type (\w+) = `)
+	declStart    = regexp.MustCompile(`(?m)^(?:export )?type (\w+) = `)
 	identifier   = regexp.MustCompile(`^\w+$`)
 	pick         = regexp.MustCompile(`^Pick<(\w+),\s*(.+)>$`)
 )
 
-// readTS returns every exported type alias in web/src/types as name → type expression.
+// readTS returns every type alias in web/src/types as name → type expression.
 func readTS(t *testing.T) map[string]string {
 	files, err := filepath.Glob("../../web/src/types/*.ts")
 	if err != nil || len(files) == 0 {
