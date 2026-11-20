@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
-	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 )
 
@@ -224,7 +224,7 @@ func TestVerifyDirectAWSCLI(t *testing.T) {
 func TestIdentityProbeWorksWithCLIv1(t *testing.T) {
 	setup(t, "aws")
 	t.Setenv("HCLARO_FAKE_AWS", "v1")
-	if id := preflight.AWSIdentity(context.Background(), nil); id.State != "verified" || id.Account != "111122223333" {
+	if id := awscli.AWSIdentity(context.Background(), nil); id.State != "verified" || id.Account != "111122223333" {
 		t.Fatalf("%+v", id)
 	}
 }
@@ -443,15 +443,15 @@ func TestProjectsDoNotShareChecksOrLogins(t *testing.T) {
 func TestJudgeClassifiesUnknownIdentity(t *testing.T) {
 	r := profiles.Resolved{AWSProfile: "dev", AWSExpectedAccount: "111122223333"}
 	for kind, want := range map[string]string{"timeout": Unknown, "network": Unknown, "credentials_expired": AuthRequired, "access_denied": AccessError, "vault_failed": AuthRequired} {
-		if state, _, _ := judge(r, preflight.Identity{State: "failed", Kind: kind}); state != want {
+		if state, _, _ := judge(r, awscli.Identity{State: "failed", Kind: kind}); state != want {
 			t.Errorf("%s: %s", kind, state)
 		}
 	}
-	if state, _, _ := judge(r, preflight.Identity{State: "verified", Account: "111122223333", ARN: "ARN withheld"}); state != Verified {
+	if state, _, _ := judge(r, awscli.Identity{State: "verified", Account: "111122223333", ARN: "ARN withheld"}); state != Verified {
 		t.Errorf("account-only guard: %s", state)
 	}
 	r.AWSExpectedRole = "arn:aws:sts::111122223333:assumed-role/Deploy/*"
-	if state, _, _ := judge(r, preflight.Identity{State: "verified", Account: "111122223333", ARN: "ARN withheld"}); state != Mismatch {
+	if state, _, _ := judge(r, awscli.Identity{State: "verified", Account: "111122223333", ARN: "ARN withheld"}); state != Mismatch {
 		t.Errorf("withheld ARN matched a role guard: %s", state)
 	}
 }
@@ -495,7 +495,7 @@ func TestCancelledDetectionIsNotCached(t *testing.T) {
 // The epoch counts a new principal even with failed checks in between (A → failure → B), and
 // ignores a new session name of the same role.
 func TestEpochFollowsTheLastVerifiedIdentity(t *testing.T) {
-	answers := []preflight.Identity{
+	answers := []awscli.Identity{
 		{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/s1"},
 		{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/s2"},
 		{State: "failed", Kind: "credentials_expired"},
@@ -506,7 +506,7 @@ func TestEpochFollowsTheLastVerifiedIdentity(t *testing.T) {
 		return []byte("aws-cli/2.17.0 Python/3.12 (synthetic)"), nil, nil
 	}
 	i := 0
-	m.Probe = func(context.Context, []string) preflight.Identity { i++; return answers[i-1] }
+	m.Probe = func(context.Context, []string) awscli.Identity { i++; return answers[i-1] }
 	tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: profiles.NewID(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
 	want := []uint64{0, 0, 0, 1}
 	for n := range answers {
@@ -549,9 +549,9 @@ func TestOneIdentityCheckAtATime(t *testing.T) {
 		return nil, nil, errors.New("exit status 1")
 	}
 	release := make(chan struct{})
-	m.Probe = func(context.Context, []string) preflight.Identity {
+	m.Probe = func(context.Context, []string) awscli.Identity {
 		<-release
-		return preflight.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:iam::111122223333:user/a"}
+		return awscli.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:iam::111122223333:user/a"}
 	}
 	tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: profiles.NewID(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
 	done := make(chan struct{})
@@ -594,10 +594,10 @@ func TestStaleIdentityCheckIsDiscarded(t *testing.T) {
 				return nil, nil, errors.New("exit status 1")
 			}
 			started, release := make(chan struct{}), make(chan struct{})
-			m.Probe = func(context.Context, []string) preflight.Identity {
+			m.Probe = func(context.Context, []string) awscli.Identity {
 				close(started)
 				<-release
-				return preflight.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/old"}
+				return awscli.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/old"}
 			}
 			tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: profiles.NewID(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
 			type result struct {
@@ -659,7 +659,7 @@ func TestAWSVaultMFAFailsFastWithoutAPrompt(t *testing.T) {
 	}
 }
 
-// run refuses any command not on the sign-in allowlist before starting a process (B01).
+// awscli.Local refuses any command not on the sign-in allowlist before starting a process (B01).
 func TestRunRefusesArgvOffTheAllowlist(t *testing.T) {
 	f := setup(t, "aws", "aws-vault")
 	ctx := context.Background()
@@ -676,7 +676,7 @@ func TestRunRefusesArgvOffTheAllowlist(t *testing.T) {
 		{"aws-vault", []string{"exec", "dev", "--", "sh"}},
 		{"sh", []string{"--version"}},
 	} {
-		if _, _, err := run(ctx, nil, c.name, c.args...); !errors.Is(err, ErrRefusedArgs) {
+		if _, _, err := awscli.Local(ctx, nil, c.name, c.args...); !errors.Is(err, awscli.ErrRefusedArgs) {
 			t.Fatalf("%s %q: %v", c.name, c.args, err)
 		}
 	}
@@ -684,11 +684,39 @@ func TestRunRefusesArgvOffTheAllowlist(t *testing.T) {
 		t.Fatal("a refused command started a process")
 	}
 	for _, args := range [][]string{{"--version"}, {"configure", "list-profiles"}, {"configure", "get", "sso_session", "--profile", "sso-dev"}} {
-		if _, _, err := run(ctx, nil, "aws", args...); errors.Is(err, ErrRefusedArgs) {
+		if _, _, err := awscli.Local(ctx, nil, "aws", args...); errors.Is(err, awscli.ErrRefusedArgs) {
 			t.Fatalf("%q refused", args)
 		}
 	}
 	if n := len(spyLines(t, f.awsSpy)); n != 3 {
 		t.Fatalf("%d allowed calls recorded, want 3", n)
+	}
+}
+
+// A sign-in that prints more than Hclaro reads is not treated as completed (B06: the sign-in
+// path enforces the output limit like every other AWS CLI call).
+func TestSignInOutputOverflowFails(t *testing.T) {
+	setup(t, "aws")
+	t.Setenv("HCLARO_FAKE_AWS_LOGIN", "flood")
+	m := New()
+	tg := target(t, projectA, profiles.Profile{Name: "sso", AWSProfile: "sso-dev"})
+	if _, err := m.StartLogin(context.Background(), tg, ModeSSO); err != nil {
+		t.Fatal(err)
+	}
+	s := waitLogin(t, m, tg)
+	if s.Login.State != LoginFailed || s.Login.Code != CodeError || s.State == Verified {
+		t.Fatalf("%+v", s.Login)
+	}
+	noCanary(t, s)
+}
+
+// A profile listing beyond the output limit still returns the first maxProfiles names
+// instead of failing (the limit is enforced, but a cut listing is still usable).
+func TestLargeProfileListingIsCapped(t *testing.T) {
+	setup(t, "aws")
+	t.Setenv("HCLARO_FAKE_AWS_LOGIN", "flood")
+	names, err := New().Profiles(context.Background())
+	if err != nil || len(names) != maxProfiles || names[0] != "generated-profile-00000" {
+		t.Fatalf("%d names, %v", len(names), err)
 	}
 }

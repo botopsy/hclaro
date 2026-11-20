@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"hclaro/fixtures"
+	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
-	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/workspace"
 )
@@ -58,7 +58,7 @@ func profileSetup(t *testing.T, fake *engine.Fake, environ []string) (*Manager, 
 	}
 	// The STS probe answers with one synthetic identity; profiles that name an AWS profile
 	// need it verified before approval (M20).
-	m.IdentityProbe = func(context.Context, []string) preflight.Identity { return verifiedAs("123456789012") }
+	m.IdentityProbe = func(context.Context, []string) awscli.Identity { return verifiedAs("123456789012") }
 	rec := &binding{}
 	m.Bind = func(env []string, ws string) engine.Planner {
 		rec.mu.Lock()

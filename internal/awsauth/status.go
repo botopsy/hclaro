@@ -9,8 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"hclaro/internal/discovery"
-	"hclaro/internal/preflight"
+	"hclaro/internal/awscli"
 	"hclaro/internal/profiles"
 )
 
@@ -127,7 +126,7 @@ func (m *Manager) Status(ctx context.Context, t Target) Status {
 	case !tools.AWS.Available:
 		s.State, s.Code, s.Message = ToolMissing, CodeToolMissing, tools.AWS.Message
 	case r.AWSAuth == profiles.AWSVault && !tools.Vault.Available:
-		s.State, s.Code, s.Message = ToolMissing, CodeToolMissing, discovery.Message(discovery.KindVaultMissing)
+		s.State, s.Code, s.Message = ToolMissing, CodeToolMissing, awscli.Message(awscli.KindVaultMissing)
 	}
 	if r.AWSAuth != profiles.AWSVault && tools.AWS.Supported {
 		s.ProfileKind = m.ProfileKind(ctx, r.AWSProfile)
@@ -160,7 +159,7 @@ func (m *Manager) Status(ctx context.Context, t Target) Status {
 
 // judge turns an identity probe into a status, comparing it with the expected account and
 // role. A withheld ARN never matches a role guard.
-func judge(r profiles.Resolved, id preflight.Identity) (state, code, message string) {
+func judge(r profiles.Resolved, id awscli.Identity) (state, code, message string) {
 	if id.State != "verified" {
 		state, code = stateOf(id)
 		return state, code, id.Message
@@ -208,9 +207,9 @@ func (m *Manager) Verify(ctx context.Context, t Target) (Status, error) {
 	}
 	m.checks[k] = &check{revision: t.Context.Revision, fingerprint: t.Context.Fingerprint, identity: id, at: m.Now()}
 	// A different principal than the last verified one, even with failed checks in between,
-	// is a new identity for review. Session names are ignored (preflight.Principal).
+	// is a new identity for review. Session names are ignored (awscli.Principal).
 	if id.State == "verified" {
-		if last, ok := m.verified[k]; ok && !preflight.SameIdentity(last, id) {
+		if last, ok := m.verified[k]; ok && !awscli.SameIdentity(last, id) {
 			m.epochs[k]++
 		}
 		m.verified[k] = id
@@ -232,7 +231,7 @@ func (m *Manager) StartLogin(ctx context.Context, t Target, mode string) (Status
 	case r.AWSAuth == profiles.AWSVault:
 		return Status{}, &Error{CodeInteractive, "aws-vault may ask for a keychain password or MFA code, which Hclaro cannot show. Run the aws-vault command shown in a terminal, then verify again."}
 	case !tools.AWS.Supported:
-		return Status{}, &Error{CodeToolMissing, discovery.Message(discovery.KindUnsupportedCLI)}
+		return Status{}, &Error{CodeToolMissing, awscli.Message(awscli.KindUnsupportedCLI)}
 	case mode == ModeLogin && !tools.Login:
 		return Status{}, &Error{CodeLoginUnsupported, tools.LoginMsg}
 	case mode == ModeSSO && m.ProfileKind(ctx, r.AWSProfile) != KindSSO:
@@ -282,7 +281,9 @@ func (m *Manager) StartLogin(ctx context.Context, t Target, mode string) (Status
 		case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 			l.State, l.Code, l.Message = LoginTimedOut, CodeInteractive, "The sign-in did not finish within 10 minutes. Use the terminal command shown, then verify again."
 		case errors.Is(err, exec.ErrNotFound):
-			l.State, l.Code, l.Message = LoginFailed, CodeToolMissing, discovery.Message(discovery.KindMissingCLI)
+			l.State, l.Code, l.Message = LoginFailed, CodeToolMissing, awscli.Message(awscli.KindMissingCLI)
+		case awscli.KindOf(err) == awscli.KindOutputTooLarge:
+			l.State, l.Code, l.Message = LoginFailed, CodeError, "The AWS CLI printed more output than Hclaro reads for a sign-in, so it is not treated as completed. Use the terminal command shown, then verify again."
 		default:
 			l.State, l.Code, l.Message = LoginFailed, CodeInteractive, loginFailure(string(errOut))
 		}
@@ -294,11 +295,11 @@ func (m *Manager) StartLogin(ctx context.Context, t Target, mode string) (Status
 
 // loginFailure explains a failed sign-in without echoing CLI output.
 func loginFailure(stderr string) string {
-	switch discovery.Classify(stderr) {
-	case discovery.KindProfileNotFound:
-		return discovery.Message(discovery.KindProfileNotFound)
-	case discovery.KindNetwork:
-		return discovery.Message(discovery.KindNetwork)
+	switch awscli.Classify(stderr) {
+	case awscli.KindProfileNotFound:
+		return awscli.Message(awscli.KindProfileNotFound)
+	case awscli.KindNetwork:
+		return awscli.Message(awscli.KindNetwork)
 	}
 	if strings.Contains(strings.ToLower(stderr), "browser") {
 		return "The AWS CLI could not open a browser. Use the device-code command shown in a terminal, then verify again."

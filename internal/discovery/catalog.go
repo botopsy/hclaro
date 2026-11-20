@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/state"
 )
 
@@ -257,7 +258,7 @@ func finish(c CloudResourceCandidate, ctx parseContext, importID string, valid b
 func decodePage(page []byte, v any) error {
 	dec := json.NewDecoder(strings.NewReader(string(page)))
 	if err := dec.Decode(v); err != nil {
-		return &CallError{KindMalformed}
+		return &awscli.CallError{Kind: awscli.KindMalformed}
 	}
 	return nil
 }
@@ -267,8 +268,8 @@ func nextToken(token string) (string, error) {
 	if token == "" {
 		return "", nil
 	}
-	if !tokenPattern.MatchString(token) {
-		return "", &CallError{KindMalformed}
+	if !awscli.ValidToken(token) {
+		return "", &awscli.CallError{Kind: awscli.KindMalformed}
 	}
 	return token, nil
 }
@@ -414,7 +415,7 @@ func parseBuckets(page []byte, ctx parseContext) ([]CloudResourceCandidate, stri
 	out := []CloudResourceCandidate{}
 	for _, b := range doc.Buckets {
 		region := ""
-		if regionPattern.MatchString(b.BucketRegion) {
+		if awscli.ValidRegion(b.BucketRegion) {
 			region = b.BucketRegion
 			if len(ctx.Selected) > 0 && !ctx.Selected[region] {
 				continue

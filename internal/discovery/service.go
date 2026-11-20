@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/imports"
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
@@ -270,7 +271,7 @@ type Prefill struct {
 
 // Service holds verifications, scans and prepared imports of this session in memory.
 type Service struct {
-	Runner Runner
+	Runner awscli.Runner
 	Now    func() time.Time
 	// Sleep waits between retries of throttled calls; tests replace it.
 	Sleep func(ctx context.Context, d time.Duration) error
@@ -297,7 +298,7 @@ type Service struct {
 }
 
 // New returns a service with runner.
-func New(runner Runner) *Service {
+func New(runner awscli.Runner) *Service {
 	base, stop := context.WithCancel(context.Background())
 	return &Service{Runner: runner, Now: time.Now, Sleep: sleep, NewID: newID, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, MaxObjects: MaxObjects, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
 }
@@ -348,7 +349,7 @@ func RegionOf(pin Pin, environ []string) (region, source string) {
 		values[strings.ToUpper(key)] = value
 	}
 	for _, key := range []string{"AWS_REGION", "AWS_DEFAULT_REGION"} {
-		if regionPattern.MatchString(values[key]) {
+		if awscli.ValidRegion(values[key]) {
 			return values[key], "environment"
 		}
 	}
@@ -395,7 +396,7 @@ func (s *Service) callerIdentity(ctx context.Context, environ []string, region s
 	}
 	account, arn, principal, partition, err = parseIdentity(out)
 	if err != nil {
-		return "", "", "", "", &CallError{KindMalformed}
+		return "", "", "", "", &awscli.CallError{Kind: awscli.KindMalformed}
 	}
 	return account, arn, principal, partition, nil
 }
@@ -407,9 +408,9 @@ func (s *Service) Verify(ctx context.Context, pin Pin, environ []string) (CloudI
 	if err != nil {
 		return CloudIdentity{}, err
 	}
-	version, supported := ParseVersion(out)
+	version, supported := awscli.ParseVersion(out)
 	if !supported {
-		return CloudIdentity{}, &CallError{KindUnsupportedCLI}
+		return CloudIdentity{}, &awscli.CallError{Kind: awscli.KindUnsupportedCLI}
 	}
 	region, source := RegionOf(pin, environ)
 	account, arn, principal, partition, err := s.callerIdentity(ctx, environ, region)
@@ -521,7 +522,7 @@ func (s *Service) copyScan(scan *Scan) Scan {
 }
 
 // fatal error kinds stop the whole scan: every other read would fail the same way.
-var fatal = map[string]bool{KindExpired: true, KindNoCredentials: true, KindInvalid: true, KindProfileNotFound: true, KindMissingCLI: true, KindIdentityChanged: true}
+var fatal = map[string]bool{awscli.KindExpired: true, awscli.KindNoCredentials: true, awscli.KindInvalid: true, awscli.KindProfileNotFound: true, awscli.KindMissingCLI: true, awscli.KindIdentityChanged: true}
 
 func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 	finish := func(status, kind string) {
@@ -530,11 +531,11 @@ func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 		s.running--
 		scan.Status, scan.CompletedAt = status, s.Now().UTC().Format(time.RFC3339)
 		if kind != "" {
-			scan.Error, scan.Message = kind, Message(kind)
+			scan.Error, scan.Message = kind, awscli.Message(kind)
 		}
 		for i := range scan.Tasks {
 			if t := &scan.Tasks[i]; t.Status == TaskPending || t.Status == TaskRunning {
-				t.Status, t.Error, t.Message = TaskCancelled, KindCancelled, Message(KindCancelled)
+				t.Status, t.Error, t.Message = TaskCancelled, awscli.KindCancelled, awscli.Message(awscli.KindCancelled)
 			}
 		}
 		sortCandidates(scan.Candidates)
@@ -547,7 +548,7 @@ func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 	select {
 	case s.calls <- struct{}{}:
 	case <-ctx.Done():
-		finish(ScanCancelled, KindCancelled)
+		finish(ScanCancelled, awscli.KindCancelled)
 		return
 	}
 	s.countCall(scan)
@@ -555,13 +556,13 @@ func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 	<-s.calls
 	switch {
 	case ctx.Err() != nil:
-		finish(ScanCancelled, KindCancelled)
+		finish(ScanCancelled, awscli.KindCancelled)
 		return
 	case err != nil:
-		finish(ScanFailed, KindOf(err))
+		finish(ScanFailed, awscli.KindOf(err))
 		return
 	case account != scan.Identity.Account:
-		finish(ScanFailed, KindIdentityChanged)
+		finish(ScanFailed, awscli.KindIdentityChanged)
 		return
 	}
 	scanCtx, abort := context.WithCancel(ctx)
@@ -597,9 +598,9 @@ func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 	case fatalKind != "":
 		finish(ScanFailed, fatalKind)
 	case ctx.Err() != nil:
-		kind := KindCancelled
+		kind := awscli.KindCancelled
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			kind = KindTimeout
+			kind = awscli.KindTimeout
 		}
 		finish(ScanCancelled, kind)
 	default:
@@ -650,10 +651,10 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		status := TaskFailed
-		if kind == KindCancelled || kind == KindTimeout {
+		if kind == awscli.KindCancelled || kind == awscli.KindTimeout {
 			status = TaskCancelled
 		}
-		task.Status, task.Error, task.Message = status, kind, Message(kind)
+		task.Status, task.Error, task.Message = status, kind, awscli.Message(kind)
 		return kind
 	}
 	token, count := "", 0
@@ -677,11 +678,11 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 		}
 		out, err := s.call(ctx, scan, task, environ, args)
 		if err != nil {
-			return fail(KindOf(err))
+			return fail(awscli.KindOf(err))
 		}
 		found, next, err := typ.parse(out, pctx)
 		if err != nil {
-			return fail(KindOf(err))
+			return fail(awscli.KindOf(err))
 		}
 		s.mu.Lock()
 		task.Pages++
@@ -700,7 +701,7 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 			break
 		}
 		if ctx.Err() != nil {
-			return fail(KindCancelled)
+			return fail(awscli.KindCancelled)
 		}
 		token = next
 	}
@@ -717,7 +718,7 @@ func (s *Service) call(ctx context.Context, scan *Scan, task *Task, environ []st
 		select {
 		case s.calls <- struct{}{}:
 		case <-ctx.Done():
-			return nil, &CallError{KindCancelled}
+			return nil, &awscli.CallError{Kind: awscli.KindCancelled}
 		}
 		s.countCall(scan)
 		out, err := s.Runner.Run(ctx, environ, args)
@@ -726,9 +727,9 @@ func (s *Service) call(ctx context.Context, scan *Scan, task *Task, environ []st
 			return out, nil
 		}
 		if ctx.Err() != nil {
-			return nil, &CallError{KindCancelled}
+			return nil, &awscli.CallError{Kind: awscli.KindCancelled}
 		}
-		if KindOf(err) != KindThrottled || attempt+1 >= maxAttempts {
+		if awscli.KindOf(err) != awscli.KindThrottled || attempt+1 >= maxAttempts {
 			return nil, err
 		}
 		s.mu.Lock()
@@ -736,7 +737,7 @@ func (s *Service) call(ctx context.Context, scan *Scan, task *Task, environ []st
 		s.mu.Unlock()
 		backoff := time.Duration(500*(1<<attempt)) * time.Millisecond
 		if s.Sleep(ctx, backoff) != nil {
-			return nil, &CallError{KindCancelled}
+			return nil, &awscli.CallError{Kind: awscli.KindCancelled}
 		}
 	}
 }
@@ -919,7 +920,7 @@ func (s *Service) Prepare(ctx context.Context, scanID, candidateID string, pin P
 		return Prefill{}, err
 	}
 	if account != identity.Account || c.Account != identity.Account {
-		return Prefill{}, &CallError{KindIdentityChanged}
+		return Prefill{}, &awscli.CallError{Kind: awscli.KindIdentityChanged}
 	}
 	now := s.Now()
 	p := &Prefill{Token: s.NewID(), ScanID: scanID, CandidateID: candidateID, Type: c.Type, ImportID: c.ImportID, SuggestedAddress: suggestAddress(c), Region: c.Region, Account: c.Account, Match: match.Status, Warnings: []string{}, pin: pin, expires: now.Add(s.PrepareTTL)}

@@ -9,7 +9,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/awsauth"
-	"hclaro/internal/preflight"
+	"hclaro/internal/awscli"
 )
 
 // authServer is a profile server with an AWS authentication manager whose commands and STS
@@ -31,9 +31,9 @@ func authServer(t *testing.T) (*hubServer, *[]string) {
 		}
 		return nil, []byte(fixtures.Canary), errors.New("exit status 1")
 	}
-	m.Probe = func(ctx context.Context, environ []string) preflight.Identity {
+	m.Probe = func(ctx context.Context, environ []string) awscli.Identity {
 		*calls = append(*calls, "sts")
-		return preflight.Identity{State: "verified", Account: "444455556666", ARN: "arn:aws:sts::444455556666:assumed-role/Deploy/s", At: "2026-11-16T00:00:00Z"}
+		return awscli.Identity{State: "verified", Account: "444455556666", ARN: "arn:aws:sts::444455556666:assumed-role/Deploy/s", At: "2026-11-16T00:00:00Z"}
 	}
 	s.hub.Auth = m
 	return s, calls

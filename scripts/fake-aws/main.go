@@ -10,8 +10,9 @@
 // Authentication (M20): `configure list-profiles` lists dev, prod and sso-dev (plus lines
 // that are not profile names); `configure get sso_session|sso_start_url --profile sso-dev`
 // succeeds, other settings and profiles exit 1. `sso login` and `login` honour
-// HCLARO_FAKE_AWS_LOGIN: unset or "ok" (prints a canary device code and succeeds), "fail"
-// and "hang" (waits 30 seconds). `login help` succeeds only with HCLARO_FAKE_AWS_LOGIN_CMD=1.
+// HCLARO_FAKE_AWS_LOGIN: unset or "ok" (prints a canary device code and succeeds), "fail",
+// "hang" (waits 30 seconds) and "flood" (prints 512 KiB and succeeds; `configure
+// list-profiles` then prints 20000 profile names, about 400 KiB). `login help` succeeds only with HCLARO_FAKE_AWS_LOGIN_CMD=1.
 // HCLARO_FAKE_AWS_SPY, when set, receives each argv as one NUL-separated line, prefixed
 // with AWS_PROFILE=<value>, KEYS=<whether AWS_ACCESS_KEY_ID is set> and SET=<the names in
 // credentialVars that are set, comma-separated> so tests can check the composed environment.
@@ -78,6 +79,10 @@ func auth(args []string) bool {
 	op := strings.Join(args[:min(2, len(args))], " ")
 	login := os.Getenv("HCLARO_FAKE_AWS_LOGIN")
 	switch {
+	case op == "configure list-profiles" && login == "flood":
+		for i := range 20000 {
+			fmt.Printf("generated-profile-%05d\n", i)
+		}
 	case op == "configure list-profiles":
 		fmt.Print("dev\nprod\nsso-dev\n" + canary + "\n--endpoint-url\n")
 	case op == "configure get":
@@ -102,6 +107,8 @@ func auth(args []string) bool {
 			fail("Failed to open browser "+canary, 255)
 		case "hang":
 			time.Sleep(30 * time.Second)
+		case "flood":
+			fmt.Print(strings.Repeat("x", 512<<10))
 		}
 		fmt.Println("Successfully logged into Start URL")
 	default:

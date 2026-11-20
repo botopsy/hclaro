@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/plan"
 	"hclaro/internal/profiles"
 )
@@ -86,19 +87,6 @@ type GitResult struct {
 	Incomplete bool `json:"incomplete"`
 }
 
-// Identity is the result of an optional, explicitly requested cloud identity probe.
-type Identity struct {
-	// State is not_requested, verified, unavailable (no CLI) or failed.
-	State   string `json:"state"`
-	Account string `json:"account,omitempty"`
-	ARN     string `json:"arn,omitempty"`
-	// Kind classifies a failed probe (discovery error kinds such as credentials_expired).
-	Kind string `json:"kind,omitempty"`
-	// Message explains unavailable or failed probes; it never contains CLI output.
-	Message string `json:"message,omitempty"`
-	At      string `json:"verifiedAt,omitempty"`
-}
-
 // SourceFacts is the comparison of a plan's source fingerprint (HEAD and the IaC files of
 // the project root and its local modules) with the working tree now.
 type SourceFacts struct {
@@ -166,7 +154,7 @@ type Input struct {
 	Source *SourceFacts
 	// Probes and policy.
 	Git        GitResult
-	Identity   Identity
+	Identity   awscli.Identity
 	Policy     Policy
 	PolicyInfo PolicyInfo
 }
@@ -384,7 +372,7 @@ func Evaluate(in Input) []Check {
 		id := in.Identity
 		title := "AWS identity verified for this review"
 		switch {
-		case id.State == "verified" && !arnRE.MatchString(id.ARN):
+		case id.State == "verified" && !awscli.ValidARN(id.ARN):
 			// Without a usable ARN the apply could not tell whether the principal changed.
 			out = append(out, check(CheckAWSReviewed, title, Block, Fail, "STS reported account "+id.Account+", but its caller ARN could not be read safely, so Hclaro cannot bind the approval to a principal.", "Check the AWS profile with aws sts get-caller-identity in a terminal, or choose another profile."))
 		case id.State == "verified":

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/discovery"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
@@ -316,17 +317,17 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 
 // discoveryError maps discovery errors to typed responses. Messages never include CLI output.
 func discoveryError(w http.ResponseWriter, err error) {
-	var call *discovery.CallError
+	var call *awscli.CallError
 	switch {
 	case errors.As(err, &call):
 		status := 502
 		switch call.Kind {
-		case discovery.KindIdentityChanged:
+		case awscli.KindIdentityChanged:
 			status = 409
-		case discovery.KindMissingCLI, discovery.KindUnsupportedCLI:
+		case awscli.KindMissingCLI, awscli.KindUnsupportedCLI:
 			status = 409
 		}
-		reasonJSON(w, status, call.Kind, discovery.Message(call.Kind))
+		reasonJSON(w, status, call.Kind, awscli.Message(call.Kind))
 	case errors.Is(err, discovery.ErrInvalidScope):
 		reasonJSON(w, 400, "invalid_scope", "Choose 1 to 6 known regions, at least one supported type, 1 to 1000 objects per type and 1 to 4 concurrent reads.")
 	case errors.Is(err, discovery.ErrIdentityStale):

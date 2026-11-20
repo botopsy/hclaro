@@ -1,10 +1,11 @@
-// Package discovery lists existing AWS objects of a small, documented set of resource types
-// in the account of the user's own credential chain, labels each one against the launch
-// workspace's recorded state and prepares an import for the M04 wizard. It never creates,
-// changes or deletes anything: the AWS CLI runs only through Exec, which accepts a fixed set
-// of read-only Describe/List/Get operations as argv arrays, never through a shell. Nothing
-// runs unless the user asks for it.
-package discovery
+// Package awscli owns every AWS CLI process Hclaro starts, and every aws-vault process
+// outside the engine (engine.CLI wraps its own commands in aws-vault exec). Exec runs the
+// read-only Describe/List/Get calls of discovery and the STS identity probe; Local runs the
+// sign-in commands of awsauth (tool detection, profile listing, sso login, login). Both take
+// argv arrays checked against a fixed allowlist, never a shell, and start the process in one
+// place (start) with a composed environment and bounded output. CLI output is read only to
+// parse a result or classify a failure; raw output is never returned in an error.
+package awscli
 
 import (
 	"context"
@@ -12,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,6 +52,7 @@ const (
 	KindVault            = "vault_failed"
 	maxOutput            = 8 << 20
 	maxStderr            = 16 << 10
+	maxLocalOutput       = 256 << 10
 	defaultCallTimeout   = 60 * time.Second
 	defaultConnectSecond = "10"
 	defaultReadSecond    = "30"
@@ -120,6 +124,12 @@ var (
 	tokenPattern = boundedPattern{regexp.MustCompile(`^[A-Za-z0-9+/=_.-]+$`), 4096}
 )
 
+// ValidRegion reports whether s has the shape of an AWS region name.
+func ValidRegion(s string) bool { return regionPattern.MatchString(s) }
+
+// ValidToken reports whether s is a pagination token Exec accepts for --starting-token.
+func ValidToken(s string) bool { return tokenPattern.MatchString(s) }
+
 // boundedPattern is a pattern with a length limit beyond regexp's repeat limit.
 type boundedPattern struct {
 	re  *regexp.Regexp
@@ -172,27 +182,33 @@ func Allowed(args []string) bool {
 	return true
 }
 
-// Environ returns environ for an AWS CLI call: the pager, auto-prompt and the CLI's own
-// retries are disabled (Hclaro retries throttled calls itself), and settings that change the
-// output format are dropped. Credential settings are kept: they are the user's credential
+// Environ returns environ for a read-only AWS CLI call: the pager, auto-prompt and the CLI's
+// own retries are disabled (Hclaro retries throttled calls itself), and settings that change
+// the output format are dropped. Credential settings are kept: they are the user's credential
 // chain, already composed by the execution profile.
 func Environ(environ []string) []string {
-	if environ == nil {
-		environ = awsvault.Strip(os.Environ())
-	}
-	out := make([]string, 0, len(environ)+5)
-	for _, item := range environ {
-		key, _, _ := strings.Cut(item, "=")
-		switch strings.ToUpper(key) {
-		case "AWS_PAGER", "AWS_CLI_AUTO_PROMPT", "AWS_DEFAULT_OUTPUT", "AWS_MAX_ATTEMPTS", "AWS_RETRY_MODE", "AWS_CLI_FILE_ENCODING":
-			continue
-		}
-		out = append(out, item)
-	}
-	return append(out, "AWS_PAGER=", "AWS_CLI_AUTO_PROMPT=off", "AWS_MAX_ATTEMPTS=1", "AWS_RETRY_MODE=standard")
+	return append(localEnviron(environ, "AWS_MAX_ATTEMPTS", "AWS_RETRY_MODE", "AWS_DEFAULT_OUTPUT", "AWS_CLI_FILE_ENCODING"), "AWS_MAX_ATTEMPTS=1", "AWS_RETRY_MODE=standard")
 }
 
-// Exec is the real runner: `aws` from PATH, argv only, empty stdin, bounded output.
+// localEnviron is environ (Hclaro's own when nil) without the aws-vault marker, the pager,
+// auto-prompt and the extra keys drop, with the pager and auto-prompt disabled. A sign-in
+// keeps the user's retry, output and file-encoding settings, as in their terminal.
+func localEnviron(environ []string, drop ...string) []string {
+	if environ == nil {
+		environ = os.Environ()
+	}
+	drop = append(drop, "AWS_PAGER", "AWS_CLI_AUTO_PROMPT")
+	out := make([]string, 0, len(environ)+4)
+	for _, item := range awsvault.Strip(environ) {
+		key, _, _ := strings.Cut(item, "=")
+		if !slices.Contains(drop, strings.ToUpper(key)) {
+			out = append(out, item)
+		}
+	}
+	return append(out, "AWS_PAGER=", "AWS_CLI_AUTO_PROMPT=off")
+}
+
+// Exec is the real read-only runner: `aws` from PATH, argv only, empty stdin, bounded output.
 type Exec struct {
 	Timeout time.Duration
 	// Observe, when set, is called with each permitted argv before it runs (tests).
@@ -233,14 +249,8 @@ func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte,
 			return nil, &CallError{KindVaultMissing}
 		}
 	}
-	cmd := exec.CommandContext(ctx, name, argv...)
-	cmd.WaitDelay = time.Second
-	cmd.Env = Environ(environ)
-	out := &bounded.Buffer{Limit: maxOutput}
-	// stderr is read only to classify the failure; it is never returned or logged.
-	errOut := &bounded.Buffer{Limit: maxStderr}
-	cmd.Stdout, cmd.Stderr = out, errOut
-	if err := cmd.Run(); err != nil {
+	out, errOut, err := start(ctx, name, argv, Environ(environ), maxOutput, false)
+	if err != nil {
 		switch {
 		case errors.Is(ctx.Err(), context.Canceled):
 			return nil, &CallError{KindCancelled}
@@ -257,6 +267,71 @@ func (e Exec) Run(ctx context.Context, environ []string, args []string) ([]byte,
 		return errOut.Bytes(), nil
 	}
 	return out.Bytes(), nil
+}
+
+// ErrRefusedArgs is returned by Local for a command not on the sign-in allowlist; no process
+// starts.
+var ErrRefusedArgs = errors.New("hclaro refused to run this command because it is not on the allowlist")
+
+// localAllowed is the sign-in allowlist: the exact commands awsauth builds, with a valid
+// profile name where one is substituted.
+func localAllowed(name string, args []string) bool {
+	is := func(want ...string) bool { return slices.Equal(args, want) }
+	profile := func(prefix ...string) bool {
+		return len(args) == len(prefix)+1 && slices.Equal(args[:len(prefix)], prefix) && awsvault.ValidProfile(args[len(prefix)])
+	}
+	switch name {
+	case "aws-vault":
+		return is("--version")
+	case "aws":
+		return is("--version") || is("login", "help") || is("configure", "list-profiles") ||
+			profile("configure", "get", "sso_session", "--profile") || profile("configure", "get", "sso_start_url", "--profile") ||
+			profile("sso", "login", "--profile") || profile("login", "--profile")
+	}
+	return false
+}
+
+// Local runs one sign-in-path command (name is aws or aws-vault) and returns bounded stdout
+// and stderr: the executable from PATH, argv only, empty stdin, the pager and auto-prompt
+// disabled. A command off the allowlist returns ErrRefusedArgs, a missing executable
+// exec.ErrNotFound, a failed one its *exec.ExitError, and stdout beyond maxLocalOutput a
+// *CallError with KindOutputTooLarge. Cancelling ctx interrupts the process first so the AWS
+// CLI can finish writing its SSO cache.
+func Local(ctx context.Context, environ []string, name string, args ...string) (stdout, stderr []byte, err error) {
+	if !localAllowed(name, args) {
+		return nil, nil, ErrRefusedArgs
+	}
+	exe, err := exec.LookPath(name)
+	if err != nil {
+		return nil, nil, exec.ErrNotFound
+	}
+	out, errOut, err := start(ctx, exe, args, localEnviron(environ), maxLocalOutput, true)
+	if err == nil && out.Overflow {
+		err = &CallError{KindOutputTooLarge}
+	}
+	return out.Bytes(), errOut.Bytes(), err
+}
+
+// start is the only place an AWS CLI or aws-vault process starts. stderr is bounded and
+// read only to classify a failure. An interactive process (a sign-in) is interrupted on
+// cancel and killed if it has not exited 3 seconds later; Windows has no interrupt signal
+// for another process, so there, like every other call, it is killed at once.
+func start(ctx context.Context, name string, argv, environ []string, limit int, interactive bool) (out, errOut *bounded.Buffer, err error) {
+	cmd := exec.CommandContext(ctx, name, argv...)
+	cmd.WaitDelay = time.Second
+	if interactive {
+		cmd.Cancel = func() error {
+			if runtime.GOOS != "windows" && cmd.Process.Signal(os.Interrupt) == nil {
+				return nil
+			}
+			return cmd.Process.Kill()
+		}
+		cmd.WaitDelay = 3 * time.Second
+	}
+	cmd.Env = environ
+	out, errOut = &bounded.Buffer{Limit: limit}, &bounded.Buffer{Limit: maxStderr}
+	cmd.Stdout, cmd.Stderr = out, errOut
+	return out, errOut, cmd.Run()
 }
 
 // Classify maps AWS CLI error text to a kind. The text itself is discarded by callers.
