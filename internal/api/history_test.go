@@ -43,6 +43,7 @@ func newHistoryServer(t *testing.T, config string) *historyServer {
 	hub := projects.NewHub(projects.Open(config, time.Now()), root)
 	t.Cleanup(hub.Close)
 	store := history.Open(config, time.Now(), history.Sources{Project: hub.Registry.Identify})
+	t.Cleanup(store.Close)
 	hub.Use(operations.Deps{Recorder: store})
 	manager := operations.New(ws, fake, root, operations.Deps{TempDir: t.TempDir(), Recorder: store})
 	manager.Reload = func(context.Context) {}

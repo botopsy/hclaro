@@ -139,6 +139,7 @@ func TestSchemaUpgradeKeepsABackupFirst(t *testing.T) {
 	path := filepath.Join(dir, FileName)
 	_ = os.WriteFile(path, []byte(legacy), 0o600)
 	s := OpenWith(dir, t0, upgradeFrom0())
+	t.Cleanup(s.Close)
 	backup := path + ".schema-0-20261106T100000Z"
 	if status, notice, _ := s.Status(); status != Ready || !strings.Contains(notice, "upgraded from schema 0 to schema 1") || !strings.Contains(notice, filepath.Base(backup)) {
 		t.Fatalf("%s %q", status, notice)
@@ -165,6 +166,7 @@ func TestSchemaUpgradeWithoutBackupLeavesFileUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := OpenWith(dir, t0, upgradeFrom0())
+	t.Cleanup(s.Close)
 	if status, notice, _ := s.Status(); status != Unavailable || !strings.Contains(notice, "backup copy could not be written") {
 		t.Fatalf("%s %q", status, notice)
 	}
@@ -178,6 +180,7 @@ func TestSchemaUpgradeWithoutBackupLeavesFileUnchanged(t *testing.T) {
 func TestOlderSchemaWrittenDuringSessionIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
 	s := OpenWith(dir, t0, upgradeFrom0())
+	t.Cleanup(s.Close)
 	s.Now = func() time.Time { return t0 }
 	finished(s, 1, "plan", operations.Succeeded, t0)
 	_ = os.WriteFile(s.Path(), []byte(legacy), 0o600)

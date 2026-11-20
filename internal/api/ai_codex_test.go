@@ -58,6 +58,7 @@ func aiServer(t *testing.T, strict bool) (*planServer, string, string, string) {
 	manager.TempDir = t.TempDir()
 	histDir := t.TempDir()
 	hist := history.Open(histDir, time.Now(), history.Sources{})
+	t.Cleanup(hist.Close)
 	manager.Recorder = hist
 	codex := assist.NewCodexCLI(exe)
 	codex.Host = assist.CodexHost{GOOS: "darwin", Managed: []string{filepath.Join(home, "etc-codex")},
