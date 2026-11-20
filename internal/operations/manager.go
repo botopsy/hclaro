@@ -423,8 +423,32 @@ func (m *Manager) stage(e *entry, stage string) {
 	e.log.Append("info", stage+"…")
 }
 
+// sharedMessages holds the codes every operation kind reports with the same text. A kind's
+// own table overrides a code only where its wording must differ.
+var sharedMessages = map[string]string{
+	"unsafe_cli_args":   "Inherited TF_CLI_ARGS or a command-specific TF_CLI_ARGS_* setting adds flags other than -no-color. Injected flags could change what the command does, so Hclaro refused to run it and nothing was run. Restart Hclaro without them. Values were not logged.",
+	"workspace_error":   "The active workspace could not be confirmed, so nothing was run. Check workspace selection with your CLI.",
+	"workspace_changed": "The active workspace changed since Hclaro read this project, so nothing was run. Read the project again first.",
+	"scope_changed":     scopeChangedMessage,
+	"state_locked":      "The state is locked by another operation. Hclaro never force-unlocks state. Wait for the other operation to finish, or investigate the lock with your CLI.",
+}
+
+// lookupMessage returns the text of code from a kind's table, then sharedMessages, then the
+// table's fallback code ("" for none).
+func lookupMessage(table map[string]string, code, fallback string) string {
+	if message := table[code]; message != "" {
+		return message
+	}
+	if message := sharedMessages[code]; message != "" {
+		return message
+	}
+	if fallback == "" {
+		return ""
+	}
+	return table[fallback]
+}
+
 var messages = map[string]string{
-	"state_locked":        "The state is locked by another operation. Hclaro never force-unlocks state. Wait for the other operation to finish, or investigate the lock with your CLI.",
 	"state_unlock_failed": "The engine could not release the state lock after planning, and no plan was kept. Planning does not change infrastructure. The lock may remain: investigate it with your CLI. Hclaro never force-unlocks state.",
 	"credentials":         "The engine could not authenticate with the backend or a provider. Refresh your credentials (for example, an SSO login) in your terminal, then run the plan again. Hclaro inherits credentials and never stores them.",
 	"init_required":       "This working directory needs initialization, or modules or providers are missing. Run init yourself, then restart Hclaro. Nothing was initialized automatically.",
@@ -432,13 +456,10 @@ var messages = map[string]string{
 	"plan_failed":         "The plan failed. Review the engine diagnostics; lines that look like secrets are withheld.",
 	"timeout":             "The plan exceeded its time limit and was stopped. Planning does not change infrastructure; if the engine was stopped forcefully, check for a leftover state lock with your CLI.",
 	"cancelled":           "The plan was cancelled and no plan was kept. Planning does not change infrastructure. If the engine had to be stopped forcefully, a state lock may remain; check with your CLI before retrying, and never force-unlock while another operation may be running.",
-	"unsafe_cli_args":     "Inherited TF_CLI_ARGS or TF_CLI_ARGS_plan contains flags other than -no-color. Injected flags could change what a reviewed plan contains, so Hclaro refused to run. Values were not logged.",
-	"workspace_error":     "The active workspace could not be confirmed before planning. Check workspace selection with your CLI.",
 	"plan_read":           "The saved plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
 	"plan_too_large":      planTooLarge,
 	"plan_format":         "The plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No plan data was returned.",
 	"shutdown":            "Hclaro stopped while the plan was running. No plan was kept.",
-	"scope_changed":       scopeChangedMessage,
 }
 
 // planTooLarge is shared by plan and drift: the saved plan's JSON passed the read limit.
@@ -470,6 +491,51 @@ func (m *Manager) verify(ctx context.Context, e *entry, kind string) (ok, change
 
 // scopeChangedCode is the Verify diagnostic code of a real scope change.
 const scopeChangedCode = "scope_changed"
+
+// prepare runs the steps every Manager operation shares before its first engine command,
+// in one order: the Hub scope is revalidated (Verify) first, so no engine command runs in a
+// changed scope, then the engine must report want as its active workspace. It returns the
+// planner bound to the operation's profile and the planning environment (Hclaro's own when
+// the operation has none), or the code that stops the operation.
+func (m *Manager) prepare(ctx context.Context, e *entry, kind, want string) (engine.Planner, []string, string) {
+	m.stage(e, "Checking workspace")
+	if b := e.op.Context; b != nil {
+		e.log.Append("info", "Execution profile "+b.ProfileName+" (revision "+fmt.Sprint(b.Revision)+"), workspace "+b.Workspace+". Identity not verified.")
+	}
+	planner := m.bound(e.environ, want)
+	if ok, changed := m.verify(ctx, e, kind); !ok {
+		if changed {
+			return nil, nil, "scope_changed"
+		}
+		return nil, nil, m.stopped(e)
+	}
+	name, err := planner.Workspace(ctx)
+	switch {
+	case ctx.Err() != nil:
+		return nil, nil, m.stopped(e)
+	case errors.Is(err, engine.ErrUnsafeArgs):
+		return nil, nil, "unsafe_cli_args"
+	case err != nil:
+		return nil, nil, "workspace_error"
+	case name != want:
+		return nil, nil, "workspace_changed"
+	}
+	return planner, environOr(e.environ), ""
+}
+
+// stopped reports why a running operation's context ended: "cancelled", "shutdown" or
+// "timeout".
+func (m *Manager) stopped(e *entry) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch {
+	case e.op.CancelRequested:
+		return "cancelled"
+	case m.closed:
+		return "shutdown"
+	}
+	return "timeout"
+}
 
 // Running reports whether an operation is running or being cancelled, or an import is
 // being revalidated before it starts.
@@ -542,7 +608,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 	default:
 		o.Status = Failed
 	}
-	message := messages[code]
+	message := lookupMessage(messages, code, "")
 	if code != "" {
 		if code == "workspace_changed" {
 			message = fmt.Sprintf("The active workspace changed since Hclaro started (was %q). Restart Hclaro to review the current workspace.", snap.Info.Workspace)
@@ -575,42 +641,11 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 // execute runs one plan. The private temp directory is removed on every return path,
 // except when the plan is eligible for apply: then it is returned as an artifact.
 func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot) (result *Plan, kept *artifact, code string, exitCode *int) {
-	stopped := func() string {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		switch {
-		case e.op.CancelRequested:
-			return "cancelled"
-		case m.closed:
-			return "shutdown"
-		}
-		return "timeout"
+	planner, environ, code := m.prepare(ctx, e, "plan", snap.Info.Workspace)
+	if code != "" {
+		return nil, nil, code, nil
 	}
-	m.stage(e, "Checking workspace")
 	bound := e.op.Context
-	planner := m.bound(e.environ, snap.Info.Workspace)
-	if bound != nil {
-		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
-	}
-	if ok, changed := m.verify(ctx, e, "plan"); !ok {
-		if !changed {
-			return nil, nil, stopped(), nil
-		}
-		return nil, nil, "scope_changed", nil
-	}
-	name, err := planner.Workspace(ctx)
-	if ctx.Err() != nil {
-		return nil, nil, stopped(), nil
-	}
-	if errors.Is(err, engine.ErrUnsafeArgs) {
-		return nil, nil, "unsafe_cli_args", nil
-	}
-	if err != nil {
-		return nil, nil, "workspace_error", nil
-	}
-	if name != snap.Info.Workspace {
-		return nil, nil, "workspace_changed", nil
-	}
 	dir, err := m.newArtifactDir(planDirPrefix)
 	if err != nil {
 		return nil, nil, "plan_failed", nil
@@ -639,10 +674,6 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	}
 	m.stage(e, "Planning")
 	label := engineLabel(snap.Info.Engine)
-	environ := e.environ
-	if environ == nil {
-		environ = os.Environ()
-	}
 	inputs := collectKnown(m.root, e.op.VarFiles, environ)
 	if inputs.incomplete {
 		e.log.Append("warn", knownIncomplete)
@@ -676,7 +707,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		var exit *engine.ExitError
 		switch {
 		case ctx.Err() != nil || errors.Is(err, engine.ErrCancelled):
-			return nil, nil, stopped(), nil
+			return nil, nil, m.stopped(e), nil
 		case errors.Is(err, engine.ErrUnsafeArgs):
 			return nil, nil, "unsafe_cli_args", nil
 		case errors.As(err, &exit):
@@ -699,7 +730,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	}
 	document, err := planner.ShowPlan(ctx, out)
 	if ctx.Err() != nil {
-		return nil, nil, stopped(), &zero
+		return nil, nil, m.stopped(e), &zero
 	}
 	if errors.Is(err, engine.ErrReadTooLarge) {
 		return nil, nil, "plan_too_large", &zero
@@ -742,7 +773,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	}
 	result = &Plan{
 		Review: review, ID: m.NewID(), OperationID: e.op.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		Engine: snap.Info.Engine, EngineVersion: snap.Info.Version, Workspace: name, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
+		Engine: snap.Info.Engine, EngineVersion: snap.Info.Version, Workspace: snap.Info.Workspace, VarFiles: e.op.VarFiles, Kind: kind, Replace: e.op.Replace,
 		Import: e.op.Import, GeneratedConfig: generatedConfig, GeneratedConfigTruncated: generatedTruncated,
 		ArtifactSHA256: digest, Fingerprint: fingerprint, Context: bound.Clone(), Source: source,
 		Destructive: review.Summary[plan.Delete]+review.Summary[plan.Replace]+review.Summary[plan.Forget]+review.Unsupported > 0,
@@ -752,7 +783,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 	// otherwise the deferred cleanup removes it now.
 	_, applies := planner.(engine.Applier)
 	if snap.Info.Capabilities.CanApply && m.applier != nil && applies && ineligible(result) == "" {
-		kept = &artifact{planID: result.ID, dir: dir, path: out, digest: digest, fingerprint: fingerprint, workspace: name, version: snap.Info.Version, engine: snap.Info.Engine, created: time.Now(), environ: slices.Clone(e.environ), context: bound.Clone()}
+		kept = &artifact{planID: result.ID, dir: dir, path: out, digest: digest, fingerprint: fingerprint, workspace: snap.Info.Workspace, version: snap.Info.Version, engine: snap.Info.Engine, created: time.Now(), environ: slices.Clone(e.environ), context: bound.Clone()}
 	}
 	return result, kept, "", &zero
 }
@@ -805,12 +836,12 @@ func environOr(environ []string) []string {
 // selection, configuration files, engine data directory and planning environment.
 // It is "" when the configuration could not be read.
 func (m *Manager) Fingerprint(snap workspace.Snapshot, varFiles []string) string {
-	fp, _ := m.fingerprintExcept(snap, varFiles, "")
+	fp, _ := m.fingerprintExcept(snap, varFiles, "", os.Environ())
 	return fp
 }
 
-func (m *Manager) fingerprintExcept(snap workspace.Snapshot, varFiles []string, skip string) (string, error) {
-	return workspace.FingerprintExcept(m.root, os.Environ(), map[string]bool{skip: skip != ""}, append([]string{snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}, varFiles...)...)
+func (m *Manager) fingerprintExcept(snap workspace.Snapshot, varFiles []string, skip string, environ []string) (string, error) {
+	return workspace.FingerprintExcept(m.root, environ, map[string]bool{skip: skip != ""}, append([]string{snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}, varFiles...)...)
 }
 
 func sha256File(path string) (string, error) {

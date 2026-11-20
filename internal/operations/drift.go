@@ -90,22 +90,17 @@ type DriftScanView struct {
 const maxScans = 10
 
 var driftMessages = map[string]string{
-	"state_locked":             "The state is locked by another operation, so the scan could not read it. Hclaro never force-unlocks state. Wait for the other operation to finish, or investigate the lock with your CLI.",
 	"credentials":              "The engine could not authenticate with the backend or a provider, or was denied access (for example, an expired SSO session or a missing permission). Sign in again in your terminal, check permissions, then scan again.",
 	"init_required":            "This working directory needs initialization, or modules or providers are missing. Run init yourself, then read the project again. Nothing was initialized automatically.",
 	"network":                  "A backend or provider endpoint was unreachable. Check VPN and network access, then scan again.",
 	"plan_failed":              "The refresh-only plan failed. Review the engine diagnostics; lines that look like secrets are withheld.",
 	"timeout":                  "The scan exceeded its time limit and was stopped. If the engine was stopped forcefully, check for a leftover state lock with your CLI.",
 	"cancelled":                "The scan was cancelled. No state was written. If the engine had to be stopped forcefully, a state lock may remain; check with your CLI before retrying.",
-	"unsafe_cli_args":          "Inherited TF_CLI_ARGS or TF_CLI_ARGS_plan contains flags other than -no-color. Injected flags could change what the scan does, so Hclaro refused to run. Values were not logged.",
-	"workspace_error":          "The active workspace could not be confirmed before scanning. Check workspace selection with your CLI.",
 	"plan_too_large":           planTooLarge,
 	"plan_read":                "The refresh-only plan could not be read back as JSON. Check that the engine version supports `show -json` for saved plans.",
 	"plan_format":              "The refresh-only plan JSON could not be safely decoded. It may use an unsupported format or contain secret-shaped resource addresses. No scan data was returned.",
 	"not_refresh_only":         "The engine returned a plan that proposes resource changes, which a refresh-only plan never does. The result cannot be trusted as a drift scan and was discarded.",
 	"shutdown":                 "Hclaro stopped while the scan was running. No result was kept.",
-	"scope_changed":            scopeChangedMessage,
-	"workspace_changed":        "The active workspace changed since Hclaro read this project. Read the project again before scanning.",
 	"configuration_unreadable": "Hclaro could not read the configuration, so a scan result could not be tied to it. Nothing was run. The log names the file or limit; fix it, then scan again.",
 }
 
@@ -260,10 +255,7 @@ func (m *Manager) runDrift(ctx context.Context, e *entry, snap workspace.Snapsho
 		o.Status, scan.Status = Failed, ScanFailed
 	}
 	if code != "" {
-		d := &Diagnostic{Code: code, Message: driftMessages[code]}
-		if d.Message == "" {
-			d.Message = driftMessages["plan_failed"]
-		}
+		d := &Diagnostic{Code: code, Message: lookupMessage(driftMessages, code, "plan_failed")}
 		o.Diagnostic, scan.Diagnostic = d, d
 	}
 	o.LogDropped = e.log.Dropped()
@@ -297,49 +289,17 @@ func (m *Manager) runDrift(ctx context.Context, e *entry, snap workspace.Snapsho
 }
 
 func driftMessage(code string) string {
-	if message := driftMessages[code]; message != "" {
-		return message
-	}
-	return driftMessages["plan_failed"]
+	return lookupMessage(driftMessages, code, "plan_failed")
 }
 
 // executeDrift runs one refresh-only plan. The private temp directory is removed on every
 // return path. partial is set when the engine failed but its plan could still be read.
 func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Snapshot) (result *drift.Result, fingerprint string, partial bool, code string, exitCode *int) {
-	stopped := func() string {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		switch {
-		case e.op.CancelRequested:
-			return "cancelled"
-		case m.closed:
-			return "shutdown"
-		}
-		return "timeout"
+	planner, environ, code := m.prepare(ctx, e, "drift", snap.Info.Workspace)
+	if code != "" {
+		return nil, "", false, code, nil
 	}
-	m.stage(e, "Checking workspace")
 	bound := e.op.Context
-	planner := m.bound(e.environ, snap.Info.Workspace)
-	if bound != nil {
-		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
-	}
-	if ok, changed := m.verify(ctx, e, "drift"); !ok {
-		if !changed {
-			return nil, "", false, stopped(), nil
-		}
-		return nil, "", false, "scope_changed", nil
-	}
-	name, err := planner.Workspace(ctx)
-	switch {
-	case ctx.Err() != nil:
-		return nil, "", false, stopped(), nil
-	case errors.Is(err, engine.ErrUnsafeArgs):
-		return nil, "", false, "unsafe_cli_args", nil
-	case err != nil:
-		return nil, "", false, "workspace_error", nil
-	case name != snap.Info.Workspace:
-		return nil, "", false, "workspace_changed", nil
-	}
 	dir, err := m.newArtifactDir(driftDirPrefix)
 	if err != nil {
 		return nil, "", false, "plan_failed", nil
@@ -355,10 +315,6 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 		return nil, "", false, "configuration_unreadable", nil
 	}
 	m.stage(e, "Scanning")
-	environ := e.environ
-	if environ == nil {
-		environ = os.Environ()
-	}
 	inputs := collectKnown(m.root, e.op.VarFiles, environ)
 	if inputs.incomplete {
 		e.log.Append("warn", knownIncomplete)
@@ -393,7 +349,7 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 		var exit *engine.ExitError
 		switch {
 		case ctx.Err() != nil || errors.Is(err, engine.ErrCancelled):
-			return nil, fingerprint, false, stopped(), nil
+			return nil, fingerprint, false, m.stopped(e), nil
 		case errors.Is(err, engine.ErrUnsafeArgs):
 			return nil, fingerprint, false, "unsafe_cli_args", nil
 		case errors.As(err, &exit):
@@ -415,7 +371,7 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 	m.stage(e, "Reading scan result")
 	r, stoppedRead, readErr := m.readDrift(ctx, planner, out)
 	if stoppedRead {
-		return nil, fingerprint, false, stopped(), &zero
+		return nil, fingerprint, false, m.stopped(e), &zero
 	}
 	if readErr != "" {
 		return nil, fingerprint, false, readErr, &zero

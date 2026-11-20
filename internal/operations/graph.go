@@ -106,26 +106,18 @@ var graphMessages = map[string]string{
 	"credentials":              "The engine could not read the backend (for example, an expired SSO session or a missing permission). Sign in again in your terminal, then generate the graph again.",
 	"init_required":            "This working directory needs initialization, or modules or providers are missing. Run init yourself, then read the project again. Nothing was initialized automatically.",
 	"network":                  "The backend was unreachable. Check VPN and network access, then generate the graph again.",
-	"state_locked":             "The state is locked by another operation, so the engine could not read it. Hclaro never force-unlocks state.",
 	"graph_failed":             "The engine could not produce a graph. Run `graph` with your CLI to see the error; its output is not shown here because it may contain secrets.",
 	"graph_format":             "The graph output could not be read as the DOT format the engines produce. Nothing was kept.",
 	"graph_too_large":          "The graph exceeds Hclaro's size limits (16 MiB, 20,000 nodes or 200,000 edges). Nothing was kept.",
 	"graph_unavailable":        "This engine adapter cannot generate graphs.",
 	"timeout":                  "Generating the graph exceeded its time limit and was stopped.",
 	"cancelled":                "Generating the graph was cancelled. Nothing was kept.",
-	"unsafe_cli_args":          "Inherited TF_CLI_ARGS or TF_CLI_ARGS_graph contains flags other than -no-color. Injected flags could change what the graph shows, so Hclaro refused to run. Values were not logged.",
-	"workspace_error":          "The active workspace could not be confirmed before generating the graph. Check workspace selection with your CLI.",
-	"workspace_changed":        "The active workspace changed since Hclaro read this project. Read the project again first.",
 	"shutdown":                 "Hclaro stopped while the graph was being generated. Nothing was kept.",
-	"scope_changed":            scopeChangedMessage,
 	"configuration_unreadable": "Hclaro could not read the configuration, so a graph could not be tied to it. Nothing was run. The log names the file or limit; fix it, then generate the graph again.",
 }
 
 func graphMessage(code string) string {
-	if message := graphMessages[code]; message != "" {
-		return message
-	}
-	return graphMessages["graph_failed"]
+	return lookupMessage(graphMessages, code, "graph_failed")
 }
 
 // GraphCapability reports whether a graph can be generated for the launch snapshot and, if
@@ -249,46 +241,21 @@ func (m *Manager) runGraph(ctx context.Context, e *entry, snap workspace.Snapsho
 }
 
 func (m *Manager) executeGraph(ctx context.Context, e *entry, snap workspace.Snapshot) (g *graph.Graph, fingerprint, code string, exitCode *int) {
-	stopped := func() string {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		switch {
-		case e.op.CancelRequested:
-			return "cancelled"
-		case m.closed:
-			return "shutdown"
-		}
-		return "timeout"
+	// The adapter's capability is checked before prepare runs an engine command.
+	if _, ok := m.bound(e.environ, snap.Info.Workspace).(engine.Grapher); !ok {
+		return nil, "", "graph_unavailable", nil
 	}
-	m.stage(e, "Checking workspace")
-	bound := e.op.Context
-	planner := m.bound(e.environ, snap.Info.Workspace)
-	if bound != nil {
-		e.log.Append("info", "Execution profile "+bound.ProfileName+" (revision "+fmt.Sprint(bound.Revision)+"), workspace "+bound.Workspace+". Identity not verified.")
+	planner, _, code := m.prepare(ctx, e, "graph", snap.Info.Workspace)
+	if code != "" {
+		return nil, "", code, nil
 	}
 	grapher, ok := planner.(engine.Grapher)
 	if !ok {
 		return nil, "", "graph_unavailable", nil
 	}
-	if ok, changed := m.verify(ctx, e, "graph"); !ok {
-		if !changed {
-			return nil, "", stopped(), nil
-		}
-		return nil, "", "scope_changed", nil
-	}
-	name, err := planner.Workspace(ctx)
-	switch {
-	case ctx.Err() != nil:
-		return nil, "", stopped(), nil
-	case errors.Is(err, engine.ErrUnsafeArgs):
-		return nil, "", "unsafe_cli_args", nil
-	case err != nil:
-		return nil, "", "workspace_error", nil
-	case name != snap.Info.Workspace:
-		return nil, "", "workspace_changed", nil
-	}
+	bound := e.op.Context
 	// Taken before the engine runs, so edits made meanwhile make the result stale.
-	fingerprint, err = m.fingerprintFor(snap, nil, "", bound, e.environ)
+	fingerprint, err := m.fingerprintFor(snap, nil, "", bound, e.environ)
 	if err != nil {
 		e.log.Append("error", unreadableNote(err))
 		return nil, "", "configuration_unreadable", nil
@@ -299,7 +266,7 @@ func (m *Manager) executeGraph(ctx context.Context, e *entry, snap workspace.Sna
 		var exit *engine.ExitError
 		switch {
 		case ctx.Err() != nil || errors.Is(err, engine.ErrCancelled):
-			return nil, fingerprint, stopped(), nil
+			return nil, fingerprint, m.stopped(e), nil
 		case errors.Is(err, engine.ErrUnsafeArgs):
 			return nil, fingerprint, "unsafe_cli_args", nil
 		case errors.Is(err, engine.ErrGraphTooLarge):

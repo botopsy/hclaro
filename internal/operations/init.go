@@ -76,12 +76,10 @@ func NewInits() *Inits {
 
 var initMessages = map[string]string{
 	"succeeded":         "Initialization finished. Workspaces and state can now be read; nothing else was run.",
-	"unsafe_cli_args":   "Inherited TF_CLI_ARGS or TF_CLI_ARGS_init adds flags other than -no-color. Hidden flags such as -upgrade or -reconfigure would change what init does, so Hclaro refused to run it. Restart Hclaro without them. Values were not logged.",
 	"engine_version":    "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13. Nothing was initialized.",
 	"path_changed":      "The project folder, its engine or its environment changed after you reviewed initialization. Nothing was run. Review the project again.",
 	"backend_migration": "The backend configuration changed, so the engine asks to migrate or reconfigure state. Hclaro never runs init with -migrate-state, -force-copy or -reconfigure. Review the backend change and run the command you intend yourself in a terminal. Nothing was migrated.",
 	"input_required":    "Init needs interactive input, such as a backend setting or a variable value. Hclaro runs init with -input=false and never asks for secrets. Provide the value through your usual configuration and run init in a terminal, or retry here once it no longer needs input.",
-	"state_locked":      "The state is locked by another operation. Hclaro never force-unlocks state. Wait for the other operation to finish, then retry.",
 	"lockfile_upgrade":  "The dependency lock file does not allow the provider versions the configuration requires. Changing it needs init -upgrade, which Hclaro does not run. Review the version constraints and run init -upgrade yourself if that is intended.",
 	"version_mismatch":  "The configuration requires a different engine version. Install a matching Terraform/OpenTofu version or change this project's engine, then retry.",
 	"registry":          "A provider or module could not be downloaded from its registry. Check network and VPN access, registry mirrors in your CLI configuration and the source addresses, then retry.",
@@ -196,7 +194,7 @@ func (r *Inits) run(ctx context.Context, e *initEntry, req InitRequest) {
 	o.CompletedAt = time.Now().UTC().Format(time.RFC3339)
 	o.DurationMs = time.Since(e.start).Milliseconds()
 	if code != "succeeded" {
-		o.Diagnostic = &Diagnostic{Code: code, Message: initMessages[code]}
+		o.Diagnostic = &Diagnostic{Code: code, Message: lookupMessage(initMessages, code, "")}
 	}
 	o.LogDropped = e.log.Dropped()
 	r.mu.Unlock()
@@ -208,7 +206,7 @@ func (r *Inits) run(ctx context.Context, e *initEntry, req InitRequest) {
 	if status == Succeeded {
 		level = "info"
 	}
-	e.log.Append(level, initMessages[code])
+	e.log.Append(level, lookupMessage(initMessages, code, ""))
 	r.recordFinal(e)
 	e.log.Finish()
 }
@@ -216,17 +214,6 @@ func (r *Inits) run(ctx context.Context, e *initEntry, req InitRequest) {
 // execute returns a code from initMessages, the engine exit code when it ran to completion,
 // and whether the engine was started.
 func (r *Inits) execute(ctx context.Context, e *initEntry, req InitRequest) (code string, exitCode *int, ran bool) {
-	stopped := func() string {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		switch {
-		case e.op.CancelRequested:
-			return "cancelled"
-		case r.closed:
-			return "shutdown"
-		}
-		return "timeout"
-	}
 	for _, n := range req.Notices {
 		e.log.Append("warn", n)
 	}
@@ -234,7 +221,7 @@ func (r *Inits) execute(ctx context.Context, e *initEntry, req InitRequest) (cod
 	version, err := req.Initer.Version(ctx)
 	switch {
 	case ctx.Err() != nil:
-		return stopped(), nil, false
+		return r.stopped(e), nil, false
 	case errors.Is(err, engine.ErrUnsafeArgs):
 		return "unsafe_cli_args", nil, false
 	case err != nil:
@@ -250,7 +237,7 @@ func (r *Inits) execute(ctx context.Context, e *initEntry, req InitRequest) (cod
 		return code, nil, false
 	}
 	if ctx.Err() != nil {
-		return stopped(), nil, false
+		return r.stopped(e), nil, false
 	}
 	r.stage(e, "Initializing")
 	k := collectKnown(req.Root, nil, req.Environ)
@@ -302,7 +289,7 @@ func (r *Inits) execute(ctx context.Context, e *initEntry, req InitRequest) (cod
 		var exit *engine.ExitError
 		switch {
 		case ctx.Err() != nil || errors.Is(err, engine.ErrCancelled):
-			return stopped(), nil, true
+			return r.stopped(e), nil, true
 		case errors.Is(err, engine.ErrUnsafeArgs):
 			return "unsafe_cli_args", nil, false
 		case errors.As(err, &exit):
