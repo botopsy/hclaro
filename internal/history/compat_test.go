@@ -5,6 +5,7 @@ import (
 	. "hclaro/internal/history"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -57,7 +58,7 @@ func TestSchema1FixtureLoadsAndStaysSchema1(t *testing.T) {
 	if err := json.Unmarshal(mustRead(t, path), &doc); err != nil || doc.Version != 1 || len(doc.Entries) != 2 {
 		t.Fatalf("rewritten file: %+v %v", doc, err)
 	}
-	if matches, _ := filepath.Glob(path + ".*"); len(matches) != 0 {
+	if matches := asideCopies(path); len(matches) != 0 {
 		t.Fatalf("unexpected backup for a current file: %v", matches)
 	}
 }
@@ -80,7 +81,7 @@ func TestNewerSchemaFixtureIsNeverChanged(t *testing.T) {
 	if string(mustRead(t, path)) != string(newer) {
 		t.Fatal("newer history changed")
 	}
-	if matches, _ := filepath.Glob(path + ".*"); len(matches) != 0 {
+	if matches := asideCopies(path); len(matches) != 0 {
 		t.Fatalf("newer history moved aside: %v", matches)
 	}
 }
@@ -211,4 +212,10 @@ func TestInvalidSchemaVersionsAreKeptAside(t *testing.T) {
 			}
 		})
 	}
+}
+
+// asideCopies lists backups and moved-aside copies of path; the lock file is not one.
+func asideCopies(path string) []string {
+	matches, _ := filepath.Glob(path + ".*")
+	return slices.DeleteFunc(matches, func(m string) bool { return m == path+".lock" })
 }

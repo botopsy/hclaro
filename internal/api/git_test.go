@@ -56,7 +56,8 @@ func (g *gitRecorder) service(t *testing.T) *gitctx.Service {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
-	s := gitctx.NewWith(gitctx.Exec{Observe: func(a []string) {
+	s := gitctx.New()
+	s.Runner, s.OpenURL = gitctx.Exec{Observe: func(a []string) {
 		g.mu.Lock()
 		g.calls = append(g.calls, a)
 		g.mu.Unlock()
@@ -65,7 +66,7 @@ func (g *gitRecorder) service(t *testing.T) *gitctx.Service {
 		g.opened = append(g.opened, link)
 		g.mu.Unlock()
 		return nil
-	})
+	}
 	s.Environ = func() []string { return nil }
 	t.Cleanup(func() {
 		g.mu.Lock()
@@ -104,7 +105,7 @@ func newGitLaunchServer(t *testing.T) (*planServer, string, *gitRecorder) {
 	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	manager := operations.NewManager(store, fake, root)
+	manager := operations.New(store, fake, root, operations.Deps{})
 	manager.TempDir = t.TempDir()
 	manager.Reload = func(context.Context) {}
 	manager.Git = svc

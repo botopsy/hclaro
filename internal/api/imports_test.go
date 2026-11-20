@@ -30,7 +30,7 @@ func newImportServer(t *testing.T, fake *enginetest.Fake) (*planServer, string) 
 	fake.Root = root
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	manager := operations.NewManager(store, fake, root)
+	manager := operations.New(store, fake, root, operations.Deps{})
 	manager.TempDir = t.TempDir()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
 	services := &Services{}

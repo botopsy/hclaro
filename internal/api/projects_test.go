@@ -64,7 +64,7 @@ func newHubServer(t *testing.T) *hubServer {
 	}
 	t.Cleanup(hub.Close)
 	store := workspace.NoProject()
-	manager := operations.NewManager(store, nil, "")
+	manager := operations.New(store, nil, "", operations.Deps{})
 	t.Cleanup(func() { manager.Close(time.Second) })
 	h := Handler(store, manager, hub, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
 	return &hubServer{t, h, hub, calls, dir}
@@ -345,7 +345,7 @@ func TestHubClientRoutesServeTheAppShellOnly(t *testing.T) {
 			t.Fatalf("%s: %d", path, w.Code)
 		}
 	}
-	plain := Handler(workspace.NoProject(), operations.NewManager(workspace.NoProject(), nil, ""), nil, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
+	plain := Handler(workspace.NoProject(), operations.New(workspace.NoProject(), nil, "", operations.Deps{}), nil, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
 	w := httptest.NewRecorder()
 	plain.ServeHTTP(w, httptest.NewRequest("GET", "http://"+host+"/projects", nil))
 	if w.Code != 404 {

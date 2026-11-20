@@ -197,7 +197,7 @@ func TestLaunchPlanWithProfileOverHTTP(t *testing.T) {
 	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "dev", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
 	store := workspace.New(workspace.Info{Project: "network", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	manager := operations.NewManager(store, fake, network.RootPath)
+	manager := operations.New(store, fake, network.RootPath, operations.Deps{})
 	manager.TempDir = t.TempDir()
 	manager.Locks = s.hub.Locks
 	manager.Binder = s.hub.LaunchBinder()

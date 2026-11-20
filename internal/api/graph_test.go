@@ -153,7 +153,7 @@ func TestGraphAPIFailuresAndUnsupported(t *testing.T) {
 	remote := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, GraphDOT: fixtures.GraphTerraform}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"})
 	store.Load(t.Context(), remote, "terraform", nil)
-	manager := operations.NewManager(store, remote, t.TempDir())
+	manager := operations.New(store, remote, t.TempDir(), operations.Deps{})
 	t.Cleanup(func() { manager.Close(time.Second) })
 	services := &Services{}
 	rs := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), remote, manager, services}

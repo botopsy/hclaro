@@ -61,7 +61,8 @@ func newBranchServer(t *testing.T) (*planServer, string, *switchRecords) {
 		rec.git = append(rec.git, a)
 		rec.mu.Unlock()
 	}}
-	svc := gitctx.NewWith(run, nil)
+	svc := gitctx.New()
+	svc.Runner, svc.OpenURL = run, nil
 	svc.Switcher, svc.Environ = run, func() []string { return nil }
 	t.Cleanup(func() {
 		for _, c := range rec.git {
@@ -85,7 +86,7 @@ func newBranchServer(t *testing.T) (*planServer, string, *switchRecords) {
 	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	manager := operations.NewManager(store, fake, root)
+	manager := operations.New(store, fake, root, operations.Deps{})
 	manager.TempDir = t.TempDir()
 	manager.Reload = func(context.Context) {}
 	manager.Git, manager.Recorder = svc, rec
@@ -252,7 +253,8 @@ func TestHubBranchSwitchInAMonorepo(t *testing.T) {
 		t.Skip("git is not installed")
 	}
 	s := newHubServer(t)
-	s.hub.Git = gitctx.NewWith(gitctx.Exec{}, nil)
+	s.hub.Git = gitctx.New()
+	s.hub.Git.Runner, s.hub.Git.OpenURL = gitctx.Exec{}, nil
 	s.hub.Git.Environ = func() []string { return nil }
 	t.Setenv("HOME", s.dir)
 	put(t, filepath.Join(s.dir, "network", "main.tf"), "# network\n")

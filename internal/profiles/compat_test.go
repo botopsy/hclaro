@@ -185,6 +185,10 @@ func TestSchemaUpgradeWithoutBackupLeavesFileUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := Open(dir, compatNow)
+	// The lock file exists from an earlier change, so only the backup copy is refused below.
+	if err := os.WriteFile(path+".lock", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	// A read-only folder refuses the backup copy (and any new file).
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)

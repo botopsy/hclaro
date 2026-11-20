@@ -30,7 +30,8 @@ func switchService(t *testing.T) (*Service, *[][]string) {
 		defer mu.Unlock()
 		*calls = append(*calls, args)
 	}}
-	s := NewWith(run, nil)
+	s := New()
+	s.Runner, s.OpenURL = run, nil
 	s.Switcher = run
 	s.Environ = func() []string { return nil }
 	t.Cleanup(func() {

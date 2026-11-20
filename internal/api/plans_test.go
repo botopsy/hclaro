@@ -41,7 +41,7 @@ func newPlanServer(t *testing.T, fake *enginetest.Fake) *planServer {
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	manager := operations.NewManager(store, fake, t.TempDir())
+	manager := operations.New(store, fake, t.TempDir(), operations.Deps{})
 	manager.TempDir = t.TempDir()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
 	services := &Services{}
@@ -328,7 +328,7 @@ func TestPlanningUnavailable(t *testing.T) {
 	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store.Load(context.Background(), fake, "terraform", nil)
 	services := &Services{}
-	s := &planServer{t, Handler(store, operations.NewManager(store, fake, t.TempDir()), nil, services, fstest.MapFS{}, host, session, csrf, "test"), fake, nil, services}
+	s := &planServer{t, Handler(store, operations.New(store, fake, t.TempDir(), operations.Deps{}), nil, services, fstest.MapFS{}, host, session, csrf, "test"), fake, nil, services}
 	options := decode[map[string]any](t, s.do("GET", "/api/v1/plans/options", ""))
 	if options["canPlan"] != false || !strings.Contains(options["reason"].(string), "Remote execution") {
 		t.Fatalf("%v", options)

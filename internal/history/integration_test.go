@@ -45,7 +45,7 @@ func newHarness(t *testing.T, fake *enginetest.Fake, dir string) *harness {
 	if err := os.WriteFile(filepath.Join(root, "terraform.tfvars"), []byte(`note = "`+knownValue+`"`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	m := operations.NewManager(ws, fake, root)
+	m := operations.New(ws, fake, root, operations.Deps{})
 	m.TempDir = t.TempDir()
 	m.Reload = func(context.Context) {}
 	store := Open(dir, time.Now(), Sources{})

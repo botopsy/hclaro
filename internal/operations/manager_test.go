@@ -43,7 +43,7 @@ func setup(t *testing.T, fake *enginetest.Fake, info workspace.Info) (*Manager, 
 	store := workspace.New(info)
 	store.Load(context.Background(), fake, "terraform", nil)
 	root := t.TempDir()
-	m := NewManager(store, fake, root)
+	m := New(store, fake, root, Deps{})
 	m.TempDir = t.TempDir()
 	t.Cleanup(func() { m.Close(5 * time.Second) })
 	return m, root
@@ -289,7 +289,7 @@ func TestWorkspaceChangeAndAvailability(t *testing.T) {
 		}
 	}
 	loading := workspace.New(workspace.Info{Project: "x", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	if _, err := NewManager(loading, &enginetest.Fake{}, t.TempDir()).StartPlan(nil, nil); !errors.Is(err, ErrLoading) {
+	if _, err := New(loading, &enginetest.Fake{}, t.TempDir(), Deps{}).StartPlan(nil, nil); !errors.Is(err, ErrLoading) {
 		t.Fatalf("plan accepted while the workspace was loading: %v", err)
 	}
 	// A project with no recorded state can still be planned.

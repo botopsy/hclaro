@@ -36,6 +36,8 @@ Two Hclaro processes may share the folder, for example after an upgrade while an
 - `projects.json` and `profiles.json` are read again before every change; if the file is no longer one this build understands, the change is refused and the file is not touched.
 - `history.json` is read again whenever it changed on disk. If a newer Hclaro rewrote it, history becomes read-only for the rest of the session. If an older Hclaro rewrote it with an older schema, it is not upgraded behind that process's back: history becomes read-only until restart, when the upgrade runs with a backup.
 - `cost-estimates.json` is read again before every save; a newer file is never replaced.
+- Changes to `projects.json`, `profiles.json`, `history.json` and `cost-estimates.json` re-read and write the file while holding an OS lock on `<file>.lock`, so two processes saving at once both keep their change. Hclaro versions before this lock do not take it.
+- Each running Hclaro holds a lock on its own `.history-session-<id>.lock`. At start, an operation still marked running in `history.json` is marked interrupted only when its process no longer holds that lock, so opening a second Hclaro (or `hclaro --export-history`) while an apply runs elsewhere leaves it running. Entries written by versions without this lock are marked interrupted as before.
 
 ### Writes
 

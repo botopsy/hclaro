@@ -26,7 +26,7 @@ func TestReplaceAndApplyThroughSyntheticCLI(t *testing.T) {
 	cli := &engine.CLI{Name: "terraform", Executable: bin, Root: root}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), cli, "terraform", nil)
-	m := NewManager(store, cli, root)
+	m := New(store, cli, root, Deps{})
 	m.TempDir = t.TempDir()
 	m.Reload = func(ctx context.Context) { store.Load(ctx, cli, "terraform", nil) }
 	t.Cleanup(func() { m.Close(5 * time.Second) })
@@ -115,7 +115,7 @@ func TestDriftScanThroughSyntheticCLI(t *testing.T) {
 			cli := &engine.CLI{Name: tc.engine, Executable: bins[tc.engine], Root: root}
 			store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 			store.Load(context.Background(), cli, tc.engine, nil)
-			m := NewManager(store, cli, root)
+			m := New(store, cli, root, Deps{})
 			m.TempDir = t.TempDir()
 			t.Cleanup(func() { m.Close(5 * time.Second) })
 			op, scan, err := m.StartDriftScan(DriftStart{})
@@ -184,7 +184,7 @@ func TestGraphThroughSyntheticCLI(t *testing.T) {
 			cli := &engine.CLI{Name: tc.engine, Executable: bins[tc.engine], Root: root}
 			store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 			store.Load(context.Background(), cli, tc.engine, nil)
-			m := NewManager(store, cli, root)
+			m := New(store, cli, root, Deps{})
 			m.TempDir = t.TempDir()
 			t.Cleanup(func() { m.Close(5 * time.Second) })
 			op, run, err := m.StartGraph(GraphStart{})

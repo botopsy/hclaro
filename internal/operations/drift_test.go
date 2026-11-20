@@ -254,10 +254,10 @@ func TestDriftUnsupported(t *testing.T) {
 		})
 	}
 	loading := workspace.New(workspace.Info{Project: "x", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	if _, _, err := NewManager(loading, &enginetest.Fake{}, t.TempDir()).StartDriftScan(DriftStart{}); !errors.Is(err, ErrLoading) {
+	if _, _, err := New(loading, &enginetest.Fake{}, t.TempDir(), Deps{}).StartDriftScan(DriftStart{}); !errors.Is(err, ErrLoading) {
 		t.Fatal(err)
 	}
-	if _, _, err := NewManager(loading, nil, "").StartDriftScan(DriftStart{}); err == nil {
+	if _, _, err := New(loading, nil, "", Deps{}).StartDriftScan(DriftStart{}); err == nil {
 		t.Fatal("scan accepted without a planner")
 	}
 }

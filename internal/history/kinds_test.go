@@ -60,6 +60,7 @@ func TestInterruptedUnknownKindMayHaveChangedInfrastructure(t *testing.T) {
 	dir := t.TempDir()
 	s := open(t, dir)
 	s.Record(operations.Record{Operation: operations.Operation{ID: id(1), Kind: "destroy", Status: operations.Running, StartedAt: t0.Format(time.RFC3339)}, Root: "/synthetic/network", Engine: "terraform"}.Event())
+	s.Close()
 	e, _ := open(t, dir).Get(id(1))
 	if e.Kind != KindUnknown || e.Outcome.Result != "interrupted" || strings.Contains(e.Outcome.Summary, "did not change infrastructure") || !strings.Contains(e.Outcome.Summary, "may be partly changed") {
 		t.Fatalf("%+v", e)

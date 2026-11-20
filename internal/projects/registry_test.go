@@ -2,10 +2,12 @@ package projects
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -222,5 +224,28 @@ func TestRegistryChangedByAnotherProcessIsReread(t *testing.T) {
 	}
 	if _, err := one.Add(project(t, "c"), "", ""); !errors.Is(err, ErrRegistryUnavailable) {
 		t.Fatalf("overwrote a file changed by someone else: %v", err)
+	}
+}
+
+// Two Hclaro processes sharing the configuration folder (two registries on one file) adding
+// projects at once keep every project: the file lock spans each re-read and write.
+func TestTwoProcessesAddingProjectsLoseNothing(t *testing.T) {
+	config := t.TempDir()
+	hubs := []*Hub{NewHub(Open(config, now), ""), NewHub(Open(config, now), "")}
+	roots := make([]string, 20)
+	for i := range roots {
+		roots[i] = project(t, fmt.Sprintf("p%d", i))
+	}
+	var wg sync.WaitGroup
+	for i, root := range roots {
+		wg.Go(func() {
+			if _, err := hubs[i%2].Add(root, "", ""); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if records, err := Open(config, now).List(); err != nil || len(records) != len(roots) {
+		t.Fatalf("kept %d of %d projects: %v", len(records), len(roots), err)
 	}
 }

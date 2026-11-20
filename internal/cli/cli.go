@@ -9,9 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -131,23 +129,6 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	return o, nil
 }
 
-func openBrowser(ctx context.Context, url string) error {
-	var command string
-	var args []string
-	switch runtime.GOOS {
-	case "darwin":
-		command = "open"
-		args = []string{url}
-	case "windows":
-		command = "rundll32"
-		args = []string{"url.dll,FileProtocolHandler", url}
-	default:
-		command = "xdg-open"
-		args = []string{url}
-	}
-	return exec.CommandContext(ctx, command, args...).Run()
-}
-
 // ExportHistory writes the redacted history in the configuration directory to path. It
 // starts no server and reads no project.
 func ExportHistory(path string, output io.Writer, version string) error {
@@ -156,6 +137,7 @@ func ExportHistory(path string, output io.Writer, version string) error {
 		return errors.New("the per-user configuration directory is unavailable")
 	}
 	store := history.Open(dir, time.Now(), history.Sources{})
+	defer store.Close()
 	status, notice, _ := store.Status()
 	if notice != "" {
 		fmt.Fprintln(output, "Operation history:", notice)
@@ -255,6 +237,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		// is read from the repository files when an operation starts.
 		operationHistory = history.Open(dir, time.Now(), history.Sources{Git: history.ReadGit, Project: registry.Identify})
 	}
+	// Runs after shutdown has waited for operations, so no running entry is left behind live.
+	defer operationHistory.Close()
 	if _, notice, _ := operationHistory.Status(); notice != "" {
 		fmt.Fprintln(output, "Operation history:", notice)
 	}
@@ -398,7 +382,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		go func() {
 			browserCtx, done := context.WithTimeout(runCtx, 5*time.Second)
 			defer done()
-			if openBrowser(browserCtx, url) != nil {
+			if gitctx.OpenURL(browserCtx, url) != nil {
 				fmt.Fprintln(output, "Browser did not open. Use the private session URL above.")
 			}
 		}()

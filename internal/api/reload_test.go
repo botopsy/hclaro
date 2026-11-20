@@ -19,7 +19,7 @@ func TestLaunchReloadReinspectsAndRereads(t *testing.T) {
 	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store := workspace.New(workspace.Info{Project: "demo", Backend: "unknown", ExecutionMode: "unsupported"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	manager := operations.NewManager(store, fake, t.TempDir())
+	manager := operations.New(store, fake, t.TempDir(), operations.Deps{})
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
 	services := &Services{}
 	s := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager, services}

@@ -47,10 +47,11 @@ func service(t *testing.T) (*Service, *recorder, *[]string) {
 	}
 	rec := &recorder{}
 	opened := &[]string{}
-	s := NewWith(Exec{Observe: rec.observe}, func(_ context.Context, link string) error {
+	s := New()
+	s.Runner, s.OpenURL = Exec{Observe: rec.observe}, func(_ context.Context, link string) error {
 		*opened = append(*opened, link)
 		return nil
-	})
+	}
 	s.Environ = func() []string { return nil }
 	t.Cleanup(func() { rec.assertReadOnly(t) })
 	return s, rec, opened
@@ -474,18 +475,21 @@ func TestMalformedGitOutputIsRefused(t *testing.T) {
 		"traversal":     "# branch.oid " + strings.Repeat("a", 40) + "\x00? ../x.tf\x00",
 		"short record":  "# branch.oid " + strings.Repeat("a", 40) + "\x001 .M\x00",
 	} {
-		s := NewWith(fake{out: map[string][]byte{"rev-parse": revParse, "status": []byte(status)}}, nil)
+		s := New()
+		s.Runner, s.OpenURL = fake{out: map[string][]byte{"rev-parse": revParse, "status": []byte(status)}}, nil
 		if c := s.Status(context.Background(), dir); c.State != StateError || len(c.Files) != 0 {
 			t.Fatalf("%s: %+v", name, c)
 		}
 	}
 	// Malformed rev-parse output.
-	s := NewWith(fake{out: map[string][]byte{"rev-parse": []byte("relative\n")}}, nil)
+	s := New()
+	s.Runner, s.OpenURL = fake{out: map[string][]byte{"rev-parse": []byte("relative\n")}}, nil
 	if c := s.Status(context.Background(), dir); c.State != StateError {
 		t.Fatalf("rev-parse %+v", c)
 	}
 	// A failing git (for example safe.directory) is unavailable, with a generic message.
-	s = NewWith(fake{err: &exec.ExitError{}}, nil)
+	s = New()
+	s.Runner, s.OpenURL = fake{err: &exec.ExitError{}}, nil
 	if c := s.Status(context.Background(), dir); c.State != StateUnavailable || strings.Contains(c.Message, dir) {
 		t.Fatalf("exit %+v", c)
 	}

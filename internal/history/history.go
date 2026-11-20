@@ -304,18 +304,20 @@ type document struct {
 // Migration upgrades a document of one schema version to the next.
 type Migration func(json.RawMessage) (json.RawMessage, error)
 
-// Store is the history file. Every change re-reads the file first, so two Hclaro processes
-// sharing a configuration directory merge their entries; the last writer wins for a single
-// entry, and every write replaces the file atomically.
+// Store is the history file. Every change re-reads the file and writes it under a lock shared
+// with other processes, so two Hclaro processes sharing a configuration directory merge their
+// entries; the last writer wins for a single entry, and every write replaces the file atomically.
 type Store struct {
 	mu      sync.Mutex
 	path    string
 	status  string
 	notice  string
 	session string
-	doc     document
-	stamp   fileStamp
-	sources Sources
+	// closeSession releases the session lock taken at load; nil when none is held.
+	closeSession func()
+	doc          document
+	stamp        fileStamp
+	sources      Sources
 	// Now is the clock; tests replace it.
 	Now func() time.Time
 	// Migrations maps a schema version to the migration that upgrades it to the next one.
@@ -383,11 +385,26 @@ func newSession() string {
 
 func (s *Store) load(now time.Time) {
 	dir := filepath.Dir(s.path)
-	if leftovers, _ := filepath.Glob(filepath.Join(dir, ".history-*.tmp")); len(leftovers) > 0 {
-		for _, name := range leftovers {
-			_ = os.Remove(name)
+	// Writers hold the history lock while their temporary file exists, so under it every
+	// leftover is from an interrupted write. Without the lock (a read-only folder) nothing is
+	// swept and the load goes on unlocked, as it cannot write either.
+	if unlock, err := safefile.Lock(s.path); err == nil {
+		defer unlock()
+		if leftovers, _ := filepath.Glob(filepath.Join(dir, ".history-*.tmp")); len(leftovers) > 0 {
+			for _, name := range leftovers {
+				_ = os.Remove(name)
+			}
 		}
 	}
+	// This process holds its session lock until Close or exit; another process marks this
+	// session's running entries interrupted only once the lock is free.
+	if unlock, err := safefile.TryLock(sessionLock(dir, s.session)); err == nil {
+		s.closeSession = func() {
+			unlock()
+			_ = os.Remove(sessionLock(dir, s.session) + ".lock")
+		}
+	}
+	live := liveSessions(dir, s.session)
 	doc, loaded, err := s.read()
 	var corrupt *corruptError
 	switch {
@@ -420,7 +437,7 @@ func (s *Store) load(now time.Time) {
 	}
 	interrupted := false
 	for i := range s.doc.Entries {
-		if e := &s.doc.Entries[i]; e.Status == StatusRunning && e.Session != s.session {
+		if e := &s.doc.Entries[i]; e.Status == StatusRunning && e.Session != s.session && !live[e.Session] {
 			interrupt(e)
 			interrupted = true
 		}
@@ -429,6 +446,44 @@ func (s *Store) load(now time.Time) {
 		if err := s.write(s.doc); err != nil {
 			s.notice = "Operation history could not be updated: " + err.Error()
 		}
+	}
+}
+
+// sessionLock is the lock path a running process holds for its session (see load).
+func sessionLock(dir, session string) string {
+	return filepath.Join(dir, ".history-session-"+session)
+}
+
+// liveSessions returns the sessions of other processes still running, by their held session
+// locks. A free one belongs to a process that ended; its file is removed.
+func liveSessions(dir, own string) map[string]bool {
+	live := map[string]bool{}
+	files, _ := filepath.Glob(filepath.Join(dir, ".history-session-*.lock"))
+	for _, f := range files {
+		session := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), ".history-session-"), ".lock")
+		if session == own || !ids.Valid(session) {
+			continue
+		}
+		unlock, err := safefile.TryLock(sessionLock(dir, session))
+		switch {
+		case errors.Is(err, safefile.ErrLocked):
+			live[session] = true
+		case err == nil:
+			unlock()
+			_ = os.Remove(f)
+		}
+	}
+	return live
+}
+
+// Close releases this process's session, so a later start may mark its running entries
+// interrupted. Exiting releases it too.
+func (s *Store) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closeSession != nil {
+		s.closeSession()
+		s.closeSession = nil
 	}
 }
 
@@ -645,6 +700,13 @@ func (s *Store) mutate(change func(*document) error) error {
 	if s.status != Ready {
 		return ErrUnavailable
 	}
+	// The lock spans the re-read and the write, so another process's change is never overwritten.
+	unlock, err := safefile.Lock(s.path)
+	if err != nil {
+		s.notice = "Operation history could not be locked: " + err.Error()
+		return err
+	}
+	defer unlock()
 	doc := cloneDoc(s.current())
 	if s.status != Ready {
 		return ErrUnavailable

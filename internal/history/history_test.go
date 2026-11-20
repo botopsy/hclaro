@@ -97,6 +97,11 @@ func TestRestartPersistsAndMarksInterrupted(t *testing.T) {
 	if e, _ := s.Get(id(2)); e.Status != StatusRunning || e.Outcome.Result != "running" {
 		t.Fatalf("%+v", e)
 	}
+	// A second process opening history while this one still runs keeps its operations running.
+	if e, _ := open(t, dir).Get(id(2)); e.Status != StatusRunning {
+		t.Fatalf("a live process's operation was marked interrupted: %+v", e)
+	}
+	s.Close() // the process stops
 	again := open(t, dir)
 	if len(again.List(Filter{})) != 3 {
 		t.Fatal("entries were not kept across a restart")
