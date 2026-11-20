@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 )
@@ -113,62 +112,4 @@ func ClassifyWorkspace(text string) string {
 		return shared
 	}
 	return ""
-}
-
-// ListWorkspaces returns the fake's workspaces; ListErr fails it.
-func (m *Fake) ListWorkspaces(context.Context) (WorkspaceList, error) {
-	m.record("workspace list")
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.ListErr != nil {
-		return WorkspaceList{}, m.ListErr
-	}
-	return WorkspaceList{Names: slices.Clone(m.Workspaces), Current: m.CLIDefault}, nil
-}
-
-// WorkspaceState returns WorkspaceStates[name], or StateErr.
-func (m *Fake) WorkspaceState(_ context.Context, name string) ([]byte, error) {
-	m.record("show " + name)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.StateErr != nil {
-		return nil, m.StateErr
-	}
-	return m.WorkspaceStates[name], nil
-}
-
-// ChangeWorkspace emulates a workspace command. On success it applies the effect the real
-// engines have: new adds and selects, select selects, delete removes. ListErrAfter then
-// makes later listings fail, for partial-success tests.
-func (m *Fake) ChangeWorkspace(ctx context.Context, action WorkspaceAction, name string, line func(stream string, b []byte)) error {
-	args, err := WorkspaceArgs(action, name)
-	if err != nil {
-		return err
-	}
-	m.record(strings.Join(args, " "))
-	for _, l := range m.WorkspaceLines {
-		line("stdout", l)
-	}
-	if m.BlockWorkspace {
-		<-ctx.Done()
-		return ErrCancelled
-	}
-	if m.WorkspaceErr != nil {
-		return m.WorkspaceErr
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	switch action {
-	case WorkspaceNew:
-		m.Workspaces = append(m.Workspaces, name)
-		m.CLIDefault = name
-	case WorkspaceSelect:
-		m.CLIDefault = name
-	case WorkspaceDelete:
-		m.Workspaces = slices.DeleteFunc(m.Workspaces, func(n string) bool { return n == name })
-	}
-	if m.ListErrAfter {
-		m.ListErr = errors.New("list failed")
-	}
-	return nil
 }

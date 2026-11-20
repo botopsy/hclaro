@@ -8,7 +8,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 )
 
 // AI-01.05: the context workflow does not depend on which assistant is installed. With only
@@ -133,7 +133,7 @@ func checkProviderSet(t *testing.T, ps providerSet, do doFunc, prefix string, re
 func TestAIHandoffWithoutClaude(t *testing.T) {
 	for _, ps := range providerSets() {
 		t.Run(ps.name, func(t *testing.T) {
-			s, _ := newDriftServer(t, &engine.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed})
+			s, _ := newDriftServer(t, &enginetest.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed})
 			s.svc.Assist = ps.session()
 			s.enableAI()
 			_, scan := startScan(t, s)

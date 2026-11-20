@@ -3,32 +3,20 @@ package operations
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/testutil"
 	"hclaro/internal/workspace"
 )
 
 // TestReplaceAndApplyThroughSyntheticCLI drives the real CLI adapter against the compiled
 // synthetic engine (scripts/fake-engine) and checks the exact argv it received.
 func TestReplaceAndApplyThroughSyntheticCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds the synthetic engine")
-	}
-	bin := filepath.Join(t.TempDir(), "terraform")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-	build := exec.Command("go", "build", "-o", bin, "hclaro/scripts/fake-engine")
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("%v %s", err, out)
-	}
+	bin := filepath.Join(testutil.FakeEngine(t), "terraform"+testutil.Exe())
 	spy := filepath.Join(t.TempDir(), "argv")
 	t.Setenv("HCLARO_FAKE_SPY", spy)
 	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_plan", "TF_CLI_ARGS_apply", "TF_CLI_ARGS_show", "TF_CLI_ARGS_workspace", "HCLARO_FAKE_PLAN", "HCLARO_FAKE_APPLY"} {
@@ -101,23 +89,8 @@ func TestReplaceAndApplyThroughSyntheticCLI(t *testing.T) {
 // compiled synthetic engine, as Terraform and as OpenTofu, and checks every argv it received:
 // one refresh-only plan and read-backs, never refresh, apply, import or a state command.
 func TestDriftScanThroughSyntheticCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds the synthetic engine")
-	}
-	dir := t.TempDir()
-	build := func(name string) string {
-		bin := filepath.Join(dir, name)
-		if runtime.GOOS == "windows" {
-			bin += ".exe"
-		}
-		cmd := exec.Command("go", "build", "-o", bin, "hclaro/scripts/fake-engine")
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%v %s", err, out)
-		}
-		return bin
-	}
-	bins := map[string]string{"terraform": build("terraform"), "tofu": build("tofu")}
+	dir := testutil.FakeEngine(t)
+	bins := map[string]string{"terraform": filepath.Join(dir, "terraform"+testutil.Exe()), "tofu": filepath.Join(dir, "tofu"+testutil.Exe())}
 	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_plan", "TF_CLI_ARGS_show", "TF_CLI_ARGS_workspace", "HCLARO_FAKE_PLAN", "HCLARO_FAKE_APPLY"} {
 		t.Setenv(key, "")
 	}
@@ -185,23 +158,8 @@ func TestDriftScanThroughSyntheticCLI(t *testing.T) {
 // compiled synthetic engine as Terraform (resource-only format) and OpenTofu (full walk
 // graph). The spy must show exactly one bare `graph` and only startup reads otherwise.
 func TestGraphThroughSyntheticCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds the synthetic engine")
-	}
-	dir := t.TempDir()
-	build := func(name string) string {
-		bin := filepath.Join(dir, name)
-		if runtime.GOOS == "windows" {
-			bin += ".exe"
-		}
-		cmd := exec.Command("go", "build", "-o", bin, "hclaro/scripts/fake-engine")
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%v %s", err, out)
-		}
-		return bin
-	}
-	bins := map[string]string{"terraform": build("terraform"), "tofu": build("tofu")}
+	dir := testutil.FakeEngine(t)
+	bins := map[string]string{"terraform": filepath.Join(dir, "terraform"+testutil.Exe()), "tofu": filepath.Join(dir, "tofu"+testutil.Exe())}
 	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_graph", "TF_CLI_ARGS_show", "TF_CLI_ARGS_workspace"} {
 		t.Setenv(key, "")
 	}
@@ -272,4 +230,10 @@ func TestGraphThroughSyntheticCLI(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	testutil.Cleanup()
+	os.Exit(code)
 }

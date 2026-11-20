@@ -17,6 +17,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/tfpolicy"
 	"hclaro/internal/workspace"
 )
@@ -25,7 +26,7 @@ const canary = "DO_NOT_LEAK_HCLARO_TEST_SECRET"
 
 func lines(b []byte) [][]byte { return bytes.Split(bytes.TrimSpace(b), []byte("\n")) }
 
-func setup(t *testing.T, fake *engine.Fake, info workspace.Info) (*Manager, string) {
+func setup(t *testing.T, fake *enginetest.Fake, info workspace.Info) (*Manager, string) {
 	t.Helper()
 	if fake.VersionValue == "" {
 		fake.VersionValue = "1.9.8"
@@ -120,7 +121,7 @@ func assertArtifactPrivate(t *testing.T, m *Manager) {
 }
 
 func TestPlanSucceeds(t *testing.T) {
-	fake := &engine.Fake{Lines: lines(fixtures.PlanLog), PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{Lines: lines(fixtures.PlanLog), PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	op, err := m.StartPlan(nil, nil)
 	if err != nil {
@@ -173,7 +174,7 @@ func TestPlanSucceeds(t *testing.T) {
 }
 
 func TestCancelRemovesArtifactsAndLeavesNoPlan(t *testing.T) {
-	fake := &engine.Fake{Lines: lines(fixtures.PlanLog), Block: true}
+	fake := &enginetest.Fake{Lines: lines(fixtures.PlanLog), Block: true}
 	m, _ := setup(t, fake, workspace.Info{})
 	op, err := m.StartPlan(nil, nil)
 	if err != nil {
@@ -211,17 +212,17 @@ func TestCancelRemovesArtifactsAndLeavesNoPlan(t *testing.T) {
 
 func TestFailureClassification(t *testing.T) {
 	for name, tc := range map[string]struct {
-		fake *engine.Fake
+		fake *enginetest.Fake
 		code string
 		exit int
 	}{
-		"lock from diagnostics": {&engine.Fake{Lines: lines(fixtures.PlanLogLocked), PlanErr: &engine.ExitError{Code: 1}}, "state_locked", 1},
-		"credentials from hint": {&engine.Fake{PlanErr: &engine.ExitError{Code: 1, Hint: "credentials"}}, "credentials", 1},
-		"generic":               {&engine.Fake{PlanErr: &engine.ExitError{Code: 1}}, "plan_failed", 1},
-		"unsafe args":           {&engine.Fake{PlanErr: engine.ErrUnsafeArgs}, "unsafe_cli_args", -1},
-		"unreadable plan":       {&engine.Fake{PlanJSON: []byte(`{"format_version":"9.0"}`)}, "plan_format", 0},
-		"show fails":            {&engine.Fake{PlanJSON: fixtures.PlanNoChanges, ShowErr: errors.New("x")}, "plan_read", 0},
-		"plan too large":        {&engine.Fake{PlanJSON: fixtures.PlanNoChanges, ShowErr: engine.ErrReadTooLarge}, "plan_too_large", 0},
+		"lock from diagnostics": {&enginetest.Fake{Lines: lines(fixtures.PlanLogLocked), PlanErr: &engine.ExitError{Code: 1}}, "state_locked", 1},
+		"credentials from hint": {&enginetest.Fake{PlanErr: &engine.ExitError{Code: 1, Hint: "credentials"}}, "credentials", 1},
+		"generic":               {&enginetest.Fake{PlanErr: &engine.ExitError{Code: 1}}, "plan_failed", 1},
+		"unsafe args":           {&enginetest.Fake{PlanErr: engine.ErrUnsafeArgs}, "unsafe_cli_args", -1},
+		"unreadable plan":       {&enginetest.Fake{PlanJSON: []byte(`{"format_version":"9.0"}`)}, "plan_format", 0},
+		"show fails":            {&enginetest.Fake{PlanJSON: fixtures.PlanNoChanges, ShowErr: errors.New("x")}, "plan_read", 0},
+		"plan too large":        {&enginetest.Fake{PlanJSON: fixtures.PlanNoChanges, ShowErr: engine.ErrReadTooLarge}, "plan_too_large", 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			m, _ := setup(t, tc.fake, workspace.Info{})
@@ -248,7 +249,7 @@ func TestFailureClassification(t *testing.T) {
 }
 
 func TestTimeoutAndShutdown(t *testing.T) {
-	m, _ := setup(t, &engine.Fake{Block: true}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{Block: true}, workspace.Info{})
 	m.Timeout = 50 * time.Millisecond
 	op, _ := m.StartPlan(nil, nil)
 	if done := wait(t, m, op.ID); done.Status != Failed || done.Diagnostic.Code != "timeout" {
@@ -269,7 +270,7 @@ func TestTimeoutAndShutdown(t *testing.T) {
 }
 
 func TestWorkspaceChangeAndAvailability(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanNoChanges}
 	m, _ := setup(t, fake, workspace.Info{})
 	fake.WorkspaceValue = "prod"
 	op, _ := m.StartPlan(nil, nil)
@@ -282,24 +283,24 @@ func TestWorkspaceChangeAndAvailability(t *testing.T) {
 		{Project: "x", Initialized: true, Backend: "unknown", ExecutionMode: "unsupported"},
 		{Project: "x", Initialized: false, Backend: "local", ExecutionMode: "local-cli"},
 	} {
-		m, _ := setup(t, &engine.Fake{}, info)
+		m, _ := setup(t, &enginetest.Fake{}, info)
 		if _, err := m.StartPlan(nil, nil); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("%+v: %v", info, err)
 		}
 	}
 	loading := workspace.New(workspace.Info{Project: "x", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
-	if _, err := NewManager(loading, &engine.Fake{}, t.TempDir()).StartPlan(nil, nil); !errors.Is(err, ErrLoading) {
+	if _, err := NewManager(loading, &enginetest.Fake{}, t.TempDir()).StartPlan(nil, nil); !errors.Is(err, ErrLoading) {
 		t.Fatalf("plan accepted while the workspace was loading: %v", err)
 	}
 	// A project with no recorded state can still be planned.
-	m, _ = setup(t, &engine.Fake{StateJSON: fixtures.Empty, PlanJSON: fixtures.PlanNoChanges}, workspace.Info{})
+	m, _ = setup(t, &enginetest.Fake{StateJSON: fixtures.Empty, PlanJSON: fixtures.PlanNoChanges}, workspace.Info{})
 	if op, err := m.StartPlan(nil, nil); err != nil || wait(t, m, op.ID).Status != Succeeded {
 		t.Fatalf("absent state should allow planning: %v", err)
 	}
 }
 
 func TestVarFileSelection(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanNoChanges}
 	m, root := setup(t, fake, workspace.Info{})
 	for _, name := range []string{"prod.tfvars", "base.tfvars.json", "terraform.tfvars", "x.auto.tfvars", "-flag.tfvars", "notes.txt"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte("a = 1\n"), 0o600); err != nil {
@@ -347,7 +348,7 @@ func TestVarFileSelection(t *testing.T) {
 // inside the root, and nothing hidden, automatically loaded or outside the root. A selected
 // link reaches the engine as the canonical path it resolves to.
 func TestVarFileSelectionMatchesProfileEditor(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanNoChanges}
 	m, root := setup(t, fake, workspace.Info{})
 	outside := t.TempDir()
 	for _, name := range []string{"env/prod.tfvars", "a/b/c/d/deep.tfvars", "a/b/c/d/e/too-deep.tfvars", ".hidden/x.tfvars", "node_modules/x.tfvars", "terraform.tfvars", "env/terraform.tfvars", "top.tfvars.json"} {
@@ -400,7 +401,7 @@ func TestVarFileSelectionReportsUnreadableRoot(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("needs POSIX permissions as a non-root user")
 	}
-	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanNoChanges}
 	m, root := setup(t, fake, workspace.Info{})
 	if err := os.WriteFile(filepath.Join(root, "prod.tfvars"), []byte("a = 1\n"), 0o600); err != nil {
 		t.Fatal(err)

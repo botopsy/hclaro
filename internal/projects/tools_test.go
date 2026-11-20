@@ -291,9 +291,6 @@ func TestToolRefusalsRunNothing(t *testing.T) {
 }
 
 func TestFormatScopeNeverFollowsLinkedFolders(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds the synthetic engine")
-	}
 	hub, ids, _ := toolsFixture(t)
 	id := ids["network"]
 	dir := root(t, hub, id)

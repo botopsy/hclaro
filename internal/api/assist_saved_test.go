@@ -11,7 +11,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 )
 
 // AI-01.11 over HTTP: opt-in saved conversations, reopen after a restart (a new session on the
@@ -55,7 +55,7 @@ func startChat(t *testing.T, s *planServer, message string) assist.Conversation 
 }
 
 func TestAISavedConversationSurvivesRestartAndReplays(t *testing.T) {
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	config := t.TempDir()
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "first reply"}
 	restart(s, config, stub)
@@ -172,7 +172,7 @@ func TestAISavedConversationSurvivesRestartAndReplays(t *testing.T) {
 // A planted canary in a stored file hides that turn on load and makes the conversation
 // read-only "needs review"; nothing is sent and the canary never reaches the browser.
 func TestAISavedConversationRescanOnLoad(t *testing.T) {
-	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	config := t.TempDir()
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "a harmless reply"}
 	restart(s, config, stub)
@@ -210,7 +210,7 @@ func TestAISavedConversationRescanOnLoad(t *testing.T) {
 // Reopen never claims a resume that will not work: a missing assistant, or a review of a plan
 // of an earlier session, opens read-only with the reason.
 func TestAISavedConversationReadOnlyReasons(t *testing.T) {
-	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	config := t.TempDir()
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
 	restart(s, config, stub)
@@ -240,8 +240,8 @@ func TestAISavedConversationReadOnlyReasons(t *testing.T) {
 
 // A file of project A, copied into project B's folder or asked for from B, is refused.
 func TestAISavedConversationIsolatedPerProject(t *testing.T) {
-	a, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
-	b, rootB := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	a, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
+	b, rootB := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	config := t.TempDir()
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
 	restart(a, config, stub)

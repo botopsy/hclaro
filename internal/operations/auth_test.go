@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 )
@@ -16,9 +16,9 @@ import (
 // M20: the execution profile's expected account guards apply, a sign-in after the preflight
 // refuses its binding, and aws-vault shows in every reviewed command.
 
-func authPlan(t *testing.T, in profiles.Input) (*Manager, *engine.Fake, string) {
+func authPlan(t *testing.T, in profiles.Input) (*Manager, *enginetest.Fake, string) {
 	t.Helper()
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	m, _, store, _ := profileSetup(t, fake, []string{"PATH=/bin", "AWS_ACCESS_KEY_ID=AKIA_TEST_CANARY"})
 	m.Reload = func(context.Context) {}
 	p, err := store.Create(testProject, in)

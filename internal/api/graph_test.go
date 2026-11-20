@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
@@ -61,7 +61,7 @@ func nodeID(t *testing.T, v graphView, name string) string {
 }
 
 func TestGraphAPI(t *testing.T) {
-	fake := &engine.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanAllActions}
 	s, store := newDriftServer(t, fake)
 	options := decode[struct {
 		CanGenerate bool     `json:"canGenerate"`
@@ -145,12 +145,12 @@ func TestGraphAPI(t *testing.T) {
 }
 
 func TestGraphAPIFailuresAndUnsupported(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{GraphDOT: []byte(`digraph { "aws_instance.a" -> "` + canary + `" `)})
+	s := newPlanServer(t, &enginetest.Fake{GraphDOT: []byte(`digraph { "aws_instance.a" -> "` + canary + `" `)})
 	op, view := startGraph(t, s)
 	if op.Status != "failed" || view.Diagnostic == nil || view.Diagnostic.Code != "graph_format" {
 		t.Fatalf("%+v", view.GraphRun)
 	}
-	remote := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, GraphDOT: fixtures.GraphTerraform}
+	remote := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, GraphDOT: fixtures.GraphTerraform}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"})
 	store.Load(t.Context(), remote, "terraform", nil)
 	manager := operations.NewManager(store, remote, t.TempDir())
@@ -173,7 +173,7 @@ func TestGraphAPIFailuresAndUnsupported(t *testing.T) {
 }
 
 func TestGraphRouteGuard(t *testing.T) {
-	s := newPlanServer(t, &engine.Fake{GraphDOT: fixtures.GraphTerraform})
+	s := newPlanServer(t, &enginetest.Fake{GraphDOT: fixtures.GraphTerraform})
 	zero := strings.Repeat("0", 32)
 	for _, tc := range []struct {
 		name, method, path, origin, csrfHeader string
@@ -216,7 +216,7 @@ func TestGraphRouteGuard(t *testing.T) {
 
 // TestGraphGolden pins the graph, overlay and impact responses the UI consumes.
 func TestGraphGolden(t *testing.T) {
-	fake := &engine.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanAllActions}
 	s, _ := newDriftServer(t, fake)
 	n := 0
 	s.manager.NewID = func() string { n++; return fmt.Sprintf("%032x", n) }

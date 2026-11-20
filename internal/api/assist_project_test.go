@@ -11,7 +11,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 )
 
 // AI-01.09 over HTTP: project packages, conversation-only start, attaching a previewed project
@@ -22,7 +22,7 @@ func chatBody(message string) string {
 }
 
 func TestAIProjectContextOverHTTP(t *testing.T) {
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
 	s.svc.Assist = assist.NewSession(false, stub)
 	for name, text := range map[string]string{
@@ -118,7 +118,7 @@ func TestAIHubProjectContextStaysInItsContext(t *testing.T) {
 // A project conversation is checked against the files on disk before every turn: an edited .tf
 // file refuses the turn until current project context is attached; unrelated files do not.
 func TestAIProjectConversationGoesStaleOnFileChange(t *testing.T) {
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
 	s.svc.Assist = assist.NewSession(false, stub)
 	s.enableAI()
@@ -170,7 +170,7 @@ func TestAIProjectPackageRefusedWhenIgnoreRulesChange(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	git := exec.Command("git", "init", "-q")
 	git.Dir = root
 	if out, err := git.CombinedOutput(); err != nil {

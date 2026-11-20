@@ -15,11 +15,11 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 )
 
-// AI-01.03 handoff routes. Everything runs against engine.Fake or the synthetic engine in
+// AI-01.03 handoff routes. Everything runs against enginetest.Fake or the synthetic engine in
 // temporary roots; no assistant, backend or provider is contacted.
 
 type builtPackage struct {
@@ -36,7 +36,7 @@ func sum(s string) string {
 	return hex.EncodeToString(h[:])
 }
 
-func newAssistServer(t *testing.T, fake *engine.Fake) (*planServer, string) {
+func newAssistServer(t *testing.T, fake *enginetest.Fake) (*planServer, string) {
 	t.Helper()
 	s, root := newImportServer(t, fake)
 	s.svc.Assist = assist.NewSession(false)
@@ -92,7 +92,7 @@ func exportSame(t *testing.T, w *httptest.ResponseRecorder, p builtPackage) {
 
 func TestAIEnabledByDefault(t *testing.T) {
 	// No session object at all: settings report off and every route refuses.
-	s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	if got := decode[assist.Settings](t, s.do("GET", "/api/v1/ai/settings", "")); got.Enabled || got.Handoff {
 		t.Fatalf("%+v", got)
 	}
@@ -125,7 +125,7 @@ func TestAIEnabledByDefault(t *testing.T) {
 func TestAISettingsPersistOverHTTP(t *testing.T) {
 	dir := t.TempDir()
 	start := func() *planServer {
-		s, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+		s, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 		s.svc.Assist = assist.NewSession(false, &stubAssistant{id: "claude", mode: assist.ModeHeadless}, &stubAssistant{id: "codex", mode: assist.ModeHandoff})
 		s.svc.Assist.UsePrefs(dir)
 		return s
@@ -159,7 +159,7 @@ func TestAISettingsPersistOverHTTP(t *testing.T) {
 }
 
 func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
-	s, _ := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, _ := newAssistServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	s.enableAI()
 	planID := s.plan()
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+planID+`"}`))
@@ -211,7 +211,7 @@ func TestAIRoutesNeedSessionOriginAndCSRF(t *testing.T) {
 // Destroy, replace and multi-change plans: the package names each action, and copy and
 // download bytes equal the preview bytes.
 func TestAIPlanHandoff(t *testing.T) {
-	s, root := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, root := newAssistServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	s.enableAI()
 	planID := s.plan()
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+planID+`"}`))
@@ -246,7 +246,7 @@ func TestAIPlanHandoff(t *testing.T) {
 }
 
 func TestAIPackageExpires(t *testing.T) {
-	s, _ := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, _ := newAssistServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	now := time.Now()
 	s.svc.Assist.Now = func() time.Time { return now }
 	s.enableAI()
@@ -256,7 +256,7 @@ func TestAIPackageExpires(t *testing.T) {
 }
 
 func TestAIResourceAndReload(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	s, store := newDriftServer(t, fake)
 	s.svc.Assist = assist.NewSession(false)
 	s.enableAI()
@@ -283,7 +283,7 @@ func TestAIResourceAndReload(t *testing.T) {
 // Import with missing configuration builds a package; a value that still names the project
 // root is blocked with field paths only, no text and no hash.
 func TestAIImportHandoffAndBlocked(t *testing.T) {
-	s, root := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanImport})
+	s, root := newAssistServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanImport})
 	s.enableAI()
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"import","import":{"address":"aws_s3_bucket.missing","id":"bucket-x","file":"imports.tf"}}`))
 	if !strings.Contains(p.Markdown, "aws_s3_bucket.missing") || !strings.Contains(p.Markdown, "missing") {
@@ -303,7 +303,7 @@ func TestAIImportHandoffAndBlocked(t *testing.T) {
 }
 
 func TestAIDriftHandoff(t *testing.T) {
-	fake := &engine.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed}
+	fake := &enginetest.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed}
 	s, _ := newDriftServer(t, fake)
 	s.svc.Assist = assist.NewSession(false)
 	s.enableAI()
@@ -370,8 +370,8 @@ func TestAIHubHandoffStaysInItsContext(t *testing.T) {
 // hash built in one is unknown in another, switching AI off in one leaves the other on, and
 // a restart (a new session) starts with the saved switch and no packages.
 func TestAIPackagesBelongToTheirProcess(t *testing.T) {
-	a, _ := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
-	b, _ := newAssistServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	a, _ := newAssistServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
+	b, _ := newAssistServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	a.enableAI()
 	b.enableAI()
 	p := build(t, a.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+a.plan()+`"}`))

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/ids"
 	"hclaro/internal/safefile"
 	"hclaro/internal/state"
 )
@@ -36,7 +37,6 @@ const (
 )
 
 var (
-	savedID    = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	projectKey = regexp.MustCompile(`^[0-9a-f]{16}$`)
 	// redactedPair is a name with a value Hclaro already redacted: `db_password: "[redacted]"`.
 	redactedPair = regexp.MustCompile(`[A-Za-z0-9_.-]+"?\s*[:=]\s*"?\[redacted\]"?`)
@@ -213,7 +213,7 @@ func ours(name string) bool {
 	if !ok {
 		id, ok = strings.CutSuffix(name, ".backup") // AI-01.12 backups, swept like conversations
 	}
-	return ok && savedID.MatchString(id) || isTemp(name)
+	return ok && ids.Valid(id) || isTemp(name)
 }
 
 // names lists the entries of folder name in r.
@@ -250,7 +250,7 @@ func (s *Store) Sweep(now time.Time) int {
 		}
 		// Recovery artifacts first: their records decide when their backups may go.
 		for _, f := range names(r, key) {
-			if id, ok := strings.CutSuffix(f, ".aside"); ok && savedID.MatchString(id) {
+			if id, ok := strings.CutSuffix(f, ".aside"); ok && ids.Valid(id) {
 				s.sweepAside(r, key, id, now)
 			}
 		}
@@ -278,7 +278,7 @@ func (s *Store) Sweep(now time.Time) int {
 
 // path is the file of conversation id of project key, relative to the store folder.
 func (s *Store) path(key, id string) (string, bool) {
-	if !projectKey.MatchString(key) || !savedID.MatchString(id) {
+	if !projectKey.MatchString(key) || !ids.Valid(id) {
 		return "", false
 	}
 	return filepath.Join(key, id+".json"), true
@@ -342,7 +342,7 @@ func (s *Store) Backup(key string, data []byte) (string, error) {
 
 // ReadBackup returns backup id of project key.
 func (s *Store) ReadBackup(key, id string) ([]byte, error) {
-	if !projectKey.MatchString(key) || !savedID.MatchString(id) {
+	if !projectKey.MatchString(key) || !ids.Valid(id) {
 		return nil, errNotPlain
 	}
 	s.mu.Lock()
@@ -360,7 +360,7 @@ func (s *Store) ReadBackup(key, id string) ([]byte, error) {
 
 // RemoveBackup deletes backup id of project key.
 func (s *Store) RemoveBackup(key, id string) {
-	if !projectKey.MatchString(key) || !savedID.MatchString(id) {
+	if !projectKey.MatchString(key) || !ids.Valid(id) {
 		return
 	}
 	s.mu.Lock()
@@ -407,7 +407,7 @@ func (s *Store) Settle(key, id, root, rel string, kept bool) error {
 }
 
 func (s *Store) writeAside(key, id string, rec asideRecord) error {
-	if !projectKey.MatchString(key) || !savedID.MatchString(id) {
+	if !projectKey.MatchString(key) || !ids.Valid(id) {
 		return errNotPlain
 	}
 	b, err := json.Marshal(rec)
@@ -536,23 +536,23 @@ func (s *Store) list(key string, now time.Time) []SavedListed {
 		return out
 	}
 	s.mu.Lock()
-	var ids []string
+	var found []string
 	if r, err := s.root(false); err == nil {
 		if s.plainDir(r, key) {
 			for _, f := range names(r, key) {
 				id, ok := strings.CutSuffix(f, ".json")
-				if !ok || !savedID.MatchString(id) {
+				if !ok || !ids.Valid(id) {
 					continue
 				}
 				if info, err := r.Lstat(filepath.Join(key, f)); err == nil && now.Sub(info.ModTime()) <= s.retention {
-					ids = append(ids, id)
+					found = append(found, id)
 				}
 			}
 		}
 		r.Close()
 	}
 	s.mu.Unlock()
-	for _, id := range ids {
+	for _, id := range found {
 		doc, err := s.read(key, id) // one unreadable file is skipped; the others still list
 		if err != nil {
 			continue

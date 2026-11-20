@@ -8,22 +8,19 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import {spawn, execFileSync} from 'node:child_process'
-import {pathToFileURL, fileURLToPath} from 'node:url'
+import {execFileSync} from 'node:child_process'
+import {fileURLToPath} from 'node:url'
+import {aiSwitchOn, launchBrowser, nav, openPage, skipOnWindows, startHclaro, stop, waitFor} from './lib.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-if (process.platform === 'win32') {
-  // shortcut: the fake assistant and wrappers are POSIX shell scripts; port them to Go helpers to run on Windows.
-  console.log('SKIP quick-actions e2e: POSIX shell fakes only')
-  process.exit(0)
-}
+// shortcut: the fake assistant and wrappers are POSIX shell scripts; port them to Go helpers to run on Windows.
+skipOnWindows('quick-actions e2e', 'POSIX shell fakes only')
 // Fixtures live in a fresh temp dir outside any Git repository (the blocked case depends on it),
 // removed at the end; the check list is kept in .cache/e2e-quick-actions/results.txt.
 const work = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'hclaro-e2e-qa-'))
 const report = path.join(repo, '.cache/e2e-quick-actions')
 await fs.mkdir(report, {recursive: true})
 const modules = path.resolve(process.argv[2] || path.join(repo, 'web/node_modules'))
-const {chromium} = await import(pathToFileURL(path.join(modules, 'playwright/index.mjs')))
 const results = []
 const ok = msg => { results.push('PASS ' + msg); console.log('PASS', msg) }
 
@@ -69,39 +66,23 @@ async function launch(name, args, claude) {
     PATH: `${bin}:${repo}/bin/mock:/usr/bin:/bin`, HOME: path.join(dir, 'home'), TMPDIR: path.join(dir, 'home'),
     HCLARO_CONFIG_DIR: path.join(dir, 'config'), TF_DATA_DIR: path.join(repo, 'fixtures/backend'), LANG: 'en_US.UTF-8',
   }
-  const proc = spawn(path.join(repo, 'bin/hclaro'), [...args, '--no-browser', '--claude-path', claude], {env, stdio: ['ignore', 'pipe', 'pipe']})
-  let out = ''
-  const url = await new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(name + ': no URL\n' + out)), 20000)
-    const read = d => { out += d; const m = out.match(/http:\/\/127\.0\.0\.1:\d+\/(projects)?#session=[0-9a-f]{64}/); if (m) { clearTimeout(t); resolve(m[0]) } }
-    proc.stdout.on('data', read); proc.stderr.on('data', read)
-    proc.on('exit', c => reject(new Error(name + ': exited ' + c + '\n' + out)))
-  })
+  const server = await startHclaro(path.join(repo, 'bin/hclaro'), [...args, '--claude-path', claude], env, name)
   const infracostCalls = async () => (await fs.readFile(infracostLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).length
-  return {proc, url, infracostCalls, out: () => out}
+  return {...server, infracostCalls}
 }
 
-const browser = await chromium.launch({headless: true, ...(process.env.HCLARO_CHROME ? {executablePath: process.env.HCLARO_CHROME} : {}), args: ['--disable-background-networking', '--disable-component-update']})
+const browser = await launchBrowser(modules)
 const pages = []
 async function open(url) {
-  const context = await browser.newContext({viewport: {width: 1400, height: 1000}})
-  const origin = new URL(url).origin
-  const external = []
-  await context.route('**/*', r => { if (new URL(r.request().url()).origin !== origin) { external.push(r.request().url()); return r.abort() } return r.continue() })
-  const page = await context.newPage()
-  const errors = []
-  page.on('pageerror', e => errors.push(e.message))
-  await page.goto(url)
-  pages.push({errors, external})
-  return {page, context, errors, external}
+  const opened = await openPage(browser, url)
+  pages.push(opened)
+  return opened
 }
-const nav = (page, label) => page.getByRole('button', {name: label, exact: true}).first().click()
 // AI is on by default (AI-01.14): Settings shows the switch already on, and nothing is detected
 // until asked (Check now). accept accepts the disclosure through the API, as the first inline
 // Accept and send would.
 async function aiOn(page, accept) {
-  await nav(page, 'Settings')
-  await page.getByRole('group', {name: 'AI assistance'}).getByRole('button', {name: 'On', pressed: true}).waitFor()
+  await aiSwitchOn(page)
   assert.equal((await call(page, 'GET', 'ai/settings')).body.checked, false, 'assistants detected before a click')
   await page.getByRole('button', {name: 'Check now'}).click()
   await waitFor(async () => (await call(page, 'GET', 'ai/settings')).body.checked, 'detection')
@@ -117,10 +98,6 @@ const call = (page, method, p, body) => page.evaluate(async ([method, p, body]) 
   const r = await fetch('/api/v1/' + p, {method, headers: {Authorization: 'Bearer ' + token, 'X-Hclaro-CSRF': s.csrfToken, 'Content-Type': 'application/json'}, body: method === 'GET' ? undefined : JSON.stringify(body)})
   return {status: r.status, body: await r.json()}
 }, [method, p, body])
-async function waitFor(fn, what, ms = 15000) {
-  for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 100))) { const v = await fn(); if (v) return v }
-  throw new Error('timed out: ' + what)
-}
 async function estimate(page) {
   const plan = await call(page, 'POST', 'plans', {acknowledgeBackendAccess: true})
   assert.equal(plan.status, 202, JSON.stringify(plan.body))
@@ -133,12 +110,12 @@ async function estimate(page) {
 const actions = [['Describe project', '# Describe this project'], ['Architecture review', '# Architecture review'], ['Security review', '# Security review'],
   ['Cost analysis', '# Cost analysis'], ['Find issues', '# Find issues'], ['Suggest improvements', '# Suggest improvements']]
 const previewText = page => page.getByLabel('Text to share: review prompt and context package').textContent()
-const procs = []
+const servers = []
 try {
   // A: headless fake Claude Code 2.1.327 + handoff-only fake codex, Git project.
   const logA = path.join(work, 'claudeA')
   const A = await launch('A', ['--engine', 'terraform', '--path', await project(path.join(work, 'projA'))], await fakeClaude(logA, '2.1.327'))
-  procs.push(A.proc)
+  servers.push(A)
   const {page, errors, external} = await open(A.url)
   await page.getByRole('navigation').first().waitFor()
   await aiOn(page, false)
@@ -230,7 +207,7 @@ try {
   // B: Claude Code version not verified -> handoff-only; codex handoff-only.
   const logB = path.join(work, 'claudeB')
   const B = await launch('B', ['--engine', 'terraform', '--path', await project(path.join(work, 'projB'))], await fakeClaude(logB, '2.0.1'))
-  procs.push(B.proc)
+  servers.push(B)
   const b = await open(B.url)
   await b.page.getByRole('navigation').first().waitFor()
   await aiOn(b.page, false)
@@ -243,7 +220,7 @@ try {
   // C: blocked package (.gitignore outside a Git repository fails closed).
   const logC = path.join(work, 'claudeC')
   const C = await launch('C', ['--engine', 'terraform', '--path', await project(path.join(work, 'projC'), {git: false, extra: {'.gitignore': '*.tfvars\n'}})], await fakeClaude(logC, '2.1.327'))
-  procs.push(C.proc)
+  servers.push(C)
   const c = await open(C.url)
   await c.page.getByRole('navigation').first().waitFor()
   await aiOn(c.page, true)
@@ -257,7 +234,7 @@ try {
   // D: Hub launch without a project.
   const logD = path.join(work, 'claudeD')
   const D = await launch('D', ['--hub'], await fakeClaude(logD, '2.1.327'))
-  procs.push(D.proc)
+  servers.push(D)
   const d = await open(D.url)
   await d.page.waitForLoadState('networkidle')
   await aiOn(d.page, true)
@@ -270,9 +247,8 @@ try {
   ok(`all ${pages.length} runs: no page errors, no request outside 127.0.0.1`)
 } finally {
   await browser.close()
-  for (const p of procs) p.kill('SIGINT')
+  await Promise.all(servers.map(stop))
   await fs.writeFile(path.join(report, 'results.txt'), results.join('\n') + '\n')
-  await new Promise(r => setTimeout(r, 500)) // let the killed servers release their files
   await fs.rm(work, {recursive: true, force: true})
 }
 console.log(`quick-actions e2e: ${results.length} checks passed`)

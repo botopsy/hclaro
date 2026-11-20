@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
 
-func newImportServer(t *testing.T, fake *engine.Fake) (*planServer, string) {
+func newImportServer(t *testing.T, fake *enginetest.Fake) (*planServer, string) {
 	t.Helper()
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -38,7 +38,7 @@ func newImportServer(t *testing.T, fake *engine.Fake) (*planServer, string) {
 }
 
 func TestImportFlowOverHTTP(t *testing.T) {
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanImport})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanImport})
 	options := decode[map[string]any](t, s.do("GET", "/api/v1/imports/options", ""))
 	if options["canImport"] != true || options["supportsImportBlocks"] != true || options["supportsGeneratedConfig"] != true {
 		t.Fatalf("%v", options)

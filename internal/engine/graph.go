@@ -65,16 +65,3 @@ func (c *CLI) Graph(ctx context.Context) ([]byte, error) {
 	}
 	return stdout.Bytes(), nil
 }
-
-// Graph returns GraphDOT, GraphErr, or waits for cancellation with BlockGraph.
-func (m *Fake) Graph(ctx context.Context) ([]byte, error) {
-	m.record("graph")
-	if m.BlockGraph {
-		<-ctx.Done()
-		return nil, ErrCancelled
-	}
-	if m.GraphErr != nil {
-		return nil, m.GraphErr
-	}
-	return m.GraphDOT, nil
-}

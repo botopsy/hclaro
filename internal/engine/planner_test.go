@@ -408,7 +408,7 @@ func TestPlanRefreshOnlyArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args, err := planArgs(PlanRequest{Out: planOut, RefreshOnly: true, VarFiles: []string{"prod.tfvars"}, LockTimeoutSeconds: 30})
+	args, err := PlanArgs(PlanRequest{Out: planOut, RefreshOnly: true, VarFiles: []string{"prod.tfvars"}, LockTimeoutSeconds: 30})
 	if err != nil {
 		t.Fatal(err)
 	}

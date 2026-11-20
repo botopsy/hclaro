@@ -18,9 +18,10 @@ import (
 	"hclaro/internal/assist"
 	"hclaro/internal/assist/claudefake"
 	"hclaro/internal/assist/codexfake"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/history"
 	"hclaro/internal/operations"
+	"hclaro/internal/testutil"
 	"hclaro/internal/workspace"
 )
 
@@ -45,7 +46,9 @@ func TestMain(m *testing.M) {
 	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), aiFakeMarker)); err == nil {
 		os.Exit(fakeAssistant())
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	testutil.Cleanup()
+	os.Exit(code)
 }
 
 func fakeAssistant() int {
@@ -137,7 +140,7 @@ resource "aws_s3_bucket" "legacy_logs" {}
 	put(t, filepath.Join(root, "terraform.tfvars"), `db_password = "`+fixtures.Canary+`_TFVARS"`+"\n")
 	put(t, filepath.Join(root, "prod.auto.tfvars"), `api_token = "`+fixtures.Canary+`_AUTO_TFVARS"`+"\n")
 
-	fake := &engine.Fake{Lines: lines(fixtures.PlanLog), PlanJSON: fixtures.PlanAllActions, VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: canaryState(t), Root: root}
+	fake := &enginetest.Fake{Lines: lines(fixtures.PlanLog), PlanJSON: fixtures.PlanAllActions, VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: canaryState(t), Root: root}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, root)

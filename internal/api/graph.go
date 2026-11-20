@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 	"hclaro/internal/workspace"
@@ -87,7 +88,7 @@ type graphSource interface {
 
 func serveGraph(w http.ResponseWriter, r *http.Request, src graphSource) {
 	id, planID := r.PathValue("id"), r.URL.Query().Get("planId")
-	if !idPattern.MatchString(id) || planID != "" && !idPattern.MatchString(planID) {
+	if !ids.Valid(id) || planID != "" && !ids.Valid(planID) {
 		errorJSON(w, 404, "graph_not_found")
 		return
 	}
@@ -101,7 +102,7 @@ func serveGraph(w http.ResponseWriter, r *http.Request, src graphSource) {
 
 func serveGraphImpact(w http.ResponseWriter, r *http.Request, src graphSource) {
 	id, node, planID := r.PathValue("id"), r.PathValue("node"), r.URL.Query().Get("planId")
-	if !idPattern.MatchString(id) || !nodePattern.MatchString(node) || planID != "" && !idPattern.MatchString(planID) {
+	if !ids.Valid(id) || !nodePattern.MatchString(node) || planID != "" && !ids.Valid(planID) {
 		errorJSON(w, 404, "node_not_found")
 		return
 	}

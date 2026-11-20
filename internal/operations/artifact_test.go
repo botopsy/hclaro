@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/workspace"
 )
 
@@ -37,7 +37,7 @@ func readOnly(t *testing.T, dir string) {
 // lockingPlanner makes the saved plan's folder read-only when the plan is read back, so the
 // cleanup that follows fails. It runs on the operation's goroutine: the test skips and
 // restores (restoreTemp) itself.
-type lockingPlanner struct{ *engine.Fake }
+type lockingPlanner struct{ *enginetest.Fake }
 
 func (p lockingPlanner) ShowPlan(ctx context.Context, path string) ([]byte, error) {
 	_ = os.Chmod(filepath.Dir(path), 0o500)
@@ -68,7 +68,7 @@ func assertReportedLeft(t *testing.T, terminal *bytes.Buffer, texts ...string) {
 
 func TestFailedApplyCleanupIsNotReportedAsDeleted(t *testing.T) {
 	skipUnenforcedPermissions(t)
-	m, _ := setup(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
 	var terminal bytes.Buffer
 	m.Terminal = &terminal
 	id := planned(t, m)
@@ -93,7 +93,7 @@ func TestFailedApplyCleanupIsNotReportedAsDeleted(t *testing.T) {
 
 func TestFailedApplyRefusalCleanupIsNotReportedAsDeleted(t *testing.T) {
 	skipUnenforcedPermissions(t)
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _ := setup(t, fake, workspace.Info{})
 	var terminal bytes.Buffer
 	m.Terminal = &terminal
@@ -113,7 +113,7 @@ func TestFailedApplyRefusalCleanupIsNotReportedAsDeleted(t *testing.T) {
 
 func TestFailedPlanCleanupIsNotReportedAsDeleted(t *testing.T) {
 	skipUnenforcedPermissions(t)
-	fake := &engine.Fake{PlanJSON: fixtures.PlanNoChanges}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanNoChanges}
 	m, _ := setup(t, fake, workspace.Info{})
 	restoreTemp(t, m)
 	var terminal bytes.Buffer
@@ -134,7 +134,7 @@ func TestFailedPlanCleanupIsNotReportedAsDeleted(t *testing.T) {
 
 func TestFailedDriftCleanupIsNotReportedAsDeleted(t *testing.T) {
 	skipUnenforcedPermissions(t)
-	fake := &engine.Fake{PlanJSON: fixtures.DriftMixed}
+	fake := &enginetest.Fake{PlanJSON: fixtures.DriftMixed}
 	m, _ := setup(t, fake, workspace.Info{})
 	restoreTemp(t, m)
 	var terminal bytes.Buffer
@@ -145,7 +145,7 @@ func TestFailedDriftCleanupIsNotReportedAsDeleted(t *testing.T) {
 }
 
 func TestCloseKeepsTheArtifactAnApplyIsReading(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, BlockApply: true, ApplyStopDelay: 300 * time.Millisecond}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, BlockApply: true, ApplyStopDelay: 300 * time.Millisecond}
 	m, _ := setup(t, fake, workspace.Info{})
 	var terminal bytes.Buffer
 	m.Terminal = &terminal
@@ -180,10 +180,10 @@ func failChmod(m *Manager, mode fs.FileMode, before func(string)) {
 	}
 }
 
-func called(f *engine.Fake, name string) bool { return slices.Contains(f.Calls(), name) }
+func called(f *enginetest.Fake, name string) bool { return slices.Contains(f.Calls(), name) }
 
 func TestArtifactDirFailsClosedWhenItCannotBeMadePrivate(t *testing.T) {
-	m, _ := setup(t, &engine.Fake{}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{}, workspace.Info{})
 	failChmod(m, 0o700, nil)
 	if dir, err := m.newArtifactDir(planDirPrefix); err == nil || dir != "" {
 		t.Fatalf("%q %v", dir, err)
@@ -192,7 +192,7 @@ func TestArtifactDirFailsClosedWhenItCannotBeMadePrivate(t *testing.T) {
 
 	for name, document := range map[string][]byte{"plan": fixtures.PlanAllActions, "drift": fixtures.DriftMixed} {
 		t.Run(name, func(t *testing.T) {
-			fake := &engine.Fake{PlanJSON: document}
+			fake := &enginetest.Fake{PlanJSON: document}
 			m, _ := setup(t, fake, workspace.Info{})
 			failChmod(m, 0o700, nil)
 			var done Operation
@@ -219,7 +219,7 @@ func TestArtifactDirFailsClosedWhenItCannotBeMadePrivate(t *testing.T) {
 func TestSavedPlanIsNotReadWhenItCannotBeMadePrivate(t *testing.T) {
 	for name, document := range map[string][]byte{"plan": fixtures.PlanAllActions, "drift": fixtures.DriftMixed} {
 		t.Run(name, func(t *testing.T) {
-			fake := &engine.Fake{PlanJSON: document}
+			fake := &enginetest.Fake{PlanJSON: document}
 			m, _ := setup(t, fake, workspace.Info{})
 			failChmod(m, 0o600, nil)
 			var done Operation
@@ -247,7 +247,7 @@ func TestUnprotectedPlanLeftAfterFailedCleanupIsReported(t *testing.T) {
 	skipUnenforcedPermissions(t)
 	for name, document := range map[string][]byte{"plan": fixtures.PlanAllActions, "drift": fixtures.DriftMixed} {
 		t.Run(name, func(t *testing.T) {
-			m, _ := setup(t, &engine.Fake{PlanJSON: document}, workspace.Info{})
+			m, _ := setup(t, &enginetest.Fake{PlanJSON: document}, workspace.Info{})
 			restoreTemp(t, m)
 			var terminal bytes.Buffer
 			m.Terminal = &terminal
@@ -277,7 +277,7 @@ func TestUnprotectedPlanLeftAfterFailedCleanupIsReported(t *testing.T) {
 
 func TestSweepReportsAFolderItCannotDelete(t *testing.T) {
 	skipUnenforcedPermissions(t)
-	m, _ := setup(t, &engine.Fake{}, workspace.Info{})
+	m, _ := setup(t, &enginetest.Fake{}, workspace.Info{})
 	var terminal bytes.Buffer
 	m.Terminal = &terminal
 	old := time.Now().Add(-(m.PlanMaxAge + m.ApplyTimeout + time.Hour))

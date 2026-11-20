@@ -10,13 +10,14 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 )
 
-// toolServer is a Hub server whose project tools run engine.Fake. The test binary stands in
+// toolServer is a Hub server whose project tools run enginetest.Fake. The test binary stands in
 // for the executable so its identity can be pinned.
-func toolServer(t *testing.T, fake *engine.Fake) (*hubServer, projects.Summary) {
+func toolServer(t *testing.T, fake *enginetest.Fake) (*hubServer, projects.Summary) {
 	t.Helper()
 	for _, key := range []string{"TF_CLI_ARGS", "TF_CLI_ARGS_validate", "TF_CLI_ARGS_fmt", "TF_CLI_ARGS_providers", "TF_CLI_ARGS_output", "TF_CLI_ARGS_version"} {
 		t.Setenv(key, "")
@@ -50,7 +51,7 @@ func (s *hubServer) noSecrets(bodies ...string) {
 }
 
 func TestToolRoutesNeedSessionCSRFAndAnOpenContext(t *testing.T) {
-	fake := &engine.Fake{VersionValue: "1.9.8"}
+	fake := &enginetest.Fake{VersionValue: "1.9.8"}
 	s, p := toolServer(t, fake)
 	cid := s.open(p.ID, "dev")
 	base := "/api/v1/projects/" + p.ID + "/operations/"
@@ -122,7 +123,7 @@ func TestToolRoutesNeedSessionCSRFAndAnOpenContext(t *testing.T) {
 }
 
 func TestToolsOverHTTPReturnSanitizedResults(t *testing.T) {
-	fake := &engine.Fake{
+	fake := &enginetest.Fake{
 		VersionValue: "1.9.8",
 		ValidateOut:  engine.Capture{Stdout: fixtures.ValidateInvalid, ExitCode: 1},
 		FormatOut:    engine.Capture{Stdout: []byte("main.tf\n"), ExitCode: 3},
@@ -169,7 +170,7 @@ func TestToolsOverHTTPReturnSanitizedResults(t *testing.T) {
 }
 
 func TestToolBusyDuplicateAndCancelOverHTTP(t *testing.T) {
-	fake := &engine.Fake{VersionValue: "1.9.8", BlockTool: true}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", BlockTool: true}
 	s, p := toolServer(t, fake)
 	cid := s.open(p.ID, "dev")
 	route := "/api/v1/projects/" + p.ID + "/operations/providers"

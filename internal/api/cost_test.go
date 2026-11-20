@@ -16,14 +16,14 @@ import (
 	"hclaro/fixtures"
 	"hclaro/internal/cost"
 	"hclaro/internal/cost/costtest"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
 
 func newCostServer(t *testing.T, strict bool) (*planServer, *costtest.Runner, string) {
 	t.Helper()
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	// The fixture project declares no import, so the fake engine returns the all-actions plan.
 	if err := os.WriteFile(filepath.Join(root, "main.tf"), []byte("resource \"aws_instance\" \"web\" {}\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -249,7 +249,7 @@ func TestCostUnavailableStatesAndGuards(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	// No cost service, and no launch project.
-	off, _ := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	off, _ := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	if caps := decode[map[string]any](t, off.do("GET", "/api/v1/cost/provider", "")); caps["state"] != "unavailable" || caps["canEstimate"] != false {
 		t.Fatalf("%v", caps)
 	}
@@ -257,7 +257,7 @@ func TestCostUnavailableStatesAndGuards(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	store := workspace.New(workspace.Info{})
-	manager := operations.NewManager(store, &engine.Fake{}, "")
+	manager := operations.NewManager(store, &enginetest.Fake{}, "")
 	services := &Services{}
 	hr := costtest.New()
 	services.Cost = cost.New(hr, false)

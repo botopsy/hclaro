@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"hclaro/internal/ids"
 	"hclaro/internal/plan"
 	"hclaro/internal/state"
 )
@@ -30,7 +31,6 @@ var (
 	codePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 	wordPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,39}$`)
 	hexPattern  = regexp.MustCompile(`^[0-9a-f]+$`)
-	workspaceRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,90}$`)
 	versionRe   = regexp.MustCompile(`^[0-9A-Za-z.+-]{1,40}$`)
 )
 
@@ -90,7 +90,7 @@ func (s *Store) project(ev Event) (id, name string, registered bool) {
 	if s.sources.Project != nil && ev.Root != "" {
 		id, name, registered = s.sources.Project(ev.Root)
 	}
-	if ev.ProjectID != "" && ValidID(ev.ProjectID) {
+	if ev.ProjectID != "" && ids.Valid(ev.ProjectID) {
 		id, registered = ev.ProjectID, true
 	}
 	if id == "" && ev.Root != "" {
@@ -143,7 +143,7 @@ func (s *Store) convert(ev Event) HistoryEntry {
 		e.EngineVersion = ev.EngineVersion
 	}
 	e.ProjectID, e.ProjectName, e.Registered = s.project(ev)
-	if workspaceRe.MatchString(ev.Workspace) {
+	if ids.ValidWorkspace(ev.Workspace) {
 		e.Workspace = ev.Workspace
 	}
 	if c := ev.Context; c != nil {
@@ -332,7 +332,7 @@ func scrubEntry(e HistoryEntry) HistoryEntry {
 	if !versionRe.MatchString(e.EngineVersion) {
 		e.EngineVersion = ""
 	}
-	if !workspaceRe.MatchString(e.Workspace) {
+	if !ids.ValidWorkspace(e.Workspace) {
 		e.Workspace = ""
 	}
 	e.ProjectName = clean(e.ProjectName, 120)
@@ -380,7 +380,7 @@ func scrubEntry(e HistoryEntry) HistoryEntry {
 		for _, a := range p.Replace {
 			c.Replace = append(c.Replace, cleanAddress(a))
 		}
-		if !ValidID(c.PlanID) {
+		if !ids.Valid(c.PlanID) {
 			c.PlanID = ""
 		}
 		e.Plan = &c

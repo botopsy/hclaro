@@ -193,7 +193,7 @@ func Inspect(root string) Info {
 	// the default local backend. A block that was never initialized makes the engine refuse
 	// to plan, so this cannot route a plan to a remote backend. Metadata that exists but is not
 	// a readable regular file (a directory, an unreadable entry) is not absence: it stays unknown.
-	if _, err := os.Lstat(metadata); info.Backend == "unknown" && info.Initialized && errors.Is(err, fs.ErrNotExist) && !declaresBackend(root) {
+	if _, err := os.Lstat(metadata); info.Backend == "unknown" && info.Initialized && errors.Is(err, fs.ErrNotExist) && !DeclaresBackend(root) {
 		info.Backend = "local"
 		info.ExecutionMode = "local-cli"
 	}
@@ -399,7 +399,7 @@ var (
 // one is not evidence that init is missing. The scan is textual and errs towards true: JSON
 // configuration, unreadable or oversized files and anything unclassified need init.
 func NeedsInit(root string) bool {
-	if declaresBackend(root) {
+	if DeclaresBackend(root) {
 		return true
 	}
 	entries, err := os.ReadDir(root)
@@ -427,14 +427,10 @@ func NeedsInit(root string) bool {
 	return false
 }
 
-// DeclaresBackend reports whether a root module file may declare a backend or cloud block,
-// erring towards true.
-func DeclaresBackend(root string) bool { return declaresBackend(root) }
-
-// declaresBackend reports whether a root module file may declare a backend or cloud block.
+// DeclaresBackend reports whether a root module file may declare a backend or cloud block.
 // The scan is textual and errs towards true, for example for a commented-out block or a
 // file that cannot be read.
-func declaresBackend(root string) bool {
+func DeclaresBackend(root string) bool {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return true

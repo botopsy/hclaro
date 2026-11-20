@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/rootlock"
 	"hclaro/internal/workspace"
 )
@@ -86,7 +87,7 @@ func joined(events []Event) string {
 func TestInitSucceedsWithSanitizedHumanOutput(t *testing.T) {
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMIK7MDENGbPxRfiCYsecretvalue")
 	h := newInitHarness(t)
-	fake := &engine.Fake{VersionValue: "1.8.3", InitDataDir: filepath.Join(h.root, ".terraform"), InitLines: [][]byte{
+	fake := &enginetest.Fake{VersionValue: "1.8.3", InitDataDir: filepath.Join(h.root, ".terraform"), InitLines: [][]byte{
 		[]byte("\x1b[1mInitializing the backend...\x1b[0m"),
 		[]byte("Backend password=" + canary),
 		[]byte("Using key wJalrXUtnFEMIK7MDENGbPxRfiCYsecretvalue now"),
@@ -127,7 +128,7 @@ func TestInitSucceedsWithSanitizedHumanOutput(t *testing.T) {
 
 func TestInitUsesJSONForTerraform19AndClassifiesDiagnostics(t *testing.T) {
 	h := newInitHarness(t)
-	fake := &engine.Fake{VersionValue: "1.9.8", InitErr: &engine.ExitError{Code: 1}, InitLines: [][]byte{
+	fake := &enginetest.Fake{VersionValue: "1.9.8", InitErr: &engine.ExitError{Code: 1}, InitLines: [][]byte{
 		[]byte(`{"type":"version","terraform":"1.9.8"}`),
 		[]byte(`{"type":"init_output","@level":"info","@message":"Initializing the backend..."}`),
 		[]byte(`{"type":"diagnostic","@level":"error","diagnostic":{"severity":"error","summary":"Backend configuration changed","detail":"Use \"init -migrate-state\" or \"init -reconfigure\". token=` + canary + `"}}`),
@@ -172,7 +173,7 @@ func TestInitFailureCategoriesFromHumanStderr(t *testing.T) {
 	for want, stderr := range cases {
 		t.Run(want, func(t *testing.T) {
 			h := newInitHarness(t)
-			fake := &engine.Fake{VersionValue: "1.8.3", InitErr: &engine.ExitError{Code: 1}}
+			fake := &enginetest.Fake{VersionValue: "1.8.3", InitErr: &engine.ExitError{Code: 1}}
 			for _, l := range stderr {
 				fake.InitStderr = append(fake.InitStderr, []byte(l))
 			}
@@ -190,7 +191,7 @@ func TestInitFailureCategoriesFromHumanStderr(t *testing.T) {
 
 func TestInitZeroExitWithoutDataDirectoryIsUnknown(t *testing.T) {
 	h := newInitHarness(t)
-	fake := &engine.Fake{VersionValue: "1.8.3"}
+	fake := &enginetest.Fake{VersionValue: "1.8.3"}
 	op, _ := h.runner.Start(h.request("tofu", fake))
 	op, _ = waitInit(t, h.runner, op.ID)
 	if op.Status != Unknown || op.Diagnostic.Code != "unverified" {
@@ -219,7 +220,7 @@ func TestInitRefusesBeforeRunningEngine(t *testing.T) {
 	})
 	t.Run("changed root", func(t *testing.T) {
 		h := newInitHarness(t)
-		fake := &engine.Fake{VersionValue: "1.9.8"}
+		fake := &enginetest.Fake{VersionValue: "1.9.8"}
 		req := h.request("terraform", fake)
 		req.Revalidate = func() string { return "path_changed" }
 		op, _ := h.runner.Start(req)
@@ -232,7 +233,7 @@ func TestInitRefusesBeforeRunningEngine(t *testing.T) {
 
 func TestInitCancelAndShutdown(t *testing.T) {
 	h := newInitHarness(t)
-	fake := &engine.Fake{VersionValue: "1.9.8", BlockInit: true}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", BlockInit: true}
 	op, _ := h.runner.Start(h.request("terraform", fake))
 	for deadline := time.Now().Add(5 * time.Second); len(fake.InitCalls()) == 0; time.Sleep(5 * time.Millisecond) {
 		if time.Now().After(deadline) {
@@ -251,7 +252,7 @@ func TestInitCancelAndShutdown(t *testing.T) {
 		t.Fatalf("second cancel %v", err)
 	}
 
-	second := &engine.Fake{VersionValue: "1.9.8", BlockInit: true}
+	second := &enginetest.Fake{VersionValue: "1.9.8", BlockInit: true}
 	op, _ = h.runner.Start(h.request("terraform", second))
 	for deadline := time.Now().Add(5 * time.Second); len(second.InitCalls()) == 0; time.Sleep(5 * time.Millisecond) {
 		if time.Now().After(deadline) {
@@ -274,7 +275,7 @@ func TestInitCancelAndShutdown(t *testing.T) {
 func TestInitDetectsLockfileChange(t *testing.T) {
 	h := newInitHarness(t)
 	lock := filepath.Join(h.root, ".terraform.lock.hcl")
-	fake := &engine.Fake{VersionValue: "1.8.3", InitDataDir: filepath.Join(h.root, ".terraform")}
+	fake := &enginetest.Fake{VersionValue: "1.8.3", InitDataDir: filepath.Join(h.root, ".terraform")}
 	req := h.request("tofu", fake)
 	initialized := req.Initialized
 	req.Initialized = func() bool { _ = os.WriteFile(lock, []byte("new"), 0o644); return initialized() }
@@ -286,7 +287,7 @@ func TestInitDetectsLockfileChange(t *testing.T) {
 }
 
 func TestLaunchOperationsRespectRootClaims(t *testing.T) {
-	m, root := setup(t, &engine.Fake{}, workspace.Info{})
+	m, root := setup(t, &enginetest.Fake{}, workspace.Info{})
 	m.Locks = rootlock.New()
 	release, ok := m.Locks.Acquire(root, "init")
 	if !ok {

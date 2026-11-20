@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/ids"
 	"hclaro/internal/safefile"
 )
 
@@ -337,11 +338,6 @@ type fileStamp struct {
 // maxFileBytes bounds what Open reads; anything larger is treated as corrupt.
 const maxFileBytes = MaxBytesLimit + 1<<20
 
-var idPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
-
-// ValidID reports whether id has the shape of an operation ID.
-func ValidID(id string) bool { return idPattern.MatchString(id) }
-
 // Open loads the history in dir. Leftover temporary files from an interrupted write are
 // removed. A file that cannot be decoded is moved aside to a timestamped backup and history
 // starts empty; a file from a newer schema is left untouched and nothing is recorded.
@@ -556,7 +552,7 @@ func (s *Store) read() (doc document, loaded loadedFile, err error) {
 
 func valid(e HistoryEntry) bool {
 	_, err := time.Parse(time.RFC3339, e.StartedAt)
-	return ValidID(e.ID) && slices.Contains(statuses, e.Status) && err == nil && len(e.Command) <= maxCommand && len(e.Excerpt) <= maxExcerpt && (e.ProjectID == "" || ValidID(e.ProjectID))
+	return ids.Valid(e.ID) && slices.Contains(statuses, e.Status) && err == nil && len(e.Command) <= maxCommand && len(e.Excerpt) <= maxExcerpt && (e.ProjectID == "" || ids.Valid(e.ProjectID))
 }
 
 // write replaces the file atomically: a private temporary file in the same directory is
@@ -895,7 +891,7 @@ func scrubAssist(a *AssistSummary) *AssistSummary {
 			*h[0] = *h[1]
 		}
 	}
-	if ValidID(a.Conversation) {
+	if ids.Valid(a.Conversation) {
 		out.Conversation = a.Conversation
 	}
 	if changePathRe.MatchString(a.Path) && !strings.Contains(a.Path, "..") {

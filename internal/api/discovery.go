@@ -9,6 +9,7 @@ import (
 
 	"hclaro/internal/awscli"
 	"hclaro/internal/discovery"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 	"hclaro/internal/state"
@@ -193,7 +194,7 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 			reasonJSON(w, 400, "acknowledgement_required", "Listing AWS objects calls AWS APIs. Confirm the scan first.")
 			return
 		}
-		if !idPattern.MatchString(body.IdentityID) {
+		if !ids.Valid(body.IdentityID) {
 			reasonJSON(w, 409, "identity_required", "Verify the AWS context before scanning.")
 			return
 		}
@@ -227,7 +228,7 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 	})
 	handle("GET /discovery/scans/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		if !idPattern.MatchString(id) {
+		if !ids.Valid(id) {
 			errorJSON(w, 404, "scan_not_found")
 			return
 		}
@@ -256,7 +257,7 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 			return
 		}
 		id := r.PathValue("id")
-		if !idPattern.MatchString(id) {
+		if !ids.Valid(id) {
 			errorJSON(w, 404, "scan_not_found")
 			return
 		}
@@ -281,7 +282,7 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 			return
 		}
 		id, cand := r.PathValue("id"), r.PathValue("cand")
-		if !idPattern.MatchString(id) || !idPattern.MatchString(cand) {
+		if !ids.Valid(id) || !ids.Valid(cand) {
 			errorJSON(w, 404, "candidate_not_found")
 			return
 		}

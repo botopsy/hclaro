@@ -17,9 +17,6 @@ import (
 // name from this list; it can never supply an executable, scheme or URL.
 var Editors = map[string]string{"vscode": "vscode", "cursor": "cursor"}
 
-// EditorLabels are display names.
-var EditorLabels = map[string]string{"vscode": "VS Code", "cursor": "Cursor"}
-
 // Editor errors.
 var (
 	ErrEditor     = errors.New("choose VS Code or Cursor")

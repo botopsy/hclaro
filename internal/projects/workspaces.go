@@ -426,11 +426,3 @@ func (h *Hub) inspection(id string) (Inspection, bool) {
 	}
 	return *in, true
 }
-
-// LatestWorkspaceOperation returns the project's most recent workspace command, if any.
-func (h *Hub) LatestWorkspaceOperation(id string) (operations.Operation, bool) {
-	if h.Inits == nil {
-		return operations.Operation{}, false
-	}
-	return h.Inits.Latest(id, "workspace")
-}

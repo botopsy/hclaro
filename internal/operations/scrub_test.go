@@ -9,6 +9,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/imports"
 	"hclaro/internal/workspace"
 )
@@ -21,7 +22,7 @@ func TestCredentialEnvValuesScrubbedInPlanApplyDrift(t *testing.T) {
 	t.Setenv("TF_TOKEN_app_example_com", token)
 	echo := lines([]byte(`{"type":"diagnostic","diagnostic":{"severity":"warning","summary":"backend said opaque-cred-4471","detail":"rejected opaque-registry-8812 for app"}}
 {"type":"log","@level":"warn","@message":"retrying with opaque-cred-4471"}`))
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, Lines: echo, ApplyLines: echo}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, Lines: echo, ApplyLines: echo}
 	m, _ := setup(t, fake, workspace.Info{})
 	m.Reload = func(context.Context) {}
 	rec := &records{}
@@ -80,7 +81,7 @@ c = "value"
 
 func TestKeyWordInputsDoNotWeakenGeneratedConfig(t *testing.T) {
 	generated := "resource \"aws_db_instance\" \"main\" {\n  admin_password = \"hunter2-gen\"\n  identifier     = \"main\"\n}\n"
-	fake := &engine.Fake{PlanJSON: fixtures.PlanImport, GeneratedConfig: []byte(generated)}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanImport, GeneratedConfig: []byte(generated)}
 	m, _ := importSetup(t, fake, map[string]string{"main.tf": "terraform {}\n", "terraform.tfvars": "x = \"password\"\n"})
 	op, err := m.StartImport(reviewed(t, m, imports.Request{Address: "aws_s3_bucket.legacy_logs", ID: "hclaro-legacy-logs", File: "legacy.tf", GenerateConfig: true}))
 	if err != nil {
@@ -98,7 +99,7 @@ func TestKeyWordInputsDoNotWeakenGeneratedConfig(t *testing.T) {
 func TestSanitizeWithholdsRandomLookingSecrets(t *testing.T) {
 	const secret = "wJalrXUtnFEMIK7MDENGbPxRfiCYzEXAMPLEKEY1"
 	diag := fmt.Sprintf(`{"type":"diagnostic","diagnostic":{"severity":"error","summary":"Provider error","detail":"The API returned key %s for this request.\nsecond line"}}`, secret)
-	fake := &engine.Fake{Lines: [][]byte{[]byte(diag)}, PlanErr: &engine.ExitError{Code: 1}}
+	fake := &enginetest.Fake{Lines: [][]byte{[]byte(diag)}, PlanErr: &engine.ExitError{Code: 1}}
 	m, _ := setup(t, fake, workspace.Info{})
 	op, err := m.StartPlan(nil, nil)
 	if err != nil {
@@ -164,7 +165,7 @@ func TestKnownSetReportsIncomplete(t *testing.T) {
 }
 
 func TestPlanLogsIncompleteKnownSet(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root := setup(t, fake, workspace.Info{})
 	writeFiles(t, root, map[string]string{"big.auto.tfvars": "x = \"" + strings.Repeat("a", maxKnownFile) + "\"\n"})
 	op, err := m.StartPlan(nil, nil)

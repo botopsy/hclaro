@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 )
@@ -43,7 +44,7 @@ func scopedContext(w http.ResponseWriter, r *http.Request, hub *projects.Hub) bo
 		projectError(w, hub, projects.ErrScopedDisabled)
 		return false
 	}
-	if !hubIDPattern.MatchString(r.PathValue("cid")) {
+	if !ids.Valid(r.PathValue("cid")) {
 		reasonJSON(w, 404, "context_closed", "This workspace view is no longer open. Open the workspace again.")
 		return false
 	}

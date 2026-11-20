@@ -15,6 +15,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/history"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
@@ -24,7 +25,7 @@ import (
 type historyServer struct {
 	*hubServer
 	manager *operations.Manager
-	fake    *engine.Fake
+	fake    *enginetest.Fake
 	store   *history.Store
 	config  string
 	root    string
@@ -35,7 +36,7 @@ type historyServer struct {
 func newHistoryServer(t *testing.T, config string) *historyServer {
 	t.Helper()
 	t.Setenv("TF_DATA_DIR", "")
-	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State, PlanJSON: fixtures.PlanAllActions}
 	ws := workspace.New(workspace.Info{Project: "demo", Engine: "terraform", Version: "1.9.8", Workspace: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	ws.Load(context.Background(), fake, "terraform", nil)
 	root := t.TempDir()

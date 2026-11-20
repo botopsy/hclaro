@@ -5,19 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"time"
 
 	"hclaro/internal/gitctx"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/plan"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
 	"hclaro/internal/workspace"
 )
-
-var idPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 type planSummary struct {
 	ID          string         `json:"id"`
@@ -208,7 +206,7 @@ func lookupPlan(r *http.Request, src interface {
 	Plan(string) (*operations.Plan, bool)
 }) (*operations.Plan, bool) {
 	id := r.PathValue("id")
-	if !idPattern.MatchString(id) {
+	if !ids.Valid(id) {
 		return nil, false
 	}
 	return src.Plan(id)
@@ -380,7 +378,7 @@ func execRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, source sou
 		}
 		change := r.PathValue("change")
 		detail, found := p.Details[change]
-		if !idPattern.MatchString(change) || !found {
+		if !ids.Valid(change) || !found {
 			errorJSON(w, 404, "change_not_found")
 			return
 		}
@@ -413,7 +411,7 @@ func execRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, source sou
 		if !ok {
 			return
 		}
-		if !idPattern.MatchString(r.PathValue("id")) {
+		if !ids.Valid(r.PathValue("id")) {
 			errorJSON(w, 404, "operation_not_found")
 			return
 		}
@@ -457,7 +455,7 @@ func planRequest(w http.ResponseWriter, r *http.Request, source sourceOf, body a
 	if !decodeBody(w, r, body) {
 		return nil, false
 	}
-	if !idPattern.MatchString(r.PathValue("id")) {
+	if !ids.Valid(r.PathValue("id")) {
 		errorJSON(w, 404, "plan_not_found")
 		return nil, false
 	}
@@ -488,7 +486,7 @@ func lookupOperation(w http.ResponseWriter, r *http.Request, source sourceOf) (e
 	}
 	id := r.PathValue("id")
 	op, log, found := operations.Operation{}, (*operations.Log)(nil), false
-	if idPattern.MatchString(id) {
+	if ids.Valid(id) {
 		op, log, found = src.Operation(id)
 	}
 	if !found {

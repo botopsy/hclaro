@@ -41,6 +41,7 @@ type Login struct {
 	StartedAt  string `json:"startedAt"`
 	FinishedAt string `json:"finishedAt,omitempty"`
 	cancel     context.CancelFunc
+	done       chan struct{} // closed when the sign-in command has returned
 }
 
 // Login modes and states.
@@ -261,13 +262,14 @@ func (m *Manager) StartLogin(ctx context.Context, t Target, mode string) (Status
 	}
 	// The sign-in outlives the request; Close (at Hclaro's shutdown) cancels it.
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), loginTimeout)
-	l := &Login{ID: newID(), Mode: mode, State: LoginRunning, Message: "Waiting for the AWS CLI sign-in. Complete it in the browser window the AWS CLI opened.", StartedAt: m.Now().UTC().Format(time.RFC3339), cancel: cancel}
+	l := &Login{ID: newID(), Mode: mode, State: LoginRunning, Message: "Waiting for the AWS CLI sign-in. Complete it in the browser window the AWS CLI opened.", StartedAt: m.Now().UTC().Format(time.RFC3339), cancel: cancel, done: make(chan struct{})}
 	m.logins[k] = l
 	// Signing in may change the identity: an earlier preflight must be reviewed again.
 	m.epochs[k]++
 	delete(m.checks, k)
 	m.mu.Unlock()
 	go func() {
+		defer close(l.done)
 		defer cancel()
 		_, errOut, err := m.Run(runCtx, t.Environ, "aws", args...)
 		m.mu.Lock()
@@ -323,20 +325,20 @@ func (m *Manager) CancelLogin(t Target) bool {
 // cache after it exits. It waits up to wait for them to end.
 func (m *Manager) Close(wait time.Duration) {
 	m.mu.Lock()
+	var running []chan struct{}
 	for _, l := range m.logins {
 		if l.State == LoginRunning {
 			l.cancel()
+			running = append(running, l.done)
 		}
 	}
 	m.mu.Unlock()
-	for deadline := time.Now().Add(wait); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		m.mu.Lock()
-		running := false
-		for _, l := range m.logins {
-			running = running || l.State == LoginRunning
-		}
-		m.mu.Unlock()
-		if !running {
+	timeout := time.NewTimer(wait)
+	defer timeout.Stop()
+	for _, done := range running {
+		select {
+		case <-done:
+		case <-timeout.C:
 			return
 		}
 	}

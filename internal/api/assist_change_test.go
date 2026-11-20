@@ -13,7 +13,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 )
 
@@ -31,7 +31,7 @@ func proposalReply(path, base, text string) string {
 }
 
 func TestAIProposedChangeOverHTTP(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	s, root := newImportServer(t, fake)
 	const old = "resource \"aws_s3_bucket\" \"legacy_logs\" {}\n" // newImportServer's main.tf
 	const next = "resource \"aws_s3_bucket\" \"legacy_logs\" {\n  bucket = \"logs\"\n}\n"
@@ -172,7 +172,7 @@ func TestAIProposedNewFileIgnoredByGit(t *testing.T) {
 	}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanAllActions})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions})
 	git := exec.Command("git", "init", "-q")
 	git.Dir = root
 	if out, err := git.CombinedOutput(); err != nil {

@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"hclaro/fixtures"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
 )
 
 // A launch project read before it was initialized becomes plannable after "Read again".
 func TestLaunchReloadReinspectsAndRereads(t *testing.T) {
-	fake := &engine.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store := workspace.New(workspace.Info{Project: "demo", Backend: "unknown", ExecutionMode: "unsupported"})
 	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, t.TempDir())

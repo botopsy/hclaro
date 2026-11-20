@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/workspace"
 )
 
@@ -20,7 +20,7 @@ func TestVerifyResultIsDecidedByTheHook(t *testing.T) {
 		{"cancelled while revalidating", "stopped", Cancelled, "cancelled"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fake := &engine.Fake{Lines: lines(nil)}
+			fake := &enginetest.Fake{Lines: lines(nil)}
 			m, _ := setup(t, fake, workspace.Info{})
 			m.Verify = func(ctx context.Context, kind string) *Diagnostic {
 				if kind != "plan" {

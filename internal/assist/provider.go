@@ -96,14 +96,14 @@ func Message(kind string) string {
 	return kindMessages[KindFailed]
 }
 
-// Failure is a classified, sanitized provider failure.
-type Failure struct{ Kind string }
+// failure is a classified, sanitized provider failure.
+type failure struct{ Kind string }
 
-func (f *Failure) Error() string { return Message(f.Kind) }
+func (f *failure) Error() string { return Message(f.Kind) }
 
 // KindOf returns the failure kind of err.
 func KindOf(err error) string {
-	var f *Failure
+	var f *failure
 	switch {
 	case errors.As(err, &f):
 		return f.Kind
@@ -273,7 +273,7 @@ func (c *CLI) Detect(ctx context.Context) ProviderStatus {
 func (c *CLI) Run(ctx context.Context, payload []byte) (string, error) {
 	st := c.Detect(ctx)
 	if st.Mode != ModeHeadless {
-		return "", &Failure{Kind: st.Reason}
+		return "", &failure{Kind: st.Reason}
 	}
 	p := Prepared{Bin: st.Path, Args: c.RunArgs}
 	if c.Prepare != nil {
@@ -287,11 +287,11 @@ func (c *CLI) Run(ctx context.Context, payload []byte) (string, error) {
 	}
 	// The global allowlist accepts every registered provider's shapes; a run must use its own.
 	if own := c.Argvs; (own == nil && !slices.Equal(p.Args, c.RunArgs)) || (own != nil && !own(p.Args)) {
-		return "", &Failure{Kind: KindRefusedArgs}
+		return "", &failure{Kind: KindRefusedArgs}
 	}
 	dir, err := privateDir()
 	if err != nil {
-		return "", &Failure{Kind: KindFailed}
+		return "", &failure{Kind: KindFailed}
 	}
 	defer os.RemoveAll(dir)
 	env := c.Environ(os.Environ())
@@ -307,14 +307,14 @@ func (c *CLI) Run(ctx context.Context, payload []byte) (string, error) {
 	case err != nil:
 		return "", err
 	case r.overflow:
-		return "", &Failure{Kind: KindOutputTooLarge}
+		return "", &failure{Kind: KindOutputTooLarge}
 	}
 	reply, kind := c.Reply(r.stdout, r.stderr, r.exitOK && !r.stopped)
 	if kind == "" && r.stopped {
 		kind = KindFailed
 	}
 	if kind != "" {
-		return "", &Failure{Kind: kind}
+		return "", &failure{Kind: kind}
 	}
 	return reply, nil
 }
@@ -324,11 +324,11 @@ func (c *CLI) Run(ctx context.Context, payload []byte) (string, error) {
 // classification.
 func (c *CLI) exec(ctx context.Context, path string, args []string, stdin []byte, limit int, timeout time.Duration) (stdout, stderr []byte, exitOK, overflow bool, err error) {
 	if !slices.Equal(args, c.VersionArgs) && !slices.Equal(args, c.RunArgs) {
-		return nil, nil, false, false, &Failure{Kind: KindRefusedArgs}
+		return nil, nil, false, false, &failure{Kind: KindRefusedArgs}
 	}
 	dir, err := privateDir()
 	if err != nil {
-		return nil, nil, false, false, &Failure{Kind: KindFailed}
+		return nil, nil, false, false, &failure{Kind: KindFailed}
 	}
 	defer os.RemoveAll(dir)
 	r, err := runProc(ctx, command{path: path, args: args, dir: dir, env: c.Environ(os.Environ()), stdin: stdin, limit: limit, timeout: timeout})
@@ -390,7 +390,7 @@ func privateDir() (string, error) {
 // runProc starts one allowlisted process; anything else is refused before exec.
 func runProc(ctx context.Context, p command) (procResult, error) {
 	if !allowedArgv(p.path, p.args) {
-		return procResult{}, &Failure{Kind: KindRefusedArgs}
+		return procResult{}, &failure{Kind: KindRefusedArgs}
 	}
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
@@ -416,7 +416,7 @@ func runProc(ctx context.Context, p command) (procResult, error) {
 	}
 	var exitErr *exec.ExitError
 	if runErr != nil && !errors.As(runErr, &exitErr) {
-		return procResult{}, &Failure{Kind: KindMissing} // could not start: removed or not executable
+		return procResult{}, &failure{Kind: KindMissing} // could not start: removed or not executable
 	}
 	return procResult{stdout: out.Bytes(), stderr: errOut.Bytes(), exitOK: runErr == nil, overflow: out.Overflow}, nil
 }

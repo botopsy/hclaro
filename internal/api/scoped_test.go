@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,15 +16,17 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
+	"hclaro/internal/testutil"
 	"hclaro/internal/workspace"
 )
 
 // Tests for Hub-scoped plan routes (M24.05, ADR M24.03). Hub engine commands run the
 // synthetic CLI (scripts/fake-engine) in temporary roots; the launch project runs
-// engine.Fake. Nothing contacts a real backend, provider or account.
+// enginetest.Fake. Nothing contacts a real backend, provider or account.
 
 type scopedServer struct {
 	*hubServer
@@ -40,21 +40,7 @@ type scopedServer struct {
 
 func newScopedServer(t *testing.T) *scopedServer {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("builds the synthetic engine")
-	}
-	bin := t.TempDir()
-	exe := ""
-	if runtime.GOOS == "windows" {
-		exe = ".exe"
-	}
-	for _, name := range []string{"terraform", "tofu"} {
-		build := exec.Command("go", "build", "-o", filepath.Join(bin, name+exe), "hclaro/scripts/fake-engine")
-		build.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("%v %s", err, out)
-		}
-	}
+	bin, exe := testutil.FakeEngine(t), testutil.Exe()
 	spy := filepath.Join(t.TempDir(), "argv")
 	t.Setenv("HCLARO_FAKE_SPY", spy)
 	t.Setenv("HCLARO_FAKE_SPY_ENV", "CWD,AWS_PROFILE")
@@ -88,7 +74,7 @@ func newScopedServer(t *testing.T) *scopedServer {
 	t.Cleanup(hub.Close)
 
 	// The launch project is another root with its own manager, sharing the root claims.
-	fake := &engine.Fake{Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n")), PlanJSON: fixtures.PlanAllActions, VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
+	fake := &enginetest.Fake{Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n")), PlanJSON: fixtures.PlanAllActions, VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
 	launch := operations.NewManager(store, fake, t.TempDir())

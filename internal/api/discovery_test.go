@@ -18,7 +18,7 @@ import (
 	"hclaro/internal/awscli"
 	"hclaro/internal/discovery"
 	"hclaro/internal/discovery/discoverytest"
-	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/imports"
 	"hclaro/internal/operations"
 	"hclaro/internal/workspace"
@@ -30,7 +30,7 @@ func newDiscoveryServer(t *testing.T) (*planServer, *discoverytest.Runner, strin
 	for _, name := range []string{"AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION"} {
 		t.Setenv(name, "")
 	}
-	s, root := newImportServer(t, &engine.Fake{PlanJSON: fixtures.PlanImport})
+	s, root := newImportServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanImport})
 	runner := &discoverytest.Runner{}
 	svc := discovery.New(runner)
 	svc.Sleep = func(context.Context, time.Duration) error { return nil }
@@ -242,12 +242,12 @@ func TestDiscoveryAccessDeniedIsPartialNotEmpty(t *testing.T) {
 
 func TestDiscoveryUnavailableAndRouteGuard(t *testing.T) {
 	// Without a service, or without a launch project, nothing runs.
-	s := newPlanServer(t, &engine.Fake{PlanJSON: fixtures.PlanImport})
+	s := newPlanServer(t, &enginetest.Fake{PlanJSON: fixtures.PlanImport})
 	if w := s.do("POST", "/api/v1/discovery/identity", `{}`); w.Code != 409 || decode[map[string]string](t, w)["error"] != "discovery_unavailable" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	store := workspace.New(workspace.Info{})
-	manager := operations.NewManager(store, &engine.Fake{}, "")
+	manager := operations.NewManager(store, &enginetest.Fake{}, "")
 	services := &Services{}
 	runner := &discoverytest.Runner{}
 	services.Discovery = discovery.New(runner)

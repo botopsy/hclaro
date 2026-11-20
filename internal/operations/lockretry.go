@@ -10,8 +10,7 @@ import (
 // (workspace diagnostic state_locked). Hclaro then reads the state again on its own, a
 // bounded number of times, and never unlocks anything.
 
-// lockRetryDelays are the waits before each re-read: about two minutes in all. A variable
-// only so tests can shorten it.
+// lockRetryDelays are the default waits before each re-read: about two minutes in all.
 var lockRetryDelays = []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second, 15 * time.Second, 15 * time.Second, 15 * time.Second, 15 * time.Second, 15 * time.Second, 15 * time.Second, 15 * time.Second}
 
 // RetryLockedRead starts the bounded re-read when the workspace's last state read was
@@ -45,7 +44,7 @@ func (m *Manager) stopLockRetryLocked() {
 func (m *Manager) lockRetryLoop(ctx context.Context, cancel context.CancelFunc) {
 	defer m.wg.Done()
 	defer cancel()
-	for _, d := range lockRetryDelays {
+	for _, d := range m.lockRetryDelays {
 		select {
 		case <-ctx.Done():
 			return

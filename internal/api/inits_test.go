@@ -13,13 +13,14 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
 )
 
-// initServer is a Hub server whose init runs engine.Fake. The test binary stands in for the
+// initServer is a Hub server whose init runs enginetest.Fake. The test binary stands in for the
 // executable so its identity can be pinned.
-func initServer(t *testing.T, fake *engine.Fake) (*hubServer, projects.Summary) {
+func initServer(t *testing.T, fake *enginetest.Fake) (*hubServer, projects.Summary) {
 	t.Helper()
 	t.Setenv("TF_CLI_ARGS", "")
 	t.Setenv("TF_CLI_ARGS_init", "")
@@ -60,7 +61,7 @@ func (s *hubServer) waitOp(id string) operations.Operation {
 }
 
 func TestInitStartNeedsCSRFAndAReviewedContext(t *testing.T) {
-	fake := &engine.Fake{VersionValue: "1.9.8"}
+	fake := &enginetest.Fake{VersionValue: "1.9.8"}
 	s, p := initServer(t, fake)
 	status := s.initStatus(p.ID)
 	if !status.CanInit || status.Initialized || len(fake.Calls()) != 0 {
@@ -109,7 +110,7 @@ func TestInitStartNeedsCSRFAndAReviewedContext(t *testing.T) {
 }
 
 func TestInitOverHTTPStreamsSanitizedEvents(t *testing.T) {
-	fake := &engine.Fake{VersionValue: "1.9.8", InitLines: [][]byte{
+	fake := &enginetest.Fake{VersionValue: "1.9.8", InitLines: [][]byte{
 		[]byte(`{"type":"init_output","@level":"info","@message":"Initializing the backend..."}`),
 		[]byte(`{"type":"init_output","@level":"info","@message":"token=` + fixtures.Canary + `"}`),
 	}}
@@ -140,7 +141,7 @@ func TestInitOverHTTPStreamsSanitizedEvents(t *testing.T) {
 }
 
 func TestInitSurvivesClosedBrowserAndCancelsOverHTTP(t *testing.T) {
-	fake := &engine.Fake{VersionValue: "1.9.8", BlockInit: true}
+	fake := &enginetest.Fake{VersionValue: "1.9.8", BlockInit: true}
 	s, p := initServer(t, fake)
 	status := s.initStatus(p.ID)
 	path := "/api/v1/projects/" + p.ID + "/operations/init"

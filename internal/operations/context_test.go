@@ -13,6 +13,7 @@ import (
 	"hclaro/fixtures"
 	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
+	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/profiles"
 	"hclaro/internal/workspace"
 )
@@ -37,7 +38,7 @@ func (b *binding) last() ([]string, string) {
 
 // profileSetup is setup plus a real profile store and a binder equivalent to the Hub's: the
 // profile is resolved against the root and the given environment and composed.
-func profileSetup(t *testing.T, fake *engine.Fake, environ []string) (*Manager, string, *profiles.Store, *binding) {
+func profileSetup(t *testing.T, fake *enginetest.Fake, environ []string) (*Manager, string, *profiles.Store, *binding) {
 	t.Helper()
 	m, root := setup(t, fake, workspace.Info{})
 	store := profiles.Open(t.TempDir(), time.Now())
@@ -91,7 +92,7 @@ func writeFile(t *testing.T, root, name, content string) {
 }
 
 func TestProfilePlanAndApplyUseTheBoundContext(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, ApplyLines: lines(fixtures.ApplyLog)}
 	environ := []string{"PATH=/bin", "AWS_SECRET_ACCESS_KEY=" + canary, "TF_WORKSPACE=other", "TF_VAR_password=" + canary}
 	m, root, store, rec := profileSetup(t, fake, environ)
 	writeFile(t, root, "env/prod.tfvars", `password = "`+canary+`"`)
@@ -161,7 +162,7 @@ func TestProfilePlanAndApplyUseTheBoundContext(t *testing.T) {
 }
 
 func TestProfilePlanRefusesUnreviewedOrMismatchedContext(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, root, store, _ := profileSetup(t, fake, []string{"PATH=/bin"})
 	p, _ := store.Create(testProject, profiles.Input{Name: "a"})
 	fp := reviewedFingerprint(t, m, p.ID)
@@ -212,7 +213,7 @@ func TestProfilePlanRefusesUnreviewedOrMismatchedContext(t *testing.T) {
 
 func TestProfileInjectedCLIArgsRefuseThePlan(t *testing.T) {
 	for _, item := range []string{"TF_CLI_ARGS_plan=-lock=false", "TF_CLI_ARGS=-auto-approve", "TF_CLI_ARGS_plan=-destroy", "TF_CLI_ARGS_apply=-auto-approve", "tf_cli_args_plan=-refresh=false"} {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 		m, _, store, _ := profileSetup(t, fake, []string{"PATH=/bin", item})
 		p, _ := store.Create(testProject, profiles.Input{Name: "a"})
 		_, bindErr := m.Binder(p.ID)
@@ -229,7 +230,7 @@ func TestProfileInjectedCLIArgsRefuseThePlan(t *testing.T) {
 // token unusable, and nothing is applied.
 func TestProfileChangeInvalidatesStoredPlanAndToken(t *testing.T) {
 	for _, change := range []string{"edit", "delete"} {
-		fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+		fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 		m, _, store, _ := profileSetup(t, fake, []string{"PATH=/bin"})
 		p, _ := store.Create(testProject, profiles.Input{Name: "staging", AWSProfile: "staging"})
 		op, err := m.StartPlanWith(PlanStart{ProfileID: p.ID, ContextFingerprint: reviewedFingerprint(t, m, p.ID)})
@@ -269,7 +270,7 @@ func TestProfileChangeInvalidatesStoredPlanAndToken(t *testing.T) {
 // A running operation keeps the context and environment it started with, whatever happens
 // to the profile meanwhile.
 func TestProfileDeletedWhileRunningKeepsSnapshot(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions, Lines: lines(fixtures.PlanLog), Delay: 20 * time.Millisecond}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions, Lines: lines(fixtures.PlanLog), Delay: 20 * time.Millisecond}
 	m, _, store, rec := profileSetup(t, fake, []string{"PATH=/bin"})
 	p, _ := store.Create(testProject, profiles.Input{Name: "prod", AWSProfile: "prod-sso", Options: profiles.Options{Parallelism: 2}})
 	op, err := m.StartPlanWith(PlanStart{ProfileID: p.ID, ContextFingerprint: reviewedFingerprint(t, m, p.ID)})
@@ -301,7 +302,7 @@ func TestProfileDeletedWhileRunningKeepsSnapshot(t *testing.T) {
 
 // Without a profile nothing changes: no binding, no TF_WORKSPACE override, old command.
 func TestPlanWithoutProfileIsUnchanged(t *testing.T) {
-	fake := &engine.Fake{PlanJSON: fixtures.PlanAllActions}
+	fake := &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}
 	m, _, _, rec := profileSetup(t, fake, []string{"PATH=/bin"})
 	id := planned(t, m)
 	plan, _ := m.Plan(id)

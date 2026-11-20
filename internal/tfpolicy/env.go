@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"hclaro/internal/ids"
 	"hclaro/internal/state"
 )
 
@@ -166,10 +167,8 @@ func UnsafeArgsHelp(environ []string, commands ...string) string {
 	return "Found: " + strings.Join(found, "; ") + ". Hidden flags such as -target, -replace, -lock=false or -auto-approve would change what runs without appearing in the reviewed command, so only -no-color is accepted. Unset them in the shell or environment that starts Hclaro (for example `unset " + strings.Join(unset, " ") + "`) and restart Hclaro. An execution profile cannot override inherited TF_CLI_ARGS settings, and Hclaro never removes them for you."
 }
 
-var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,90}$`)
-
 // ValidWorkspace accepts the conservative workspace name subset Hclaro displays and passes
 // to TF_WORKSPACE.
 func ValidWorkspace(name string) bool {
-	return workspaceName.MatchString(name) && !state.Suspicious(name)
+	return ids.ValidWorkspace(name) && !state.Suspicious(name)
 }

@@ -116,7 +116,7 @@ func ReadHead(root string) *Head {
 
 // CleanBranch returns b when it is a displayable branch name, else "".
 func CleanBranch(b string) string {
-	if !refPattern.MatchString(b) || strings.Contains(b, "..") || len(b) > 200 || SuspiciousText(b) {
+	if !refPattern.MatchString(b) || strings.Contains(b, "..") || len(b) > 200 || state.Suspicious(b) {
 		return ""
 	}
 	return b
@@ -150,6 +150,3 @@ func readSmall(path string) ([]byte, error) {
 	}
 	return io.ReadAll(io.LimitReader(f, maxGitFile))
 }
-
-// SuspiciousText reports credential-shaped text (see state.Suspicious).
-func SuspiciousText(s string) bool { return state.Suspicious(s) }

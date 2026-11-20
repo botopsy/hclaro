@@ -3,7 +3,6 @@ package history_test
 import (
 	"encoding/json"
 	"fmt"
-	. "hclaro/internal/history"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	. "hclaro/internal/history"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/plan"
 )
@@ -683,7 +684,7 @@ func TestOnlyChangeDecisionsGetAnID(t *testing.T) {
 		t.Fatalf("%d entries: %+v", len(entries), entries)
 	}
 	for _, e := range entries {
-		if (e.Kind == "assist-change") != ValidID(e.ID) {
+		if (e.Kind == "assist-change") != ids.Valid(e.ID) {
 			t.Fatalf("%s entry ID %q", e.Kind, e.ID)
 		}
 	}
