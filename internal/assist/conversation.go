@@ -142,6 +142,8 @@ const (
 	RefuseSaveOff       = "saving_unavailable"
 	RefuseSaveFailed    = "save_failed"
 	RefuseSaveUnsafe    = "save_blocked"
+	RefusePrefs         = "ai_settings_not_saved"
+	RefuseChecking      = "ai_checking"
 )
 
 var refusalMessages = map[string]string{
@@ -162,6 +164,8 @@ var refusalMessages = map[string]string{
 	RefuseReadOnly:      "This saved conversation is read-only. Nothing was sent.",
 	RefuseSaveOff:       "Conversations cannot be saved here: the per-user configuration folder is unavailable.",
 	RefuseSaveFailed:    "Hclaro could not save this conversation to disk. It stays open in this session, unsaved.",
+	RefusePrefs:         "The AI settings could not be saved in the configuration folder, so nothing changed.",
+	RefuseChecking:      "Hclaro is still checking the installed assistants. Try again in a moment.",
 	RefuseSaveUnsafe:    "This conversation was not saved: a message or reply looks like it contains a secret, a credential or a local path. It stays open in this session, unsaved.",
 }
 
@@ -213,6 +217,9 @@ func (s *Session) Accept(version string) error {
 		return refuse(RefuseDisabled)
 	case version != DisclosureVersion:
 		return refuse(RefuseDisclosure)
+	case s.checking:
+		// Detection may add lines (a provider's); the acceptance must cover what it finds.
+		return refuse(RefuseChecking)
 	}
 	s.accepted = true
 	return nil
@@ -366,24 +373,45 @@ func (s *Session) gate(provider string) (Assistant, error) {
 
 // StartConversation starts a conversation about the package with hash, built in scope key, and
 // sends its first turn (message may be empty). The disclosure version named must be current.
-func (s *Session) StartConversation(key, hash, provider, disclosureVersion string, scope RunScope, message string) (Conversation, error) {
-	return s.start(key, hash, provider, disclosureVersion, scope, message, Prompt{})
+// Every new conversation runs the session's effective assistant (preferred); clients never
+// choose it.
+func (s *Session) StartConversation(key, hash, disclosureVersion string, scope RunScope, message string) (Conversation, error) {
+	if hash == "" {
+		return Conversation{}, refuse(RefuseNotFound)
+	}
+	return s.start(key, hash, disclosureVersion, scope, message, Prompt{}, nil)
 }
 
 // StartReview starts a conversation whose first turn is registry prompt promptID, which must fit
 // the package's kind (Prompt.Fits). Its stdin is FirstTurn of the package and the prompt.
-func (s *Session) StartReview(key, hash, provider, disclosureVersion string, scope RunScope, promptID string) (Conversation, error) {
+func (s *Session) StartReview(key, hash, disclosureVersion string, scope RunScope, promptID string) (Conversation, error) {
 	p, ok := LookupPrompt(promptID)
-	if !ok {
+	switch {
+	case !ok:
 		return Conversation{}, refuse(RefuseInvalidArgs)
+	case hash == "":
+		return Conversation{}, refuse(RefuseNotFound)
 	}
-	return s.start(key, hash, provider, disclosureVersion, scope, p.Text, p)
+	return s.start(key, hash, disclosureVersion, scope, p.Text, p, nil)
 }
 
-func (s *Session) start(key, hash, provider, disclosureVersion string, scope RunScope, message string, prompt Prompt) (Conversation, error) {
-	kind, markdown, found, fresh := s.Get(key, hash)
+// StartChat starts a conversation without a context package (AI-01.09 "conversation only") and
+// sends its first message, which is required. fresh reports whether the user is still in the
+// project and workspace it started in; once false, no turn is sent.
+func (s *Session) StartChat(key, disclosureVersion string, scope RunScope, message string, fresh func() bool) (Conversation, error) {
+	return s.start(key, "", disclosureVersion, scope, message, Prompt{}, fresh)
+}
+
+// start opens a conversation with the preferred assistant: about the package with hash, or a
+// chat bound to fresh when hash is empty.
+func (s *Session) start(key, hash, disclosureVersion string, scope RunScope, message string, prompt Prompt, fresh func() bool) (Conversation, error) {
+	kind, markdown, found, pkgFresh := KindChat, "", true, true
+	if hash != "" {
+		kind, markdown, found, pkgFresh = s.Get(key, hash)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	provider := s.preferred
 	p, err := s.gate(provider)
 	switch {
 	case err != nil:
@@ -392,28 +420,31 @@ func (s *Session) start(key, hash, provider, disclosureVersion string, scope Run
 		return Conversation{}, refuse(RefuseDisclosure)
 	case !found:
 		return Conversation{}, refuse(RefuseNotFound)
-	case !fresh:
+	case !pkgFresh:
 		return Conversation{}, refuse(RefuseStale)
 	case prompt.ID != "" && !prompt.Fits(kind):
 		return Conversation{}, refuse(RefuseInvalidArgs)
 	}
-	if err := checkMessage(message, scope.Root, true); err != nil {
+	if err := checkMessage(message, scope.Root, hash != ""); err != nil {
 		return Conversation{}, err
 	}
 	if err := s.evict(); err != nil {
 		return Conversation{}, err
 	}
-	stored, ok := s.packages[key+"\x00"+hash]
-	if !ok { // expired between Get and here
-		return Conversation{}, refuse(RefuseNotFound)
-	}
-	c := &conversation{key: key, scope: scope, pkg: markdown, fresh: stored.fresh, assist: p, resume: resumeNone, version: s.versionOf(provider),
-		view: Conversation{ID: randomID(), Provider: provider, Kind: kind, SHA256: hash, Turns: []Turn{}, LimitBytes: MaxTranscript, StartedAt: s.Now().UTC().Format(time.RFC3339)}}
-	if kind == KindProject {
-		// A project package can be superseded by attaching current project context.
-		c.fresh, c.attached = nil, stored.fresh
-		if stored.fingerprint != "" {
-			c.resume, c.fingerprint = resumeProject, stored.fingerprint
+	c := &conversation{key: key, scope: scope, fresh: fresh, assist: p, resume: resumeWorkspace, version: s.versionOf(provider),
+		view: Conversation{ID: randomID(), Provider: provider, Kind: kind, Turns: []Turn{}, LimitBytes: MaxTranscript, StartedAt: s.Now().UTC().Format(time.RFC3339)}}
+	if hash != "" {
+		stored, ok := s.packages[key+"\x00"+hash]
+		if !ok { // expired between Get and here
+			return Conversation{}, refuse(RefuseNotFound)
+		}
+		c.pkg, c.fresh, c.resume, c.view.SHA256 = markdown, stored.fresh, resumeNone, hash
+		if kind == KindProject {
+			// A project package can be superseded by attaching current project context.
+			c.fresh, c.attached = nil, stored.fresh
+			if stored.fingerprint != "" {
+				c.resume, c.fingerprint = resumeProject, stored.fingerprint
+			}
 		}
 	}
 	if err := s.send(c, message, prompt.ID); err != nil {
@@ -439,34 +470,6 @@ func (s *Session) evict() error {
 	}
 	delete(s.conversations, oldest.view.ID)
 	return nil
-}
-
-// StartChat starts a conversation without a context package (AI-01.09 "conversation only") and
-// sends its first message, which is required. fresh reports whether the user is still in the
-// project and workspace it started in; once false, no turn is sent.
-func (s *Session) StartChat(key, provider, disclosureVersion string, scope RunScope, message string, fresh func() bool) (Conversation, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	p, err := s.gate(provider)
-	if err != nil {
-		return Conversation{}, err
-	}
-	if disclosureVersion != DisclosureVersion {
-		return Conversation{}, refuse(RefuseDisclosure)
-	}
-	if err := checkMessage(message, scope.Root, false); err != nil {
-		return Conversation{}, err
-	}
-	if err := s.evict(); err != nil {
-		return Conversation{}, err
-	}
-	c := &conversation{key: key, scope: scope, fresh: fresh, assist: p, resume: resumeWorkspace, version: s.versionOf(provider),
-		view: Conversation{ID: randomID(), Provider: provider, Kind: KindChat, Turns: []Turn{}, LimitBytes: MaxTranscript, StartedAt: s.Now().UTC().Format(time.RFC3339)}}
-	if err := s.send(c, message, ""); err != nil {
-		return Conversation{}, err
-	}
-	s.conversations[c.view.ID] = c
-	return s.snapshot(c), nil
 }
 
 // Attach adds the previewed project package with hash, built in scope key, to conversation id

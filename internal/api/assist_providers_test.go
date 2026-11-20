@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"hclaro/fixtures"
 	"hclaro/internal/assist"
@@ -45,11 +46,26 @@ func (ps providerSet) session() *assist.Session {
 
 type doFunc func(method, path, body string) *httptest.ResponseRecorder
 
+// turnOnAI switches AI on and waits for the background detection it starts.
+func turnOnAI(t *testing.T, do doFunc) assist.Settings {
+	t.Helper()
+	if w := do("POST", "/api/v1/ai/settings", `{"enabled":true}`); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if st := decode[assist.Settings](t, do("GET", "/api/v1/ai/settings", "")); !st.Checking {
+			return st
+		}
+	}
+	t.Fatal("detection did not finish")
+	return assist.Settings{}
+}
+
 // checkProviderSet builds and exports each kind under prefix, checks Settings and that Send
 // (a conversation) reaches only a headless-eligible Claude.
 func checkProviderSet(t *testing.T, ps providerSet, do doFunc, prefix string, requests map[string]string) {
 	t.Helper()
-	do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, do)
 	if w := do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`); w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -79,9 +95,6 @@ func checkProviderSet(t *testing.T, ps providerSet, do doFunc, prefix string, re
 			t.Fatalf("copy-only choice: %+v", st)
 		}
 	}
-	if headless {
-		do("POST", "/api/v1/ai/settings", `{"defaultProvider":"claude"}`)
-	}
 	var last builtPackage
 	for kind, body := range requests {
 		p := build(t, do("POST", prefix+"/ai/packages", body))
@@ -91,10 +104,15 @@ func checkProviderSet(t *testing.T, ps providerSet, do doFunc, prefix string, re
 		exportSame(t, do("POST", prefix+"/ai/packages/"+p.SHA256+"/export", `{}`), p)
 		last = p
 	}
+	// The chosen assistant runs; a chosen copy-only one is refused.
 	for _, h := range ps.handoffs {
-		wantError(t, do("POST", prefix+"/ai/conversations", startBody(last.SHA256, h.id, "")), 409, "provider_unavailable")
+		do("POST", "/api/v1/ai/settings", `{"defaultProvider":"`+h.id+`"}`)
+		wantError(t, do("POST", prefix+"/ai/conversations", startBody(last.SHA256, "")), 409, "provider_unavailable")
 	}
-	claudeRun := do("POST", prefix+"/ai/conversations", startBody(last.SHA256, "claude", ""))
+	if headless {
+		do("POST", "/api/v1/ai/settings", `{"defaultProvider":"claude"}`)
+	}
+	claudeRun := do("POST", prefix+"/ai/conversations", startBody(last.SHA256, ""))
 	if headless {
 		if claudeRun.Code != 202 {
 			t.Fatalf("claude run: %d %s", claudeRun.Code, claudeRun.Body)
@@ -136,7 +154,7 @@ func TestAIHubHandoffWithoutClaude(t *testing.T) {
 			s := newScopedServer(t)
 			s.launch.Assist = ps.session()
 			do := func(method, path, body string) *httptest.ResponseRecorder { return s.do(method, path, body) }
-			do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+			turnOnAI(t, do)
 			a := s.openLoaded("network", "dev", "")
 			done := s.waitScoped(a, s.plan(a).ID)
 			scan := s.scan(a)

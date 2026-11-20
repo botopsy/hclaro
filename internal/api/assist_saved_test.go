@@ -47,7 +47,7 @@ func savedFiles(t *testing.T, config string) []string {
 
 func startChat(t *testing.T, s *planServer, message string) assist.Conversation {
 	t.Helper()
-	w := s.do("POST", "/api/v1/ai/conversations", chatBody("stub", message))
+	w := s.do("POST", "/api/v1/ai/conversations", chatBody(message))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -217,7 +217,7 @@ func TestAISavedConversationReadOnlyReasons(t *testing.T) {
 	chat := startChat(t, s, "hello")
 	s.do("POST", "/api/v1/ai/conversations/"+chat.ID+"/save", `{"saved":true}`)
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+s.plan()+`"}`))
-	w := s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","provider":"stub","disclosureVersion":"`+assist.DisclosureVersion+`","prompt":"review-plan@1"}`)
+	w := s.do("POST", "/api/v1/ai/conversations", `{"packageSha256":"`+p.SHA256+`","disclosureVersion":"`+assist.DisclosureVersion+`","prompt":"review-plan@1"}`)
 	review := waitChat(t, s.do, "/api/v1", decode[assist.Conversation](t, w).ID)
 	s.do("POST", "/api/v1/ai/conversations/"+review.ID+"/save", `{"saved":true}`)
 
@@ -274,12 +274,12 @@ func TestAIHubSavedConversationsArePerProject(t *testing.T) {
 	s.launch.Assist = assist.NewSession(false, stub)
 	config := t.TempDir()
 	s.launch.Assist.Store = assist.OpenStore(config, time.Now())
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
 	other := s.openLoaded("platform", "staging", "")
 	do := func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) }
-	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations", chatBody("stub", "network question"))
+	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations", chatBody("network question"))
 	id := decode[assist.Conversation](t, w).ID
 	waitChat(t, do, "/api/v1/contexts/"+a, id)
 	if w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations/"+id+"/save", `{"saved":true}`); w.Code != 200 {

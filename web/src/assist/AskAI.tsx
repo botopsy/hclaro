@@ -17,13 +17,16 @@ import { hasProposal, ProposedChanges, useChanges } from './ProposedChanges';
 // only, with no links, command buttons or actions.
 
 export type AssistDisclosure = { version: string; lines: string[] };
-export type AssistProvider = { id: string; name: string; mode: 'headless-eligible' | 'handoff-only' | 'unsupported'; version?: string; path?: string; reason?: string; message?: string };
+// send: Hclaro can run it; usable: it can at least be copied to; installed: found on PATH.
+export type AssistProvider = { id: string; name: string; mode: string; send: boolean; usable: boolean; installed: boolean; version?: string; path?: string; reason?: string; message?: string };
 export type AssistSettings = {
   enabled: boolean; strictLocal: boolean; handoff: boolean; headless: boolean; disclosure: AssistDisclosure;
   disclosureAccepted?: boolean; providers?: AssistProvider[]; defaultProvider?: string;
   // checked/checking: whether the assistants were detected (AI-01.14), which happens only on
   // request; warning: saved settings were unreadable.
   checked?: boolean; checking?: boolean; warning?: string;
+  // The server's byte limit for one typed message.
+  maxMessage: number;
 };
 type Turn = { role: 'user' | 'assistant' | 'context'; text: string; at: string; prompt?: string; sha256?: string; hidden?: boolean };
 export type Conversation = {
@@ -32,8 +35,8 @@ export type Conversation = {
   // Saved conversations (AI-01.11): the file is kept; readOnly says why a reopened one cannot continue.
   saved: boolean; saveError?: string; readOnly?: string; needsReview?: boolean;
 };
-// Mirrors assist.MaxMessage; the server enforces it.
-const maxMessage = 8000;
+// tooLong: the message exceeds the server's limit (it enforces it too).
+export const tooLong = (text: string, settings?: AssistSettings) => !!settings && new TextEncoder().encode(text).length > settings.maxMessage;
 // action is a quick action prompt (AI-01.10); cost attaches the session's existing cost estimate.
 export type AssistRequest = { kind: 'project'; action?: string; cost?: boolean } | { kind: 'plan'; planId: string } | { kind: 'drift'; scanId: string } | { kind: 'resource'; resourceId: string } | { kind: 'import'; import: ImportRequest };
 // review is the first turn (AI-01.08): the review prompt and the package, byte for byte what
@@ -50,7 +53,7 @@ export const assistSettingsQuery = {
 // chosenAssistant is the assistant picked in Settings when Hclaro can run it (AI-01.14): it
 // drives every Review with, quick action and the AI Assistant page.
 export function chosenAssistant(settings?: AssistSettings) {
-  return settings?.headless ? settings.providers?.find(p => p.id === settings.defaultProvider && p.mode === 'headless-eligible') : undefined;
+  return settings?.headless ? settings.providers?.find(p => p.id === settings.defaultProvider && p.send) : undefined;
 }
 
 // useDetectAssistants asks the server to detect the assistants (their --version only) when the
@@ -118,7 +121,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
   });
   const settings = useQuery(assistSettingsQuery).data;
   // Handoff-only assistants get their own Copy action; Hclaro never runs them (AI-01.05).
-  const handoffs = (settings?.providers ?? []).filter(p => p.mode === 'handoff-only');
+  const handoffs = (settings?.providers ?? []).filter(p => p.usable && !p.send);
   const provider = chosenAssistant(settings);
   const acceptThen = useAcceptThen();
   useDetectAssistants(settings);
@@ -263,7 +266,7 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
   }
   const proposing = !!c?.turns.some(t => t.role === 'assistant' && !t.hidden && hasProposal(t.text));
   const changes = useChanges(scope, id, c?.turns.length ?? 0, proposing);
-  const tooLong = new TextEncoder().encode(text).length > maxMessage;
+  const long = tooLong(text, settings);
   const running = c?.state === 'running';
   const locked = running || c?.stale || !!c?.readOnly;
   return <section className="assist-run" aria-label="Conversation">
@@ -288,13 +291,13 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
     </label>
     <label className="assist-cost"><input type="checkbox" checked={c.saved} disabled={busy || (!c.saved && c.needsReview)} onChange={e => void act('save', e.target.checked)} />
      <span>Save conversation: keep its context, messages and replies as plain text in Hclaro's configuration folder on this machine, to reopen after Hclaro restarts. Unticking deletes the saved copy.</span></label>
-    {tooLong && <p className="dialog-error" role="alert">This message is longer than {maxMessage} bytes. Shorten it to send it.</p>}
+    {long && <p className="dialog-error" role="alert">This message is longer than {settings?.maxMessage} bytes. Shorten it to send it.</p>}
     {refused && <p className="dialog-error" role="alert">{refused}</p>}
     {accept && !locked && <ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
     <div className="form-actions">
      <Button variant="ghost" disabled={busy} onClick={() => void act('close')}><MessageSquareX size={14} />Close conversation</Button>
      {!running && !c.readOnly && actions}
-     <Button disabled={busy || locked || tooLong || !text.trim()} onClick={() => void act('messages')}><Send size={14} />{accept ? 'Accept and send' : 'Send message'}</Button>
+     <Button disabled={busy || locked || long || !text.trim()} onClick={() => void act('messages')}><Send size={14} />{accept ? 'Accept and send' : 'Send message'}</Button>
     </div>
    </>}
   </section>;

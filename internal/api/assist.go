@@ -163,15 +163,12 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 		if body.Enabled != nil {
 			if _, err := manager.Assist.SetEnabled(*body.Enabled); err != nil {
-				reasonJSON(w, 500, "ai_settings_not_saved", "The AI settings could not be saved in the configuration folder, so nothing changed.")
+				aiRefusal(w, err)
 				return
 			}
 		}
 		if body.DefaultProvider != nil {
-			if err := manager.Assist.SetDefault(*body.DefaultProvider); errors.Is(err, assist.ErrPrefs) {
-				reasonJSON(w, 500, "ai_settings_not_saved", "The AI settings could not be saved in the configuration folder, so nothing changed.")
-				return
-			} else if err != nil {
+			if err := manager.Assist.SetDefault(*body.DefaultProvider); err != nil {
 				aiRefusal(w, err)
 				return
 			}
@@ -312,10 +309,10 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 	}
 
-	// Conversations (AI-01.07). Start names a previewed package hash, the assistant and the
-	// disclosure version the user accepted; the bytes are the stored package. Every other route
-	// names the conversation ID under the scope it started in; another scope answers
-	// conversation_not_found.
+	// Conversations (AI-01.07). Start names a previewed package hash and the disclosure version the
+	// user accepted; the server runs the chosen assistant, and refuses when the request names another one. The
+	// bytes are the stored package. Every other route names the conversation ID under the scope it
+	// started in; another scope answers conversation_not_found.
 	start := func(w http.ResponseWriter, r *http.Request, src assistSource) {
 		sess, ok := on(w)
 		if !ok {
@@ -323,7 +320,9 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		}
 		var body struct {
 			PackageSHA256     string `json:"packageSha256"`
-			Provider          string `json:"provider"`
+			// Provider, when given, is the assistant the user saw; the server refuses the start
+			// if its chosen assistant is another one. The server always picks the provider.
+			Provider string `json:"provider"`
 			DisclosureVersion string `json:"disclosureVersion"`
 			Message           string `json:"message"`
 			Prompt            string `json:"prompt"`
@@ -335,18 +334,22 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		var c assist.Conversation
 		var err error
 		switch {
+		// shortcut: checked just before the start, not under the session lock; a choice changed in
+		// that microsecond window is not caught. Move the check into Session.start if that matters.
+		case body.Provider != "" && body.Provider != sess.Settings().DefaultProvider:
+			err = &assist.Refusal{Code: assist.RefuseProvider}
 		case body.PackageSHA256 == "" && body.Prompt == "":
 			// Conversation only (AI-01.09): no package. A Hub conversation is bound to its read
 			// context; a launch one to the workspace it started in.
-			c, err = sess.StartChat(src.key, body.Provider, body.DisclosureVersion, scope, body.Message, src.bound)
+			c, err = sess.StartChat(src.key, body.DisclosureVersion, scope, body.Message, src.bound)
 		case !packageHash.MatchString(body.PackageSHA256):
 			err = &assist.Refusal{Code: assist.RefuseNotFound}
 		case body.Prompt == "":
-			c, err = sess.StartConversation(src.key, body.PackageSHA256, body.Provider, body.DisclosureVersion, scope, body.Message)
+			c, err = sess.StartConversation(src.key, body.PackageSHA256, body.DisclosureVersion, scope, body.Message)
 		case body.Message != "": // a review's first message is the prompt itself
 			err = &assist.Refusal{Code: assist.RefuseInvalidArgs}
 		default:
-			c, err = sess.StartReview(src.key, body.PackageSHA256, body.Provider, body.DisclosureVersion, scope, body.Prompt)
+			c, err = sess.StartReview(src.key, body.PackageSHA256, body.DisclosureVersion, scope, body.Prompt)
 		}
 		if err != nil {
 			aiRefusal(w, err)
@@ -910,7 +913,7 @@ func aiRefusal(w http.ResponseWriter, err error) {
 		status = 404
 	case assist.RefuseInvalidArgs, assist.RefuseMessageEmpty:
 		status = 400
-	case assist.RefuseSaveFailed, assist.RefuseChangeFailed, assist.RefuseChangeNoBackup:
+	case assist.RefuseSaveFailed, assist.RefuseChangeFailed, assist.RefuseChangeNoBackup, assist.RefusePrefs:
 		status = 500
 	case assist.RefuseTooLong, assist.RefuseMessageLong:
 		status = 413

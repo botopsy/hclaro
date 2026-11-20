@@ -6,7 +6,7 @@ import { api, post } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 import { ErrorState } from '../workbench/ErrorState';
-import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, useAcceptThen, useDetectAssistants, type Approve, type Conversation } from './AskAI';
+import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve, type Conversation } from './AskAI';
 
 // The AI Assistant page (AI-01.09): conversations that are not tied to a plan or drift result.
 // A conversation starts with no project data, or with a project package the user previewed in
@@ -18,8 +18,6 @@ import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, 
 type Listed = { id: string; provider: string; kind: string; state: string; title: string; project: string; workspace: string; here: boolean; saved: boolean; startedAt: string };
 type Saved = { id: string; title: string; provider: string; providerVersion: string; kind: string; workspace: string; createdAt: string; lastActivity: string; open: boolean };
 type Mode = 'chat' | 'project';
-// Mirrors assist.MaxMessage; the server enforces it.
-const maxMessage = 8000;
 // Quick actions (AI-01.10): a project package plus a fixed, versioned prompt from the server's
 // registry. Each goes through the same preview drawer; the IDs are what turn metadata records.
 const quickActions = [
@@ -109,7 +107,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
         await list.refetch();
       }
     } : undefined;
-  const tooLong = new TextEncoder().encode(text).length > maxMessage;
+  const long = tooLong(text, settings);
   const chosen = providers.find(p => p.id === settings.defaultProvider);
   const actionsOff = noProject ? 'Open a project to use quick actions: they share its configuration.'
     : !provider ? 'Quick actions need an assistant Hclaro can run. A handoff-only assistant can use Preview project context, then Copy or Download.' : undefined;
@@ -164,13 +162,13 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
        <label className="assist-compose">{mode === 'chat' ? 'Message' : 'Message (optional)'}
         <textarea value={text} rows={4} onChange={e => setText(e.target.value)} />
        </label>
-       {tooLong && <p className="dialog-error" role="alert">This message is longer than {maxMessage} bytes. Shorten it to send it.</p>}
+       {long && <p className="dialog-error" role="alert">This message is longer than {settings.maxMessage} bytes. Shorten it to send it.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
        {!settings.disclosureAccepted && provider && mode === 'chat' && <ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
        {!provider && <p className="muted assist-note">No assistant can run here. Preview the project context to copy or download it for an assistant you run yourself.</p>}
        <div className="form-actions">
-        {mode === 'chat' ? <Button disabled={busy || !provider || !text.trim() || tooLong} onClick={() => void startChat()}><Send size={14} />{settings.disclosureAccepted || !provider ? 'Start conversation' : 'Accept and send'}</Button>
-          : <Button disabled={busy || tooLong} onClick={() => setPreview('start')}><Sparkles size={14} />Preview project context</Button>}
+        {mode === 'chat' ? <Button disabled={busy || !provider || !text.trim() || long} onClick={() => void startChat()}><Send size={14} />{settings.disclosureAccepted || !provider ? 'Start conversation' : 'Accept and send'}</Button>
+          : <Button disabled={busy || long} onClick={() => setPreview('start')}><Sparkles size={14} />Preview project context</Button>}
        </div>
       </div>}
    </section>

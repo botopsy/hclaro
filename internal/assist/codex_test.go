@@ -587,12 +587,12 @@ func TestRunProcRefusesArgvOffTheAllowlist(t *testing.T) {
 		"features enabled":   {"features", "enable", "shell_tool"},
 		"osascript argv":     osascriptArgs,
 	} {
-		_, err := runProc(context.Background(), proc{path: c.Path, args: args, timeout: time.Second})
+		_, err := runProc(context.Background(), command{path: c.Path, args: args, timeout: time.Second})
 		if KindOf(err) != KindRefusedArgs {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	if _, err := runProc(context.Background(), proc{path: osascriptPath, args: []string{"-e", "do shell script \"id\""}, timeout: time.Second}); KindOf(err) != KindRefusedArgs {
+	if _, err := runProc(context.Background(), command{path: osascriptPath, args: []string{"-e", "do shell script \"id\""}, timeout: time.Second}); KindOf(err) != KindRefusedArgs {
 		t.Errorf("osascript: %v", err)
 	}
 	if runs := codexRuns(home); len(runs) != 0 {

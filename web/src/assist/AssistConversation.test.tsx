@@ -12,7 +12,7 @@ const id = '1'.repeat(32);
 const markdown = '# Hclaro context: plan\n';
 const disclosure = { version: '4', lines: ['Every follow-up resends the whole conversation.'] };
 const pkg = { kind: 'plan', markdown, sha256: hash, sections: ['context'], dropped: [], disclosure, prompt: 'review-plan@1', review: 'Review this plan.\n' + markdown };
-const provider = { id: 'claude', name: 'Claude Code', mode: 'headless-eligible', version: '2.1.326', path: '/synthetic/bin/claude' };
+const provider = { id: 'claude', name: 'Claude Code', mode: 'headless-eligible', send: true, usable: true, installed: true, version: '2.1.326', path: '/synthetic/bin/claude' };
 const reply = 'Run `terraform apply -auto-approve` and rm -rf / <a href="javascript:alert(1)">click</a> <script>window.pwned=1</script> [x](javascript:alert(1))\nresource "aws_s3_bucket" "b" {}';
 type Turn = { role: string; text: string; at: string; prompt?: string };
 const at = '2026-11-18T09:00:00Z';
@@ -26,7 +26,7 @@ function serve(settings: object, current: () => object, answers: Record<string, 
     if (init?.method === 'POST') posts.push({ url, body: JSON.parse(String(init.body)) });
     for (const [suffix, answer] of Object.entries(answers)) if (url.endsWith(suffix)) return answer();
     if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64) });
-    if (url.endsWith('/ai/settings')) return Response.json({ enabled: true, strictLocal: false, handoff: true, headless: true, disclosure, disclosureAccepted: true, providers: [provider], defaultProvider: 'claude', ...settings });
+    if (url.endsWith('/ai/settings')) return Response.json({ enabled: true, strictLocal: false, handoff: true, headless: true, disclosure, disclosureAccepted: true, providers: [provider], defaultProvider: 'claude', maxMessage: 8000, ...settings });
     if (url.endsWith('/ai/packages')) return Response.json(pkg);
     if (url.endsWith('/ai/conversations')) return Response.json(chat('running', [{ role: 'user', text: '', at }]), { status: 202 });
     if (url.endsWith(`/ai/conversations/${id}/messages`)) return Response.json(chat('running', first), { status: 202 });
@@ -183,6 +183,7 @@ describe('AI conversation', () => {
     const sent = posts.filter(p => !p.url.endsWith('/ai/packages'));
     expect(sent.map(p => p.url)).toEqual(['/api/v1/ai/settings', '/api/v1/ai/conversations']);
     expect(sent[0].body).toEqual({ acceptDisclosure: '4' });
+    // The request names the assistant shown, so the server refuses if its choice changed.
     expect(sent[1].body).toMatchObject({ provider: 'claude', disclosureVersion: '4' });
     cleanup();
 

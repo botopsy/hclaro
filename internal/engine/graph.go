@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"hclaro/internal/bounded"
+	"hclaro/internal/proc"
 )
 
 // Grapher runs `graph` without arguments and nothing else. It is a separate interface so the
@@ -41,9 +42,9 @@ func (c *CLI) Graph(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	prepareInterrupt(cmd)
+	proc.PrepareInterrupt(cmd)
 	cmd.Cancel = func() error {
-		if err := interrupt(cmd.Process); err != nil {
+		if err := proc.Interrupt(cmd.Process); err != nil {
 			return cmd.Process.Kill()
 		}
 		return nil

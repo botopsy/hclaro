@@ -193,13 +193,13 @@ func TestAICodexConversation(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 	// No send before the disclosure is accepted.
-	wantError(t, s.do("POST", "/api/v1/ai/conversations", chatBody("codex", "hello")), 409, "disclosure_required")
+	wantError(t, s.do("POST", "/api/v1/ai/conversations", chatBody("hello")), 409, "disclosure_required")
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 
 	w := s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`)
 	op := s.wait(decode[operations.Operation](t, w).ID)
 	p := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"plan","planId":"`+op.PlanID+`"}`))
-	w = s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "codex", "Review this plan."))
+	w = s.do("POST", "/api/v1/ai/conversations", startBody(p.SHA256, "Review this plan."))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -216,14 +216,14 @@ func TestAICodexConversation(t *testing.T) {
 		t.Fatalf("save: %d %s", w.Code, w.Body)
 	}
 	quick := build(t, s.do("POST", "/api/v1/ai/packages", `{"kind":"project","action":"qa-describe@1"}`))
-	w = s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"provider":"codex","disclosureVersion":%q,"prompt":"qa-describe@1"}`, quick.SHA256, assist.DisclosureVersion))
+	w = s.do("POST", "/api/v1/ai/conversations", fmt.Sprintf(`{"packageSha256":%q,"disclosureVersion":%q,"prompt":"qa-describe@1"}`, quick.SHA256, assist.DisclosureVersion))
 	if w.Code != 202 {
 		t.Fatalf("quick action: %d %s", w.Code, w.Body)
 	}
 	if c := waitChat(t, s.do, "/api/v1", decode[assist.Conversation](t, w).ID); c.State != assist.StateReady {
 		t.Fatalf("%+v", c)
 	}
-	w = s.do("POST", "/api/v1/ai/conversations", chatBody("codex", "What is a moved block?"))
+	w = s.do("POST", "/api/v1/ai/conversations", chatBody("What is a moved block?"))
 	chat := decode[assist.Conversation](t, w).ID
 	if c := waitChat(t, s.do, "/api/v1", chat); c.State != assist.StateReady {
 		t.Fatalf("%+v", c)
@@ -317,8 +317,8 @@ func TestAICodexRefusals(t *testing.T) {
 			if p := st.Providers[1]; p.ID != "codex" || p.Mode != assist.ModeHandoff || p.Reason != tc.kind || p.Message != assist.Message(tc.kind) {
 				t.Fatalf("%+v", p)
 			}
-			s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
-			wantError(t, s.do("POST", "/api/v1/ai/conversations", chatBody("codex", "hello")), 409, "provider_unavailable")
+			s.do("POST", "/api/v1/ai/settings", `{"defaultProvider":"codex","acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
+			wantError(t, s.do("POST", "/api/v1/ai/conversations", chatBody("hello")), 409, "provider_unavailable")
 			for _, a := range starts(home) {
 				if a != "--version" {
 					t.Fatalf("a refused Codex was started with %q", a)
@@ -335,7 +335,7 @@ func TestAICodexRefusals(t *testing.T) {
 		t.Fatalf("strict local-only detected: %+v", st)
 	}
 	strict.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
-	wantError(t, strict.do("POST", "/api/v1/ai/conversations", chatBody("codex", "hello")), 409, "strict_local")
+	wantError(t, strict.do("POST", "/api/v1/ai/conversations", chatBody("hello")), 409, "strict_local")
 	time.Sleep(50 * time.Millisecond)
 	if len(starts(offHome)) != 0 || len(starts(strictHome)) != 0 {
 		t.Fatal("an assistant process started with AI off or in strict local-only mode")
@@ -347,8 +347,8 @@ func TestAICodexRefusedAtSend(t *testing.T) {
 	runnableCodex(t)
 	s, home, _, _ := aiServer(t, false)
 	detectNow(t, s)
-	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
-	w := s.do("POST", "/api/v1/ai/conversations", chatBody("codex", "hello"))
+	s.do("POST", "/api/v1/ai/settings", `{"defaultProvider":"codex","acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
+	w := s.do("POST", "/api/v1/ai/conversations", chatBody("hello"))
 	id := decode[assist.Conversation](t, w).ID
 	if c := waitChat(t, s.do, "/api/v1", id); c.State != assist.StateReady {
 		t.Fatalf("%+v", c)

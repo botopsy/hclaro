@@ -93,7 +93,7 @@ func (c *CodexCLI) selfCheck(ctx context.Context, bin, catalog string) string {
 	}
 	env = append(env, "HOME="+home, "CODEX_HOME="+codexHome, "OPENAI_API_KEY="+selfCheckKey, "GIT_CEILING_DIRECTORIES="+root, "NO_PROXY=127.0.0.1")
 	env = append(env, proxy.env()...)
-	r, err := runProc(ctx, proc{path: bin, args: args, dir: work, env: env, stdin: []byte(selfCheckPrompt), limit: maxReply, timeout: selfCheckTimeout, stop: codexStop})
+	r, err := runProc(ctx, command{path: bin, args: args, dir: work, env: env, stdin: []byte(selfCheckPrompt), limit: maxReply, timeout: selfCheckTimeout, stop: codexStop})
 	if err != nil || r.stopped || r.overflow {
 		return KindCodexCheck
 	}

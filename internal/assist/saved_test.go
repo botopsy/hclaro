@@ -25,7 +25,7 @@ func savedSession(t *testing.T, dir string, a Assistant) *Session {
 	t.Helper()
 	s := NewSession(false, a)
 	s.Store = OpenStore(dir, time.Now())
-	s.SetEnabled(true)
+	enable(t, s)
 	if err := s.Accept(DisclosureVersion); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestSavedConversationRetentionAndSettings(t *testing.T) {
 	if err != nil || !strings.Contains(string(settings), `"retentionDays": 30`) {
 		t.Fatalf("default settings: %s %v", settings, err)
 	}
-	c, err := s.StartChat("launch", "good", DisclosureVersion, savedScope, "keep me", nil)
+	c, err := s.StartChat("launch", DisclosureVersion, savedScope, "keep me", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestSavedConversationRetentionAndSettings(t *testing.T) {
 	if s.Store.RetentionDays() != 2 {
 		t.Fatalf("retention %d", s.Store.RetentionDays())
 	}
-	c, _ = s.StartChat("launch", "good", DisclosureVersion, savedScope, "short", nil)
+	c, _ = s.StartChat("launch", DisclosureVersion, savedScope, "short", nil)
 	settle(t, s, "launch", c.ID)
 	_, _ = s.Save("launch", c.ID, true)
 	if len(s.SavedList("launch", savedScope.ProjectKey)) != 1 {
@@ -110,7 +110,7 @@ func TestSavedConversationRunningAndVersion(t *testing.T) {
 	dir := t.TempDir()
 	a := &stub{id: "good", mode: ModeHeadless}
 	s := savedSession(t, dir, versioned{a, "2.1.0"})
-	c, _ := s.StartChat("launch", "good", DisclosureVersion, savedScope, "first", nil)
+	c, _ := s.StartChat("launch", DisclosureVersion, savedScope, "first", nil)
 	settle(t, s, "launch", c.ID)
 	_, _ = s.Save("launch", c.ID, true)
 	a.set(true, nil)
@@ -148,9 +148,9 @@ func TestSavedConversationRunningAndVersion(t *testing.T) {
 // Without a configuration folder nothing can be saved.
 func TestSaveWithoutStore(t *testing.T) {
 	s := NewSession(false, &stub{id: "good", mode: ModeHeadless})
-	s.SetEnabled(true)
+	enable(t, s)
 	_ = s.Accept(DisclosureVersion)
-	c, _ := s.StartChat("launch", "good", DisclosureVersion, savedScope, "hi", nil)
+	c, _ := s.StartChat("launch", DisclosureVersion, savedScope, "hi", nil)
 	settle(t, s, "launch", c.ID)
 	_, err := s.Save("launch", c.ID, true)
 	refused(t, err, RefuseSaveOff)
@@ -185,7 +185,7 @@ func TestSavedUnsafeReplyIsNeverWritten(t *testing.T) {
 	dir := t.TempDir()
 	a := &replier{stub: stub{id: "good", mode: ModeHeadless}, reply: "safe answer"}
 	s := savedSession(t, dir, a)
-	c, _ := s.StartChat("launch", "good", DisclosureVersion, savedScope, "first", nil)
+	c, _ := s.StartChat("launch", DisclosureVersion, savedScope, "first", nil)
 	settle(t, s, "launch", c.ID)
 	if _, err := s.Save("launch", c.ID, true); err != nil {
 		t.Fatal(err)
@@ -200,7 +200,7 @@ func TestSavedUnsafeReplyIsNeverWritten(t *testing.T) {
 		t.Fatalf("%q\n%s", got.SaveError, raw)
 	}
 	// A conversation already holding such a reply cannot be saved at all.
-	c2, _ := s.StartChat("launch", "good", DisclosureVersion, savedScope, "other", nil)
+	c2, _ := s.StartChat("launch", DisclosureVersion, savedScope, "other", nil)
 	settle(t, s, "launch", c2.ID)
 	_, err := s.Save("launch", c2.ID, true)
 	refused(t, err, RefuseSaveUnsafe)
@@ -273,7 +273,7 @@ func TestSavedDeleteDuringTurnStaysDeleted(t *testing.T) {
 	dir := t.TempDir()
 	a := &stub{id: "good", mode: ModeHeadless}
 	s := savedSession(t, dir, versioned{a, "2.1.0"})
-	c, _ := s.StartChat("launch", "good", DisclosureVersion, savedScope, "first", nil)
+	c, _ := s.StartChat("launch", DisclosureVersion, savedScope, "first", nil)
 	settle(t, s, "launch", c.ID)
 	_, _ = s.Save("launch", c.ID, true)
 	a.set(true, nil)
@@ -333,7 +333,7 @@ func TestSavedConversationStaysInItsWorkspace(t *testing.T) {
 	dev.Workspace, prod.Workspace = "dev", "prod"
 	bound := func() bool { return true }
 	s := newSession()
-	c, _ := s.StartChat("launch", "good", DisclosureVersion, dev, "dev question", bound)
+	c, _ := s.StartChat("launch", DisclosureVersion, dev, "dev question", bound)
 	settle(t, s, "launch", c.ID)
 	if _, err := s.Save("launch", c.ID, true); err != nil {
 		t.Fatal(err)

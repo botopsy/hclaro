@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -250,7 +251,7 @@ func TestAIHubQuickActionsGetNoCost(t *testing.T) {
 			t.Fatal("estimate did not complete")
 		}
 	}
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
 	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/packages", `{"kind":"project","action":"qa-cost@1"}`)

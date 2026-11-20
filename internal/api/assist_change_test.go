@@ -44,7 +44,7 @@ func TestAIProposedChangeOverHTTP(t *testing.T) {
 	wantError(t, s.do("GET", "/api/v1/ai/conversations/"+strings.Repeat("a", 32)+"/changes", ""), 409, "ai_disabled")
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
-	w := s.do("POST", "/api/v1/ai/conversations", chatBody("stub", "Give the bucket a name."))
+	w := s.do("POST", "/api/v1/ai/conversations", chatBody("Give the bucket a name."))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -129,11 +129,11 @@ func TestAIProposedChangeInHubWorkspace(t *testing.T) {
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: proposalReply("hclaro_ai.tf", "new", "locals {\n  owner = \"net\"\n}\n")}
 	s.launch.Assist = assist.NewSession(false, stub)
 	s.launch.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")
 	b := s.openLoaded("platform", "staging", "")
-	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations", chatBody("stub", "Add an owner local."))
+	w := s.do("POST", "/api/v1/contexts/"+a+"/ai/conversations", chatBody("Add an owner local."))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -187,7 +187,7 @@ func TestAIProposedNewFileIgnoredByGit(t *testing.T) {
 	s.manager.Assist.Store = assist.OpenStore(t.TempDir(), time.Now())
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
-	w := s.do("POST", "/api/v1/ai/conversations", chatBody("stub", "Add files."))
+	w := s.do("POST", "/api/v1/ai/conversations", chatBody("Add files."))
 	if w.Code != 202 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}

@@ -14,14 +14,14 @@ func TestChatWithoutProjectDataThenAttach(t *testing.T) {
 	var records []RunRecord
 	s.Record = func(r RunRecord) { records = append(records, r) }
 
-	_, err := s.StartChat("a", "good", DisclosureVersion, scope, "", nil)
+	_, err := s.StartChat("a", DisclosureVersion, scope, "", nil)
 	refused(t, err, RefuseMessageEmpty)
-	_, err = s.StartChat("a", "good", DisclosureVersion, scope, "my key is AKIAIOSFODNN7EXAMPLE", nil)
+	_, err = s.StartChat("a", DisclosureVersion, scope, "my key is AKIAIOSFODNN7EXAMPLE", nil)
 	refused(t, err, RefuseMessageUnsafe)
-	_, err = s.StartChat("a", "good", "3", scope, "hi", nil)
+	_, err = s.StartChat("a", "3", scope, "hi", nil)
 	refused(t, err, RefuseDisclosure)
 
-	c, err := s.StartChat("a", "good", DisclosureVersion, scope, "What is a moved block?", nil)
+	c, err := s.StartChat("a", DisclosureVersion, scope, "What is a moved block?", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,11 +78,11 @@ func TestChatListAndWorkspaceSwitch(t *testing.T) {
 	good := &stub{id: "good", mode: ModeHeadless}
 	s := ready(t, good)
 	ws := "default"
-	launch, err := s.StartChat("launch", "good", DisclosureVersion, RunScope{Project: "net", Workspace: "default"}, "hello", func() bool { return ws == "default" })
+	launch, err := s.StartChat("launch", DisclosureVersion, RunScope{Project: "net", Workspace: "default"}, "hello", func() bool { return ws == "default" })
 	if err != nil {
 		t.Fatal(err)
 	}
-	hub, err := s.StartChat("cid1", "good", DisclosureVersion, RunScope{Project: "app", Workspace: "prod"}, "hi", nil)
+	hub, err := s.StartChat("cid1", DisclosureVersion, RunScope{Project: "app", Workspace: "prod"}, "hi", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestReattachProjectContext(t *testing.T) {
 		s.Put("a", Package{Kind: KindProject, Markdown: md, SHA256: hashOf(md)}, func() bool { return files == built })
 		return hashOf(md)
 	}
-	c, err := s.StartConversation("a", pkg("v1"), "good", DisclosureVersion, RunScope{Project: "net"}, "hi")
+	c, err := s.StartConversation("a", pkg("v1"), DisclosureVersion, RunScope{Project: "net"}, "hi")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestReattachProjectContext(t *testing.T) {
 	// A plan review whose plan changed is not revived by project context.
 	planCurrent := true
 	s.Put("a", Package{Kind: KindPlan, Markdown: "plan", SHA256: hashOf("plan")}, func() bool { return planCurrent })
-	r, err := s.StartConversation("a", hashOf("plan"), "good", DisclosureVersion, RunScope{}, "")
+	r, err := s.StartConversation("a", hashOf("plan"), DisclosureVersion, RunScope{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

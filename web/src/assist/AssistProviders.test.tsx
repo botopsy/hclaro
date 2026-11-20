@@ -13,18 +13,18 @@ const markdown = '# Hclaro context: plan\n';
 const disclosure = { version: '3', lines: ['Nothing is shared without your click.'] };
 const review = '# Hclaro review request (review-plan@1)\n\n' + markdown + '\n## Review request\n\nReview this plan.\n';
 const pkg = { kind: 'plan', markdown, sha256: hash, sections: ['context'], dropped: [], disclosure, prompt: 'review-plan@1', review };
-const claudeMissing: AssistProvider = { id: 'claude', name: 'Claude Code', mode: 'unsupported', reason: 'cli_missing', message: 'The assistant\'s executable was not found on PATH.' };
-const claude: AssistProvider = { id: 'claude', name: 'Claude Code', mode: 'headless-eligible', version: '2.1.326', path: '/synthetic/bin/claude' };
+const claudeMissing: AssistProvider = { id: 'claude', name: 'Claude Code', mode: 'unsupported', send: false, usable: false, installed: false, reason: 'cli_missing', message: 'The assistant\'s executable was not found on PATH.' };
+const claude: AssistProvider = { id: 'claude', name: 'Claude Code', mode: 'headless-eligible', send: true, usable: true, installed: true, version: '2.1.326', path: '/synthetic/bin/claude' };
 // Codex is copy-only (AI-01.14 review): Hclaro cannot verify that all its tools are off.
-const codex: AssistProvider = { id: 'codex', name: 'OpenAI Codex', mode: 'handoff-only', version: '0.166.0', path: '/synthetic/bin/codex', reason: 'not_headless', message: 'This assistant is handoff-only: Codex turns tools on by default.' };
+const codex: AssistProvider = { id: 'codex', name: 'OpenAI Codex', mode: 'handoff-only', send: false, usable: true, installed: true, version: '0.166.0', path: '/synthetic/bin/codex', reason: 'not_headless', message: 'This assistant is handoff-only: Codex turns tools on by default.' };
 
 let posts: string[] = [];
 let bodies: unknown[] = [];
 function serve(providers: AssistProvider[], extra: object = {}) {
   posts = [];
   bodies = [];
-  const headless = providers.some(p => p.mode === 'headless-eligible');
-  const first = providers.find(p => p.mode === 'headless-eligible') ?? providers.find(p => p.mode !== 'unsupported');
+  const headless = providers.some(p => p.send);
+  const first = providers.find(p => p.send) ?? providers.find(p => p.usable);
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
       posts.push(url);

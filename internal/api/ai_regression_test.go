@@ -75,6 +75,12 @@ func (a *aiSide) enable(t *testing.T) {
 		if code, out := a.do("POST", "/api/v1/ai/settings", body); code != 200 {
 			t.Fatalf("ai settings %d %s", code, out)
 		}
+		// Switching on detects in the background; accept only what it found.
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			if _, out := a.do("GET", "/api/v1/ai/settings", ""); strings.Contains(out, `"checking":false`) {
+				break
+			}
+		}
 	}
 }
 
@@ -98,7 +104,7 @@ func (a *aiSide) ask(t *testing.T, value string) {
 	if code, out := a.do("POST", a.base+"/ai/packages/"+hash+"/export", `{}`); code != 200 {
 		t.Fatalf("export %d %s", code, out)
 	}
-	code, out = a.do("POST", a.base+"/ai/conversations", startBody(hash, "stub", "Is it safe to approve?"))
+	code, out = a.do("POST", a.base+"/ai/conversations", startBody(hash, "Is it safe to approve?"))
 	if code != 202 {
 		t.Fatalf("conversation %d %s", code, out)
 	}

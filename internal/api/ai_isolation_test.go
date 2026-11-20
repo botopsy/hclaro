@@ -55,7 +55,7 @@ func TestAIEveryConversationRouteRefusesAnotherScope(t *testing.T) {
 	s.launch.Assist = assist.NewSession(false, stub)
 	config := t.TempDir()
 	s.launch.Assist.Store = assist.OpenStore(config, time.Now())
-	s.do("POST", "/api/v1/ai/settings", `{"enabled":true}`)
+	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 
 	type scope struct{ name, base, project, conversation, pkg string }
@@ -67,7 +67,7 @@ func TestAIEveryConversationRouteRefusesAnotherScope(t *testing.T) {
 	}
 	snapshot := map[string]string{}
 	for _, sc := range scopes {
-		w := s.do("POST", sc.base+"/ai/conversations", chatBody("stub", "Question in "+sc.name))
+		w := s.do("POST", sc.base+"/ai/conversations", chatBody("Question in "+sc.name))
 		if w.Code != 202 {
 			t.Fatalf("%s: %d %s", sc.name, w.Code, w.Body)
 		}

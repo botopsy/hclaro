@@ -12,8 +12,8 @@ const other = '2'.repeat(32);
 const at = '2026-11-18T09:00:00Z';
 const markdown = '# Hclaro context: project\n\nresource "null_resource" "a" {}\n';
 const disclosure = { version: '5', lines: ['Hclaro builds this context on your machine.'] };
-const claude = { id: 'claude', name: 'Claude Code', mode: 'headless-eligible' };
-const codex = { id: 'codex', name: 'Codex CLI', mode: 'handoff-only' };
+const claude = { id: 'claude', name: 'Claude Code', mode: 'headless-eligible', send: true, usable: true, installed: true };
+const codex = { id: 'codex', name: 'Codex CLI', mode: 'handoff-only', send: false, usable: true, installed: true };
 const pkg = { kind: 'project', markdown, sha256: hash, sections: ['context', 'files'], dropped: [], disclosure, prompt: '', review: 'x' };
 const chat = (turns: object[], extra = {}) => ({ id, provider: 'claude', kind: 'conversation', packageSha256: '', state: 'ready', turns, usedBytes: 1024, limitBytes: 262144, startedAt: at, ...extra });
 const listed = (extra = {}) => ({ id, provider: 'claude', kind: 'conversation', state: 'ready', title: 'What is a moved block?', project: 'net', workspace: 'default', here: true, startedAt: at, ...extra });
@@ -103,7 +103,7 @@ describe('AI Assistant page', () => {
   });
 
   it('a chosen copy-only assistant offers no Send', async () => {
-    serve({ headless: false, providers: [{ ...claude, mode: 'unsupported', reason: 'cli_missing' }, codex], defaultProvider: 'codex' });
+    serve({ headless: false, providers: [{ ...claude, mode: 'unsupported', send: false, usable: false, installed: false, reason: 'cli_missing' }, codex], defaultProvider: 'codex' });
     show();
     expect(await screen.findByText(/^Assistant:/)).toHaveTextContent('Assistant: Codex CLI · copy or download only.');
     expect(screen.getByRole('button', { name: 'Start conversation' })).toBeDisabled();

@@ -16,17 +16,21 @@ func TestReadmeQuotesTheDisclosure(t *testing.T) {
 	if !strings.Contains(readme, "### Disclosure text (version "+DisclosureVersion+")") {
 		t.Fatalf("README does not quote disclosure version %s", DisclosureVersion)
 	}
+	var want []string
 	for _, l := range disclosure.Lines {
-		mark := ""
-		if line, ok := strings.CutPrefix(l, claudeLine); ok {
-			mark, l = "*(Claude Code)* ", line
-		} else if line, ok := strings.CutPrefix(l, codexLine); ok {
-			mark, l = "*(OpenAI Codex)* ", line
+		if l == providerLines {
+			for _, a := range adapters {
+				want = append(want, "*("+a.Name+")* "+a.Disclosure)
+			}
 		} else if line, ok := strings.CutPrefix(l, sendLine); ok {
-			mark, l = "*(headless)* ", line
+			want = append(want, "*(headless)* "+line)
+		} else {
+			want = append(want, l)
 		}
-		if !strings.Contains(readme, "> - "+mark+l+"\n") {
-			t.Errorf("README lacks disclosure line: %s%s", mark, l)
+	}
+	for _, l := range want {
+		if !strings.Contains(readme, "> - "+l+"\n") {
+			t.Errorf("README lacks disclosure line: %s", l)
 		}
 	}
 }
