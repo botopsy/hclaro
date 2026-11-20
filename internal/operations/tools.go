@@ -165,7 +165,6 @@ func ToolCommand(engineName string, tool engine.Tool, json, recursive bool) []st
 }
 
 var toolMessages = map[string]string{
-	"unsafe_cli_args":   "Inherited TF_CLI_ARGS or a command-specific TF_CLI_ARGS_* setting adds flags other than -no-color, which would change this read-only command. Nothing was run. Restart Hclaro without them.",
 	"engine_version":    "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13. Nothing was run.",
 	"path_changed":      "The project folder or its engine changed after this workspace was opened. Nothing was run. Open the workspace again.",
 	"workspace_missing": "The engine reported that this workspace does not exist. List workspaces again on the project page.",
@@ -242,7 +241,7 @@ func (r *Inits) runTool(ctx context.Context, e *initEntry, req ToolRequest) {
 	o.Status, o.Stage, o.ExitCode = status, "Finished", exitCode
 	o.CompletedAt = time.Now().UTC().Format(time.RFC3339)
 	o.DurationMs = time.Since(e.start).Milliseconds()
-	message := toolMessages[code]
+	message := lookupMessage(toolMessages, code, "")
 	if code == "succeeded" {
 		message = toolSuccess(req.Tool, o.Tool)
 	} else {

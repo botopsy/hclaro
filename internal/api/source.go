@@ -83,8 +83,8 @@ func (l launchSource) Cancel(id string) (operations.Operation, error) {
 	}
 	return op, err
 }
-func (l launchSource) DiscoveryPin(_ context.Context, _ bool, profileID, reviewed string) (discovery.Pin, []string, error) {
-	return discoveryPin(l.Manager, profileID, reviewed)
+func (l launchSource) DiscoveryPin(_ context.Context, check bool, profileID, reviewed string) (discovery.Pin, []string, error) {
+	return discoveryPin(l.Manager, check, profileID, reviewed)
 }
 func (launchSource) Holder() string            { return "" }
 func (launchSource) View() *projects.ScopeView { return nil }

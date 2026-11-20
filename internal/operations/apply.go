@@ -477,10 +477,8 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 var applyMessages = map[string]string{
 	"applied":                  "Apply finished. The state view was reloaded from the engine.",
 	"workspace_changed":        "The active workspace no longer matches this plan. Nothing was applied.",
-	"workspace_error":          "The active workspace could not be confirmed. Nothing was applied.",
 	"artifact_changed":         "The saved plan file changed after review. Nothing was applied.",
 	"unknown_actions":          "The plan contains an action combination Hclaro does not support. Nothing was applied.",
-	"unsafe_cli_args":          "Inherited TF_CLI_ARGS or TF_CLI_ARGS_apply contains flags other than -no-color. Nothing was applied. Values were not logged.",
 	"stale_plan":               "The engine refused the saved plan because state changed after it was created. Nothing was applied. Run a new plan and review it again.",
 	"state_locked":             "The state is locked by another operation, so the engine did not apply. Hclaro never force-unlocks state.",
 	"state_unlock_failed":      "The engine ran the apply but could not release the state lock afterwards. Changes may have been made; review the reloaded state. The lock may remain: investigate it with your CLI. Hclaro never force-unlocks state.",
@@ -553,10 +551,7 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	if code != "applied" && started && code != "stale_plan" && code != "state_locked" {
 		o.Outcome = "uncertain"
 	}
-	message := applyMessages[code]
-	if message == "" {
-		message = applyMessages["apply_failed"]
-	}
+	message := lookupMessage(applyMessages, code, "apply_failed")
 	if code == "applied" && !reloaded {
 		message = "Apply finished. The engine reported success."
 	}
@@ -595,36 +590,32 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	e.log.Finish()
 }
 
+// applyStop names a stop by what it means for an apply: one that was started may have
+// changed infrastructure.
+func applyStop(code string) string {
+	switch code {
+	case "cancelled":
+		return "apply_cancelled"
+	case "timeout":
+		return "apply_timeout"
+	}
+	return code
+}
+
 // executeApply re-verifies the workspace and the artifact digest, then applies. started
 // reports whether the engine apply command was run.
 func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code string, exitCode *int, started bool) {
-	stopped := func() string {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		switch {
-		case e.op.CancelRequested:
-			return "apply_cancelled"
-		case m.closed:
-			return "shutdown"
-		}
-		return "apply_timeout"
-	}
-	m.stage(e, "Checking workspace")
-	planner := m.bound(e.environ, a.workspace)
-	applier, _ := planner.(engine.Applier)
-	if applier == nil {
+	// The adapter's capability is checked before prepare runs an engine command.
+	if _, ok := m.bound(e.environ, a.workspace).(engine.Applier); !ok {
 		return "apply_failed", nil, false
 	}
-	name, err := planner.Workspace(ctx)
-	switch {
-	case ctx.Err() != nil:
-		return stopped(), nil, false
-	case errors.Is(err, engine.ErrUnsafeArgs):
-		return "unsafe_cli_args", nil, false
-	case err != nil:
-		return "workspace_error", nil, false
-	case name != a.workspace:
-		return "workspace_changed", nil, false
+	planner, environ, code := m.prepare(ctx, e, "apply", a.workspace)
+	if code != "" {
+		return applyStop(code), nil, false
+	}
+	applier, ok := planner.(engine.Applier)
+	if !ok {
+		return "apply_failed", nil, false
 	}
 	m.stage(e, "Verifying saved plan")
 	if digest, err := sha256File(a.path); err != nil || digest != a.digest {
@@ -635,14 +626,6 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	p, ok := m.Plan(e.op.PlanID)
 	if !ok || p.ID != a.planID || unsupportedReason(p) != "" {
 		return "unknown_actions", nil, false
-	}
-	// A Hub workspace's scope is revalidated last, with the root claim held: project folder,
-	// engine binary and version, profile, environment, data directory and backend.
-	if ok, changed := m.verify(ctx, e, "apply"); !ok {
-		if !changed {
-			return stopped(), nil, false
-		}
-		return "scope_changed", nil, false
 	}
 	// The context fingerprint (configuration, variable files, lock file, data directory,
 	// profile and planning environment) is recomputed last, with the root claim held, so an
@@ -655,16 +638,12 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 	}
 	m.stage(e, "Applying")
 	label := engineLabel(a.engine)
-	environ := e.environ
-	if environ == nil {
-		environ = os.Environ()
-	}
 	inputs := collectKnown(m.root, e.op.VarFiles, environ)
 	if inputs.incomplete {
 		e.log.Append("warn", knownIncomplete)
 	}
 	undecoded := false
-	err = applier.Apply(ctx, applyRequest(a), func(line []byte) {
+	err := applier.Apply(ctx, applyRequest(a), func(line []byte) {
 		level, text, diag, ok := translate(line, "apply", label, inputs)
 		if !ok {
 			if !undecoded {
@@ -688,7 +667,7 @@ func (m *Manager) executeApply(ctx context.Context, e *entry, a *artifact) (code
 		var exit *engine.ExitError
 		switch {
 		case ctx.Err() != nil || errors.Is(err, engine.ErrCancelled):
-			return stopped(), nil, true
+			return applyStop(m.stopped(e)), nil, true
 		case errors.Is(err, engine.ErrUnsafeArgs):
 			return "unsafe_cli_args", nil, false
 		case errors.As(err, &exit):

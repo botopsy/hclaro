@@ -20,9 +20,16 @@ const verifyTimeout = 45 * time.Second
 var awsProfileName = regexp.MustCompile(`^[A-Za-z0-9_.+=@,-]{1,64}$`)
 
 // discoveryPin resolves the context of a discovery request: the launch workspace and engine,
-// and the execution profile (checked against the reviewed fingerprint when one is given).
-// environ is the profile's composed environment, or nil for Hclaro's own.
-func discoveryPin(manager *operations.Manager, profileID, expected string) (discovery.Pin, []string, error) {
+// and the execution profile. With check set, for a request that contacts AWS, expected must be
+// the fingerprint the user reviewed; a read that contacts nothing and names none pins the
+// profile as it is now, as a Hub scope's DiscoveryPin does. environ is the profile's composed
+// environment, or nil for Hclaro's own.
+func discoveryPin(manager *operations.Manager, check bool, profileID, expected string) (discovery.Pin, []string, error) {
+	if !check && expected == "" && profileID != "" && manager.Binder != nil {
+		if b, err := manager.Binder(profileID); err == nil {
+			expected = b.Context.Fingerprint
+		}
+	}
 	c, environ, err := manager.ResolveProfile(profileID, expected)
 	if err != nil {
 		return discovery.Pin{}, nil, err
@@ -92,7 +99,7 @@ func discoveryRoutes(mux *http.ServeMux, manager *operations.Manager, hub *proje
 		var identity *discovery.CloudIdentity
 		region, regionSource := "us-east-1", "default"
 		if canScan {
-			if pin, environ, perr := discoveryPin(manager, profileID, ""); perr == nil {
+			if pin, environ, perr := discoveryPin(manager, false, profileID, ""); perr == nil {
 				region, regionSource = discovery.RegionOf(pin, environ)
 				if id, ok := manager.Discovery.Identity(pin); ok {
 					identity = &id
