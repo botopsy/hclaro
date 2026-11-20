@@ -136,7 +136,7 @@ function ProjectCard({ project: p, writable, first, last, onPin, onMove, onDialo
   onDialog: (kind: 'rename' | 'repair' | 'remove') => void;
 }) {
   const ready = p.status === 'ready';
-  const engine = p.inspection?.engine ? `${enginePreference(p.inspection.engine)} ${p.inspection.version || ''}`.trim() : p.enginePreference ? `${enginePreference(p.enginePreference)} · version not checked` : 'Engine not checked';
+  const engine = p.inspection?.engine ? `${engineLabel(p.inspection.engine, 'Automatic')} ${p.inspection.version || ''}`.trim() : p.enginePreference ? `${engineLabel(p.enginePreference, 'Automatic')} · version not checked` : 'Engine not checked';
   return <li className={`hub-card ${ready ? '' : 'hub-card-problem'}`}>
    <div className="hub-card-main">
     <button className="hub-card-title" data-hub-item onClick={() => navigate(projectPath(p.id))} aria-label={`Open ${p.alias}`}><span className="directory-icon"><FolderOpen size={19} /></span><span><strong>{p.alias}</strong>{p.pinned && <Pin size={12} aria-label="Pinned" className="muted" />}</span></button>
@@ -359,7 +359,7 @@ export function ProjectView({ id }: { id: string }) {
    {current.busy === 'init' && !initOpen && <div className="hub-banner" role="status"><LoaderCircle className="spin" size={15} /><span><strong>Initialization is running.</strong> Workspaces can be listed when it finishes.</span><span className="context-spacer" /><Button size="small" variant="outline" onClick={() => setInitOpen(true)}>Show progress</Button></div>}
    <section className="surface"><div className="surface-heading"><div><h2>{current.alias} {productionLike(current.alias) && <ProductionBadge />}</h2><p className="mono">{current.rootPath}</p></div>{current.status === 'ready' ? <div className="hub-actions"><Button size="small" variant="outline" onClick={() => navigate(contextPath(id, toolsWorkspace, 'Tools'))} title={`Validate, format check, providers and outputs. Opens in workspace ${toolsWorkspace}.`}><Wrench size={13} />Project tools</Button><Button size="small" variant={current.initialized ? 'outline' : 'default'} onClick={() => setInitOpen(true)} disabled={!!current.busy && current.busy !== 'init'}><Play size={13} />{current.initialized ? 'Run init again…' : 'Initialize…'}</Button></div> : <FolderOpen size={18} />}</div>
     {current.status === 'ready' && <div className="project-profile"><ContextSelector projectId={id} selection={profile} workspaces={inspection?.workspaces} /></div>}
-    <dl className="metadata"><div><dt>Engine</dt><dd>{inspection?.engine ? `${enginePreference(inspection.engine)} ${inspection.version || ''}` : enginePreference(current.enginePreference)}</dd></div><div><dt>Initialized</dt><dd>{current.initialized ? 'Yes' : 'Not detected'}</dd></div><div><dt>Backend type</dt><dd>{current.backend}</dd></div><div><dt>Execution mode</dt><dd>{current.executionMode}</dd></div><div><dt>Data directory</dt><dd className="mono">{env?.dataDir || '.terraform'}</dd></div><div><dt>Provider lockfile</dt><dd>{current.providerLock ? 'Present' : 'Not detected'}</dd></div></dl>
+    <dl className="metadata"><div><dt>Engine</dt><dd>{inspection?.engine ? `${engineLabel(inspection.engine, 'Automatic')} ${inspection.version || ''}` : engineLabel(current.enginePreference, 'Automatic')}</dd></div><div><dt>Initialized</dt><dd>{current.initialized ? 'Yes' : 'Not detected'}</dd></div><div><dt>Backend type</dt><dd>{current.backend}</dd></div><div><dt>Execution mode</dt><dd>{current.executionMode}</dd></div><div><dt>Data directory</dt><dd className="mono">{env?.dataDir || '.terraform'}</dd></div><div><dt>Provider lockfile</dt><dd>{current.providerLock ? 'Present' : 'Not detected'}</dd></div></dl>
     {current.status === 'ready' && <SeparateSession rootPath={current.rootPath} engine={current.enginePreference} />}
    </section>
    <section aria-labelledby="workspaces-title"><div className="workspace-heading"><h2 className="hub-section" id="workspaces-title">CLI workspaces</h2>{current.status === 'ready' && <><label className="workspace-advanced"><input type="checkbox" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />Advanced actions</label><Button size="small" variant="outline" disabled={!current.workspaceActions?.change || !!current.busy || !inspection || !!inspection.diagnostic} title={current.workspaceActions?.change ? undefined : current.workspaceActions?.reason} onClick={() => setWorkspaceDialog({ action: 'new' })}><Plus size={13} />New workspace…</Button></>}</div>
@@ -408,8 +408,4 @@ function SeparateSession({ rootPath, engine }: { rootPath: string; engine?: stri
    <p><strong>The two sessions do not coordinate.</strong> Do not plan, apply, init or change workspaces of this folder in both at the same time.</p>
    <div className="init-command"><code>{command}</code><Button size="small" variant="outline" onClick={() => void navigator.clipboard.writeText(command).then(() => setNote('Command copied'), () => setNote('Clipboard is unavailable. Select and copy the command manually.'))}><Terminal size={13} />Copy command</Button><span className="muted" role="status">{note}</span></div>
   </details>;
-}
-// An empty engine preference means Hclaro picks one automatically.
-function enginePreference(name?: string) {
-  return name ? engineLabel(name) : 'Automatic';
 }

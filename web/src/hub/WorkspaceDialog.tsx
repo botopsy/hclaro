@@ -6,8 +6,8 @@ import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { OperationLog } from '../plans/OperationLog';
-import { engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
+import { engineLabel } from '../lib/format';
 
 // The names Hclaro passes to a workspace command: never starting with "-", so a name can
 // never be read as a flag. The server applies the same rule.
@@ -97,7 +97,7 @@ export function WorkspaceDialog({ projectId, profileId = '', action, initialName
     onFinished();
   }, [onFinished]);
   const confirmed = action === 'delete' ? typed === review?.name : acknowledged;
-  const engine = engineLabel(review?.engine);
+  const engine = engineLabel(review?.engine, 'Terraform');
   const running = operation && !result;
   return <div className="dialog-backdrop">
    <div ref={dialog} className="dialog dialog-wide init-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-dialog-title">

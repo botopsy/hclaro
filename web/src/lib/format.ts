@@ -1,8 +1,8 @@
 // Display formatting shared by every feature. A missing time shows as "—".
 
-// engineLabel names the IaC engine; an unknown or not-yet-known engine is "The engine".
-export function engineLabel(engine?: string) {
-  return engine === 'tofu' ? 'OpenTofu' : engine === 'terraform' ? 'Terraform' : 'The engine';
+// engineLabel names the IaC engine; an unknown or not-yet-known engine reads as fallback.
+export function engineLabel(engine?: string, fallback = 'The engine') {
+  return engine === 'tofu' ? 'OpenTofu' : engine === 'terraform' ? 'Terraform' : fallback;
 }
 export function providerName(name: string) {
   return name.split('/').at(-1) || 'unknown';

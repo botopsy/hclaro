@@ -7,8 +7,8 @@ import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { OperationLog } from '../plans/OperationLog';
 import { RecordedContext } from '../profiles/ContextSummary';
-import { engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
+import { engineLabel } from '../lib/format';
 
 const outcomeTitle: Record<string, string> = {
   succeeded: 'Initialized',
@@ -70,7 +70,7 @@ export function InitWizard({ projectId, profileId = '', onClose, onFinished }: {
     setError('');
     void status.refetch();
   }
-  const engine = engineLabel(s?.engine);
+  const engine = engineLabel(s?.engine, 'Terraform');
   const running = operation && !result;
   return <div className="dialog-backdrop">
    <div ref={dialog} className="dialog dialog-wide init-dialog" role="dialog" aria-modal="true" aria-labelledby="init-title">
