@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
 	"hclaro/internal/preflight"
 )
@@ -19,7 +20,7 @@ type preflightBinding struct {
 	expires     time.Time
 	checkedAt   time.Time
 	acknowledge []string
-	identity    preflight.Identity
+	identity    awscli.Identity
 	policy      string
 	// epoch is the AWS authentication epoch of the plan's profile when the preflight ran.
 	epoch uint64
@@ -60,7 +61,7 @@ type PreflightReport struct {
 	Acknowledge []string             `json:"acknowledge"`
 	Impact      preflight.Impact     `json:"impact"`
 	Policy      preflight.PolicyInfo `json:"policy"`
-	Identity    preflight.Identity   `json:"identity"`
+	Identity    awscli.Identity      `json:"identity"`
 	Binding     string               `json:"binding,omitempty"`
 	Phrase      string               `json:"phrase,omitempty"`
 	Command     []string             `json:"command"`
@@ -81,11 +82,11 @@ type ApprovalRequest struct {
 	Acknowledged []string
 }
 
-func notRequested() preflight.Identity { return preflight.Identity{State: "not_requested"} }
+func notRequested() awscli.Identity { return awscli.Identity{State: "not_requested"} }
 
 // facts collects the preflight input for p. It hashes the artifact and probes Git; the
 // identity is passed in because it is only probed on request.
-func (m *Manager) facts(ctx context.Context, p *Plan, identity preflight.Identity) preflight.Input {
+func (m *Manager) facts(ctx context.Context, p *Plan, identity awscli.Identity) preflight.Input {
 	current, rej := m.currentFingerprint(p)
 	var reason, unreadable string
 	switch {
@@ -203,7 +204,7 @@ func (m *Manager) Preflight(ctx context.Context, id string, req PreflightRequest
 		go func() {
 			defer wg.Done()
 			if m.IdentityProbe == nil {
-				identity = preflight.Identity{State: "unavailable", Message: "Identity verification is not available."}
+				identity = awscli.Identity{State: "unavailable", Message: "Identity verification is not available."}
 				return
 			}
 			identity = m.IdentityProbe(ctx, environ)

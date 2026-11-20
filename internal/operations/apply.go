@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
 	"hclaro/internal/plan"
 	"hclaro/internal/preflight"
@@ -393,7 +394,7 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	// with the answer. Only an identity the user chose to verify is probed again, so apply
 	// never contacts AWS unasked.
 	if identity.State == "verified" {
-		identity = preflight.Identity{State: "unavailable", Message: "Identity verification is not available."}
+		identity = awscli.Identity{State: "unavailable", Message: "Identity verification is not available."}
 		if m.IdentityProbe != nil {
 			identity = m.IdentityProbe(m.base, environ)
 		}
@@ -423,13 +424,13 @@ func (m *Manager) StartApply(id, token, typed string) (Operation, error) {
 	if err != nil {
 		return Operation{}, err
 	}
-	if b.identity.State == "verified" && !preflight.SameIdentity(b.identity, identity) {
+	if b.identity.State == "verified" && !awscli.SameIdentity(b.identity, identity) {
 		a.preflight = nil
 		now := "STS could not verify the identity again"
 		if identity.State == "verified" {
-			now = "STS now reports account " + identity.Account + " (" + preflight.Principal(identity.ARN) + ")"
+			now = "STS now reports account " + identity.Account + " (" + awscli.Principal(identity.ARN) + ")"
 		}
-		return Operation{}, reject("AUTH_CONTEXT_STALE", "The AWS identity changed after review: you reviewed account "+b.identity.Account+" ("+preflight.Principal(b.identity.ARN)+"), and "+now+". Nothing was applied. Verify the identity and run the checks again.")
+		return Operation{}, reject("AUTH_CONTEXT_STALE", "The AWS identity changed after review: you reviewed account "+b.identity.Account+" ("+awscli.Principal(b.identity.ARN)+"), and "+now+". Nothing was applied. Verify the identity and run the checks again.")
 	}
 	if blockers > 0 {
 		names := []string{}

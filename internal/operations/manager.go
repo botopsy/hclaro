@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"hclaro/internal/assist"
+	"hclaro/internal/awscli"
 	"hclaro/internal/cost"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
@@ -205,7 +206,7 @@ type Manager struct {
 	// GitProbe and IdentityProbe gather preflight facts; nil reports them as unavailable.
 	// PreflightTTL bounds how long a passed preflight can be used for an approval.
 	GitProbe      preflight.GitProbe
-	IdentityProbe preflight.IdentityProbe
+	IdentityProbe awscli.IdentityProbe
 	// AuthEpoch returns the AWS authentication epoch of a project's execution profile
 	// (awsauth.Manager.Epoch). A sign-in or identity change after a preflight refuses it.
 	AuthEpoch    func(projectID, profileID string) uint64

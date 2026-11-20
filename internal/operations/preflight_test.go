@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
+	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
 	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
@@ -385,9 +386,9 @@ func TestIdentityProbeIsExplicitAndNotLogged(t *testing.T) {
 	m, root := setup(t, fake, workspace.Info{})
 	m.Reload = func(context.Context) {}
 	var probes atomic.Int32
-	m.IdentityProbe = func(context.Context, []string) preflight.Identity {
+	m.IdentityProbe = func(context.Context, []string) awscli.Identity {
 		probes.Add(1)
-		return preflight.Identity{State: "verified", Account: account, ARN: "arn:aws:sts::" + account + ":assumed-role/deployer/session"}
+		return awscli.Identity{State: "verified", Account: account, ARN: "arn:aws:sts::" + account + ":assumed-role/deployer/session"}
 	}
 	rec := &records{}
 	m.Recorder = rec
@@ -438,21 +439,21 @@ func TestIdentityProbeIsExplicitAndNotLogged(t *testing.T) {
 // identityAt is a fake STS answer that a test can change between preflight and apply.
 type identityAt struct {
 	mu     sync.Mutex
-	id     preflight.Identity
+	id     awscli.Identity
 	probes int
 }
 
-func (f *identityAt) set(id preflight.Identity) { f.mu.Lock(); f.id = id; f.mu.Unlock() }
-func (f *identityAt) count() int                { f.mu.Lock(); defer f.mu.Unlock(); return f.probes }
-func (f *identityAt) probe(context.Context, []string) preflight.Identity {
+func (f *identityAt) set(id awscli.Identity) { f.mu.Lock(); f.id = id; f.mu.Unlock() }
+func (f *identityAt) count() int             { f.mu.Lock(); defer f.mu.Unlock(); return f.probes }
+func (f *identityAt) probe(context.Context, []string) awscli.Identity {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.probes++
 	return f.id
 }
 
-func verifiedAs(account string) preflight.Identity {
-	return preflight.Identity{State: "verified", Account: account, ARN: "arn:aws:sts::" + account + ":assumed-role/deployer/session"}
+func verifiedAs(account string) awscli.Identity {
+	return awscli.Identity{State: "verified", Account: account, ARN: "arn:aws:sts::" + account + ":assumed-role/deployer/session"}
 }
 
 // An account policy is enforced against the credentials at apply time, not the account the
@@ -462,20 +463,20 @@ func TestApplyRechecksTheAccountPolicy(t *testing.T) {
 	for name, tc := range map[string]struct {
 		policy  string
 		verify  bool
-		atApply preflight.Identity
+		atApply awscli.Identity
 		code    string
 		probes  int
 	}{
 		// M20: a verified identity binds the approval, so any switch or failed check refuses
 		// the apply as stale, with or without an account rule.
 		"account switched":           {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, verifiedAs(other), "AUTH_CONTEXT_STALE", 2},
-		"probe fails at apply":       {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, preflight.Identity{State: "failed", Message: "expired"}, "AUTH_CONTEXT_STALE", 2},
+		"probe fails at apply":       {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, awscli.Identity{State: "failed", Message: "expired"}, "AUTH_CONTEXT_STALE", 2},
 		"warn rule, switched":        {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, true, verifiedAs(other), "AUTH_CONTEXT_STALE", 2},
 		"same account":               {`{"version":1,"rules":{"awsAccounts":{"severity":"block","allowed":["` + allowed + `"]}}}`, true, verifiedAs(allowed), "", 2},
 		"no account rule, switched":  {`{"version":1}`, true, verifiedAs(other), "AUTH_CONTEXT_STALE", 2},
-		"no account rule, failed":    {`{"version":1}`, true, preflight.Identity{State: "failed", Kind: "credentials_expired"}, "AUTH_CONTEXT_STALE", 2},
-		"same role, new session":     {`{"version":1}`, true, preflight.Identity{State: "verified", Account: allowed, ARN: "arn:aws:sts::" + allowed + ":assumed-role/deployer/1794860000000000000"}, "", 2},
-		"another role, same account": {`{"version":1}`, true, preflight.Identity{State: "verified", Account: allowed, ARN: "arn:aws:sts::" + allowed + ":assumed-role/admin/session"}, "AUTH_CONTEXT_STALE", 2},
+		"no account rule, failed":    {`{"version":1}`, true, awscli.Identity{State: "failed", Kind: "credentials_expired"}, "AUTH_CONTEXT_STALE", 2},
+		"same role, new session":     {`{"version":1}`, true, awscli.Identity{State: "verified", Account: allowed, ARN: "arn:aws:sts::" + allowed + ":assumed-role/deployer/1794860000000000000"}, "", 2},
+		"another role, same account": {`{"version":1}`, true, awscli.Identity{State: "verified", Account: allowed, ARN: "arn:aws:sts::" + allowed + ":assumed-role/admin/session"}, "AUTH_CONTEXT_STALE", 2},
 		"warn rule, never checked":   {`{"version":1,"rules":{"awsAccounts":{"severity":"warn","allowed":["` + allowed + `"]}}}`, false, verifiedAs(other), "", 0},
 	} {
 		t.Run(name, func(t *testing.T) {

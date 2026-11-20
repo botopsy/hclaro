@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"hclaro/internal/awscli"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/history"
 	"io"
@@ -186,7 +187,7 @@ type Hub struct {
 	// GitProbe and IdentityProbe gather apply preflight facts for execution scopes; nil
 	// reports them as unavailable.
 	GitProbe      preflight.GitProbe
-	IdentityProbe preflight.IdentityProbe
+	IdentityProbe awscli.IdentityProbe
 	// Auth is the AWS authentication manager (M20): identity checks and sign-ins per
 	// execution profile. Its epochs invalidate apply preflights after a sign-in.
 	Auth *awsauth.Manager

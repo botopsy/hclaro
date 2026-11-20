@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
+	"hclaro/internal/awscli"
 	"hclaro/internal/discovery"
 	"hclaro/internal/discovery/discoverytest"
 	"hclaro/internal/engine"
@@ -185,12 +186,12 @@ func TestDiscoveryAPIEndToEnd(t *testing.T) {
 	}
 	// The credentials now belong to another account: prepare and new scans are refused.
 	runner.SetAccount("999999999999")
-	if w := s.do("POST", "/api/v1/discovery/scans/"+v.ID+"/candidates/"+logs.ID+"/prepare", `{}`); w.Code != 409 || decode[map[string]string](t, w)["error"] != discovery.KindIdentityChanged {
+	if w := s.do("POST", "/api/v1/discovery/scans/"+v.ID+"/candidates/"+logs.ID+"/prepare", `{}`); w.Code != 409 || decode[map[string]string](t, w)["error"] != awscli.KindIdentityChanged {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	// Every call was an allowlisted read; no response carried a canary or CLI internals.
 	for _, args := range runner.Calls() {
-		if !discovery.Allowed(args) || (args[0] != "--version" && !(strings.HasPrefix(args[1], "describe-") || strings.HasPrefix(args[1], "list-") || strings.HasPrefix(args[1], "get-"))) {
+		if !awscli.Allowed(args) || (args[0] != "--version" && !(strings.HasPrefix(args[1], "describe-") || strings.HasPrefix(args[1], "list-") || strings.HasPrefix(args[1], "get-"))) {
 			t.Fatalf("non-read call %v", args)
 		}
 	}
@@ -207,13 +208,13 @@ func TestDiscoveryErrorsAreSanitized(t *testing.T) {
 	s, runner, _ := newDiscoveryServer(t)
 	runner.Fail = func(args []string) error {
 		if args[0] == "sts" {
-			return &discovery.CallError{Kind: discovery.Classify("Error loading SSO Token: Token for corp-sso at /Users/me/.aws/sso/cache/abc.json has expired")}
+			return &awscli.CallError{Kind: awscli.Classify("Error loading SSO Token: Token for corp-sso at /Users/me/.aws/sso/cache/abc.json has expired")}
 		}
 		return nil
 	}
 	w := s.do("POST", "/api/v1/discovery/identity", `{}`)
 	body := w.Body.String()
-	if w.Code != 502 || !strings.Contains(body, discovery.KindExpired) || strings.Contains(body, "corp-sso") || strings.Contains(body, ".aws") {
+	if w.Code != 502 || !strings.Contains(body, awscli.KindExpired) || strings.Contains(body, "corp-sso") || strings.Contains(body, ".aws") {
 		t.Fatalf("%d %s", w.Code, body)
 	}
 }
@@ -222,7 +223,7 @@ func TestDiscoveryAccessDeniedIsPartialNotEmpty(t *testing.T) {
 	s, runner, _ := newDiscoveryServer(t)
 	runner.Fail = func(args []string) error {
 		if args[0] == "rds" {
-			return &discovery.CallError{Kind: discovery.KindAccessDenied}
+			return &awscli.CallError{Kind: awscli.KindAccessDenied}
 		}
 		return nil
 	}
@@ -233,7 +234,7 @@ func TestDiscoveryAccessDeniedIsPartialNotEmpty(t *testing.T) {
 		t.Fatalf("%s %d", v.Status, len(v.Results))
 	}
 	for _, task := range v.Tasks {
-		if task.Type == "aws_db_instance" && task.Error != discovery.KindAccessDenied {
+		if task.Type == "aws_db_instance" && task.Error != awscli.KindAccessDenied {
 			t.Fatalf("%+v", task)
 		}
 	}

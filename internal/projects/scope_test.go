@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"hclaro/internal/awsauth"
+	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
-	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 )
 
@@ -879,14 +879,14 @@ func TestScopePreflightIsStaleAfterAuthChange(t *testing.T) {
 	hub.Profiles = profiles.Open(t.TempDir(), time.Now())
 	auth := awsauth.New()
 	identity := "111122223333"
-	auth.Probe = func(context.Context, []string) preflight.Identity {
-		return preflight.Identity{State: "verified", Account: identity, ARN: "arn:aws:sts::" + identity + ":assumed-role/Deploy/s"}
+	auth.Probe = func(context.Context, []string) awscli.Identity {
+		return awscli.Identity{State: "verified", Account: identity, ARN: "arn:aws:sts::" + identity + ":assumed-role/Deploy/s"}
 	}
 	auth.Run = func(context.Context, []string, string, ...string) ([]byte, []byte, error) {
 		return []byte("aws-cli/2.17.0 Python/3.12 (synthetic)"), nil, nil
 	}
 	hub.Auth = auth
-	hub.IdentityProbe = func(ctx context.Context, environ []string) preflight.Identity { return auth.Probe(ctx, environ) }
+	hub.IdentityProbe = func(ctx context.Context, environ []string) awscli.Identity { return auth.Probe(ctx, environ) }
 	network := ids["network"]
 	p, err := hub.Profiles.Create(network, profiles.Input{Name: "dev", AWSProfile: "dev-sso"})
 	if err != nil {
@@ -928,8 +928,8 @@ func TestSignInAfterApprovalRefusesTheScopeApply(t *testing.T) {
 	hub, ids, spy := scopedHub(t)
 	hub.Profiles = profiles.Open(t.TempDir(), time.Now())
 	auth := awsauth.New()
-	auth.Probe = func(context.Context, []string) preflight.Identity {
-		return preflight.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/s"}
+	auth.Probe = func(context.Context, []string) awscli.Identity {
+		return awscli.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/s"}
 	}
 	auth.Run = func(_ context.Context, _ []string, _ string, args ...string) ([]byte, []byte, error) {
 		switch strings.Join(args, " ") {
@@ -943,7 +943,7 @@ func TestSignInAfterApprovalRefusesTheScopeApply(t *testing.T) {
 		return nil, nil, errors.New("exit status 1")
 	}
 	hub.Auth = auth
-	hub.IdentityProbe = func(ctx context.Context, environ []string) preflight.Identity { return auth.Probe(ctx, environ) }
+	hub.IdentityProbe = func(ctx context.Context, environ []string) awscli.Identity { return auth.Probe(ctx, environ) }
 	network := ids["network"]
 	p, err := hub.Profiles.Create(network, profiles.Input{Name: "dev", AWSProfile: "dev-sso"})
 	if err != nil {

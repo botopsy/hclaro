@@ -3,29 +3,21 @@ package preflight
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"time"
 	"unicode"
 
-	"hclaro/internal/discovery"
 	"hclaro/internal/state"
 )
 
 // GitProbe reads the Git working tree status of root. Tests inject fakes.
 type GitProbe func(ctx context.Context, root string) GitResult
 
-// IdentityProbe asks a cloud CLI for the caller identity using environ. Tests inject fakes.
-type IdentityProbe func(ctx context.Context, environ []string) Identity
-
 const (
-	gitTimeout      = 10 * time.Second
-	identityTimeout = 20 * time.Second
-	maxProbeOutput  = 1 << 20
-	maxPaths        = 10
+	gitTimeout     = 10 * time.Second
+	maxProbeOutput = 1 << 20
+	maxPaths       = 10
 )
 
 // insideRepository reports whether root or a parent has a .git entry. It reads only names.
@@ -110,64 +102,4 @@ func cleanPath(p string) string {
 		}
 	}
 	return p
-}
-
-var (
-	arnRE     = regexp.MustCompile(`^arn:aws[a-z-]{0,20}:(sts|iam)::[0-9]{12}:[A-Za-z0-9+=,.@/_-]{1,512}$`)
-	accountID = regexp.MustCompile(`^[0-9]{12}$`)
-)
-
-// AWSIdentity runs `aws sts get-caller-identity --output json` with environ, through
-// aws-vault when the composed environment selects it, exactly as the engine would run. It is
-// called only after the user asks for it: STS is a read-only call, but it contacts AWS. The
-// pager and prompts are disabled, stdin is empty and stderr is only classified. Only the
-// account ID and a validated ARN are returned; the user ID and any other output are dropped.
-func AWSIdentity(ctx context.Context, environ []string) Identity {
-	out, err := discovery.Exec{Timeout: identityTimeout}.Run(ctx, environ, []string{"sts", "get-caller-identity", "--output", "json"})
-	if err != nil {
-		kind := discovery.KindOf(err)
-		state := "failed"
-		if kind == discovery.KindMissingCLI || kind == discovery.KindVaultMissing {
-			state = "unavailable"
-		}
-		return Identity{State: state, Kind: kind, Message: discovery.Message(kind)}
-	}
-	return ParseIdentity(out)
-}
-
-// ParseIdentity extracts the account and ARN from get-caller-identity JSON.
-func ParseIdentity(b []byte) Identity {
-	var v struct {
-		Account string `json:"Account"`
-		Arn     string `json:"Arn"`
-	}
-	if json.Unmarshal(b, &v) != nil || !accountID.MatchString(v.Account) {
-		return Identity{State: "failed", Message: "The AWS CLI returned an unexpected response."}
-	}
-	id := Identity{State: "verified", Account: v.Account, At: time.Now().UTC().Format(time.RFC3339)}
-	if arnRE.MatchString(v.Arn) && strings.Contains(v.Arn, "::"+v.Account+":") && !state.Suspicious(v.Arn) {
-		id.ARN = v.Arn
-	} else {
-		id.ARN = "ARN withheld"
-	}
-	return id
-}
-
-// Principal is the stable part of an STS caller ARN: an assumed-role ARN without its session
-// name (aws-vault and SSO name every session differently), any other ARN unchanged.
-func Principal(arn string) string {
-	if head, rest, ok := strings.Cut(arn, ":assumed-role/"); ok {
-		if role, _, ok := strings.Cut(rest, "/"); ok {
-			return head + ":assumed-role/" + role
-		}
-	}
-	return arn
-}
-
-// SameIdentity reports whether two verified identities are the same account and principal.
-// An identity that is not verified, or whose ARN was withheld (so its principal is unknown),
-// is never the same as anything.
-func SameIdentity(a, b Identity) bool {
-	return a.State == "verified" && b.State == "verified" && arnRE.MatchString(a.ARN) && arnRE.MatchString(b.ARN) &&
-		a.Account == b.Account && Principal(a.ARN) == Principal(b.ARN)
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/plan"
 )
@@ -23,7 +24,7 @@ func base() Input {
 		Digest: strings.Repeat("a", 64), ExpiresAt: now.Add(30 * time.Minute), Backend: "local", ExecutionMode: "local-cli",
 		CanApply: true, EngineSupported: true, Kind: "plan", Summary: map[string]int{"create": 1},
 		Changes: []plan.Change{{Address: "null_resource.a", Action: plan.Create, Type: "null_resource", Provider: "registry.terraform.io/hashicorp/null"}},
-		Git:     GitResult{State: GitClean}, Identity: Identity{State: "not_requested"}, Policy: DefaultPolicy(),
+		Git:     GitResult{State: GitClean}, Identity: awscli.Identity{State: "not_requested"}, Policy: DefaultPolicy(),
 		PolicyInfo: PolicyInfo{Source: "default", Version: 1, Valid: true},
 	}
 }
@@ -204,7 +205,7 @@ func TestAWSIdentityCheck(t *testing.T) {
 	if c.Status != Unknown || c.Severity != Info || !strings.Contains(c.Evidence, "does not infer") {
 		t.Fatalf("%+v", c)
 	}
-	in.Identity = Identity{State: "verified", Account: "123456789012", ARN: "arn:aws:iam::123456789012:user/ci"}
+	in.Identity = awscli.Identity{State: "verified", Account: "123456789012", ARN: "arn:aws:iam::123456789012:user/ci"}
 	if c := get(t, Evaluate(in), CheckAWS); c.Status != Pass {
 		t.Fatalf("%+v", c)
 	}
@@ -212,7 +213,7 @@ func TestAWSIdentityCheck(t *testing.T) {
 	if c := get(t, Evaluate(in), CheckAWS); !c.Blocks() || c.Source != "policy" {
 		t.Fatalf("%+v", c)
 	}
-	in.Identity = Identity{State: "failed", Message: "nope"}
+	in.Identity = awscli.Identity{State: "failed", Message: "nope"}
 	if c := get(t, Evaluate(in), CheckAWS); !c.Blocks() || c.Status != Unknown {
 		t.Fatalf("%+v", c)
 	}
@@ -301,22 +302,6 @@ func TestParsePorcelain(t *testing.T) {
 	}
 	if r := ParsePorcelain(nil); r.State != GitClean {
 		t.Fatalf("%+v", r)
-	}
-}
-
-func TestParseIdentity(t *testing.T) {
-	id := ParseIdentity([]byte(`{"UserId":"AIDAEXAMPLE","Account":"123456789012","Arn":"arn:aws:sts::123456789012:assumed-role/deploy/s1"}`))
-	if id.State != "verified" || id.Account != "123456789012" || id.ARN != "arn:aws:sts::123456789012:assumed-role/deploy/s1" {
-		t.Fatalf("%+v", id)
-	}
-	// The user ID is never returned; a mismatched ARN is withheld.
-	if id := ParseIdentity([]byte(`{"UserId":"AIDA","Account":"123456789012","Arn":"arn:aws:iam::999999999999:user/x"}`)); id.ARN != "ARN withheld" {
-		t.Fatalf("%+v", id)
-	}
-	for _, bad := range []string{`{}`, `{"Account":"12"}`, `not json`} {
-		if id := ParseIdentity([]byte(bad)); id.State != "failed" {
-			t.Fatalf("%s: %+v", bad, id)
-		}
 	}
 }
 
@@ -426,15 +411,15 @@ func TestExpectedAccountAndRoleBlock(t *testing.T) {
 	if c := get(t, Evaluate(in), CheckAWSExpected); !c.Blocks() || c.Status != Unknown {
 		t.Fatalf("unverified identity: %+v", c)
 	}
-	in.Identity = Identity{State: "failed", Kind: "timeout", Message: "STS did not answer"}
+	in.Identity = awscli.Identity{State: "failed", Kind: "timeout", Message: "STS did not answer"}
 	if c := get(t, Evaluate(in), CheckAWSExpected); !c.Blocks() || c.Status != Unknown {
 		t.Fatalf("timed out: %+v", c)
 	}
-	in.Identity = Identity{State: "verified", Account: "444455556666", ARN: "arn:aws:sts::444455556666:assumed-role/Deploy/s"}
+	in.Identity = awscli.Identity{State: "verified", Account: "444455556666", ARN: "arn:aws:sts::444455556666:assumed-role/Deploy/s"}
 	if c := get(t, Evaluate(in), CheckAWSExpected); !c.Blocks() || c.Status != Fail || !strings.Contains(c.Evidence, "AUTH_ACCOUNT_MISMATCH") {
 		t.Fatalf("mismatch: %+v", c)
 	}
-	in.Identity = Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/DeployAdmin/s"}
+	in.Identity = awscli.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/DeployAdmin/s"}
 	if c := get(t, Evaluate(in), CheckAWSExpected); c.Blocks() {
 		t.Fatalf("account-only guard: %+v", c)
 	}
@@ -457,12 +442,12 @@ func TestExpectedAccountAndRoleBlock(t *testing.T) {
 // L3: a withheld ARN hides the principal, so two of them are never the same identity, and a
 // review with one cannot bind an approval: it blocks instead of failing later at apply.
 func TestWithheldARNFailsClosed(t *testing.T) {
-	ok := Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/a"}
-	withheld := Identity{State: "verified", Account: "111122223333", ARN: "ARN withheld"}
-	if !SameIdentity(ok, Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/b"}) {
+	ok := awscli.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/a"}
+	withheld := awscli.Identity{State: "verified", Account: "111122223333", ARN: "ARN withheld"}
+	if !awscli.SameIdentity(ok, awscli.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/b"}) {
 		t.Fatal("same role, new session")
 	}
-	if SameIdentity(withheld, withheld) || SameIdentity(ok, withheld) || SameIdentity(withheld, ok) {
+	if awscli.SameIdentity(withheld, withheld) || awscli.SameIdentity(ok, withheld) || awscli.SameIdentity(withheld, ok) {
 		t.Fatal("a withheld ARN compared as the same principal")
 	}
 	in := base()

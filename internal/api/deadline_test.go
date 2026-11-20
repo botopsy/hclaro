@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
+	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
 	"hclaro/internal/preflight"
@@ -26,12 +27,12 @@ func TestSlowPreflightOutlastsWriteTimeout(t *testing.T) {
 	s.manager.GitProbe = func(context.Context, string) preflight.GitResult {
 		return preflight.GitResult{State: preflight.GitClean, Paths: []string{}}
 	}
-	s.manager.IdentityProbe = func(ctx context.Context, _ []string) preflight.Identity {
+	s.manager.IdentityProbe = func(ctx context.Context, _ []string) awscli.Identity {
 		select {
 		case <-time.After(400 * time.Millisecond):
-			return preflight.Identity{State: "unavailable", Message: "slow"}
+			return awscli.Identity{State: "unavailable", Message: "slow"}
 		case <-ctx.Done():
-			return preflight.Identity{State: "unavailable", Message: "cancelled"}
+			return awscli.Identity{State: "unavailable", Message: "cancelled"}
 		}
 	}
 	op := s.wait(decode[operations.Operation](t, s.do("POST", "/api/v1/plans", `{"acknowledgeBackendAccess":true}`)).ID)
@@ -53,14 +54,14 @@ func TestSlowApplyIdentityRecheckOutlastsWriteTimeout(t *testing.T) {
 		return preflight.GitResult{State: preflight.GitClean, Paths: []string{}}
 	}
 	var probes atomic.Int32
-	s.manager.IdentityProbe = func(ctx context.Context, _ []string) preflight.Identity {
+	s.manager.IdentityProbe = func(ctx context.Context, _ []string) awscli.Identity {
 		if probes.Add(1) > 1 {
 			select {
 			case <-time.After(400 * time.Millisecond):
 			case <-ctx.Done():
 			}
 		}
-		return preflight.Identity{State: "verified", Account: account, ARN: "arn:aws:iam::" + account + ":user/test"}
+		return awscli.Identity{State: "verified", Account: account, ARN: "arn:aws:iam::" + account + ":user/test"}
 	}
 	dir := filepath.Join(s.manager.Root(), ".hclaro")
 	if err := os.MkdirAll(dir, 0o700); err != nil {

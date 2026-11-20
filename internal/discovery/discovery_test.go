@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
+	"hclaro/internal/awscli"
 	"hclaro/internal/imports"
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
@@ -36,8 +37,8 @@ type fakeRunner struct {
 var randomHex = regexp.MustCompile(`"[0-9a-f]{16,}"`)
 
 func (f *fakeRunner) Run(ctx context.Context, environ []string, args []string) ([]byte, error) {
-	if !Allowed(args) {
-		return nil, &CallError{KindRefused}
+	if !awscli.Allowed(args) {
+		return nil, &awscli.CallError{Kind: awscli.KindRefused}
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, slices.Clone(args))
@@ -55,7 +56,7 @@ func (f *fakeRunner) Run(ctx context.Context, environ []string, args []string) (
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():
-			return nil, &CallError{KindCancelled}
+			return nil, &awscli.CallError{Kind: awscli.KindCancelled}
 		}
 	}
 	if handle != nil {
@@ -124,14 +125,14 @@ func fixtureAnswer(args []string, acct string) ([]byte, error) {
 		}
 		return fixture("rds-describe-db-instances.json"), nil
 	}
-	return nil, &CallError{KindFailed}
+	return nil, &awscli.CallError{Kind: awscli.KindFailed}
 }
 
 func pin() Pin {
 	return Pin{ContextFingerprint: "inherited", Workspace: "default", Engine: "terraform", AWSRegion: "eu-west-1"}
 }
 
-func newService(r Runner) *Service {
+func newService(r awscli.Runner) *Service {
 	s := New(r)
 	s.Sleep = func(context.Context, time.Duration) error { return nil }
 	return s
@@ -206,90 +207,6 @@ func find(v ScanView, typ, id string) *CandidateView {
 	return nil
 }
 
-func TestAllowedRefusesEverythingButReadOnlyCalls(t *testing.T) {
-	ok := [][]string{
-		{"--version"},
-		{"sts", "get-caller-identity", "--output", "json", "--region", "eu-west-1"},
-		{"ec2", "describe-vpcs", "--output", "json", "--region", "us-east-1", "--max-items", "100", "--starting-token", "eyJhIjoxfQ=="},
-		{"s3api", "list-buckets", "--output", "json"},
-		{"rds", "describe-db-instances", "--region", "ap-southeast-2"},
-	}
-	for _, args := range ok {
-		if !Allowed(args) {
-			t.Errorf("refused %v", args)
-		}
-	}
-	refused := [][]string{
-		{},
-		{"ec2", "create-vpc"},
-		{"ec2", "delete-vpc", "--vpc-id", "vpc-1"},
-		{"ec2", "modify-vpc-attribute"},
-		{"ec2", "run-instances"},
-		{"s3api", "delete-bucket"},
-		{"s3api", "put-bucket-policy"},
-		{"s3", "rm", "s3://x"},
-		{"rds", "delete-db-instance"},
-		{"iam", "list-users"},
-		{"configure", "set"},
-		{"ec2", "describe-vpcs", "--cli-input-json", "file://x"},
-		{"ec2", "describe-vpcs", "--endpoint-url", "http://evil"},
-		{"ec2", "describe-vpcs", "--profile", "prod"},
-		{"ec2", "describe-vpcs", "--query", "Vpcs"},
-		{"ec2", "describe-vpcs", "--region", "eu-west-1; rm -rf /"},
-		{"ec2", "describe-vpcs", "--region", "eu-west-1", "--region", "us-east-1"},
-		{"ec2", "describe-vpcs", "--max-items", "0"},
-		{"ec2", "describe-vpcs", "--output", "text"},
-		{"ec2", "describe-vpcs", "--starting-token"},
-		{"ec2", "describe-vpcs", "--debug"},
-		{"--version", "x"},
-	}
-	for _, args := range refused {
-		if Allowed(args) {
-			t.Errorf("allowed %v", args)
-		}
-	}
-	if _, err := (Exec{}).Run(context.Background(), nil, []string{"ec2", "delete-vpc"}); KindOf(err) != KindRefused {
-		t.Fatalf("Exec ran a refused command: %v", err)
-	}
-}
-
-func TestEnvironDisablesPagerPromptsAndRetries(t *testing.T) {
-	env := Environ([]string{"AWS_PAGER=less", "aws_cli_auto_prompt=on", "AWS_MAX_ATTEMPTS=10", "AWS_DEFAULT_OUTPUT=table", "AWS_PROFILE=dev", "HOME=/home/x"})
-	joined := strings.Join(env, "\n")
-	for _, bad := range []string{"less", "=on", "=10", "table"} {
-		if strings.Contains(joined, bad) {
-			t.Errorf("environment kept %q: %v", bad, env)
-		}
-	}
-	for _, want := range []string{"AWS_PROFILE=dev", "AWS_PAGER=", "AWS_CLI_AUTO_PROMPT=off", "AWS_MAX_ATTEMPTS=1"} {
-		if !slices.Contains(env, want) {
-			t.Errorf("missing %s", want)
-		}
-	}
-}
-
-func TestClassify(t *testing.T) {
-	cases := map[string]string{
-		"Error when retrieving token from sso: Token has expired and refresh failed":                                KindExpired,
-		"An error occurred (ExpiredToken) when calling the GetCallerIdentity operation":                             KindExpired,
-		"The config profile (prod) could not be found":                                                              KindProfileNotFound,
-		"Unable to locate credentials. You can configure credentials by running \"aws configure\".":                 KindNoCredentials,
-		"An error occurred (Throttling) when calling the DescribeVpcs operation: Rate exceeded":                     KindThrottled,
-		"An error occurred (RequestLimitExceeded) when calling the DescribeSubnets operation":                       KindThrottled,
-		"An error occurred (UnauthorizedOperation) when calling the DescribeVpcs operation: You are not authorized": KindAccessDenied,
-		"An error occurred (AccessDenied) when calling the ListBuckets operation: Access Denied":                    KindAccessDenied,
-		"An error occurred (InvalidClientTokenId) when calling the GetCallerIdentity operation":                     KindInvalid,
-		"An error occurred (AuthFailure) when calling the DescribeVpcs operation: AWS was not able to validate":     KindRegionDisabled,
-		"Could not connect to the endpoint URL: \"https://ec2.eu-west-1.amazonaws.com/\"":                           KindNetwork,
-		"something else entirely": KindFailed,
-	}
-	for in, want := range cases {
-		if got := Classify(in); got != want {
-			t.Errorf("Classify(%q) = %s, want %s", in, got, want)
-		}
-	}
-}
-
 func TestVerifyRequiresCLIv2AndKeepsOnlySafeIdentity(t *testing.T) {
 	r := &fakeRunner{handle: func(args []string) ([]byte, error) {
 		if args[0] == "--version" {
@@ -298,7 +215,7 @@ func TestVerifyRequiresCLIv2AndKeepsOnlySafeIdentity(t *testing.T) {
 		return nil, nil
 	}}
 	s := newService(r)
-	if _, err := s.Verify(context.Background(), pin(), nil); KindOf(err) != KindUnsupportedCLI {
+	if _, err := s.Verify(context.Background(), pin(), nil); awscli.KindOf(err) != awscli.KindUnsupportedCLI {
 		t.Fatalf("v1 accepted: %v", err)
 	}
 	r.handle = nil
@@ -329,11 +246,11 @@ func TestVerifyRequiresCLIv2AndKeepsOnlySafeIdentity(t *testing.T) {
 func TestVerifyExpiredSSO(t *testing.T) {
 	r := &fakeRunner{handle: func(args []string) ([]byte, error) {
 		if args[0] == "sts" {
-			return nil, &CallError{Classify("Error loading SSO Token: Token for my-sso does not exist / Token has expired")}
+			return nil, &awscli.CallError{Kind: awscli.Classify("Error loading SSO Token: Token for my-sso does not exist / Token has expired")}
 		}
 		return nil, nil
 	}}
-	if _, err := newService(r).Verify(context.Background(), pin(), nil); KindOf(err) != KindExpired {
+	if _, err := newService(r).Verify(context.Background(), pin(), nil); awscli.KindOf(err) != awscli.KindExpired {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -441,7 +358,7 @@ func TestScanPaginationMatchingAndRedaction(t *testing.T) {
 func TestAccessDeniedGivesPartialResultsPerService(t *testing.T) {
 	r := &fakeRunner{handle: func(args []string) ([]byte, error) {
 		if args[0] == "rds" {
-			return nil, &CallError{Classify("An error occurred (AccessDenied) when calling the DescribeDBInstances operation")}
+			return nil, &awscli.CallError{Kind: awscli.Classify("An error occurred (AccessDenied) when calling the DescribeDBInstances operation")}
 		}
 		return nil, nil
 	}}
@@ -451,7 +368,7 @@ func TestAccessDeniedGivesPartialResultsPerService(t *testing.T) {
 	}
 	for _, task := range v.Tasks {
 		switch {
-		case task.Type == "aws_db_instance" && (task.Status != TaskFailed || task.Error != KindAccessDenied || !strings.Contains(task.Message, "missing, not empty")):
+		case task.Type == "aws_db_instance" && (task.Status != TaskFailed || task.Error != awscli.KindAccessDenied || !strings.Contains(task.Message, "missing, not empty")):
 			t.Errorf("rds task %+v", task)
 		case task.Type != "aws_db_instance" && task.Status != TaskDone:
 			t.Errorf("task %+v", task)
@@ -470,12 +387,12 @@ func TestExpiredSSODuringScanStopsIt(t *testing.T) {
 		defer r.mu.Unlock()
 		if args[0] != "sts" && args[0] != "--version" {
 			calls++
-			return nil, &CallError{KindExpired}
+			return nil, &awscli.CallError{Kind: awscli.KindExpired}
 		}
 		return nil, nil
 	}
 	v := scanAll(t, newService(r), DiscoveryScope{Regions: []string{"eu-west-1", "us-east-1", "us-west-2"}, Types: allTypes(), Concurrency: 1}, snapshot())
-	if v.Status != ScanFailed || v.Error != KindExpired {
+	if v.Status != ScanFailed || v.Error != awscli.KindExpired {
 		t.Fatalf("status %s error %s", v.Status, v.Error)
 	}
 	if calls >= len(v.Tasks) {
@@ -495,7 +412,7 @@ func TestThrottlingRetriesWithBackoff(t *testing.T) {
 		key := args[1] + option(args, "--region") + option(args, "--starting-token")
 		if throttled[key] < 2 {
 			throttled[key]++
-			return nil, &CallError{KindThrottled}
+			return nil, &awscli.CallError{Kind: awscli.KindThrottled}
 		}
 		return nil, nil
 	}}
@@ -517,12 +434,12 @@ func TestThrottlingRetriesWithBackoff(t *testing.T) {
 	// Throttled on every attempt: the task fails after the attempt limit; nothing loops.
 	r.handle = func(args []string) ([]byte, error) {
 		if args[0] == "ec2" {
-			return nil, &CallError{KindThrottled}
+			return nil, &awscli.CallError{Kind: awscli.KindThrottled}
 		}
 		return nil, nil
 	}
 	v = scanAll(t, s, DiscoveryScope{Regions: []string{"eu-west-1"}, Types: []string{"aws_subnet"}}, snapshot())
-	if v.Status != ScanFailed || v.Tasks[0].Error != KindThrottled || v.Tasks[0].Retries != maxAttempts-1 {
+	if v.Status != ScanFailed || v.Tasks[0].Error != awscli.KindThrottled || v.Tasks[0].Retries != maxAttempts-1 {
 		t.Fatalf("status %s tasks %+v", v.Status, v.Tasks)
 	}
 }
@@ -675,7 +592,7 @@ func TestScanAndPrepareAreBoundToTheirContext(t *testing.T) {
 	r.mu.Lock()
 	r.account = "999999999999"
 	r.mu.Unlock()
-	if _, err := s.Prepare(context.Background(), scan.ID, cand.ID, pin(), nil, snap, false); KindOf(err) != KindIdentityChanged {
+	if _, err := s.Prepare(context.Background(), scan.ID, cand.ID, pin(), nil, snap, false); awscli.KindOf(err) != awscli.KindIdentityChanged {
 		t.Fatalf("prepare after account change: %v", err)
 	}
 	// And a scan with a verification from the old account fails before listing anything.
@@ -685,7 +602,7 @@ func TestScanAndPrepareAreBoundToTheirContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	v2 := wait(t, s, scan2.ID, pin(), snap)
-	if v2.Status != ScanFailed || v2.Error != KindIdentityChanged || len(v2.Results) != 0 {
+	if v2.Status != ScanFailed || v2.Error != awscli.KindIdentityChanged || len(v2.Results) != 0 {
 		t.Fatalf("scan after account change: %s %s", v2.Status, v2.Error)
 	}
 	for _, c := range r.recorded()[before:] {
@@ -783,7 +700,7 @@ func TestOnlyReadOnlyCallsAreEverMade(t *testing.T) {
 		t.Fatal("no calls recorded")
 	}
 	for _, args := range calls {
-		if !Allowed(args) {
+		if !awscli.Allowed(args) {
 			t.Fatalf("not allowlisted: %v", args)
 		}
 		if args[0] == "--version" {
@@ -893,17 +810,6 @@ func TestSuggestAddress(t *testing.T) {
 	}
 }
 
-func TestParseVersion(t *testing.T) {
-	if v, ok := ParseVersion([]byte("aws-cli/2.15.30 Python/3.11.8 Darwin/23.3.0 exe/x86_64 prompt/off\n")); !ok || v != "2.15.30" {
-		t.Fatal(v)
-	}
-	for _, out := range []string{"aws-cli/1.32.0 Python/3.9", "", "not aws"} {
-		if _, ok := ParseVersion([]byte(out)); ok {
-			t.Errorf("accepted %q", out)
-		}
-	}
-}
-
 func TestMalformedPagesAreRefused(t *testing.T) {
 	r := &fakeRunner{handle: func(args []string) ([]byte, error) {
 		if len(args) < 2 {
@@ -919,7 +825,7 @@ func TestMalformedPagesAreRefused(t *testing.T) {
 	}}
 	v := scanAll(t, newService(r), DiscoveryScope{Regions: []string{"eu-west-1"}, Types: []string{"aws_vpc", "aws_subnet"}}, snapshot())
 	for _, task := range v.Tasks {
-		if task.Status != TaskFailed || task.Error != KindMalformed {
+		if task.Status != TaskFailed || task.Error != awscli.KindMalformed {
 			t.Errorf("task %+v", task)
 		}
 	}

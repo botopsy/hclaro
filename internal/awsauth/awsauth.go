@@ -8,21 +8,18 @@
 package awsauth
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/awsvault"
-	"hclaro/internal/bounded"
-	"hclaro/internal/discovery"
-	"hclaro/internal/preflight"
 )
 
 // Status values of a project's execution profile.
@@ -53,7 +50,6 @@ const (
 	loginTimeout             = 10 * time.Minute
 	localTimeout             = 15 * time.Second
 	maxProfiles              = 500
-	maxLocalOutput           = 256 << 10
 	maxRunningLogins         = 4
 	providerIdentityDisclose = "STS reports the identity of the AWS CLI credentials in this context (CLI execution identity). Provider aliases, assume_role, web identity or a profile set in the Terraform configuration can make the provider use another principal or account."
 )
@@ -64,14 +60,14 @@ type Error struct{ Code, Message string }
 func (e *Error) Error() string { return e.Message }
 
 // Exec runs one fixed command and returns bounded stdout and stderr. Tests may replace it;
-// the real one is run.
+// the real one is awscli.Local.
 type Exec func(ctx context.Context, environ []string, name string, args ...string) (stdout, stderr []byte, err error)
 
 // Manager holds the tool detection, the last identity check of each execution profile and
 // running sign-in commands. All state is in memory: nothing here is persisted.
 type Manager struct {
-	// Probe checks the caller identity with a composed environment (preflight.AWSIdentity).
-	Probe preflight.IdentityProbe
+	// Probe checks the caller identity with a composed environment (awscli.AWSIdentity).
+	Probe awscli.IdentityProbe
 	Run   Exec
 	Now   func() time.Time
 
@@ -81,7 +77,7 @@ type Manager struct {
 	checks map[string]*check
 	// verified is the last verified identity of each profile, kept across failed checks so
 	// a change A → failure → B still counts as a new identity.
-	verified  map[string]preflight.Identity
+	verified  map[string]awscli.Identity
 	verifying map[string]bool
 	logins    map[string]*Login
 	epochs    map[string]uint64
@@ -92,13 +88,13 @@ type check struct {
 	revision    int
 	fingerprint string
 	running     bool
-	identity    preflight.Identity
+	identity    awscli.Identity
 	at          time.Time
 }
 
 // New returns a manager using the real AWS CLI and aws-vault.
 func New() *Manager {
-	return &Manager{Probe: preflight.AWSIdentity, Run: run, Now: time.Now, checks: map[string]*check{}, verified: map[string]preflight.Identity{}, verifying: map[string]bool{}, logins: map[string]*Login{}, epochs: map[string]uint64{}}
+	return &Manager{Probe: awscli.AWSIdentity, Run: awscli.Local, Now: time.Now, checks: map[string]*check{}, verified: map[string]awscli.Identity{}, verifying: map[string]bool{}, logins: map[string]*Login{}, epochs: map[string]uint64{}}
 }
 
 func key(projectID, profileID string) string { return projectID + "/" + profileID }
@@ -113,73 +109,6 @@ func (m *Manager) Epoch(projectID, profileID string) uint64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.epochs[key(projectID, profileID)]
-}
-
-// ErrRefusedArgs is returned for a command not on the sign-in allowlist; no process starts.
-var ErrRefusedArgs = errors.New("hclaro refused to run this command because it is not on the allowlist")
-
-// allowed is the sign-in allowlist: the exact commands this package builds, with a valid
-// profile name where one is substituted.
-func allowed(name string, args []string) bool {
-	is := func(want ...string) bool { return slices.Equal(args, want) }
-	profile := func(prefix ...string) bool {
-		return len(args) == len(prefix)+1 && slices.Equal(args[:len(prefix)], prefix) && awsvault.ValidProfile(args[len(prefix)])
-	}
-	switch name {
-	case "aws-vault":
-		return is("--version")
-	case "aws":
-		return is("--version") || is("login", "help") || is("configure", "list-profiles") ||
-			profile("configure", "get", "sso_session", "--profile") || profile("configure", "get", "sso_start_url", "--profile") ||
-			profile("sso", "login", "--profile") || profile("login", "--profile")
-	}
-	return false
-}
-
-// run is the real Exec: an allowlisted command, the executable from PATH, argv only, empty
-// stdin, bounded output, the pager and auto-prompt disabled.
-func run(ctx context.Context, environ []string, name string, args ...string) ([]byte, []byte, error) {
-	if !allowed(name, args) {
-		return nil, nil, ErrRefusedArgs
-	}
-	exe, err := exec.LookPath(name)
-	if err != nil {
-		return nil, nil, exec.ErrNotFound
-	}
-	cmd := exec.CommandContext(ctx, exe, args...)
-	// Cancelling (a cancelled sign-in, shutdown) interrupts first so the AWS CLI can finish
-	// writing its SSO cache; it is killed if it has not exited 3 seconds later. Windows has
-	// no interrupt signal for another process, so there it is killed at once.
-	cmd.Cancel = func() error {
-		if runtime.GOOS != "windows" && cmd.Process.Signal(os.Interrupt) == nil {
-			return nil
-		}
-		return cmd.Process.Kill()
-	}
-	cmd.WaitDelay = 3 * time.Second
-	cmd.Env = cliEnviron(environ)
-	out := &bounded.Buffer{Limit: maxLocalOutput}
-	errOut := &bounded.Buffer{Limit: 16 << 10}
-	cmd.Stdout, cmd.Stderr = out, errOut
-	err = cmd.Run()
-	return out.Bytes(), errOut.Bytes(), err
-}
-
-// cliEnviron is environ (Hclaro's own when nil) without the aws-vault marker, with the
-// pager and auto-prompt disabled.
-func cliEnviron(environ []string) []string {
-	if environ == nil {
-		environ = os.Environ()
-	}
-	out := []string{}
-	for _, item := range awsvault.Strip(environ) {
-		k, _, _ := strings.Cut(item, "=")
-		if strings.EqualFold(k, "AWS_PAGER") || strings.EqualFold(k, "AWS_CLI_AUTO_PROMPT") {
-			continue
-		}
-		out = append(out, item)
-	}
-	return append(out, "AWS_PAGER=", "AWS_CLI_AUTO_PROMPT=off")
 }
 
 // Tool is one detected executable. Its path is not reported.
@@ -222,7 +151,7 @@ func (m *Manager) DetectTools(ctx context.Context, refresh bool) Tools {
 	out, errOut, err := m.Run(ctx, nil, "aws", "--version")
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
-		t.AWS.Message = discovery.Message(discovery.KindMissingCLI)
+		t.AWS.Message = awscli.Message(awscli.KindMissingCLI)
 	case err != nil:
 		t.AWS = Tool{Available: true, Message: "aws --version failed, so the AWS CLI version is unknown."}
 	default:
@@ -232,9 +161,9 @@ func (m *Manager) DetectTools(ctx context.Context, refresh bool) Tools {
 			text = errOut
 		}
 		t.AWS.Available = true
-		t.AWS.Version, t.AWS.Supported = discovery.ParseVersion(text)
+		t.AWS.Version, t.AWS.Supported = awscli.ParseVersion(text)
 		if !t.AWS.Supported {
-			t.AWS.Message = discovery.Message(discovery.KindUnsupportedCLI)
+			t.AWS.Message = awscli.Message(awscli.KindUnsupportedCLI)
 		}
 	}
 	if t.AWS.Supported {
@@ -276,13 +205,19 @@ func (m *Manager) Profiles(ctx context.Context) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, localTimeout)
 	defer cancel()
 	out, errOut, err := m.Run(ctx, nil, "aws", "configure", "list-profiles")
+	// A listing beyond the output limit still yields its first maxProfiles names; only the
+	// last, possibly cut, line is dropped.
+	if awscli.KindOf(err) == awscli.KindOutputTooLarge {
+		out = out[:bytes.LastIndexByte(out, '\n')+1]
+		err = nil
+	}
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
-		return nil, &Error{CodeToolMissing, discovery.Message(discovery.KindMissingCLI)}
+		return nil, &Error{CodeToolMissing, awscli.Message(awscli.KindMissingCLI)}
 	case ctx.Err() != nil:
 		return nil, &Error{CodeError, "The AWS CLI did not list profiles in time."}
 	case err != nil:
-		return nil, &Error{CodeError, failureMessage(discovery.Classify(string(errOut)))}
+		return nil, &Error{CodeError, awscli.Message(awscli.Classify(string(errOut)))}
 	}
 	names := []string{}
 	for _, line := range strings.Split(string(out), "\n") {
@@ -347,23 +282,20 @@ func (m *Manager) profileKind(ctx context.Context, profile string) string {
 	return KindOther
 }
 
-// failureMessage is the user-facing text of a classified failure.
-func failureMessage(kind string) string { return discovery.Message(kind) }
-
 // stateOf maps a failed identity probe to a status and diagnostic code.
-func stateOf(id preflight.Identity) (state, code string) {
+func stateOf(id awscli.Identity) (state, code string) {
 	switch id.Kind {
-	case discovery.KindMissingCLI, discovery.KindVaultMissing:
+	case awscli.KindMissingCLI, awscli.KindVaultMissing:
 		return ToolMissing, CodeToolMissing
-	case discovery.KindExpired, discovery.KindNoCredentials, discovery.KindInvalid:
+	case awscli.KindExpired, awscli.KindNoCredentials, awscli.KindInvalid:
 		return AuthRequired, CodeAuthRequired
-	case discovery.KindVault:
+	case awscli.KindVault:
 		return AuthRequired, CodeInteractive
-	case discovery.KindNetwork, discovery.KindTimeout:
+	case awscli.KindNetwork, awscli.KindTimeout:
 		return Unknown, CodeNetwork
-	case discovery.KindCancelled:
+	case awscli.KindCancelled:
 		return Unknown, CodeError
-	case discovery.KindProfileNotFound, discovery.KindAccessDenied:
+	case awscli.KindProfileNotFound, awscli.KindAccessDenied:
 		return AccessError, CodeError
 	}
 	return AccessError, CodeError

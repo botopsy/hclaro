@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"hclaro/internal/awscli"
 	"hclaro/internal/discovery"
 	"hclaro/internal/discovery/discoverytest"
 	"hclaro/internal/profiles"
@@ -233,7 +234,7 @@ func TestScopedDiscoveryStaysInItsContext(t *testing.T) {
 
 	// Every AWS call was an allowlisted read.
 	for _, args := range runner.Calls() {
-		if !discovery.Allowed(args) || (args[0] != "--version" && !(strings.HasPrefix(args[1], "describe-") || strings.HasPrefix(args[1], "list-") || strings.HasPrefix(args[1], "get-"))) {
+		if !awscli.Allowed(args) || (args[0] != "--version" && !(strings.HasPrefix(args[1], "describe-") || strings.HasPrefix(args[1], "list-") || strings.HasPrefix(args[1], "get-"))) {
 			t.Fatalf("non-read call %v", args)
 		}
 	}

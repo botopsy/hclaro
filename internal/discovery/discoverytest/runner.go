@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"hclaro/fixtures"
-	"hclaro/internal/discovery"
+	"hclaro/internal/awscli"
 )
 
 // Runner answers allowlisted calls from fixtures. Account replaces the account STS reports;
@@ -46,8 +46,8 @@ func option(args []string, name string) string {
 func page(name string) ([]byte, error) { return fixtures.AWS.ReadFile("aws/" + name) }
 
 func (r *Runner) Run(ctx context.Context, environ []string, args []string) ([]byte, error) {
-	if !discovery.Allowed(args) {
-		return nil, &discovery.CallError{Kind: discovery.KindRefused}
+	if !awscli.Allowed(args) {
+		return nil, &awscli.CallError{Kind: awscli.KindRefused}
 	}
 	r.mu.Lock()
 	r.calls = append(r.calls, slices.Clone(args))
@@ -94,5 +94,5 @@ func (r *Runner) Run(ctx context.Context, environ []string, args []string) ([]by
 		}
 		return page("rds-describe-db-instances.json")
 	}
-	return nil, &discovery.CallError{Kind: discovery.KindFailed}
+	return nil, &awscli.CallError{Kind: awscli.KindFailed}
 }

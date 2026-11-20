@@ -18,6 +18,7 @@ import (
 	"hclaro/internal/api"
 	"hclaro/internal/assist"
 	"hclaro/internal/awsauth"
+	"hclaro/internal/awscli"
 	"hclaro/internal/awsvault"
 	"hclaro/internal/cost"
 	"hclaro/internal/discovery"
@@ -270,14 +271,14 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	gitService := gitctx.New()
 	manager.Git = gitService
 	hub.Git = gitService
-	manager.IdentityProbe = preflight.AWSIdentity
+	manager.IdentityProbe = awscli.AWSIdentity
 	// Hub execution scopes (when enabled) gather the same preflight facts.
-	hub.GitProbe, hub.IdentityProbe = gitProbe, preflight.AWSIdentity
+	hub.GitProbe, hub.IdentityProbe = gitProbe, awscli.AWSIdentity
 	// AWS authentication (M20): STS checks and AWS CLI sign-ins only on explicit request.
 	hub.Auth = awsauth.New()
 	manager.AuthEpoch = hub.Auth.Epoch
 	// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
-	manager.Discovery = discovery.New(discovery.Exec{})
+	manager.Discovery = discovery.New(awscli.Exec{})
 	hub.Discovery = manager.Discovery
 	// Cost estimation (M17): off until the user opts in after the disclosure; never in
 	// strict local-only mode. Only sanitized aggregates are saved in the config folder.
