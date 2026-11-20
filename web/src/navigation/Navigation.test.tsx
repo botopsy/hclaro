@@ -4,9 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import golden from '../../../fixtures/discovery/scan.golden.json';
 import App from '../App';
-import { parseRoute, workbenchKey } from '../router';
+import { contextPath, isExplorerView, parseRoute, workbenchKey } from '../router';
 import type { DiscoveryOptions, Project, ProjectList, Resource, Workspace } from '../types';
-import { importDiscoveryTabs, isActive, navItem, navItems, navState, viewTrail, type NavContext } from './config';
+import { globalPages, importDiscoveryTabs, isActive, navItem, navItems, navState, pages, viewTrail, type NavContext, type View } from './config';
 
 const hubId = 'a'.repeat(32);
 const otherId = 'b'.repeat(32);
@@ -132,6 +132,16 @@ describe('Navigation model', () => {
     expect(isActive(navItem('history'), parseRoute('/history'), 'Resources')).toBe(true);
     expect(isActive(navItem('resources'), parseRoute(`/projects/${hubId}/workspaces/dev/resources`), 'Resources')).toBe(true);
   });
+  it('routes every page with a segment from the page table, and only those', () => {
+    for (const [view, page] of Object.entries(pages) as [View, (typeof pages)[View]][]) {
+      expect(isExplorerView(view)).toBe(!!page.segment);
+      if (!isExplorerView(view)) continue;
+      expect(parseRoute(contextPath(hubId, 'dev', view))).toEqual({ kind: 'context', projectId: hubId, workspace: 'dev', view });
+    }
+    expect(parseRoute(`/projects/${hubId}/workspaces/dev/settings`)).toEqual({ kind: 'project', projectId: hubId });
+    for (const kind of ['hub', 'compare', 'history'] as const) expect(parseRoute(globalPages[kind].path)).toEqual({ kind });
+  });
+
   it('names pages for breadcrumbs and keys workbenches per context', () => {
     expect(viewTrail('Discovery')).toEqual(['Import & discovery', 'Discover cloud resources']);
     expect(viewTrail('Drift')).toEqual(['Drift detection']);
