@@ -304,7 +304,7 @@ func TestGraphUnsupported(t *testing.T) {
 	if ok, reason := m.GraphCapability(); !ok {
 		t.Fatal(reason)
 	}
-	if _, _, err := NewManager(workspace.New(workspace.Info{}), nil, "").StartGraph(GraphStart{}); err == nil {
+	if _, _, err := New(workspace.New(workspace.Info{}), nil, "", Deps{}).StartGraph(GraphStart{}); err == nil {
 		t.Fatal("graph accepted without a planner")
 	}
 }

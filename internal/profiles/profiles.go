@@ -336,6 +336,13 @@ func (s *Store) mutate(change func(*document) error) error {
 	if s.status != Ready {
 		return ErrUnavailable
 	}
+	// The lock spans the re-read and the write, so another process's change is never overwritten.
+	unlock, err := safefile.Lock(s.path)
+	if err != nil {
+		s.notice = "The execution profile file cannot be locked against other Hclaro processes, so nothing was changed: " + err.Error()
+		return ErrUnavailable
+	}
+	defer unlock()
 	doc, err := s.read()
 	if err != nil {
 		return ErrUnavailable

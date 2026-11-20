@@ -25,6 +25,7 @@ func id(n int) string { return fmt.Sprintf("%032x", n) }
 func open(t *testing.T, dir string) *Store {
 	t.Helper()
 	s := Open(dir, t0, Sources{})
+	t.Cleanup(s.Close) // Windows cannot remove the folder while its session lock is open
 	s.Now = func() time.Time { return t0 }
 	return s
 }
@@ -97,6 +98,11 @@ func TestRestartPersistsAndMarksInterrupted(t *testing.T) {
 	if e, _ := s.Get(id(2)); e.Status != StatusRunning || e.Outcome.Result != "running" {
 		t.Fatalf("%+v", e)
 	}
+	// A second process opening history while this one still runs keeps its operations running.
+	if e, _ := open(t, dir).Get(id(2)); e.Status != StatusRunning {
+		t.Fatalf("a live process's operation was marked interrupted: %+v", e)
+	}
+	s.Close() // the process stops
 	again := open(t, dir)
 	if len(again.List(Filter{})) != 3 {
 		t.Fatal("entries were not kept across a restart")
@@ -240,6 +246,7 @@ func TestMigrationUpgradesOlderSchema(t *testing.T) {
 		return json.Marshal(doc)
 	}}
 	s := OpenWith(dir, t0, migrations)
+	t.Cleanup(s.Close)
 	if status, notice, _ := s.Status(); status != Ready || !strings.Contains(notice, "upgraded from schema 0 to schema 1") {
 		t.Fatal(status, notice)
 	}
@@ -253,7 +260,9 @@ func TestMigrationUpgradesOlderSchema(t *testing.T) {
 	}
 	other := t.TempDir()
 	_ = os.WriteFile(filepath.Join(other, FileName), []byte(legacy), 0o600)
-	if _, notice, _ := OpenWith(other, t0, nil).Status(); !strings.Contains(notice, "no upgrade from schema 0") {
+	unmigrated := OpenWith(other, t0, nil)
+	t.Cleanup(unmigrated.Close)
+	if _, notice, _ := unmigrated.Status(); !strings.Contains(notice, "no upgrade from schema 0") {
 		t.Fatal(notice)
 	}
 }

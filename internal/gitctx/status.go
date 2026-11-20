@@ -113,13 +113,6 @@ func New() *Service {
 // serves each request from a fresh process; production keeps the random per-process key.
 func (s *Service) UseKey(key []byte) { s.ids = ids{key: append([]byte(nil), key...)} }
 
-// NewWith returns a Service with injected dependencies (tests).
-func NewWith(r Runner, open func(context.Context, string) error) *Service {
-	s := New()
-	s.Runner, s.OpenURL = r, open
-	return s
-}
-
 func (s *Service) environ() []string {
 	if s.Environ != nil {
 		return s.Environ()

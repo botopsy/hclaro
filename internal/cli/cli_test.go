@@ -58,6 +58,7 @@ func TestExportHistory(t *testing.T) {
 	config := t.TempDir()
 	t.Setenv("HCLARO_CONFIG_DIR", config)
 	store := history.Open(config, time.Now(), history.Sources{})
+	t.Cleanup(store.Close)
 	store.Record(operations.Record{Operation: operations.Operation{ID: strings.Repeat("a", 32), Kind: "plan", Status: operations.Failed, StartedAt: time.Now().UTC().Format(time.RFC3339), Diagnostic: &operations.Diagnostic{Code: "plan_failed", Message: "password=" + fixtures.Canary}}, Root: "/synthetic/net", Engine: "terraform", Final: true}.Event())
 	out := filepath.Join(t.TempDir(), "history.json")
 	var log strings.Builder

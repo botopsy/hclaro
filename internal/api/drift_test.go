@@ -53,7 +53,7 @@ func newDriftServer(t *testing.T, fake *enginetest.Fake) (*planServer, *workspac
 	fake.VersionValue, fake.WorkspaceValue, fake.StateJSON = "1.9.8", "demo", fixtures.State
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	manager := operations.NewManager(store, fake, t.TempDir())
+	manager := operations.New(store, fake, t.TempDir(), operations.Deps{})
 	manager.TempDir = t.TempDir()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
 	services := &Services{}
@@ -164,7 +164,7 @@ func TestDriftScanAPIFailuresAndUnsupported(t *testing.T) {
 	remote := &enginetest.Fake{VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "remote", ExecutionMode: "remote-exec"})
 	store.Load(context.Background(), remote, "terraform", nil)
-	manager := operations.NewManager(store, remote, t.TempDir())
+	manager := operations.New(store, remote, t.TempDir(), operations.Deps{})
 	t.Cleanup(func() { manager.Close(time.Second) })
 	services := &Services{}
 	rs := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), remote, manager, services}

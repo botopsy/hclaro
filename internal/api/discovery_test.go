@@ -247,7 +247,7 @@ func TestDiscoveryUnavailableAndRouteGuard(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	store := workspace.New(workspace.Info{})
-	manager := operations.NewManager(store, &enginetest.Fake{}, "")
+	manager := operations.New(store, &enginetest.Fake{}, "", operations.Deps{})
 	services := &Services{}
 	runner := &discoverytest.Runner{}
 	services.Discovery = discovery.New(runner)

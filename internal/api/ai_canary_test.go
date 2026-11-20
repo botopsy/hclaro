@@ -143,11 +143,12 @@ resource "aws_s3_bucket" "legacy_logs" {}
 	fake := &enginetest.Fake{Lines: lines(fixtures.PlanLog), PlanJSON: fixtures.PlanAllActions, VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: canaryState(t), Root: root}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	manager := operations.NewManager(store, fake, root)
+	manager := operations.New(store, fake, root, operations.Deps{})
 	services := &Services{}
 	manager.TempDir = t.TempDir()
 	histDir := t.TempDir()
 	hist := history.Open(histDir, time.Now(), history.Sources{})
+	t.Cleanup(hist.Close)
 	manager.Recorder = hist
 	services.Assist = assist.NewSession(false, &assist.CLI{Adapter: assist.Claude, Path: exe})
 	services.Assist.Record = func(r assist.RunRecord) { hist.Record(r.Event()) }

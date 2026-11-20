@@ -67,7 +67,7 @@ func escapePath(p string) string {
 }
 
 // OpenURL hands a URL to the operating system's URL handler with a fixed argv. It is only
-// called with URLs built by EditorURL.
+// called with URLs Hclaro built: EditorURL's, and the CLI's private session URL.
 func OpenURL(ctx context.Context, link string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

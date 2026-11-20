@@ -228,6 +228,12 @@ func (r *Registry) mutate(change func([]Record) ([]Record, error)) ([]Record, er
 	if r.status != RegistryReady {
 		return nil, ErrRegistryUnavailable
 	}
+	// The lock spans the re-read and the write, so another process's change is never overwritten.
+	unlock, err := safefile.Lock(r.path)
+	if err != nil {
+		return nil, ErrRegistryUnavailable
+	}
+	defer unlock()
 	records, err := r.read()
 	if err != nil {
 		return nil, ErrRegistryUnavailable

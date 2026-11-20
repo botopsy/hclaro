@@ -77,7 +77,7 @@ func newScopedServer(t *testing.T) *scopedServer {
 	fake := &enginetest.Fake{Lines: bytes.Split(bytes.TrimSpace(fixtures.PlanLog), []byte("\n")), PlanJSON: fixtures.PlanAllActions, VersionValue: "1.9.8", WorkspaceValue: "demo", StateJSON: fixtures.State}
 	store := workspace.New(workspace.Info{Project: "demo", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	launch := operations.NewManager(store, fake, t.TempDir())
+	launch := operations.New(store, fake, t.TempDir(), operations.Deps{})
 	launch.TempDir = t.TempDir()
 	launch.Locks = hub.Locks
 	services := &Services{}

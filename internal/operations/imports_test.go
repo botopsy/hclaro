@@ -40,7 +40,7 @@ func importSetup(t *testing.T, fake *enginetest.Fake, files map[string]string) (
 		}
 	}
 	fake.Root = root
-	m := NewManager(store, fake, root)
+	m := New(store, fake, root, Deps{})
 	m.TempDir = t.TempDir()
 	t.Cleanup(func() { m.Close(5 * time.Second) })
 	return m, root
@@ -229,7 +229,7 @@ func TestImportUnavailableWithoutLocalPlanning(t *testing.T) {
 		t.Fatalf("%+v", caps)
 	}
 	root, _ := filepath.EvalSymlinks(t.TempDir())
-	m := NewManager(store, fake, root)
+	m := New(store, fake, root, Deps{})
 	t.Cleanup(func() { m.Close(time.Second) })
 	// The preview and recipe still work; starting does not.
 	p := m.PreviewImport(imports.Request{Address: "aws_s3_bucket.x", ID: "x", File: "a.tf"})

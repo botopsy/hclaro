@@ -120,10 +120,16 @@ func (s *AggregateStore) write(records []AggregateRecord) error {
 	return safefile.WriteAtomic(filepath.Dir(s.path), filepath.Base(s.path), ".cost-estimates-", b)
 }
 
-// Add appends a record, keeping the last 50.
+// Add appends a record, keeping the last 50. Like Clear, it re-reads and writes the file under
+// a lock shared with other Hclaro processes.
 func (s *AggregateStore) Add(r AggregateRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, err := safefile.Lock(s.path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	records, newer := s.read()
 	if newer {
 		return ErrNewerStore
@@ -153,6 +159,12 @@ func (s *AggregateStore) List(projectKey string) []AggregateRecord {
 func (s *AggregateStore) Clear(projectKey string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// The lock spans the re-read and the write, so another process's change is never overwritten.
+	unlock, err := safefile.Lock(s.path)
+	if err != nil {
+		return 0, err
+	}
+	defer unlock()
 	// A newer file reads as empty, so nothing is removed and it is never written.
 	records, _ := s.read()
 	kept := records[:0]

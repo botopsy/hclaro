@@ -64,10 +64,11 @@ func sourceSetup(t *testing.T, fake *enginetest.Fake) (*Manager, string, string,
 	gitFixture(t, repo, "commit", "-q", "-m", "initial")
 	store := workspace.New(workspace.Info{Project: "app", Initialized: true, Backend: "local", ExecutionMode: "local-cli"})
 	store.Load(context.Background(), fake, "terraform", nil)
-	m := NewManager(store, fake, root)
+	m := New(store, fake, root, Deps{})
 	m.TempDir = t.TempDir()
 	calls := &[][]string{}
-	m.Git = gitctx.NewWith(gitctx.Exec{Observe: func(a []string) { *calls = append(*calls, a) }}, nil)
+	m.Git = gitctx.New()
+	m.Git.Runner, m.Git.OpenURL = gitctx.Exec{Observe: func(a []string) { *calls = append(*calls, a) }}, nil
 	m.Git.Environ = func() []string { return nil }
 	m.GitProbe = (&gitState{r: clean}).probe
 	t.Cleanup(func() {

@@ -45,10 +45,11 @@ func newHarness(t *testing.T, fake *enginetest.Fake, dir string) *harness {
 	if err := os.WriteFile(filepath.Join(root, "terraform.tfvars"), []byte(`note = "`+knownValue+`"`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	m := operations.NewManager(ws, fake, root)
+	m := operations.New(ws, fake, root, operations.Deps{})
 	m.TempDir = t.TempDir()
 	m.Reload = func(context.Context) {}
 	store := Open(dir, time.Now(), Sources{})
+	t.Cleanup(store.Close)
 	m.Recorder = store
 	t.Cleanup(func() { m.Close(5 * time.Second) })
 	return &harness{t, fake, m, ws, store, dir, root}
@@ -228,6 +229,7 @@ func TestCancelledApplyIsPartialAndLinkedToItsPlan(t *testing.T) {
 
 func TestHubInitIsRecordedWithProject(t *testing.T) {
 	store := Open(t.TempDir(), time.Now(), Sources{})
+	t.Cleanup(store.Close)
 	root := t.TempDir()
 	store.UseProject(func(r string) (string, string, bool) { return id(77), "network", r == root })
 	inits := operations.NewInits()

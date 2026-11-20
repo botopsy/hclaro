@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -173,9 +174,7 @@ func listResources(w http.ResponseWriter, r *http.Request, snap workspace.Snapsh
 		matches = append(matches, resource)
 	}
 	if q.Get("sort") == "desc" {
-		for l, h := 0, len(matches)-1; l < h; l, h = l+1, h-1 {
-			matches[l], matches[h] = matches[h], matches[l]
-		}
+		slices.Reverse(matches)
 	} else if q.Get("sort") != "" && q.Get("sort") != "asc" {
 		errorJSON(w, 400, "invalid_sort")
 		return

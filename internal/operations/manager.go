@@ -269,11 +269,6 @@ type Deps struct {
 	StateIDs func(typ string, attrs map[string]any) ([]string, bool)
 }
 
-// NewManager is New without shared services (tests).
-func NewManager(store *workspace.Store, planner engine.Planner, root string) *Manager {
-	return New(store, planner, root, Deps{})
-}
-
 // New returns the operation manager of one project root and workspace.
 func New(store *workspace.Store, planner engine.Planner, root string, deps Deps) *Manager {
 	base, stop := context.WithCancel(context.Background())
