@@ -1,3 +1,4 @@
+import { readJSON, storageKeys } from '../lib/storage';
 // Theme resolution shared by the first paint (main.tsx) and the Settings preference (App.tsx).
 // The stylesheet already follows the system palette through color-scheme before any script runs;
 // applying the saved preference before React renders keeps a pinned theme from flashing.
@@ -7,12 +8,8 @@ export type ThemePreference = 'system' | 'light' | 'dark';
 const chrome = { dark: '#0B1220', light: '#F4F4F0' } as const;
 
 export function savedTheme(): ThemePreference {
-  try {
-    const theme = JSON.parse(localStorage.getItem('hclaro.preferences') || '{}').theme;
-    return theme === 'light' || theme === 'dark' ? theme : 'system';
-  } catch {
-    return 'system';
-  }
+  const theme = (readJSON('local', storageKeys.preferences) as { theme?: unknown } | null | undefined)?.theme;
+  return theme === 'light' || theme === 'dark' ? theme : 'system';
 }
 
 export function resolveTheme(preference: ThemePreference): 'light' | 'dark' {

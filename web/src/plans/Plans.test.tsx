@@ -7,7 +7,7 @@ import golden from '../../../fixtures/plan/all-actions.golden.json';
 import unsupportedGolden from '../../../fixtures/plan/unknown-actions.golden.json';
 import { PlansView } from './PlansView';
 import { ApplyDialog } from './ApplyDialog';
-import { planRoute } from './routes';
+import { planRoute } from '../lib/scope';
 import type { Approval, Operation, Plan, PlanOptions, PreflightCheck, PreflightReport } from '../types';
 
 const canary = 'DO_NOT_LEAK_HCLARO_TEST_SECRET';

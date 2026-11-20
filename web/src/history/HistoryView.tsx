@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, ChevronLeft, ChevronRight, CircleCheck, CircleDashed, CircleHelp, CircleX, Copy, Download, GitBranch, GitCompareArrows, History, Info, LoaderCircle, LockKeyhole, Search, Settings2, ShieldCheck, Trash2, TriangleAlert, X } from 'lucide-react';
 import { api, download, send } from '../api';
@@ -8,7 +8,10 @@ import { Drawer } from '../components/Drawer';
 import { useModal } from '../components/useModal';
 import { ActionBadge } from '../plans/PlanReview';
 import { OperationLog } from '../plans/OperationLog';
-import { actionOrder, duration, engineLabel } from '../plans/labels';
+import { actionOrder } from '../plans/labels';
+import { dayTime, duration, engineLabel } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
+import { useDebounced } from '../lib/useDebounced';
 
 const PAGE = 50;
 const kinds: Record<HistoryKind, string> = {
@@ -62,14 +65,6 @@ const isPlan = (e: HistoryEntry) => !!e.plan && e.kind !== 'apply';
 export function label(e: HistoryEntry) {
   return (kinds[e.kind] ?? kinds.unknown) + (e.action ? ` · ${e.action.replaceAll('-', ' ')}` : '');
 }
-function when(time?: string) {
-  if (!time) return '—';
-  const d = new Date(time);
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-function message(err: unknown) {
-  return err instanceof Error ? err.message : 'Something went wrong.';
-}
 
 export function StatusBadge({ status }: { status: HistoryStatus }) {
   const Icon = status === 'succeeded' ? CircleCheck : status === 'failed' ? CircleX : status === 'running' ? LoaderCircle : status === 'cancelled' ? CircleDashed : CircleHelp;
@@ -101,7 +96,7 @@ export function HistoryView({ copy }: { copy: (value: string, label: string) => 
   const [kind, setKind] = useState('');
   const [status, setStatus] = useState('');
   const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
+  const query = useDebounced(search.trim(), 250);
   // The page belongs to one filter combination; changing a filter starts at the first page.
   const [paging, setPaging] = useState({ key: '', page: 0 });
   const [selected, setSelected] = useState<string>();
@@ -109,10 +104,6 @@ export function HistoryView({ copy }: { copy: (value: string, label: string) => 
   const [comparing, setComparing] = useState(false);
   const [dialog, setDialog] = useState<'retention' | 'clear'>();
   const [error, setError] = useState('');
-  useEffect(() => {
-    const t = setTimeout(() => setQuery(search.trim()), 250);
-    return () => clearTimeout(t);
-  }, [search]);
   const filters = new URLSearchParams();
   if (projectId) filters.set('projectId', projectId);
   if (workspace) filters.set('workspace', workspace);
@@ -141,7 +132,7 @@ export function HistoryView({ copy }: { copy: (value: string, label: string) => 
     try {
       await download(`history/export?${params.toString()}`, `hclaro-history.${format === 'json' ? 'json' : 'md'}`);
     } catch (err) {
-      setError(message(err));
+      setError(errorMessage(err, 'Something went wrong.'));
     }
   }
   const writable = data?.status === 'ready';
@@ -169,8 +160,8 @@ export function HistoryView({ copy }: { copy: (value: string, label: string) => 
     <div className="table-scroll"><table className="resources-table history-table">
      <thead><tr><th scope="col"><span className="sr-only">Compare</span></th><th scope="col">Started</th><th scope="col">Operation</th><th scope="col">Project · workspace</th><th scope="col">Status</th><th scope="col">Changes</th><th scope="col">Result</th></tr></thead>
      <tbody>{data!.entries.map(e => <tr key={e.id} className={selected === e.id ? 'selected' : ''}>
-      <td>{isPlan(e) && <input type="checkbox" aria-label={`Select ${label(e)} of ${when(e.startedAt)} for comparison`} checked={compare.includes(e.id)} onChange={() => toggleCompare(e)} />}</td>
-      <td className="history-when"><time dateTime={e.startedAt}>{when(e.startedAt)}</time><span className="muted">{e.status === 'running' ? 'running' : duration(e.durationMs)}</span></td>
+      <td>{isPlan(e) && <input type="checkbox" aria-label={`Select ${label(e)} of ${dayTime(e.startedAt)} for comparison`} checked={compare.includes(e.id)} onChange={() => toggleCompare(e)} />}</td>
+      <td className="history-when"><time dateTime={e.startedAt}>{dayTime(e.startedAt)}</time><span className="muted">{e.status === 'running' ? 'running' : duration(e.durationMs)}</span></td>
       <td><button className="resource-button" aria-pressed={selected === e.id} onClick={() => setSelected(e.id)}><span className="resource-text"><strong>{label(e)}</strong><span className="resource-address mono">{e.command.join(' ')}</span></span></button></td>
       <td><span className="history-target"><strong>{e.projectName || '—'}</strong><span className="muted">{e.workspace || 'no workspace'} · {engineLabel(e.engine)}{e.engineVersion ? ` ${e.engineVersion}` : ''}</span></span></td>
       <td><StatusBadge status={e.status} /></td>
@@ -210,7 +201,7 @@ function HistoryDetails({ id, copy, writable, onClose, onDeleted }: { id: string
       await send('DELETE', `history/${id}`, {});
       onDeleted();
     } catch (err) {
-      setError(message(err));
+      setError(errorMessage(err, 'Something went wrong.'));
     }
   }
   const changes = e?.plan?.changes ?? [];
@@ -280,7 +271,7 @@ function CompareDialog({ left, right, onClose }: { left: HistoryEntry; right: Hi
   return <div className="dialog-backdrop">
    <div ref={ref} className="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="history-compare-title">
     <div className="dialog-header"><h2 id="history-compare-title">Compare plan summaries</h2><Button ref={close} variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
-    <p className="muted">{older.projectName} · {older.workspace || 'no workspace'}: plan of {when(older.startedAt)} → plan of {when(newer.startedAt)}. Addresses and actions only; values were never kept.</p>
+    <p className="muted">{older.projectName} · {older.workspace || 'no workspace'}: plan of {dayTime(older.startedAt)} → plan of {dayTime(newer.startedAt)}. Addresses and actions only; values were never kept.</p>
     {result.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Comparing…</div> : result.error ? <div className="empty-state error-state" role="alert"><p>{result.error.message}</p></div> : c && <>
      {c.notices.map(n => <div className="plan-warning" key={n} role="note"><Info size={15} />{n}</div>)}
      <p className="info-line compare-facts"><span>{c.added.length} newly planned</span><span>{c.removed.length} no longer planned</span><span>{c.changed.length} with a different action</span><span>{c.same} unchanged</span></p>
@@ -320,7 +311,7 @@ function RetentionDialog({ current, onClose, onSaved }: { current: HistoryRetent
           await send('PATCH', 'history/retention', { maxEntries: Number(entries), maxAgeDays: Number(days), maxBytes: Math.round(Number(mib) * (1 << 20)) });
           onSaved();
         } catch (err) {
-          setError(message(err));
+          setError(errorMessage(err, 'Something went wrong.'));
         } finally {
           setBusy(false);
         }
@@ -358,7 +349,7 @@ function ClearDialog({ projectName, projectId, workspace, onClose, onCleared }: 
           await send('DELETE', 'history', scope === 'filtered' && projectId ? { confirm: true, projectId, ...(workspace ? { workspace } : {}) } : { confirm: true });
           onCleared();
         } catch (err) {
-          setError(message(err));
+          setError(errorMessage(err, 'Something went wrong.'));
         } finally {
           setBusy(false);
         }

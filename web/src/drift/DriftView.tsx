@@ -8,13 +8,14 @@ import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
 import { useModal } from '../components/useModal';
 import { OperationLog } from '../plans/OperationLog';
-import { clock, engineLabel } from '../plans/labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
 import { ScopeSummary } from '../plans/PreflightDialog';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
-import { activeOperation, operationsQuery } from '../plans/operations';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
+import { activeOperation, operationsQuery } from '../lib/queries';
 import { AskAI } from '../assist/AskAI';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
+import { clock, engineLabel } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
 // Classifications are distinguished by icon and text, never by color alone.
 const classes: Record<DriftClassification, { label: string; icon: LucideIcon; tone: string }> = {
@@ -93,7 +94,7 @@ export function DriftView({
       await client.invalidateQueries({ queryKey: ['operations'] });
       await client.invalidateQueries({ queryKey: ['drift-scans'] });
     } catch (e) {
-      setStartError(e instanceof Error ? e.message : 'The scan could not be started.');
+      setStartError(errorMessage(e, 'The scan could not be started.'));
       void options.refetch();
     } finally {
       setStarting(false);

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { globalPages, pages, pageOf, type ExplorerView } from './navigation/config';
+import { storageKeys, writeStorage } from './lib/storage';
 
 // Client routes. Segments are routing hints only: the server resolves project IDs and
 // workspace names itself and never reads files from them.
@@ -61,9 +62,8 @@ export function consumeDeepLink() {
     if (/^[0-9a-f]{32}$/.test(resource)) linkedResource = { path: window.location.pathname, id: resource };
     const profile = params.get('profile') || '';
     if (profile === 'none' || projectId.test(profile)) {
-      try {
-        sessionStorage.setItem(`hclaro.profile.${route.projectId}`, profile);
-      } catch {/* Without storage the project's default profile applies. */}
+      // Without storage the project's default profile applies.
+      writeStorage('session', storageKeys.profile(route.projectId), profile);
     }
   }
   if (window.location.search) window.history.replaceState(null, '', window.location.pathname);

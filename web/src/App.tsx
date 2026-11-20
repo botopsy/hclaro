@@ -4,12 +4,12 @@ import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRigh
 import { ApiError, api, openInNewTab, post } from './api';
 import type { ReplaceTarget, Resource, ResourcePage } from './types';
 import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
-import { HubView, ProductionBadge, ProjectView } from './hub/HubView';
+import { HubView, ProjectView } from './hub/HubView';
 import { Button } from './components/ui/button';
 import { PlansView } from './plans/PlansView';
 import { OperationsView } from './plans/OperationsView';
-import { scopeKey, scopedPath } from './plans/routes';
-import { activeOperation } from './plans/operations';
+import { scopeKey, scopedPath } from './lib/scope';
+import { activeOperation } from './lib/queries';
 import { ImportView } from './imports/ImportView';
 import { DriftView } from './drift/DriftView';
 import { DiscoveryView } from './discovery/DiscoveryView';
@@ -34,7 +34,10 @@ import { SettingsPanel } from './workbench/SettingsPanel';
 import { PageHeading } from './workbench/PageHeading';
 import { useAssistEnabled } from './assist/AskAI';
 import { AssistantPage } from './assist/AssistantPage';
-import { moduleName, providerName, timeLabel } from './workbench/format';
+import { moduleName, providerName, timeLabel } from './lib/format';
+import { ProductionBadge } from './components/ProductionBadge';
+import { errorMessage } from './lib/errorMessage';
+import { useDebounced } from './lib/useDebounced';
 // Each project workspace gets its own Workbench instance (keyed below), so filters,
 // selections and cached queries can never carry over from another context.
 export default function App() {
@@ -83,13 +86,19 @@ function Workbench({
   // Icon-only mode is a desktop preference; the narrow-screen drawer always shows labels.
   const compact = preferences.sidebar === 'compact' && !narrow;
   const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
   const [module, setModule] = useState<string | undefined>();
   const [provider, setProvider] = useState('');
   const [type, setType] = useState('');
   const [mode, setMode] = useState('');
   const [sort, setSort] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
+  const query = useDebounced(search, 180);
+  // A new search starts at the first page.
+  const [pagedQuery, setPagedQuery] = useState(query);
+  if (pagedQuery !== query) {
+    setPagedQuery(query);
+    setPage(0);
+  }
   // A deep link (for example from a comparison) may name the resource to inspect.
   const [selected, setSelected] = useState<string | undefined>(() => scoped ? takeLinkedResource() : undefined);
   const [treeVisible, setTreeVisible] = useState(true);
@@ -208,7 +217,7 @@ function Workbench({
       await post('workspace/reload', {});
       await workspace.refetch();
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : 'Unable to read the project again.');
+      setNotice(errorMessage(e, 'Unable to read the project again.'));
     } finally {
       setRereading(false);
     }
@@ -236,13 +245,6 @@ function Workbench({
     enabled: !!selected && !!readScope
   });
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setQuery(search);
-      setPage(0);
-    }, 180);
-    return () => window.clearTimeout(timer);
-  }, [search]);
-  useEffect(() => {
     if (onHub) return;
     function keyboard(event: globalThis.KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -268,7 +270,6 @@ function Workbench({
   }
   function resetFilters() {
     setSearch('');
-    setQuery('');
     setModule(undefined);
     setProvider('');
     setType('');

@@ -3,8 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, FilePen, LoaderCircle, Undo2, X } from 'lucide-react';
 import { api, post } from '../api';
 import { Button } from '../components/ui/button';
-import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import type { ChangeView } from '../types';
+import { errorMessage } from '../lib/errorMessage';
 
 // Proposed changes (AI-01.12): a reply may carry whole-file proposals. The server validates each
 // one against the project files and computes the diff; the reply's own text is never trusted.
@@ -49,7 +50,7 @@ function ChangeCard({ scope, id, change }: { scope: PlanScope; id: string; chang
       // A written file changes plans, the Git view and the project context.
       if (action !== 'reject') void client.invalidateQueries();
     } catch (err) {
-      setRefused(err instanceof Error ? err.message : 'The request was refused.');
+      setRefused(errorMessage(err, 'The request was refused.'));
     } finally {
       setBusy(false);
     }

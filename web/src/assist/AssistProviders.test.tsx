@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssistDrawer } from './AskAI';
 import type { AssistProvider } from '../types';
 import { SettingsPanel } from '../workbench/SettingsPanel';
-import type { PlanScope } from '../plans/routes';
+import type { PlanScope } from '../lib/scope';
 
 // AI-01.05, AI-01.14: the workflow does not need Claude Code. Copy-only assistants get their own
 // Copy action and are never run. Fake server only.

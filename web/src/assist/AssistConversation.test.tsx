@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssistDrawer } from './AskAI';
-import type { PlanScope } from '../plans/routes';
+import type { PlanScope } from '../lib/scope';
 
 // AI-01.04 / AI-01.07 / AI-01.08: Review with <assistant> starts a conversation; replies are untrusted and inert; follow-ups,
 // cancel, failure and close. Fake server only.

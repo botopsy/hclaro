@@ -5,9 +5,11 @@ import { Ban, Copy, Download, LoaderCircle, MessageSquareX, Send, Sparkles, Squa
 import { api, ApiError, post } from '../api';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
-import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import type { AssistExport, AssistPackage, AssistProvider, AssistRequest, AssistSettings, Conversation } from '../types';
 import { hasProposal, ProposedChanges, useChanges } from './ProposedChanges';
+import { errorMessage } from '../lib/errorMessage';
+import { saveFile } from '../lib/download';
 
 // AI handoff (AI-01.03) and conversations (AI-01.04, AI-01.07): the server builds a sanitized
 // context package; the user previews it and only Copy, Download or Review with an assistant hands it over.
@@ -69,18 +71,6 @@ export function AskAI({ scope, request, label, note }: { scope?: PlanScope; requ
   </>;
 }
 
-function save(filename: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 // approve replaces "Review with <assistant>" (AI-01.09): the previewed package is attached to a
 // new or open conversation only when the user presses it.
 export type Approve = { label: string; run: (p: AssistPackage, provider: AssistProvider) => Promise<void> };
@@ -117,7 +107,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
         setChatId(chat.id);
       });
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : 'The request could not be sent.');
+      setFailed(errorMessage(err, 'The request could not be sent.'));
     } finally {
       setBusy(false);
     }
@@ -138,10 +128,10 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
           throw new Error('The browser did not allow copying to the clipboard. Use Download .md instead.');
         }
       }
-      else save(e.filename, e.review);
+      else saveFile(new Blob([e.review], { type: 'text/markdown;charset=utf-8' }), e.filename);
       setHanded({ how: how === 'copy' ? 'copied' : 'downloaded', to });
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : 'The package could not be exported.');
+      setFailed(errorMessage(err, 'The package could not be exported.'));
     } finally {
       setBusy(false);
     }
@@ -232,7 +222,7 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
       if (action === 'messages') setText('');
       if (action === 'save') void Promise.all([client.invalidateQueries({ queryKey: ['ai-saved'] }), client.invalidateQueries({ queryKey: ['ai-conversations'] })]);
     } catch (err) {
-      setRefused(err instanceof Error ? err.message : 'The request was refused.');
+      setRefused(errorMessage(err, 'The request was refused.'));
     } finally {
       setBusy(false);
     }

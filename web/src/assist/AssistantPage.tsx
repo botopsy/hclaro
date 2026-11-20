@@ -4,10 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileCode2, FolderOpen, LoaderCircle, MessageSquarePlus, Send, Sparkles, Trash2, Zap } from 'lucide-react';
 import { api, post } from '../api';
 import { Button } from '../components/ui/button';
-import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { ErrorState } from '../workbench/ErrorState';
 import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve } from './AskAI';
 import type { AssistListed, AssistSaved, Conversation } from '../types';
+import { errorMessage } from '../lib/errorMessage';
 
 // The AI Assistant page (AI-01.09): conversations that are not tied to a plan or drift result.
 // A conversation starts with no project data, or with a project package the user previewed in
@@ -67,7 +68,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
       if (action === 'open' && c.id) setSelected(c.id);
       setConfirmAll(false);
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : 'The saved conversation could not be changed.');
+      setFailed(errorMessage(err, 'The saved conversation could not be changed.'));
     }
     await Promise.all([list.refetch(), saved.refetch(), client.invalidateQueries({ queryKey: ['ai-conversation'] })]);
   }
@@ -88,7 +89,7 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
     try {
       await acceptThen(settings!, () => start());
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : 'The conversation could not be started.');
+      setFailed(errorMessage(err, 'The conversation could not be started.'));
     } finally {
       setBusy(false);
     }

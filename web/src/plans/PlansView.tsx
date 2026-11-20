@@ -5,12 +5,13 @@ import { api, ApiError, post } from '../api';
 import { operationActive, type ImportTarget, type Operation, type Plan, type PlanOptions, type PlanSummary, type ReplaceTarget, type ScopedPlanOptions } from '../types';
 import { Button } from '../components/ui/button';
 import { ApplyDialog } from './ApplyDialog';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from './routes';
-import { activeOperation, operationsQuery } from './operations';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
+import { activeOperation, operationsQuery } from '../lib/queries';
 import { OperationLog } from './OperationLog';
 import { PlanReview } from './PlanReview';
 import { PreflightDialog } from './PreflightDialog';
-import { clock } from './labels';
+import { clock } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
 export function PlansView({
   project,
@@ -104,7 +105,7 @@ export function PlansView({
       choosePlan(undefined);
       await client.invalidateQueries({ queryKey: ['operations'] });
     } catch (e) {
-      setStartError(e instanceof Error ? e.message : 'The plan could not be started.');
+      setStartError(errorMessage(e, 'The plan could not be started.'));
       void options.refetch();
     } finally {
       setStarting(false);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { readStorage, storageKeys, writeStorage } from '../lib/storage';
 
-const storageKey = 'hclaro.drawerWidth';
 const minWidth = 360;
 const defaultWidth = 720;
 const step = 40;
@@ -20,12 +20,8 @@ function bound(width: number) {
 }
 
 function savedWidth() {
-  try {
-    const value = Number(localStorage.getItem(storageKey));
-    return Number.isFinite(value) && value > 0 ? value : defaultWidth;
-  } catch {
-    return defaultWidth;
-  }
+  const value = Number(readStorage('local', storageKeys.drawerWidth));
+  return Number.isFinite(value) && value > 0 ? value : defaultWidth;
 }
 
 // Drawer is a non-modal details panel docked to the right edge of the window. The list
@@ -54,11 +50,7 @@ export function Drawer({ label, onClose, children }: { label: string; onClose: (
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, String(preferred));
-    } catch {
-      // Width is a convenience; private windows may block storage.
-    }
+    writeStorage('local', storageKeys.drawerWidth, String(preferred));
   }, [preferred]);
 
   useEffect(() => {

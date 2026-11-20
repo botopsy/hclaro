@@ -6,7 +6,7 @@ import planGolden from '../../../fixtures/plan/all-actions.golden.json';
 import { PlanReview } from '../plans/PlanReview';
 import { AskAI } from './AskAI';
 import type { AssistRequest } from '../types';
-import type { PlanScope } from '../plans/routes';
+import type { PlanScope } from '../lib/scope';
 import type { ImportRequest, Plan } from '../types';
 
 const planId = 'a'.repeat(32);

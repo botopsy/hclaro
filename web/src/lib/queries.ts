@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '../api';
-import { operationActive, type Operation } from '../types';
-import { scopeKey, scopedPath, type PlanScope } from './routes';
+import { operationActive, type Operation, type ProjectList } from '../types';
+import { scopeKey, scopedPath, type PlanScope } from './scope';
 
 export type OperationList = { operations: Operation[] };
 
@@ -20,3 +20,8 @@ export function operationsQuery(scope: PlanScope | undefined) {
 export function activeOperation(list: Operation[] | undefined) {
   return list?.find(operationActive);
 }
+
+export const projectsQuery = {
+  queryKey: ['projects'],
+  queryFn: () => api<ProjectList>('projects')
+};

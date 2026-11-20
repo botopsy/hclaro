@@ -1,33 +1,23 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, ExternalLink, Folder, FolderOpen, FolderPlus, Layers3, LoaderCircle, Pencil, Play, Pin, PinOff, Plus, RefreshCcw, Search, ShieldCheck, Terminal, Trash2, Wrench, X } from 'lucide-react';
-import { api, ApiError, openInNewTab, send } from '../api';
-import type { FolderListing, Project, ProjectList, WorkspaceAction } from '../types';
+import { ApiError, openInNewTab, send } from '../api';
+import type { FolderListing, Project, WorkspaceAction } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { contextPath, navigate, productionLike, projectPath } from '../router';
 import { globalPages } from '../navigation/config';
+import { ProductionBadge } from '../components/ProductionBadge';
+import { projectsQuery } from '../lib/queries';
 import { InitWizard } from './InitWizard';
 import { WorkspaceDialog } from './WorkspaceDialog';
 import { ContextSelector } from '../profiles/ContextSelector';
 import { useProfileSelection } from '../profiles/selection';
 import { HclaroMark } from '../brand/HclaroLogo';
+import { dateTime, engineLabel } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
-export const projectsQuery = {
-  queryKey: ['projects'],
-  queryFn: () => api<ProjectList>('projects')
-};
-function engineName(name?: string) {
-  return name === 'tofu' ? 'OpenTofu' : name === 'terraform' ? 'Terraform' : 'Automatic';
-}
-function when(time?: string) {
-  if (!time) return 'Never opened';
-  const date = new Date(time);
-  return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-}
-function message(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to reach the local Hclaro server. Check that it is still running, then retry.';
-}
+const when = (time?: string) => time ? dateTime(time) : 'Never opened';
 const statusLabel: Record<Project['status'], string> = {
   ready: 'Available',
   missing: 'Folder missing',
@@ -35,9 +25,6 @@ const statusLabel: Record<Project['status'], string> = {
   not_project: 'Not a project',
   path_changed: 'Path changed'
 };
-export function ProductionBadge() {
-  return <span className="prod-badge" title="The name looks production-like. Hclaro cannot verify how critical an environment is."><AlertTriangle size={11} />Production-like name</span>;
-}
 // Moves focus between items marked data-hub-item with the arrow keys.
 function arrowKeys(event: KeyboardEvent<HTMLElement>) {
   if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -78,7 +65,7 @@ export function HubView({ notify }: { notify: (text: string) => void }) {
       await send('PATCH', `projects/${p.id}`, change);
       notify(done);
     } catch (error) {
-      notify(message(error));
+      notify(errorMessage(error));
     }
     await refresh();
   }
@@ -91,12 +78,12 @@ export function HubView({ notify }: { notify: (text: string) => void }) {
     try {
       await send('POST', 'projects/order', { ids });
     } catch (error) {
-      notify(message(error));
+      notify(errorMessage(error));
     }
     await refresh();
   }
   if (list.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading your projects…</p></div>;
-  if (list.error || !data) return <div className="empty-state error-state" role="alert"><AlertTriangle size={28} /><h2>Unable to load the Hub</h2><p>{message(list.error)}</p><Button variant="outline" onClick={() => void list.refetch()}>Retry</Button></div>;
+  if (list.error || !data) return <div className="empty-state error-state" role="alert"><AlertTriangle size={28} /><h2>Unable to load the Hub</h2><p>{errorMessage(list.error)}</p><Button variant="outline" onClick={() => void list.refetch()}>Retry</Button></div>;
   const env = data.environment;
   return <div className="hub">
    {data.registry.notice && <div className={`hub-banner ${writable ? '' : 'hub-banner-warn'}`} role={writable ? 'status' : 'alert'}><AlertTriangle size={15} /><span>{data.registry.notice}</span></div>}
@@ -148,7 +135,7 @@ function ProjectCard({ project: p, writable, first, last, onPin, onMove, onDialo
   onDialog: (kind: 'rename' | 'repair' | 'remove') => void;
 }) {
   const ready = p.status === 'ready';
-  const engine = p.inspection?.engine ? `${engineName(p.inspection.engine)} ${p.inspection.version || ''}`.trim() : p.enginePreference ? `${engineName(p.enginePreference)} · version not checked` : 'Engine not checked';
+  const engine = p.inspection?.engine ? `${enginePreference(p.inspection.engine)} ${p.inspection.version || ''}`.trim() : p.enginePreference ? `${enginePreference(p.enginePreference)} · version not checked` : 'Engine not checked';
   return <li className={`hub-card ${ready ? '' : 'hub-card-problem'}`}>
    <div className="hub-card-main">
     <button className="hub-card-title" data-hub-item onClick={() => navigate(projectPath(p.id))} aria-label={`Open ${p.alias}`}><span className="directory-icon"><FolderOpen size={19} /></span><span><strong>{p.alias}</strong>{p.pinned && <Pin size={12} aria-label="Pinned" className="muted" />}</span></button>
@@ -205,7 +192,7 @@ function AddProjectDialog({ initialPath = '', onClose, onAdded }: {
     try {
       onAdded(await send<Project>('POST', 'projects', { path: path.trim(), alias: alias.trim(), engine }));
     } catch (e) {
-      setError(e instanceof ApiError && e.code === 'duplicate_project' ? 'This folder is already in the Hub.' : message(e));
+      setError(e instanceof ApiError && e.code === 'duplicate_project' ? 'This folder is already in the Hub.' : errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -245,7 +232,7 @@ function FolderChooser({ start, choose }: { start: string; choose: (path: string
         setError('');
       }
     }, e => {
-      if (live) setError(message(e));
+      if (live) setError(errorMessage(e));
     });
     return () => {
       live = false;
@@ -289,7 +276,7 @@ function TextDialog({ title, label, initial, action, description, mono, onClose,
         try {
           await onSubmit(value.trim());
         } catch (err) {
-          setError(message(err));
+          setError(errorMessage(err));
         } finally {
           setBusy(false);
         }
@@ -318,7 +305,7 @@ function RemoveDialog({ project, onClose, onRemoved }: { project: Project; onClo
             const res = await send<{ warning?: string }>('DELETE', `projects/${project.id}`, {});
             onRemoved(res.warning ?? '');
           } catch (e) {
-            setError(message(e));
+            setError(errorMessage(e));
           }
         }}><Trash2 size={14} />Remove from Hub</Button></div>
    </div>
@@ -371,11 +358,11 @@ export function ProjectView({ id }: { id: string }) {
    {current.busy === 'init' && !initOpen && <div className="hub-banner" role="status"><LoaderCircle className="spin" size={15} /><span><strong>Initialization is running.</strong> Workspaces can be listed when it finishes.</span><span className="context-spacer" /><Button size="small" variant="outline" onClick={() => setInitOpen(true)}>Show progress</Button></div>}
    <section className="surface"><div className="surface-heading"><div><h2>{current.alias} {productionLike(current.alias) && <ProductionBadge />}</h2><p className="mono">{current.rootPath}</p></div>{current.status === 'ready' ? <div className="hub-actions"><Button size="small" variant="outline" onClick={() => navigate(contextPath(id, toolsWorkspace, 'Tools'))} title={`Validate, format check, providers and outputs. Opens in workspace ${toolsWorkspace}.`}><Wrench size={13} />Project tools</Button><Button size="small" variant={current.initialized ? 'outline' : 'default'} onClick={() => setInitOpen(true)} disabled={!!current.busy && current.busy !== 'init'}><Play size={13} />{current.initialized ? 'Run init again…' : 'Initialize…'}</Button></div> : <FolderOpen size={18} />}</div>
     {current.status === 'ready' && <div className="project-profile"><ContextSelector projectId={id} selection={profile} workspaces={inspection?.workspaces} /></div>}
-    <dl className="metadata"><div><dt>Engine</dt><dd>{inspection?.engine ? `${engineName(inspection.engine)} ${inspection.version || ''}` : engineName(current.enginePreference)}</dd></div><div><dt>Initialized</dt><dd>{current.initialized ? 'Yes' : 'Not detected'}</dd></div><div><dt>Backend type</dt><dd>{current.backend}</dd></div><div><dt>Execution mode</dt><dd>{current.executionMode}</dd></div><div><dt>Data directory</dt><dd className="mono">{env?.dataDir || '.terraform'}</dd></div><div><dt>Provider lockfile</dt><dd>{current.providerLock ? 'Present' : 'Not detected'}</dd></div></dl>
+    <dl className="metadata"><div><dt>Engine</dt><dd>{inspection?.engine ? `${enginePreference(inspection.engine)} ${inspection.version || ''}` : enginePreference(current.enginePreference)}</dd></div><div><dt>Initialized</dt><dd>{current.initialized ? 'Yes' : 'Not detected'}</dd></div><div><dt>Backend type</dt><dd>{current.backend}</dd></div><div><dt>Execution mode</dt><dd>{current.executionMode}</dd></div><div><dt>Data directory</dt><dd className="mono">{env?.dataDir || '.terraform'}</dd></div><div><dt>Provider lockfile</dt><dd>{current.providerLock ? 'Present' : 'Not detected'}</dd></div></dl>
     {current.status === 'ready' && <SeparateSession rootPath={current.rootPath} engine={current.enginePreference} />}
    </section>
    <section aria-labelledby="workspaces-title"><div className="workspace-heading"><h2 className="hub-section" id="workspaces-title">CLI workspaces</h2>{current.status === 'ready' && <><label className="workspace-advanced"><input type="checkbox" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />Advanced actions</label><Button size="small" variant="outline" disabled={!current.workspaceActions?.change || !!current.busy || !inspection || !!inspection.diagnostic} title={current.workspaceActions?.change ? undefined : current.workspaceActions?.reason} onClick={() => setWorkspaceDialog({ action: 'new' })}><Plus size={13} />New workspace…</Button></>}</div>
-    {current.status !== 'ready' ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{statusLabel[current.status]}</h2><p>{current.problem}</p><Button variant="outline" onClick={() => navigate(globalPages.hub.path)}>Repair or remove in the Hub</Button></div> : inspect.isPending || inspect.isFetching && !inspection ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Listing workspaces</h2><p>Running <code>workspace list</code> through the local CLI. This may contact the backend. No workspace is selected or created.</p></div> : inspect.error ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>Workspaces unavailable</h2><p>{message(inspect.error)}</p><Button variant="outline" onClick={() => void inspect.refetch()}>Try again</Button></div> : inspection?.diagnostic ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{inspection.diagnostic.code === 'uninitialized' ? 'Initialize this project first' : inspection.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspaces unavailable'}</h2><p>{inspection.diagnostic.code === 'uninitialized' ? 'Backend initialization was not detected. Review and run init here, or run it yourself in a terminal. Nothing was initialized automatically.' : inspection.diagnostic.message}</p>{inspection.diagnostic.code === 'uninitialized' && <Button onClick={() => setInitOpen(true)}><Play size={14} />Review and initialize…</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing was initialized or changed.</span></div> : inspection && inspection.workspaces.length === 0 ? <div className="empty-state"><Layers3 size={24} /><h2>No workspaces listed</h2><p>The CLI returned no workspace names Hclaro can display.</p></div> : inspection && <>
+    {current.status !== 'ready' ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{statusLabel[current.status]}</h2><p>{current.problem}</p><Button variant="outline" onClick={() => navigate(globalPages.hub.path)}>Repair or remove in the Hub</Button></div> : inspect.isPending || inspect.isFetching && !inspection ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><h2>Listing workspaces</h2><p>Running <code>workspace list</code> through the local CLI. This may contact the backend. No workspace is selected or created.</p></div> : inspect.error ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>Workspaces unavailable</h2><p>{errorMessage(inspect.error)}</p><Button variant="outline" onClick={() => void inspect.refetch()}>Try again</Button></div> : inspection?.diagnostic ? <div className="empty-state error-state" role="alert"><AlertTriangle size={24} /><h2>{inspection.diagnostic.code === 'uninitialized' ? 'Initialize this project first' : inspection.diagnostic.code === 'missing_cli' ? 'An IaC engine is needed' : 'Workspaces unavailable'}</h2><p>{inspection.diagnostic.code === 'uninitialized' ? 'Backend initialization was not detected. Review and run init here, or run it yourself in a terminal. Nothing was initialized automatically.' : inspection.diagnostic.message}</p>{inspection.diagnostic.code === 'uninitialized' && <Button onClick={() => setInitOpen(true)}><Play size={14} />Review and initialize…</Button>}<span className="safe-note"><ShieldCheck size={13} />Nothing was initialized or changed.</span></div> : inspection && inspection.workspaces.length === 0 ? <div className="empty-state"><Layers3 size={24} /><h2>No workspaces listed</h2><p>The CLI returned no workspace names Hclaro can display.</p></div> : inspection && <>
      <ul className="workspace-list" onKeyDown={arrowKeys}>{inspection.workspaces.map(ws => {
          const isDefault = ws === inspection.cliDefault;
          const deleteBlocked = !current.workspaceActions?.delete ? current.workspaceActions?.deleteReason : ws === 'default' ? 'The default workspace cannot be deleted.' : isDefault ? 'This is the CLI default. Set another workspace as CLI default first.' : !inspection.cliDefault ? 'The CLI default is unknown.' : undefined;
@@ -420,4 +407,8 @@ function SeparateSession({ rootPath, engine }: { rootPath: string; engine?: stri
    <p><strong>The two sessions do not coordinate.</strong> Do not plan, apply, init or change workspaces of this folder in both at the same time.</p>
    <div className="init-command"><code>{command}</code><Button size="small" variant="outline" onClick={() => void navigator.clipboard.writeText(command).then(() => setNote('Command copied'), () => setNote('Clipboard is unavailable. Select and copy the command manually.'))}><Terminal size={13} />Copy command</Button><span className="muted" role="status">{note}</span></div>
   </details>;
+}
+// An empty engine preference means Hclaro picks one automatically.
+function enginePreference(name?: string) {
+  return name ? engineLabel(name) : 'Automatic';
 }

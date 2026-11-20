@@ -5,6 +5,7 @@ import { api, post } from '../api';
 import type { AuthState, AuthStatus } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
+import { errorMessage } from '../lib/errorMessage';
 
 const labels: Record<AuthState, string> = {
   not_configured: 'No AWS profile',
@@ -32,7 +33,7 @@ function StateIcon({ state }: { state: AuthState }) {
   return <CircleHelp size={12} aria-hidden="true" />;
 }
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : 'The request failed.');
+const errorText = (e: unknown) => (errorMessage(e, 'The request failed.'));
 
 export const authQuery = (projectId: string, profileId: string) => ({
   queryKey: ['aws-auth', projectId, profileId],

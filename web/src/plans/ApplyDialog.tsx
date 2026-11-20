@@ -6,12 +6,14 @@ import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { AuthPanel } from '../profiles/AuthPanel';
-import { actionOrder, engineLabel, meta } from './labels';
-import { launchScope, planRoute, type PlanScope } from './routes';
+import { actionOrder, meta } from './labels';
+import { launchScope, planRoute, type PlanScope } from '../lib/scope';
 import { productionLike } from '../router';
-import { ProductionBadge } from '../hub/HubView';
+import { engineLabel } from '../lib/format';
+import { ProductionBadge } from '../components/ProductionBadge';
+import { errorMessage } from '../lib/errorMessage';
 
-const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+const errorText = (e: unknown, fallback: string) => (errorMessage(e, fallback));
 
 function statusLabel(c: PreflightCheck) {
   if (c.status === 'pass') return 'Passed';

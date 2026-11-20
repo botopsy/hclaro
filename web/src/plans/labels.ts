@@ -44,16 +44,3 @@ export function reasonLabel(reason?: string) {
   if (!reason) return undefined;
   return reasons[reason] ?? reason.replaceAll('_', ' ');
 }
-
-export function clock(time?: string) {
-  return time ? new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
-}
-
-export function duration(ms: number) {
-  const seconds = Math.round(ms / 1000);
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-}
-
-export function engineLabel(engine: string) {
-  return engine === 'tofu' ? 'OpenTofu' : engine === 'terraform' ? 'Terraform' : 'The engine';
-}

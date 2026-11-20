@@ -6,10 +6,11 @@ import type { DiscoveryPrefill, ImportOptions, ImportPreview, ImportRequest, Ope
 import { ContextSummary } from '../profiles/ContextSummary';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 import { Button } from '../components/ui/button';
-import { engineLabel } from '../plans/labels';
 import { ScopeSummary } from '../plans/PreflightDialog';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { AskAI } from '../assist/AskAI';
+import { engineLabel } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
 // addressType returns the resource type of an instance address (the server parses it exactly).
 function addressType(address: string) {
@@ -81,7 +82,7 @@ export function ImportView({
     try {
       setPreview(await post<ImportPreview>(scopedPath(scope, 'imports/preview'), { ...request, address: request.address.trim() }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The import could not be checked.');
+      setError(errorMessage(e, 'The import could not be checked.'));
     } finally {
       setChecking(false);
     }
@@ -107,7 +108,7 @@ export function ImportView({
       setConsent(false);
       onStarted(operation);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The import could not be started.');
+      setError(errorMessage(e, 'The import could not be started.'));
       // The file may exist now or the context changed; check again before retrying.
       setPreview(undefined);
       setConsent(false);

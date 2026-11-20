@@ -6,9 +6,10 @@ import { assistSettingsQuery } from '../assist/AskAI';
 import type { AssistProvider, AssistSettings } from '../types';
 import { HclaroLogo } from '../brand/HclaroLogo';
 import { Button } from '../components/ui/button';
-import { editorLabels } from '../git/GitView';
 import type { EditorName } from '../types';
 import type { Preferences } from './preferences';
+import { editorLabels } from '../git/editor';
+import { errorMessage } from '../lib/errorMessage';
 export function SettingsPanel({
   preferences,
   changePreference
@@ -43,7 +44,7 @@ function AssistSetting() {
     try {
       client.setQueryData(assistSettingsQuery.queryKey, await post<AssistSettings>(path, body));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'AI assistance could not be changed.');
+      setError(errorMessage(e, 'AI assistance could not be changed.'));
     }
   }
   const providers = s?.providers ?? [];

@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CircleHelp, Code2, FileCode2, FileLock2, FolderGit2, GitBranch, GitCommitHorizontal, LoaderCircle, LockKeyhole, RefreshCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
-import { ApiError, api, post } from '../api';
-import type { EditorName, GitContext, GitDiff, GitFileStatus, SourceReference } from '../types';
+import { CircleHelp, FileCode2, FileLock2, FolderGit2, GitBranch, GitCommitHorizontal, LoaderCircle, LockKeyhole, RefreshCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { api, post } from '../api';
+import { EditorButtons } from './editor';
+import type { EditorName, GitContext, GitDiff, GitFileStatus } from '../types';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
+import { errorMessage } from '../lib/errorMessage';
 
 // gitPrefix is the API prefix of a project's Git routes: the launch project's are at the
 // API root, a Hub project's under projects/<id>/.
 export function gitPrefix(projectId?: string) {
   return projectId ? `projects/${projectId}/` : '';
 }
-export const editorLabels: Record<EditorName, string> = { vscode: 'VS Code', cursor: 'Cursor' };
 const statusLabels: Record<GitFileStatus['status'], string> = {
   modified: 'Modified',
   added: 'Added',
@@ -21,9 +22,6 @@ const statusLabels: Record<GitFileStatus['status'], string> = {
   conflicted: 'Conflict'
 };
 const kindLabels: Record<GitFileStatus['kind'], string> = { hcl: 'HCL', json: 'JSON', vars: 'Variables', lock: 'Lock file' };
-function message(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to reach the local Hclaro server.';
-}
 export function shortCommit(commit?: string) {
   return commit ? commit.slice(0, 7) : '';
 }
@@ -51,34 +49,6 @@ export function GitBadge({ prefix, onOpen }: { prefix: string | undefined; onOpe
   return <button className="context-item git-badge" onClick={onOpen} title={`Git: ${label}${dirty === undefined ? '' : dirty ? ', uncommitted IaC changes' : ', IaC files clean'}${h.worktree ? ', linked worktree' : ''}. Open Git changes.`} aria-label={`Git ${label}${dirty ? ', uncommitted changes' : ''}. Open Git changes`}><GitBranch size={13} /><strong className="mono">{label}</strong>{dirty !== undefined && <span className={`git-dirty-dot ${dirty ? 'dirty' : 'clean'}`} aria-hidden="true" />}{h.detached && <TriangleAlert size={12} aria-hidden="true" />}</button>;
 }
 
-export function EditorButtons({ prefix, fileId, line, editor, onDone }: { prefix: string; fileId: string; line: number; editor: EditorName; onDone: (text: string) => void }) {
-  const [busy, setBusy] = useState(false);
-  async function open() {
-    setBusy(true);
-    try {
-      const r = await post<{ path: string; line: number }>(`${prefix}editor/open`, { fileId, line, editor });
-      onDone(`Asked ${editorLabels[editor]} to open ${r.path}:${r.line}`);
-    } catch (e) {
-      onDone(message(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return <Button variant="outline" size="small" onClick={() => void open()} disabled={busy} title={`Open line ${line} in ${editorLabels[editor]} through its link handler. Change the editor in Settings.`}><Code2 size={12} />Open in {editorLabels[editor]}</Button>;
-}
-
-export function SourceLink({ prefix, sourcePath, editor, notify }: { prefix: string; sourcePath: string | undefined; editor: EditorName; notify: (text: string) => void }) {
-  const ref = useQuery({
-    queryKey: ['source', sourcePath],
-    queryFn: () => api<SourceReference>(sourcePath!),
-    enabled: !!sourcePath,
-    retry: false
-  });
-  if (!sourcePath) return null;
-  const r = ref.data;
-  return <div className="source-ref" aria-live="polite"><div className="label-row"><span>CONFIGURATION SOURCE</span>{r?.state === 'found' && <span className="best-effort" title={r.reason}>Best effort</span>}</div>{ref.isPending ? <span className="muted"><LoaderCircle className="spin" size={12} /> Locating…</span> : ref.error ? <span className="muted">{ref.error instanceof ApiError && ref.error.code === 'git_unavailable' ? 'Source links are unavailable in this session.' : message(ref.error)}</span> : r && r.state === 'found' && r.fileId && r.line ? <><code className="source-path">{r.path}:{r.line}</code><p className="muted small">{r.reason} The plan and state, not this link, decide what exists and what changes.</p><EditorButtons prefix={prefix} fileId={r.fileId} line={r.line} editor={editor} onDone={notify} /></> : r && <p className="muted small">{r.reason}</p>}</div>;
-}
-
 export function GitView({ projectId, editor, notify }: { projectId?: string; editor: EditorName; notify: (text: string) => void }) {
   const prefix = gitPrefix(projectId);
   const [selected, setSelected] = useState<string>();
@@ -102,7 +72,7 @@ export function GitView({ projectId, editor, notify }: { projectId?: string; edi
     void status.refetch();
   };
   if (status.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Reading the Git working tree with <code>git status</code>. Nothing is changed.</p></div>;
-  if (status.error) return <div className="empty-state error-state" role="alert"><CircleHelp size={28} /><h2>Git context unavailable</h2><p>{message(status.error)}</p><Button variant="outline" onClick={refresh}>Try again</Button></div>;
+  if (status.error) return <div className="empty-state error-state" role="alert"><CircleHelp size={28} /><h2>Git context unavailable</h2><p>{errorMessage(status.error)}</p><Button variant="outline" onClick={refresh}>Try again</Button></div>;
   if (!c) return null;
   if (c.state !== 'repository') return <div className="empty-state" role="status"><FolderGit2 size={28} /><h2>{c.state === 'not_repository' ? 'Not a Git repository' : 'Git context unavailable'}</h2><p>{c.message}</p>{c.state !== 'not_repository' && <Button variant="outline" onClick={refresh}><RefreshCcw size={13} />Read again</Button>}</div>;
   const h = c.head!;
@@ -127,7 +97,7 @@ export function GitView({ projectId, editor, notify }: { projectId?: string; edi
     {file && <Drawer label="Diff inspector" onClose={() => setSelected(undefined)}><div className="inspector-header"><span><FileCode2 size={15} />Changes</span><Button variant="ghost" size="icon" aria-label="Close diff" onClick={() => setSelected(undefined)}><X size={16} /></Button></div><div className="inspector-body git-diff-body">
      <h2 className="mono git-diff-title">{file.path}</h2>
      <p className="muted small">{statusLabels[file.status]} · {file.place === 'module' ? `local module ${file.module}` : 'project root'} · compared with {diff.data?.base === 'none' ? 'nothing (new to Git)' : 'HEAD'}</p>
-     {!file.diffable ? <div className="info-note" role="note"><LockKeyhole size={15} /><span>{file.reason}</span></div> : diff.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Reading the diff…</div> : diff.error ? <div className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{message(diff.error)}</span></div> : diff.data && <DiffView diff={diff.data} prefix={prefix} editor={editor} notify={notify} />}
+     {!file.diffable ? <div className="info-note" role="note"><LockKeyhole size={15} /><span>{file.reason}</span></div> : diff.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Reading the diff…</div> : diff.error ? <div className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{errorMessage(diff.error)}</span></div> : diff.data && <DiffView diff={diff.data} prefix={prefix} editor={editor} notify={notify} />}
      <p className="muted small git-disclaimer">A Git diff shows edited text. Only a plan shows which resources actually change.</p>
     </div></Drawer>}
    </div>}

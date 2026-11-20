@@ -3,11 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, History, LoaderCircle, Terminal } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { OperationLog } from './OperationLog';
-import { clock, duration } from './labels';
 import { navigate } from '../router';
 import { globalPages } from '../navigation/config';
-import { launchScope, type PlanScope } from './routes';
-import { operationsQuery } from './operations';
+import { launchScope, type PlanScope } from '../lib/scope';
+import { operationsQuery } from '../lib/queries';
+import { clock, duration } from '../lib/format';
 
 // scope names the project or Hub workspace whose operations are listed.
 export function OperationsView({ openPlan, scope = launchScope }: { openPlan: (id: string) => void; scope?: PlanScope }) {

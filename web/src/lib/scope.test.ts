@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { launchScope, scopedPath, snapshotPath } from './routes';
+import { launchScope, scopedPath, snapshotPath } from './scope';
 
 describe('scoped API paths', () => {
   const cid = 'a'.repeat(32);

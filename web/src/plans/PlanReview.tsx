@@ -6,11 +6,12 @@ import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, Pla
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
-import { actionOrder, clock, engineLabel, meta, reasonLabel, replaceOrder } from './labels';
+import { actionOrder, meta, reasonLabel, replaceOrder } from './labels';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { CostTab } from './CostTab';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from './routes';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { AskAI } from '../assist/AskAI';
+import { clock, engineLabel } from '../lib/format';
 
 type Tab = 'changes' | 'outputs' | 'drift' | 'cost';
 const pageSize = 200;

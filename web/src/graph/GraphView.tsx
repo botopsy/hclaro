@@ -7,12 +7,13 @@ import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { OperationLog } from '../plans/OperationLog';
 import { ActionBadge } from '../plans/PlanReview';
-import { clock, engineLabel } from '../plans/labels';
 import { ContextSummary, RecordedContext } from '../profiles/ContextSummary';
 import { ScopeSummary } from '../plans/PreflightDialog';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
-import { activeOperation, operationsQuery } from '../plans/operations';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
+import { activeOperation, operationsQuery } from '../lib/queries';
 import { internalKinds, layout, moduleAncestors, NODE_H, NODE_W, nodeForAddress, project, typePrefix, type Point, type Projection, type VisEdge, type VisNode } from './layout';
+import { clock, engineLabel } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
 const kindLabels: Record<string, string> = {
   resource: 'Resource',
@@ -99,7 +100,7 @@ export function GraphView({
       await client.invalidateQueries({ queryKey: ['operations'] });
       await client.invalidateQueries({ queryKey: ['graphs'] });
     } catch (e) {
-      setStartError(e instanceof Error ? e.message : 'The graph could not be generated.');
+      setStartError(errorMessage(e, 'The graph could not be generated.'));
       void options.refetch();
     } finally {
       setStarting(false);

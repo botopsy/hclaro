@@ -3,12 +3,12 @@ import { Box, Braces, ChevronDown, Copy, Database, Folder, LoaderCircle, LockKey
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
-import { SourceLink } from '../git/GitView';
 import { AskAI } from '../assist/AskAI';
-import type { PlanScope } from '../plans/routes';
+import type { PlanScope } from '../lib/scope';
 import type { EditorName, Module, Resource } from '../types';
 import { ErrorState } from './ErrorState';
-import { moduleName, providerName } from './format';
+import { moduleName, providerName } from '../lib/format';
+import { SourceLink } from '../git/editor';
 export function ResourceRow({
   resource: r,
   selected,

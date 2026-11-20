@@ -5,9 +5,10 @@ import { api, ApiError, post } from '../api';
 import type { CostAggregate, CostEstimate, CostItemStatus, CostLineItem, CostProviderCapabilities, ExternalDataDisclosure, Plan } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
-import { clock } from './labels';
 import { ActionBadge } from './PlanReview';
-import type { PlanScope } from './routes';
+import type { PlanScope } from '../lib/scope';
+import { clock } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
 // Amounts arrive as decimal strings rounded to cents. They are shown as received, with an
 // explicit sign and currency code, so no floating-point rounding is added in the browser.
@@ -64,7 +65,7 @@ function LaunchCostTab({ plan }: { plan: Plan }) {
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The request failed.');
+      setError(errorMessage(e, 'The request failed.'));
     } finally {
       setBusy(false);
     }
@@ -132,7 +133,7 @@ function DisclosureDialog({ disclosure: d, onClose, onEnabled }: { disclosure: E
     try {
       onEnabled(await post<CostProviderCapabilities>('cost/opt-in', { acknowledged: true, disclosureVersion: d.version }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Cost estimation could not be turned on.');
+      setError(errorMessage(e, 'Cost estimation could not be turned on.'));
     } finally {
       setBusy(false);
     }

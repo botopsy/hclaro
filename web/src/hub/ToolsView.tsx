@@ -6,8 +6,9 @@ import { operationActive, type ContextInfo, type Operation, type ToolName, type 
 import { RecordedContext } from '../profiles/ContextSummary';
 import { Button } from '../components/ui/button';
 import { OperationLog } from '../plans/OperationLog';
-import { clock, duration } from '../plans/labels';
 import { navigate, projectPath } from '../router';
+import { clock, duration } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
 type ToolInfo = {
   name: ToolName;
@@ -46,9 +47,6 @@ export const tools: ToolInfo[] = [{
 const toolTitle = Object.fromEntries(tools.map(t => [t.name, t.title])) as Record<ToolName, string>;
 const readsState = (tool: ToolName) => tool === 'providers' || tool === 'outputs-metadata';
 
-function message(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to reach the local Hclaro server. Check that it is still running, then retry.';
-}
 export function operationLabel(op: Operation) {
   if (op.kind === 'tool' && op.tool) return toolTitle[op.tool.tool] || 'Project tool';
   if (op.kind === 'init') return 'Init';
@@ -91,7 +89,7 @@ export function ToolsView({ context }: { context: ContextInfo }) {
       setSelected(op.id);
       refresh();
     } catch (e) {
-      setError({ tool, text: message(e), code: e instanceof ApiError ? e.code : '' });
+      setError({ tool, text: errorMessage(e), code: e instanceof ApiError ? e.code : '' });
     } finally {
       setStarting(undefined);
     }
@@ -128,7 +126,7 @@ export function ToolsView({ context }: { context: ContextInfo }) {
      <Button variant="ghost" size="small" onClick={() => void list.refetch()} disabled={list.isFetching}>Refresh</Button>
      <Button variant="ghost" size="small" onClick={() => navigate(projectPath(context.projectId))}>Project page<ArrowRight size={13} /></Button></div>
     {list.isPending ? <p className="muted" role="status"><LoaderCircle className="spin" size={13} /> Loading operations…</p>
-     : list.error ? <p className="dialog-error" role="alert">{message(list.error)}</p>
+     : list.error ? <p className="dialog-error" role="alert">{errorMessage(list.error)}</p>
      : !shown.length ? <div className="empty-state"><Terminal size={24} /><h2>No operations yet</h2><p>Init, workspace commands and project tools you run for this project appear here with their status and sanitized output.</p></div>
      : <table className="resources-table tool-ops"><thead><tr><th scope="col">Operation</th><th scope="col">Workspace</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Duration</th><th scope="col">Result</th></tr></thead><tbody>{shown.map(o => <tr key={o.id} className={selected === o.id ? 'selected' : ''}>
        <td><button className="resource-button" aria-pressed={selected === o.id} onClick={() => setSelected(o.id)}><span className="resource-text"><strong>{operationLabel(o)}</strong><span className="resource-address mono">{o.command.join(' ')}</span></span></button></td>

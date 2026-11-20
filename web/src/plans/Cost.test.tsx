@@ -7,7 +7,7 @@ import golden from '../../../fixtures/cost/estimate.golden.json';
 import planGolden from '../../../fixtures/plan/all-actions.golden.json';
 import { PlanReview } from './PlanReview';
 import { signed } from './CostTab';
-import type { PlanScope } from './routes';
+import type { PlanScope } from '../lib/scope';
 import type { CostEstimate, CostProviderCapabilities, Plan } from '../types';
 
 const canary = 'DO_NOT_LEAK_HCLARO_TEST_SECRET';

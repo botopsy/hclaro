@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { applyTheme } from '../brand/theme';
 import type { EditorName } from '../types';
+import { readJSON, storageKeys, writeStorage } from '../lib/storage';
 
 export type Preferences = {
   theme: 'system' | 'light' | 'dark';
@@ -19,26 +20,21 @@ const defaults: Preferences = {
   sidebar: 'expanded'
 };
 function readPreferences(): Preferences {
-  try {
-    const saved = JSON.parse(localStorage.getItem('hclaro.preferences') || '{}');
-    return {
-      theme: ['system', 'light', 'dark'].includes(saved.theme) ? saved.theme : defaults.theme,
-      density: saved.density === 'compact' ? 'compact' : 'comfortable',
-      grouping: saved.grouping === 'flat' ? 'flat' : 'module',
-      editor: saved.editor === 'cursor' ? 'cursor' : 'vscode',
-      sidebar: saved.sidebar === 'compact' ? 'compact' : 'expanded'
-    };
-  } catch {
-    return defaults;
-  }
+  const saved = (readJSON('local', storageKeys.preferences) ?? {}) as Partial<Record<keyof Preferences, unknown>>;
+  if (typeof saved !== 'object') return defaults;
+  return {
+    theme: saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : defaults.theme,
+    density: saved.density === 'compact' ? 'compact' : 'comfortable',
+    grouping: saved.grouping === 'flat' ? 'flat' : 'module',
+    editor: saved.editor === 'cursor' ? 'cursor' : 'vscode',
+    sidebar: saved.sidebar === 'compact' ? 'compact' : 'expanded'
+  };
 }
 // Validated display preferences, saved in this browser and applied as the theme.
 export function usePreferences() {
   const [preferences, setPreferences] = useState(readPreferences);
   useEffect(() => {
-    try {
-      localStorage.setItem('hclaro.preferences', JSON.stringify(preferences));
-    } catch {/* Preferences are optional. */}
+    writeStorage('local', storageKeys.preferences, JSON.stringify(preferences));
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () => applyTheme(preferences.theme);
     apply();

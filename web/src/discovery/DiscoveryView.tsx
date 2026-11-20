@@ -5,10 +5,11 @@ import { api, ApiError, post } from '../api';
 import type { CloudIdentity, CloudResourceCandidate, DiscoveryMatchStatus, DiscoveryOptions, DiscoveryPrefill, DiscoveryScan, DiscoveryScope } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
-import { clock } from '../plans/labels';
 import { ContextSummary } from '../profiles/ContextSummary';
 import { ScopeSummary } from '../plans/PreflightDialog';
-import { launchScope, scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
+import { clock } from '../lib/format';
+import { errorMessage } from '../lib/errorMessage';
 
 // Labels are distinguished by icon and text, never by color alone.
 const labels: Record<DiscoveryMatchStatus, { label: string; icon: LucideIcon; tone: string; hint: string }> = {
@@ -94,7 +95,7 @@ export function DiscoveryView({
       await post<CloudIdentity>(at(scope, 'identity'), bound(o, profileId, scope));
       await options.refetch();
     } catch (e) {
-      setVerifyError(e instanceof Error ? e.message : 'The AWS context could not be verified.');
+      setVerifyError(errorMessage(e, 'The AWS context could not be verified.'));
     } finally {
       setVerifying(false);
     }
@@ -179,7 +180,7 @@ function ScanPreview({ target, options, identity, profileId, onClose, onStarted 
     try {
       onStarted(await post<DiscoveryScan>(at(target, 'scans'), { identityId: identity.id, scope, acknowledgeApiCalls: true, ...bound(options, profileId, target) }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The scan could not be started.');
+      setError(errorMessage(e, 'The scan could not be started.'));
     } finally {
       setBusy(false);
     }
@@ -246,7 +247,7 @@ function ScanResult({ scope, scan, options, profileId, onPrepared, openResource,
     try {
       onPrepared(await post<DiscoveryPrefill>(at(scope, `scans/${scan.id}/candidates/${c.id}/prepare`), { ...bound(options, profileId, scope), acknowledgeUnknownMapping }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The import could not be prepared.');
+      setError(errorMessage(e, 'The import could not be prepared.'));
     } finally {
       setPreparing(undefined);
       setConfirming(undefined);

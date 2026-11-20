@@ -8,10 +8,14 @@ import { Drawer } from '../components/Drawer';
 import { JsonTree } from '../components/JsonTree';
 import { useModal } from '../components/useModal';
 import { contextPath, productionLike } from '../router';
-import { clock, engineLabel } from '../plans/labels';
-import { ProductionBadge, projectsQuery } from '../hub/HubView';
 import { profilesQuery } from '../profiles/selection';
 import { RecordedContext } from '../profiles/ContextSummary';
+import { clock, engineLabel } from '../lib/format';
+import { ProductionBadge } from '../components/ProductionBadge';
+import { projectsQuery } from '../lib/queries';
+import { errorMessage } from '../lib/errorMessage';
+import { useDebounced } from '../lib/useDebounced';
+import { readJSON, readStorage, storageKeys, writeStorage } from '../lib/storage';
 
 const statuses: Record<MatchStatus, { label: string; short: string; icon: LucideIcon; tone: string; key: keyof StatusCounts }> = {
   'attribute-different': { label: 'Attribute differences', short: 'Different', icon: Pencil, tone: 'update', key: 'different' },
@@ -42,7 +46,7 @@ const workspacePattern = /^[A-Za-z0-9_-]{1,90}$/;
 // server refuses when it looks like a credential.
 function readDraft(): Draft {
   try {
-    const saved = JSON.parse(sessionStorage.getItem('hclaro.compare.draft') || 'null') as Draft | null;
+    const saved = readJSON('session', storageKeys.compareDraft) as Draft | null | undefined;
     if (!saved || typeof saved !== 'object' || !Array.isArray(saved.rules)) return emptyDraft;
     const target = (t?: TargetDraft): TargetDraft => ({
       projectId: t && hex.test(t.projectId) ? t.projectId : '',
@@ -58,23 +62,16 @@ function readDraft(): Draft {
 function str(v: unknown) {
   return typeof v === 'string' ? v.slice(0, 256) : '';
 }
+// Without storage the draft lasts until the page reloads.
 function writeDraft(draft: Draft) {
-  try {
-    sessionStorage.setItem('hclaro.compare.draft', JSON.stringify(draft));
-  } catch {/* Without storage the draft lasts until the page reloads. */}
+  writeStorage('session', storageKeys.compareDraft, JSON.stringify(draft));
 }
 function readComparisonId() {
-  try {
-    const id = sessionStorage.getItem('hclaro.compare.id') || '';
-    return hex.test(id) ? id : undefined;
-  } catch {
-    return undefined;
-  }
+  const id = readStorage('session', storageKeys.compareId) || '';
+  return hex.test(id) ? id : undefined;
 }
 function writeComparisonId(id: string) {
-  try {
-    sessionStorage.setItem('hclaro.compare.id', id);
-  } catch {/* Session only. */}
+  writeStorage('session', storageKeys.compareId, id);
 }
 // Rules are sent without empty optional fields.
 function cleanRules(rules: ComparisonRule[]): ComparisonRule[] {
@@ -125,7 +122,7 @@ export function CompareView({ copy }: { copy: (value: string, label: string) => 
       void client.invalidateQueries({ queryKey: ['comparisons'] });
       void client.invalidateQueries({ queryKey: ['compare-target'] });
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'The comparison could not be started.';
+      const message = errorMessage(e, 'The comparison could not be started.');
       const match = /^Rule (\d+):/.exec(message);
       if (match) setRuleError({ index: Number(match[1]) - 1, reason: message });
       setStartError(message);
@@ -178,7 +175,7 @@ function TargetCard({ side, draft, projects, onChange }: { side: 'left' | 'right
       await post(`projects/${project.id}/inspect`, {});
       await client.invalidateQueries({ queryKey: ['projects'] });
     } catch (e) {
-      setListError(e instanceof Error ? e.message : 'Workspaces could not be listed.');
+      setListError(errorMessage(e, 'Workspaces could not be listed.'));
     } finally {
       setListing(false);
     }
@@ -300,7 +297,7 @@ function ComparisonResult({ id, copy, compareAgain, canCompare }: { id: string; 
     try {
       await download(`comparisons/${id}/export?format=${format}`, `hclaro-comparison-${id.slice(0, 8)}.${format === 'json' ? 'json' : 'md'}`);
     } catch (e) {
-      setExportError(e instanceof Error ? e.message : 'The report could not be exported.');
+      setExportError(errorMessage(e, 'The report could not be exported.'));
     }
   }
   return <div className="plan-review compare-result">
@@ -358,7 +355,7 @@ const PAGE = 100;
 
 function MatchList({ comparison, filter, setFilter, module, setModule, copy }: { comparison: Comparison; filter: MatchStatus[]; setFilter: (f: MatchStatus[]) => void; module?: string; setModule: (m?: string) => void; copy: (value: string, label: string) => Promise<void> }) {
   const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
+  const query = useDebounced(search.trim(), 180);
   const [mode, setMode] = useState('');
   const [type, setType] = useState('');
   // The page resets whenever a filter changes.
@@ -367,10 +364,6 @@ function MatchList({ comparison, filter, setFilter, module, setModule, copy }: {
   const page = paging.key === filterKey ? paging.page : 0;
   const setPage = (next: number) => setPaging({ key: filterKey, page: next });
   const [selected, setSelected] = useState<string>();
-  useEffect(() => {
-    const timer = setTimeout(() => setQuery(search.trim()), 180);
-    return () => clearTimeout(timer);
-  }, [search]);
   const params = useMemo(() => {
     const p = new URLSearchParams();
     if (filter.length) p.set('status', filter.join(','));

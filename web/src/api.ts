@@ -1,12 +1,14 @@
 import type { Operation, OperationEvent } from './types';
+import { saveFile } from './lib/download';
+import { storageKeys } from './lib/storage';
 let token = '';
 let csrf = '';
 export function initializeSession() {
   const params = new URLSearchParams(window.location.hash.slice(1));
   const incoming = params.get('session');
   try {
-    if (incoming && /^[a-f0-9]{64}$/.test(incoming)) sessionStorage.setItem('hclaro.session', incoming);
-    token = sessionStorage.getItem('hclaro.session') || '';
+    if (incoming && /^[a-f0-9]{64}$/.test(incoming)) sessionStorage.setItem(storageKeys.session, incoming);
+    token = sessionStorage.getItem(storageKeys.session) || '';
   } catch {
     token = incoming || '';
   }
@@ -187,13 +189,5 @@ export async function download(path: string, filename: string) {
     cache: 'no-store'
   });
   if (!response.ok) throw await failure(response);
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveFile(await response.blob(), filename);
 }
