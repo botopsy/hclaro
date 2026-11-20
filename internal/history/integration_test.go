@@ -47,7 +47,6 @@ func newHarness(t *testing.T, fake *engine.Fake, dir string) *harness {
 	m.TempDir = t.TempDir()
 	m.Reload = func(context.Context) {}
 	store := Open(dir, time.Now())
-	store.Sync = false
 	m.Recorder = store
 	t.Cleanup(func() { m.Close(5 * time.Second) })
 	return &harness{t, fake, m, ws, store, dir, root}
@@ -227,7 +226,6 @@ func TestCancelledApplyIsPartialAndLinkedToItsPlan(t *testing.T) {
 
 func TestHubInitIsRecordedWithProject(t *testing.T) {
 	store := Open(t.TempDir(), time.Now())
-	store.Sync = false
 	root := t.TempDir()
 	store.Project = func(r string) (string, string, bool) { return id(77), "network", r == root }
 	inits := operations.NewInits()

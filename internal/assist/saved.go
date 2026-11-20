@@ -1,8 +1,6 @@
 package assist
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"hclaro/internal/imports"
+	"hclaro/internal/safefile"
 	"hclaro/internal/state"
 )
 
@@ -49,10 +47,7 @@ var (
 )
 
 // ProjectKey derives the store key of a project root without keeping the path.
-func ProjectKey(root string) string {
-	h := sha256.Sum256([]byte("hclaro-ai\x00" + root))
-	return hex.EncodeToString(h[:8])
-}
+func ProjectKey(root string) string { return safefile.ProjectKey("hclaro-ai", root) }
 
 // Resume modes: how a reopened conversation re-checks its context.
 const (
@@ -134,7 +129,7 @@ func OpenStore(configDir string, now time.Time) *Store {
 			}
 		} else if errors.Is(err, os.ErrNotExist) {
 			b, _ := json.MarshalIndent(map[string]int{"version": savedVersion, "retentionDays": DefaultRetentionDays}, "", "  ")
-			_ = writeAtomic(r, ".", savedSettings, b) // best effort: the defaults apply without the file
+			_ = safefile.WriteAtomicIn(r, savedSettings, tempPrefix, b) // best effort: the defaults apply without the file
 		}
 		r.Close()
 	}
@@ -194,6 +189,24 @@ func (s *Store) plainDir(r *os.Root, name string) bool {
 	return ok
 }
 
+// tempPrefix starts the temporary files of the store's and the settings' atomic writes.
+const tempPrefix = ".conversation-"
+
+func isTemp(name string) bool {
+	return strings.HasPrefix(name, tempPrefix) && strings.HasSuffix(name, ".tmp")
+}
+
+// sweepTemp deletes the temporary files of writes in folder r that did not finish. A file
+// younger than an hour may belong to a write still running in another Hclaro process (the
+// settings write does not take the store lock), so it is left for a later sweep.
+func sweepTemp(r *os.Root, now time.Time) {
+	for _, f := range names(r, ".") {
+		if info, err := r.Lstat(f); err == nil && isTemp(f) && info.ModTime().Before(now.Add(-time.Hour)) {
+			_ = r.Remove(f)
+		}
+	}
+}
+
 // ours reports whether name is a file the store writes: a conversation or a temporary file.
 // Sweep and delete-all never touch anything else.
 func ours(name string) bool {
@@ -201,7 +214,7 @@ func ours(name string) bool {
 	if !ok {
 		id, ok = strings.CutSuffix(name, ".backup") // AI-01.12 backups, swept like conversations
 	}
-	return ok && savedID.MatchString(id) || strings.HasPrefix(name, ".conversation-") && strings.HasSuffix(name, ".tmp")
+	return ok && savedID.MatchString(id) || isTemp(name)
 }
 
 // names lists the entries of folder name in r.
@@ -220,17 +233,18 @@ func names(r *os.Root, name string) []string {
 func (s *Store) Sweep(now time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// The configuration folder holds ai.json, written the same way (Session.savePrefs).
+	if cfg, err := os.OpenRoot(s.config); err == nil {
+		sweepTemp(cfg, now)
+		cfg.Close()
+	}
 	r, err := s.root(false)
 	if err != nil {
 		return 0
 	}
 	defer r.Close()
 	n := 0
-	for _, f := range names(r, ".") {
-		if strings.HasPrefix(f, ".conversation-") && strings.HasSuffix(f, ".tmp") {
-			_ = r.Remove(f) // a settings write that did not finish
-		}
-	}
+	sweepTemp(r, now)
 	for _, key := range names(r, ".") {
 		if !projectKey.MatchString(key) || !s.plainDir(r, key) {
 			continue
@@ -300,7 +314,7 @@ func (s *Store) write(doc savedDoc) error {
 		return errNotPlain
 	}
 	_ = r.Chmod(doc.ProjectKey, 0o700)
-	return writeAtomic(r, doc.ProjectKey, path, b)
+	return safefile.WriteAtomicIn(r, path, tempPrefix, b)
 }
 
 // Backup keeps a copy of a project file before an AI-proposed change replaces it (AI-01.12),
@@ -324,7 +338,7 @@ func (s *Store) Backup(key string, data []byte) (string, error) {
 	if !s.plainDir(r, key) {
 		return "", errNotPlain
 	}
-	return id, writeAtomic(r, key, filepath.Join(key, id+".backup"), data)
+	return id, safefile.WriteAtomicIn(r, filepath.Join(key, id+".backup"), tempPrefix, data)
 }
 
 // ReadBackup returns backup id of project key.
@@ -359,7 +373,7 @@ func (s *Store) RemoveBackup(key, id string) {
 }
 
 // asideRecord owns one recovery artifact of a proposed change (AI-01.12): the file a replacement
-// or removal moved aside, imports.AsideName(id) in the folder of Path inside Root. The backup with
+// or removal moved aside, safefile.AsideName(id) in the folder of Path inside Root. The backup with
 // the same ID holds the bytes the artifact was verified to hold. Done is false while the change
 // runs: a record still not done at startup means Hclaro stopped in the middle of it.
 type asideRecord struct {
@@ -414,7 +428,7 @@ func (s *Store) writeAside(key, id string, rec asideRecord) error {
 	if !s.plainDir(r, key) {
 		return errNotPlain
 	}
-	return writeAtomic(r, key, filepath.Join(key, id+".aside"), b)
+	return safefile.WriteAtomicIn(r, filepath.Join(key, id+".aside"), tempPrefix, b)
 }
 
 // sweepAside handles one recovery artifact at startup. Callers hold mu.
@@ -435,8 +449,8 @@ func (s *Store) sweepAside(r *os.Root, key, id string, now time.Time) {
 	expired := now.Sub(info.ModTime()) > s.retention
 	aside, target := "", ""
 	if err == nil && json.Unmarshal(b, &rec) == nil && rec.Version == 1 && filepath.IsAbs(rec.Root) && validChangePath(rec.Path) {
-		if dir, err := imports.SafeDir(rec.Root, rec.Path); err == nil {
-			aside, target = filepath.Join(dir, imports.AsideName(id)), filepath.Join(dir, path.Base(rec.Path))
+		if dir, err := safefile.SafeDir(rec.Root, rec.Path); err == nil {
+			aside, target = filepath.Join(dir, safefile.AsideName(id)), filepath.Join(dir, path.Base(rec.Path))
 		}
 	}
 	backup, berr := readFile(r, filepath.Join(key, id+".backup"), maxProjectFile)
@@ -455,7 +469,7 @@ func (s *Store) sweepAside(r *os.Root, key, id string, now time.Time) {
 		_ = r.Remove(filepath.Join(key, id+".backup"))
 	} else if !rec.Done {
 		if b, err := json.Marshal(asideRecord{Version: 1, Root: rec.Root, Path: rec.Path, Done: true}); err == nil {
-			_ = writeAtomic(r, key, name, b) // best effort: the next sweep marks it done again
+			_ = safefile.WriteAtomicIn(r, name, tempPrefix, b) // best effort: the next sweep marks it done again
 		}
 	}
 }
@@ -624,30 +638,6 @@ func readFile(r *os.Root, name string, limit int64) ([]byte, error) {
 		return nil, errors.New("not a readable file")
 	}
 	return io.ReadAll(io.LimitReader(f, limit+1))
-}
-
-// writeAtomic writes path in r through a new temporary file in dir (exclusive create, 0600)
-// renamed over it. Rename replaces a link at path itself, never its target. A crash before
-// the rename leaves the old file and a temporary file that the next startup deletes; the folder
-// is not synced, so a power loss can bring back the previous version.
-func writeAtomic(r *os.Root, dir, path string, b []byte) error {
-	tmp := filepath.Join(dir, ".conversation-"+randomID()+".tmp")
-	f, err := r.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	_, werr := f.Write(b)
-	serr := f.Sync()
-	cerr := f.Close()
-	if err := errors.Join(werr, serr, cerr); err != nil {
-		_ = r.Remove(tmp)
-		return err
-	}
-	if err := r.Rename(tmp, path); err != nil {
-		_ = r.Remove(tmp)
-		return err
-	}
-	return nil
 }
 
 // titleOf is the first user message, truncated, or the review or quick action prompt; never

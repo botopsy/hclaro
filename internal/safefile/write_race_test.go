@@ -1,4 +1,4 @@
-package imports
+package safefile
 
 import (
 	"bytes"

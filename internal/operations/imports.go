@@ -11,6 +11,7 @@ import (
 	"hclaro/internal/discovery"
 	"hclaro/internal/imports"
 	"hclaro/internal/plan"
+	"hclaro/internal/safefile"
 	"hclaro/internal/workspace"
 )
 
@@ -126,7 +127,7 @@ func (m *Manager) StartImport(req ImportRequest) (Operation, error) {
 		}
 	}
 	switch err := imports.WriteNew(m.root, preview.File, []byte(preview.Content)); {
-	case errors.Is(err, imports.ErrFileExists):
+	case errors.Is(err, safefile.ErrFileExists):
 		release()
 		return Operation{}, reject("file_exists", fmt.Sprintf("%s already exists. Nothing was written.", preview.File))
 	case err != nil:

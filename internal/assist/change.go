@@ -16,7 +16,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"hclaro/internal/imports"
+	"hclaro/internal/redact"
+	"hclaro/internal/safefile"
 )
 
 // Proposed changes (AI-01.12, OD-AI-12). A reply may carry whole-file proposals in fenced
@@ -178,7 +179,7 @@ func checkChange(root string, p proposal, git GitFiles) (v ChangeView, old []byt
 	if real, err := filepath.EvalSymlinks(root); err != nil || real != root {
 		return invalid(v, "change_project"), nil
 	}
-	dir, err := imports.SafeDir(root, p.path)
+	dir, err := safefile.SafeDir(root, p.path)
 	if err != nil {
 		return invalid(v, "change_folder"), nil
 	}
@@ -347,7 +348,7 @@ func stripComments(text string) (string, error) {
 				blank(at+j, at+j+2)
 				j++
 			case c == '"':
-				_, end, ok := imports.ReadString(l, j)
+				_, end, ok := redact.ReadString(l, j)
 				if !ok {
 					return "", bad
 				}
@@ -678,8 +679,8 @@ func (s *Session) recordChange(record func(ChangeRecord), t changeTarget, v Chan
 // ApplyChange writes one proposal after validating it again. exclusive runs the write with the
 // workspace's operation lock held and fails without running it when an operation is running.
 // The file must still match what the user reviewed (req). A new file is hard-linked into place
-// (imports.CreateAt). A replaced file is first copied to the backup folder, then replaced with
-// imports.ReplaceAt, which keeps the moved file as a recovery artifact (see moved).
+// (safefile.CreateAt). A replaced file is first copied to the backup folder, then replaced with
+// safefile.ReplaceAt, which keeps the moved file as a recovery artifact (see moved).
 func (s *Session) ApplyChange(key, id string, req ChangeRequest, scope RunScope, git func() GitFiles, exclusive func(func() error) error) (ChangeView, error) {
 	t, err := s.target(key, id, req.Turn, scope)
 	if err != nil {
@@ -708,18 +709,18 @@ func (s *Session) ApplyChange(key, id string, req ChangeRequest, scope RunScope,
 		st := &changeState{view: v}
 		unsettled := false
 		if old == nil {
-			err = imports.CreateAt(scope.Root, p.path, []byte(p.text))
+			err = safefile.CreateAt(scope.Root, p.path, []byte(p.text))
 		} else {
 			// Exactly the bytes in the backup: a file that changed in any way is not replaced.
 			current := func(b []byte) bool { return bytes.Equal(b, old) }
 			st.backup, unsettled, err = s.moved(scope, p.path, old, func(keep string) error {
-				return imports.ReplaceAt(scope.Root, p.path, []byte(p.text), current, keep)
+				return safefile.ReplaceAt(scope.Root, p.path, []byte(p.text), current, keep)
 			})
 			if st.backup != "" {
-				st.view.Aside = imports.AsideName(st.backup)
+				st.view.Aside = safefile.AsideName(st.backup)
 			}
 		}
-		var aside *imports.AsideError
+		var aside *safefile.AsideError
 		switch {
 		case errors.As(err, &aside) && aside.Written:
 			// Written, but another program wrote into the replaced file meanwhile: that version
@@ -780,7 +781,7 @@ func (s *Session) UndoChange(key, id string, turn, index int, scope RunScope, ex
 		// The applied text is backed up too: the file Undo moves aside is its recovery artifact.
 		if st.view.Created {
 			kept, unsettled, err = s.moved(scope, p.path, []byte(p.text), func(keep string) error {
-				return imports.RemoveAt(scope.Root, p.path, applied, keep)
+				return safefile.RemoveAt(scope.Root, p.path, applied, keep)
 			})
 		} else {
 			old, rerr := s.Store.ReadBackup(scope.ProjectKey, st.backup)
@@ -788,13 +789,13 @@ func (s *Session) UndoChange(key, id string, turn, index int, scope RunScope, ex
 				return refuse(RefuseChangeNoUndo) // the backup is gone (retention) or not plain
 			}
 			kept, unsettled, err = s.moved(scope, p.path, []byte(p.text), func(keep string) error {
-				return imports.ReplaceAt(scope.Root, p.path, old, applied, keep)
+				return safefile.ReplaceAt(scope.Root, p.path, old, applied, keep)
 			})
 		}
-		var aside *imports.AsideError
+		var aside *safefile.AsideError
 		switch {
 		case errors.As(err, &aside) && aside.Written:
-		case errors.Is(err, imports.ErrChanged), errors.Is(err, imports.ErrUnsafePath):
+		case errors.Is(err, safefile.ErrChanged), errors.Is(err, safefile.ErrUnsafePath):
 			return refuse(RefuseChangeNoUndo) // edited after apply: never restored over
 		case err != nil:
 			return changeError(err)
@@ -834,8 +835,8 @@ func (s *Session) moved(scope RunScope, rel string, data []byte, op func(keep st
 	}
 	err = op(id)
 	kept := false
-	if dir, derr := imports.SafeDir(scope.Root, rel); derr == nil {
-		_, lerr := os.Lstat(filepath.Join(dir, imports.AsideName(id)))
+	if dir, derr := safefile.SafeDir(scope.Root, rel); derr == nil {
+		_, lerr := os.Lstat(filepath.Join(dir, safefile.AsideName(id)))
 		kept = lerr == nil
 	}
 	unsettled = s.Store.Settle(scope.ProjectKey, id, scope.Root, rel, kept) != nil
@@ -848,11 +849,11 @@ func (s *Session) moved(scope RunScope, rel string, data []byte, op func(keep st
 // putBackRemoved links the moved-aside file keep back to rel, never over an existing name, as
 // the start-up sweep would. It reports whether the file is back.
 func putBackRemoved(root, rel, keep string) bool {
-	dir, err := imports.SafeDir(root, rel)
+	dir, err := safefile.SafeDir(root, rel)
 	if err != nil {
 		return false
 	}
-	aside := filepath.Join(dir, imports.AsideName(keep))
+	aside := filepath.Join(dir, safefile.AsideName(keep))
 	if os.Link(aside, filepath.Join(dir, path.Base(rel))) != nil {
 		return false
 	}
@@ -868,11 +869,11 @@ func changeError(err error) error {
 	switch {
 	case errors.As(err, &r):
 		return err
-	case errors.Is(err, imports.ErrKeptAside):
+	case errors.Is(err, safefile.ErrKeptAside):
 		return refuse(RefuseChangeConflict)
-	case errors.Is(err, imports.ErrNoLinks):
+	case errors.Is(err, safefile.ErrNoLinks):
 		return refuse(RefuseChangeNoLinks)
-	case errors.Is(err, imports.ErrChanged), errors.Is(err, imports.ErrFileExists):
+	case errors.Is(err, safefile.ErrChanged), errors.Is(err, safefile.ErrFileExists):
 		return refuse(RefuseChangeReviewed)
 	}
 	return refuse(RefuseChangeFailed)

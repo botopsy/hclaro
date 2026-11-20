@@ -37,6 +37,7 @@ import (
 	"hclaro/internal/drift"
 	"hclaro/internal/imports"
 	"hclaro/internal/plan"
+	"hclaro/internal/redact"
 	"hclaro/internal/state"
 )
 
@@ -307,7 +308,7 @@ func braces(s string) int {
 	for j := 0; j < len(s); j++ {
 		switch c := s[j]; {
 		case c == '"':
-			_, end, ok := imports.ReadString(s, j)
+			_, end, ok := redact.ReadString(s, j)
 			if !ok {
 				return hideRest
 			}
@@ -359,7 +360,7 @@ func (b *builder) config() {
 		if !ok {
 			b.blocked[path+".backend"] = true
 		}
-		for j, line := range strings.Split(imports.RedactGenerated(text, false), "\n") {
+		for j, line := range strings.Split(redact.Generated(text, false), "\n") {
 			if state.LooksSecret(line) || b.isLocal(line) {
 				b.blocked[fmt.Sprintf("%s.line[%d]", path, j+1)] = true
 			}

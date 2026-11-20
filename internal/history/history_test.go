@@ -24,7 +24,6 @@ func open(t *testing.T, dir string) *Store {
 	t.Helper()
 	s := Open(dir, t0)
 	s.Now = func() time.Time { return t0 }
-	s.Sync = false
 	return s
 }
 

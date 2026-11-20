@@ -25,6 +25,7 @@ import (
 
 	"hclaro/internal/assist"
 	"hclaro/internal/operations"
+	"hclaro/internal/safefile"
 )
 
 // SchemaVersion is the history file format written by this build.
@@ -286,8 +287,6 @@ type Store struct {
 	Git func(root string) *GitIdentity
 	// Migrations maps a schema version to the migration that upgrades it to the next one.
 	Migrations map[int]Migration
-	// Sync forces data to disk before the rename. Tests may turn it off for speed.
-	Sync bool
 }
 
 type fileStamp struct {
@@ -323,7 +322,7 @@ func OpenWith(dir string, now time.Time, migrations map[int]Migration) *Store {
 }
 
 func newStore(path string) *Store {
-	return &Store{path: path, status: Ready, session: newSession(), doc: document{Version: SchemaVersion, Retention: DefaultPolicy, Entries: []HistoryEntry{}}, Now: time.Now, Sync: true}
+	return &Store{path: path, status: Ready, session: newSession(), doc: document{Version: SchemaVersion, Retention: DefaultPolicy, Entries: []HistoryEntry{}}, Now: time.Now}
 }
 
 // DefaultMigrations is empty: schema 1 is the first history format. A later schema adds
@@ -531,27 +530,7 @@ func (s *Store) write(doc document) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".history-*.tmp")
-	if err != nil {
-		return errors.New("the history file cannot be written")
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	_ = tmp.Chmod(0o600)
-	if _, err := tmp.Write(append(b, '\n')); err != nil {
-		tmp.Close()
-		return errors.New("the history file cannot be written")
-	}
-	if s.Sync {
-		if err := tmp.Sync(); err != nil {
-			tmp.Close()
-			return errors.New("the history file cannot be written")
-		}
-	}
-	if err := tmp.Close(); err != nil {
-		return errors.New("the history file cannot be written")
-	}
-	if err := os.Rename(name, s.path); err != nil {
+	if err := safefile.WriteAtomic(dir, filepath.Base(s.path), ".history-", append(b, '\n')); err != nil {
 		return errors.New("the history file cannot be written")
 	}
 	if fi, err := os.Stat(s.path); err == nil {

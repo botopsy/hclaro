@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"hclaro/internal/safefile"
 )
 
 // Scenario statuses (tasks/M27/README.md). A scenario starts NOT_TESTED.
@@ -175,20 +177,7 @@ func (w *Writer) write(name string) error {
 		return err
 	}
 	b = w.san.Bytes(b)
-	tmp, err := os.CreateTemp(w.dir, "."+name+".*")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return err
-	}
-	return os.Rename(tmp.Name(), filepath.Join(w.dir, name))
+	return safefile.WriteAtomic(w.dir, name, "."+name+"-", b)
 }
 
 // marshal writes indented JSON without HTML escaping, so <TMP> stays readable.

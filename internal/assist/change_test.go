@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"hclaro/internal/gitctx"
-	"hclaro/internal/imports"
+	"hclaro/internal/safefile"
 )
 
 // proposer is an Assistant whose reply is fixed text: a synthetic model proposing changes.
@@ -791,7 +791,7 @@ func TestUnsettledRemovalIsPutBack(t *testing.T) {
 	var keyDir string
 	id, unsettled, err := s.moved(scope, "modules/net/extra.tf", []byte("locals {}\n"), func(keep string) error {
 		dir := filepath.Join(root, "modules/net")
-		if err := os.Rename(filepath.Join(dir, "extra.tf"), filepath.Join(dir, imports.AsideName(keep))); err != nil {
+		if err := os.Rename(filepath.Join(dir, "extra.tf"), filepath.Join(dir, safefile.AsideName(keep))); err != nil {
 			return err
 		}
 		keyDir = filepath.Join(s.Store.config, savedDir, scope.ProjectKey)
@@ -804,7 +804,7 @@ func TestUnsettledRemovalIsPutBack(t *testing.T) {
 	if !putBackRemoved(root, "modules/net/extra.tf", id) || read(t, root, "modules/net/extra.tf") != "locals {}\n" {
 		t.Fatal("removed file not put back")
 	}
-	if exists(filepath.Join(root, "modules/net", imports.AsideName(id))) {
+	if exists(filepath.Join(root, "modules/net", safefile.AsideName(id))) {
 		t.Fatal("aside name left behind")
 	}
 }

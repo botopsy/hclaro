@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"hclaro/internal/redact"
 )
 
 // Repository states of a GitContext.
@@ -161,7 +163,7 @@ func (s *Service) HeadOf(root string) GitContext {
 }
 
 func displayName(name string) string {
-	if hasControl(name) || SuspiciousText(name) || len(name) > 200 {
+	if redact.HasControl(name) || SuspiciousText(name) || len(name) > 200 {
 		return "repository"
 	}
 	return name
@@ -178,7 +180,7 @@ func (s *Service) topLevel(ctx context.Context, root string) (top string, worktr
 		return "", false, errMalformed
 	}
 	for _, l := range lines {
-		if !filepath.IsAbs(l) || hasControl(l) {
+		if !filepath.IsAbs(l) || redact.HasControl(l) {
 			return "", false, errMalformed
 		}
 	}
@@ -303,7 +305,7 @@ func orDot(s string) string {
 }
 
 func safePath(p string) bool {
-	return len(p) <= 400 && !hasControl(p) && !SuspiciousText(p) && !strings.Contains(p, "\\")
+	return len(p) <= 400 && !redact.HasControl(p) && !SuspiciousText(p) && !strings.Contains(p, "\\")
 }
 
 func warnings(c GitContext) []GitWarning {
