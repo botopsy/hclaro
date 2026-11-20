@@ -143,7 +143,7 @@ func (s *scopedServer) openLoaded(project, ws, profileID string) string {
 	return ""
 }
 
-type planOptions struct {
+type planOptionsBody struct {
 	CanPlan               bool                         `json:"canPlan"`
 	Code                  string                       `json:"code"`
 	Reason                string                       `json:"reason"`
@@ -154,13 +154,13 @@ type planOptions struct {
 	ContextFingerprint    string                       `json:"contextFingerprint"`
 }
 
-func (s *scopedServer) options(cid string) planOptions {
+func (s *scopedServer) options(cid string) planOptionsBody {
 	s.t.Helper()
 	w := s.do("GET", "/api/v1/contexts/"+cid+"/plans/options", "")
 	if w.Code != 200 {
 		s.t.Fatalf("options: %d %s", w.Code, w.Body)
 	}
-	return decode[planOptions](s.t, w)
+	return decode[planOptionsBody](s.t, w)
 }
 
 type scopedOp struct {

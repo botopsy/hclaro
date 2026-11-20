@@ -33,7 +33,37 @@ const messages: Record<string, string> = {
   preflight_changed: 'The preflight results changed. Review them again. Nothing was applied.',
   scan_not_found: 'This drift scan is no longer kept. Scan again.',
   scan_not_started: 'The drift scan could not be started.',
-  invalid_request: 'The request was refused. Reload the page and try again.'
+  invalid_request: 'The request was refused. Reload the page and try again.',
+  // Refusals the server sends without a reason. internal/api/wire_test.go checks that every one has a message.
+  ai_failed: 'The assistant could not answer. Nothing was changed.',
+  apply_not_started: 'The apply could not be started. Nothing was applied.',
+  candidate_not_found: 'This discovered object is no longer in the scan. Scan again.',
+  change_not_found: 'This change is no longer available. Reload the page.',
+  comparison_not_found: 'This comparison is no longer kept. Compare again.',
+  comparison_not_started: 'The comparison could not be started.',
+  estimate_not_found: 'This cost estimate is no longer kept. Estimate again.',
+  graph_not_found: 'This dependency graph is no longer kept. Generate it again.',
+  graph_not_started: 'The dependency graph could not be started.',
+  history_not_found: 'This history entry is no longer kept.',
+  import_not_started: 'The import plan could not be started. Nothing was imported.',
+  invalid_cursor: 'The log position is not valid. Reload the page.',
+  invalid_filter: 'The history filter is not valid. Clear the filters and try again.',
+  invalid_format: 'Choose JSON or Markdown for the export.',
+  invalid_limit: 'The page size is not valid. Reload the page.',
+  invalid_mode: 'The resource mode filter is not valid. Clear the filters and try again.',
+  invalid_offset: 'The page is out of range. Go back to the first page.',
+  invalid_profile: 'The execution profile is not valid. Check its fields and try again.',
+  invalid_sort: 'The sort order is not valid. Reload the page.',
+  invalid_status: 'The status filter is not valid. Clear the filters and try again.',
+  match_not_found: 'This compared resource is no longer in the comparison. Reload it.',
+  node_not_found: 'This node is not in the dependency graph.',
+  operation_not_found: 'This operation is no longer kept.',
+  package_failed: 'The context package could not be built. Nothing was shared.',
+  plan_not_found: 'This plan is no longer kept. Run a new plan.',
+  plan_not_started: 'The plan could not be started.',
+  resource_not_found: 'This resource is no longer in the state snapshot. Read the workspace again.',
+  route_not_found: 'This feature is not available in this session.',
+  snapshot_unavailable: 'The workspace state is not readable yet. Read the workspace again.'
 };
 export class ApiError extends Error {
   // fields are the structural paths of a blocked AI context package, never values.

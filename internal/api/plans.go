@@ -112,21 +112,7 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		if errors.As(err, &refusal) {
 			profileError = refusal.Message
 		}
-		writeJSON(w, 200, struct {
-			CanPlan     bool     `json:"canPlan"`
-			Reason      string   `json:"reason,omitempty"`
-			CanApply    bool     `json:"canApply"`
-			ApplyReason string   `json:"applyReason,omitempty"`
-			Engine      string   `json:"engine"`
-			Version     string   `json:"version"`
-			Workspace   string   `json:"workspace"`
-			Backend     string   `json:"backend"`
-			VarFiles    []string `json:"varFiles"`
-			// ProjectID is the launch project's Hub ID; profiles exist only when it is set.
-			ProjectID    string            `json:"projectId,omitempty"`
-			Context      *executionSummary `json:"context,omitempty"`
-			ProfileError string            `json:"profileError,omitempty"`
-		}{caps.CanPlan, caps.PlanReason, caps.CanApply, caps.ApplyReason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles(), projectID, context, profileError})
+		writeJSON(w, 200, planOptions{caps.CanPlan, caps.PlanReason, caps.CanApply, caps.ApplyReason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles(), projectID, context, profileError})
 	})
 	// Reload inspects the launch project again and rereads its state, as at startup.
 	mux.HandleFunc("POST /api/v1/workspace/reload", func(w http.ResponseWriter, r *http.Request) {
@@ -313,14 +299,7 @@ func execRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, source sou
 			return
 		}
 		changed, status := src.ContextStatus(p)
-		writeJSON(w, 200, struct {
-			*operations.Plan
-			EngineVersionLabel string                 `json:"currentEngineVersion"`
-			ContextChanged     bool                   `json:"contextChanged"`
-			Apply              operations.ApplyStatus `json:"apply"`
-			SourceStatus       gitctx.SourceStatus    `json:"sourceStatus"`
-			Scope              *projects.ScopeView    `json:"scope,omitempty"`
-		}{p, src.Snapshot().Info.Version, changed, status, src.SourceStatus(p), src.View()})
+		writeJSON(w, 200, planResponse{p, src.Snapshot().Info.Version, changed, status, src.SourceStatus(p), src.View()})
 	})
 	// Preflight evaluates every apply check on the server. verifyIdentity runs the read-only
 	// AWS STS caller identity probe, which contacts AWS, and is false unless the user asks.
@@ -341,10 +320,7 @@ func execRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, source sou
 			applyError(w, r, hub, src, err)
 			return
 		}
-		writeJSON(w, 200, struct {
-			operations.PreflightReport
-			Scope *projects.ScopeView `json:"scope,omitempty"`
-		}{report, src.View()})
+		writeJSON(w, 200, preflightResponse{report, src.View()})
 	})
 	handle("POST /plans/{id}/approval", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -372,10 +348,7 @@ func execRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, source sou
 			applyError(w, r, hub, src, err)
 			return
 		}
-		writeJSON(w, 200, struct {
-			operations.Approval
-			Scope *projects.ScopeView `json:"scope,omitempty"`
-		}{approval, src.View()})
+		writeJSON(w, 200, approvalResponse{approval, src.View()})
 	})
 	handle("POST /plans/{id}/apply", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -523,4 +496,39 @@ func lookupOperation(w http.ResponseWriter, r *http.Request, source sourceOf) (e
 		return nil, operations.Operation{}, nil, false
 	}
 	return src, op, log, true
+}
+
+type planOptions struct {
+	CanPlan     bool     `json:"canPlan"`
+	Reason      string   `json:"reason,omitempty"`
+	CanApply    bool     `json:"canApply"`
+	ApplyReason string   `json:"applyReason,omitempty"`
+	Engine      string   `json:"engine"`
+	Version     string   `json:"version"`
+	Workspace   string   `json:"workspace"`
+	Backend     string   `json:"backend"`
+	VarFiles    []string `json:"varFiles"`
+	// ProjectID is the launch project's Hub ID; profiles exist only when it is set.
+	ProjectID    string            `json:"projectId,omitempty"`
+	Context      *executionSummary `json:"context,omitempty"`
+	ProfileError string            `json:"profileError,omitempty"`
+}
+
+type planResponse struct {
+	*operations.Plan
+	EngineVersionLabel string                 `json:"currentEngineVersion"`
+	ContextChanged     bool                   `json:"contextChanged"`
+	Apply              operations.ApplyStatus `json:"apply"`
+	SourceStatus       gitctx.SourceStatus    `json:"sourceStatus"`
+	Scope              *projects.ScopeView    `json:"scope,omitempty"`
+}
+
+type preflightResponse struct {
+	operations.PreflightReport
+	Scope *projects.ScopeView `json:"scope,omitempty"`
+}
+
+type approvalResponse struct {
+	operations.Approval
+	Scope *projects.ScopeView `json:"scope,omitempty"`
 }

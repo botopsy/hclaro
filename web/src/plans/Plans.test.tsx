@@ -52,7 +52,7 @@ const report: PreflightReport = {
     changes: [{ address: 'module.compute.aws_instance.main[0]', action: 'replace', requested: true }, { address: 'aws_lb_target_group_attachment.web[2]', action: 'delete' }, { address: 'aws_route53_record.www', action: 'create' }],
     truncated: false
   },
-  policy: { source: 'default', version: 1, valid: true }, identity: { state: 'not_requested' },
+  policy: { source: 'default', version: 1, valid: true, rules: { gitDirty: 'warn', productionLabels: { severity: 'warn', patterns: [] } } }, identity: { state: 'not_requested' },
   binding: 'b'.repeat(64), phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>']
 };
 

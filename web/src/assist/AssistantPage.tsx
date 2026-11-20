@@ -6,7 +6,8 @@ import { api, post } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
 import { ErrorState } from '../workbench/ErrorState';
-import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve, type Conversation } from './AskAI';
+import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve } from './AskAI';
+import type { AssistListed, AssistSaved, Conversation } from '../types';
 
 // The AI Assistant page (AI-01.09): conversations that are not tied to a plan or drift result.
 // A conversation starts with no project data, or with a project package the user previewed in
@@ -15,8 +16,6 @@ import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, 
 // listed, read-only. Saved conversations (AI-01.11) of this project are listed below them and
 // can be reopened or deleted.
 
-type Listed = { id: string; provider: string; kind: string; state: string; title: string; project: string; workspace: string; here: boolean; saved: boolean; startedAt: string };
-type Saved = { id: string; title: string; provider: string; providerVersion: string; kind: string; workspace: string; createdAt: string; lastActivity: string; open: boolean };
 type Mode = 'chat' | 'project';
 // Quick actions (AI-01.10): a project package plus a fixed, versioned prompt from the server's
 // registry. Each goes through the same preview drawer; the IDs are what turn metadata records.
@@ -34,13 +33,13 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   const client = useQueryClient();
   const list = useQuery({
     queryKey: ['ai-conversations', scope ? scopeKey(scope) : 'none'],
-    queryFn: () => api<{ conversations: Listed[] }>(scopedPath(scope!, 'ai/conversations')),
+    queryFn: () => api<{ conversations: AssistListed[] }>(scopedPath(scope!, 'ai/conversations')),
     enabled: !!scope && settings?.enabled === true,
     refetchInterval: q => q.state.data?.conversations.some(c => c.state === 'running') ? 2000 : false
   });
   const saved = useQuery({
     queryKey: ['ai-saved', scope ? scopeKey(scope) : 'none'],
-    queryFn: () => api<{ conversations: Saved[]; available: boolean; retentionDays?: number }>(scopedPath(scope!, 'ai/saved')),
+    queryFn: () => api<{ conversations: AssistSaved[]; available: boolean; retentionDays?: number }>(scopedPath(scope!, 'ai/saved')),
     enabled: !!scope && settings?.enabled === true && !noProject
   });
   const [confirmAll, setConfirmAll] = useState(false);

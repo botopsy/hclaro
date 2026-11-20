@@ -6,7 +6,7 @@ import { api, ApiError, post } from '../api';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
-import type { ImportRequest } from '../types';
+import type { AssistExport, AssistPackage, AssistProvider, AssistRequest, AssistSettings, Conversation } from '../types';
 import { hasProposal, ProposedChanges, useChanges } from './ProposedChanges';
 
 // AI handoff (AI-01.03) and conversations (AI-01.04, AI-01.07): the server builds a sanitized
@@ -16,33 +16,8 @@ import { hasProposal, ProposedChanges, useChanges } from './ProposedChanges';
 // headless run of the whole conversation. Replies are untrusted text: rendered as plain text
 // only, with no links, command buttons or actions.
 
-export type AssistDisclosure = { version: string; lines: string[] };
-// send: Hclaro can run it; usable: it can at least be copied to; installed: found on PATH.
-export type AssistProvider = { id: string; name: string; mode: string; send: boolean; usable: boolean; installed: boolean; version?: string; path?: string; reason?: string; message?: string };
-export type AssistSettings = {
-  enabled: boolean; strictLocal: boolean; handoff: boolean; headless: boolean; disclosure: AssistDisclosure;
-  disclosureAccepted?: boolean; providers?: AssistProvider[]; defaultProvider?: string;
-  // checked/checking: whether the assistants were detected (AI-01.14), which happens only on
-  // request; warning: saved settings were unreadable.
-  checked?: boolean; checking?: boolean; warning?: string;
-  // The server's byte limit for one typed message.
-  maxMessage: number;
-};
-type Turn = { role: 'user' | 'assistant' | 'context'; text: string; at: string; prompt?: string; sha256?: string; hidden?: boolean };
-export type Conversation = {
-  id: string; provider: string; kind: string; packageSha256: string; state: 'ready' | 'running' | 'failed' | 'cancelled'; stale?: boolean;
-  turns: Turn[]; draft?: string; error?: { code: string; message: string }; usedBytes: number; limitBytes: number; startedAt: string;
-  // Saved conversations (AI-01.11): the file is kept; readOnly says why a reopened one cannot continue.
-  saved: boolean; saveError?: string; readOnly?: string; needsReview?: boolean;
-};
 // tooLong: the message exceeds the server's limit (it enforces it too).
 export const tooLong = (text: string, settings?: AssistSettings) => !!settings && new TextEncoder().encode(text).length > settings.maxMessage;
-// action is a quick action prompt (AI-01.10); cost attaches the session's existing cost estimate.
-export type AssistRequest = { kind: 'project'; action?: string; cost?: boolean } | { kind: 'plan'; planId: string } | { kind: 'drift'; scanId: string } | { kind: 'resource'; resourceId: string } | { kind: 'import'; import: ImportRequest };
-// review is the first turn (AI-01.08): the review prompt and the package, byte for byte what
-// Send submits and what Copy and Download hand over.
-export type AssistPackage = { kind: string; markdown: string; sha256: string; sections: string[]; dropped: string[]; disclosure: AssistDisclosure; prompt: string; review: string; costAvailable?: boolean; costHidden?: number };
-type Exported = { kind: string; sha256: string; markdown: string; filename: string; prompt: string; review: string };
 
 export const assistSettingsQuery = {
   queryKey: ['ai-settings'],
@@ -154,7 +129,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
     setBusy(true);
     setFailed(undefined);
     try {
-      const e = await post<Exported>(scopedPath(scope, `ai/packages/${p.sha256}/export`), {});
+      const e = await post<AssistExport>(scopedPath(scope, `ai/packages/${p.sha256}/export`), {});
       if (e.sha256 !== p.sha256 || e.review !== p.review || e.prompt !== p.prompt) throw new Error('The package changed since the preview. Open the preview again.');
       if (how === 'copy') {
         try {

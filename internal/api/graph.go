@@ -37,19 +37,7 @@ func graphRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations
 		if errors.As(err, &refusal) {
 			profileError = refusal.Message
 		}
-		writeJSON(w, 200, struct {
-			CanGenerate  bool              `json:"canGenerate"`
-			Reason       string            `json:"reason,omitempty"`
-			Engine       string            `json:"engine"`
-			Version      string            `json:"version"`
-			Workspace    string            `json:"workspace"`
-			Backend      string            `json:"backend"`
-			Execution    string            `json:"executionMode"`
-			Command      []string          `json:"command"`
-			ProjectID    string            `json:"projectId,omitempty"`
-			Context      *executionSummary `json:"context,omitempty"`
-			ProfileError string            `json:"profileError,omitempty"`
-		}{canGenerate, reason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, snap.Info.ExecutionMode, []string{snap.Info.Engine, "graph"}, projectID, context, profileError})
+		writeJSON(w, 200, graphOptions{canGenerate, reason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, snap.Info.ExecutionMode, []string{snap.Info.Engine, "graph"}, projectID, context, profileError})
 	})
 	mux.HandleFunc("POST /api/v1/graphs", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -139,4 +127,18 @@ func graphError(w http.ResponseWriter, err error) {
 	default:
 		errorJSON(w, 404, "graph_not_found")
 	}
+}
+
+type graphOptions struct {
+	CanGenerate  bool              `json:"canGenerate"`
+	Reason       string            `json:"reason,omitempty"`
+	Engine       string            `json:"engine"`
+	Version      string            `json:"version"`
+	Workspace    string            `json:"workspace"`
+	Backend      string            `json:"backend"`
+	Execution    string            `json:"executionMode"`
+	Command      []string          `json:"command"`
+	ProjectID    string            `json:"projectId,omitempty"`
+	Context      *executionSummary `json:"context,omitempty"`
+	ProfileError string            `json:"profileError,omitempty"`
 }

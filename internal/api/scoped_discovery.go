@@ -20,20 +20,7 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		out := struct {
-			CanScan bool `json:"canScan"`
-			analysisOptions
-			Provider      string                   `json:"provider"`
-			Types         []discovery.ResourceType `json:"types"`
-			Regions       []string                 `json:"regions"`
-			DefaultRegion string                   `json:"defaultRegion"`
-			RegionSource  string                   `json:"regionSource"`
-			Limits        map[string]int           `json:"limits"`
-			Project       string                   `json:"project"`
-			StateStatus   string                   `json:"stateStatus"`
-			Identity      *discovery.CloudIdentity `json:"identity,omitempty"`
-			ProjectID     string                   `json:"projectId,omitempty"`
-		}{analysisOptions: base, Provider: "aws", Types: discovery.Types, Regions: discovery.Regions, DefaultRegion: "us-east-1", RegionSource: "default", Limits: map[string]int{
+		out := scopedDiscoveryOptions{analysisOptions: base, Provider: "aws", Types: discovery.Types, Regions: discovery.Regions, DefaultRegion: "us-east-1", RegionSource: "default", Limits: map[string]int{
 			"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "maxObjects": discovery.MaxObjects, "defaultPerType": discovery.DefaultPerType,
 			"maxConcurrency": discovery.MaxConcurrency, "defaultConcurrency": discovery.DefaultConcurrent, "pageSize": discovery.PageSize,
 		}}
@@ -78,4 +65,19 @@ func scopeDiscoveryPin(ctx context.Context, s *projects.Scope, check bool, revie
 		pin.AWSProfile = inheritedAWSProfile()
 	}
 	return pin, environ, err
+}
+
+type scopedDiscoveryOptions struct {
+	CanScan bool `json:"canScan"`
+	analysisOptions
+	Provider      string                   `json:"provider"`
+	Types         []discovery.ResourceType `json:"types"`
+	Regions       []string                 `json:"regions"`
+	DefaultRegion string                   `json:"defaultRegion"`
+	RegionSource  string                   `json:"regionSource"`
+	Limits        map[string]int           `json:"limits"`
+	Project       string                   `json:"project"`
+	StateStatus   string                   `json:"stateStatus"`
+	Identity      *discovery.CloudIdentity `json:"identity,omitempty"`
+	ProjectID     string                   `json:"projectId,omitempty"`
 }

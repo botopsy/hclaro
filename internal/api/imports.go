@@ -15,19 +15,7 @@ func importRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, ma
 	mux.HandleFunc("GET /api/v1/imports/options", func(w http.ResponseWriter, r *http.Request) {
 		snap := store.Get()
 		caps := snap.Info.Capabilities
-		writeJSON(w, 200, struct {
-			CanImport        bool     `json:"canImport"`
-			Reason           string   `json:"reason,omitempty"`
-			CanApply         bool     `json:"canApply"`
-			ApplyReason      string   `json:"applyReason,omitempty"`
-			SupportsBlocks   bool     `json:"supportsImportBlocks"`
-			SupportsGenerate bool     `json:"supportsGeneratedConfig"`
-			Engine           string   `json:"engine"`
-			Version          string   `json:"version"`
-			Workspace        string   `json:"workspace"`
-			Backend          string   `json:"backend"`
-			VarFiles         []string `json:"varFiles"`
-		}{caps.CanImport, caps.ImportReason, caps.CanApply, caps.ApplyReason, caps.SupportsImportBlocks, caps.SupportsGeneratedConfig, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles()})
+		writeJSON(w, 200, importOptions{caps.CanImport, caps.ImportReason, caps.CanApply, caps.ApplyReason, caps.SupportsImportBlocks, caps.SupportsGeneratedConfig, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles()})
 	})
 	importExecRoutes(mux, "/api/v1", nil, func() *discovery.Service { return deps.Discovery }, launchSourceOf(manager, inits))
 }
@@ -55,10 +43,7 @@ func importExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, svc 
 			scopeError(w, r, hub, err)
 			return
 		}
-		writeJSON(w, 200, struct {
-			imports.Preview
-			Scope *projects.ScopeView `json:"scope,omitempty"`
-		}{preview, src.View()})
+		writeJSON(w, 200, importPreviewResponse{preview, src.View()})
 	})
 	handle("POST /imports", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -126,4 +111,23 @@ func importExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, svc 
 			errorJSON(w, 500, "import_not_started")
 		}
 	})
+}
+
+type importOptions struct {
+	CanImport        bool     `json:"canImport"`
+	Reason           string   `json:"reason,omitempty"`
+	CanApply         bool     `json:"canApply"`
+	ApplyReason      string   `json:"applyReason,omitempty"`
+	SupportsBlocks   bool     `json:"supportsImportBlocks"`
+	SupportsGenerate bool     `json:"supportsGeneratedConfig"`
+	Engine           string   `json:"engine"`
+	Version          string   `json:"version"`
+	Workspace        string   `json:"workspace"`
+	Backend          string   `json:"backend"`
+	VarFiles         []string `json:"varFiles"`
+}
+
+type importPreviewResponse struct {
+	imports.Preview
+	Scope *projects.ScopeView `json:"scope,omitempty"`
 }

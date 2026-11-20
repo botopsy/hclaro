@@ -2,7 +2,8 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AssistDrawer, type AssistProvider } from './AskAI';
+import { AssistDrawer } from './AskAI';
+import type { AssistProvider } from '../types';
 import { SettingsPanel } from '../workbench/SettingsPanel';
 import type { PlanScope } from '../plans/routes';
 

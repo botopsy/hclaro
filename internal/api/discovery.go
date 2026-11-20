@@ -106,25 +106,7 @@ func discoveryRoutes(mux *http.ServeMux, deps *Services, manager *operations.Man
 				}
 			}
 		}
-		writeJSON(w, 200, struct {
-			CanScan       bool                     `json:"canScan"`
-			Reason        string                   `json:"reason,omitempty"`
-			Provider      string                   `json:"provider"`
-			Types         []discovery.ResourceType `json:"types"`
-			Regions       []string                 `json:"regions"`
-			DefaultRegion string                   `json:"defaultRegion"`
-			RegionSource  string                   `json:"regionSource"`
-			Limits        map[string]int           `json:"limits"`
-			Project       string                   `json:"project"`
-			Engine        string                   `json:"engine"`
-			Workspace     string                   `json:"workspace"`
-			Backend       string                   `json:"backend"`
-			StateStatus   string                   `json:"stateStatus"`
-			Identity      *discovery.CloudIdentity `json:"identity,omitempty"`
-			ProjectID     string                   `json:"projectId,omitempty"`
-			Context       *executionSummary        `json:"context,omitempty"`
-			ProfileError  string                   `json:"profileError,omitempty"`
-		}{canScan, reason, "aws", discovery.Types, discovery.Regions, region, regionSource, map[string]int{
+		writeJSON(w, 200, discoveryOptions{canScan, reason, "aws", discovery.Types, discovery.Regions, region, regionSource, map[string]int{
 			"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "maxObjects": discovery.MaxObjects, "defaultPerType": discovery.DefaultPerType,
 			"maxConcurrency": discovery.MaxConcurrency, "defaultConcurrency": discovery.DefaultConcurrent, "pageSize": discovery.PageSize,
 		}, snap.Info.Project, snap.Info.Engine, snap.Info.Workspace, snap.Info.Backend, snap.Status, identity, projectID, context, profileError})
@@ -356,4 +338,24 @@ func discoveryError(w http.ResponseWriter, err error) {
 	default:
 		reasonJSON(w, 502, "discovery_failed", "Cloud discovery failed.")
 	}
+}
+
+type discoveryOptions struct {
+	CanScan       bool                     `json:"canScan"`
+	Reason        string                   `json:"reason,omitempty"`
+	Provider      string                   `json:"provider"`
+	Types         []discovery.ResourceType `json:"types"`
+	Regions       []string                 `json:"regions"`
+	DefaultRegion string                   `json:"defaultRegion"`
+	RegionSource  string                   `json:"regionSource"`
+	Limits        map[string]int           `json:"limits"`
+	Project       string                   `json:"project"`
+	Engine        string                   `json:"engine"`
+	Workspace     string                   `json:"workspace"`
+	Backend       string                   `json:"backend"`
+	StateStatus   string                   `json:"stateStatus"`
+	Identity      *discovery.CloudIdentity `json:"identity,omitempty"`
+	ProjectID     string                   `json:"projectId,omitempty"`
+	Context       *executionSummary        `json:"context,omitempty"`
+	ProfileError  string                   `json:"profileError,omitempty"`
 }

@@ -17,27 +17,10 @@ import (
 // link (M24.09) must name a candidate prepared in this same context.
 func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	mux.HandleFunc("GET /api/v1/contexts/{cid}/imports/options", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		type options struct {
-			CanImport          bool                         `json:"canImport"`
-			Code               string                       `json:"code,omitempty"`
-			Reason             string                       `json:"reason,omitempty"`
-			CanApply           bool                         `json:"canApply"`
-			ApplyReason        string                       `json:"applyReason,omitempty"`
-			SupportsBlocks     bool                         `json:"supportsImportBlocks"`
-			SupportsGenerate   bool                         `json:"supportsGeneratedConfig"`
-			Engine             string                       `json:"engine"`
-			Version            string                       `json:"version"`
-			Workspace          string                       `json:"workspace"`
-			Backend            string                       `json:"backend"`
-			VarFiles           []string                     `json:"varFiles"`
-			Scope              *projects.ScopeView          `json:"scope"`
-			ExecutionContext   *operations.ExecutionContext `json:"executionContext"`
-			ContextFingerprint string                       `json:"contextFingerprint"`
-		}
 		s, err := hub.Preview(r.PathValue("cid"))
 		var unsupported *projects.ScopeError
 		if errors.As(err, &unsupported) && unsupported.Code == projects.CodeExecutionUnsupported {
-			writeJSON(w, 200, options{Code: unsupported.Code, Reason: unsupported.Message, VarFiles: []string{}})
+			writeJSON(w, 200, scopedImportOptions{Code: unsupported.Code, Reason: unsupported.Message, VarFiles: []string{}})
 			return
 		}
 		if err != nil {
@@ -47,7 +30,7 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		snap := s.Snapshot()
 		caps := snap.Info.Capabilities
 		view := s.View()
-		writeJSON(w, 200, options{
+		writeJSON(w, 200, scopedImportOptions{
 			CanImport: caps.CanImport, Reason: caps.ImportReason, CanApply: caps.CanApply, ApplyReason: caps.ApplyReason,
 			SupportsBlocks: caps.SupportsImportBlocks, SupportsGenerate: caps.SupportsGeneratedConfig,
 			Engine: view.Engine, Version: view.Version, Workspace: view.Workspace, Backend: view.Backend,
@@ -55,4 +38,22 @@ func scopedImportRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		})
 	}))
 	importExecRoutes(mux, "/api/v1/contexts/{cid}", hub, func() *discovery.Service { return hub.Discovery }, hubSourceOf(hub))
+}
+
+type scopedImportOptions struct {
+	CanImport          bool                         `json:"canImport"`
+	Code               string                       `json:"code,omitempty"`
+	Reason             string                       `json:"reason,omitempty"`
+	CanApply           bool                         `json:"canApply"`
+	ApplyReason        string                       `json:"applyReason,omitempty"`
+	SupportsBlocks     bool                         `json:"supportsImportBlocks"`
+	SupportsGenerate   bool                         `json:"supportsGeneratedConfig"`
+	Engine             string                       `json:"engine"`
+	Version            string                       `json:"version"`
+	Workspace          string                       `json:"workspace"`
+	Backend            string                       `json:"backend"`
+	VarFiles           []string                     `json:"varFiles"`
+	Scope              *projects.ScopeView          `json:"scope"`
+	ExecutionContext   *operations.ExecutionContext `json:"executionContext"`
+	ContextFingerprint string                       `json:"contextFingerprint"`
 }

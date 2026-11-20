@@ -112,15 +112,7 @@ func historyRoutes(mux *http.ServeMux, store *history.Store, manager *operations
 			items = append(items, historyListItem{e, live(e.ID)})
 		}
 		status, notice, _ := store.Status()
-		writeJSON(w, 200, struct {
-			Status    string                         `json:"status"`
-			Notice    string                         `json:"notice,omitempty"`
-			Retention history.HistoryRetentionPolicy `json:"retention"`
-			Total     int                            `json:"total"`
-			Stored    int                            `json:"stored"`
-			Entries   []historyListItem              `json:"entries"`
-			Projects  []historyProject               `json:"projects"`
-		}{status, notice, store.Retention(), len(matches), len(all), items, projects})
+		writeJSON(w, 200, historyPage{status, notice, store.Retention(), len(matches), len(all), items, projects})
 	})
 	mux.HandleFunc("GET /api/v1/history/compare", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -245,4 +237,14 @@ func historyWriteError(w http.ResponseWriter, err error) bool {
 		writeJSON(w, 500, map[string]string{"error": "history_write_failed", "reason": "Operation history could not be written."})
 	}
 	return true
+}
+
+type historyPage struct {
+	Status    string                         `json:"status"`
+	Notice    string                         `json:"notice,omitempty"`
+	Retention history.HistoryRetentionPolicy `json:"retention"`
+	Total     int                            `json:"total"`
+	Stored    int                            `json:"stored"`
+	Entries   []historyListItem              `json:"entries"`
+	Projects  []historyProject               `json:"projects"`
 }

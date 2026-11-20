@@ -4,17 +4,13 @@ import { Check, FilePen, LoaderCircle, Undo2, X } from 'lucide-react';
 import { api, post } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../plans/routes';
+import type { ChangeView } from '../types';
 
 // Proposed changes (AI-01.12): a reply may carry whole-file proposals. The server validates each
 // one against the project files and computes the diff; the reply's own text is never trusted.
 // Each proposal is applied or rejected on its own (no "apply all"); applying writes the file and
 // nothing else: no validate, plan or apply runs.
 
-export type ChangeView = {
-  turn: number; index: number; path: string; status: 'ready' | 'invalid' | 'applied' | 'rejected' | 'undone';
-  code?: string; reason?: string; created: boolean; baseSha256?: string; newSha256?: string; diff?: string;
-  added: number; removed: number; canUndo?: boolean; aside?: string;
-};
 
 // The fenced header the prompts ask for; a reply without it has no proposals to fetch.
 export const hasProposal = (text: string) => /^`{3,}hclaro-change /m.test(text);

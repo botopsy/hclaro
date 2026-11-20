@@ -148,7 +148,7 @@ func profileRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		for _, profile := range list {
 			views = append(views, viewOf(profile, def))
 		}
-		writeJSON(w, 200, map[string]any{"profiles": views, "defaultId": def, "status": status, "notice": notice})
+		writeJSON(w, 200, profileList{views, def, status, notice})
 	})
 	mux.HandleFunc("POST /api/v1/projects/{id}/execution-profiles", func(w http.ResponseWriter, r *http.Request) {
 		var body profileBody
@@ -356,4 +356,11 @@ func contextSummary(hub *projects.Hub, p projects.Record, r profiles.Resolved, t
 		s.WorkspaceSource = "cli_default"
 	}
 	return s
+}
+
+type profileList struct {
+	Profiles  []profileView `json:"profiles"`
+	DefaultID string        `json:"defaultId"`
+	Status    string        `json:"status"`
+	Notice    string        `json:"notice"`
 }

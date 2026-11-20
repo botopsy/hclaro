@@ -67,23 +67,6 @@ func (s *historyServer) plan(replace ...string) string {
 	return ""
 }
 
-type historyPage struct {
-	Status    string
-	Notice    string
-	Total     int
-	Stored    int
-	Retention history.HistoryRetentionPolicy
-	Entries   []struct {
-		history.HistoryEntry
-		Live bool
-	}
-	Projects []struct {
-		ID, Name   string
-		Registered bool
-		Workspaces []string
-	}
-}
-
 func TestHistoryListDetailAndFilters(t *testing.T) {
 	s := newHistoryServer(t, t.TempDir())
 	first := s.plan()
