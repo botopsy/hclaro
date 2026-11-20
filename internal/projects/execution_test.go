@@ -11,7 +11,6 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/engine"
-	"hclaro/internal/history"
 	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
 )
@@ -245,9 +244,7 @@ func TestLaunchUnderAnotherSpellingIsTheRegisteredProject(t *testing.T) {
 	if s, _ := hub.Summary(network); !s.Launch {
 		t.Fatal("registered project not flagged as the launch project")
 	}
-	store := &history.Store{}
-	hub.UseHistory(store)
-	if id, _, ok := store.Project(hub.Launch); !ok || id != network {
+	if id, _, ok := hub.Registry.Identify(hub.Launch); !ok || id != network {
 		t.Fatalf("history project %q %v", id, ok)
 	}
 	// A launch plan's claim makes the Hub report the project busy and refuse its init.

@@ -31,6 +31,7 @@ import (
 type scopedServer struct {
 	*hubServer
 	launch *operations.Manager
+	svc    *Services
 	spy    string
 	bin    string
 	ids    map[string]string
@@ -93,16 +94,17 @@ func newScopedServer(t *testing.T) *scopedServer {
 	launch := operations.NewManager(store, fake, t.TempDir())
 	launch.TempDir = t.TempDir()
 	launch.Locks = hub.Locks
+	services := &Services{}
 	// As in cli.go: a closed context drops its AI packages and conversations.
 	hub.ContextClosed = func(cid string) {
-		if launch.Assist != nil {
-			launch.Assist.DropScope(cid)
+		if services.Assist != nil {
+			services.Assist.DropScope(cid)
 		}
 	}
 	t.Cleanup(func() { launch.Close(5 * time.Second) })
 
-	h := Handler(store, launch, hub, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
-	s := &scopedServer{hubServer: &hubServer{t, h, hub, &atomic.Int64{}, dir}, launch: launch, spy: spy, bin: bin, ids: map[string]string{}, roots: map[string]string{}}
+	h := Handler(store, launch, hub, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
+	s := &scopedServer{hubServer: &hubServer{t, h, hub, &atomic.Int64{}, dir}, launch: launch, svc: services, spy: spy, bin: bin, ids: map[string]string{}, roots: map[string]string{}}
 	for _, p := range fixtures.HubProjects {
 		summary, err := hub.Add(filepath.Join(dir, p.Dir), p.Dir, p.Engine)
 		if err != nil {

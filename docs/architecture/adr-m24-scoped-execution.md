@@ -9,7 +9,7 @@
 
 Hclaro serves one local web UI per process. Today, two execution models coexist:
 
-- **Launch project.** `internal/cli` builds one `workspace.Store`, one full engine adapter and one `operations.Manager` for the root Hclaro was started with (`operations.NewManager(store, planner, root)`). The manager runs plans, imports, drift scans, graphs and saved-plan applies for that root only, in the CLI-selected workspace. Execution profiles bind its plans through `Hub.LaunchBinder()`.
+- **Launch project.** `internal/cli` builds one `workspace.Store`, one full engine adapter and one `operations.Manager` for the root Hclaro was started with (`operations.New(store, planner, root, hub.Deps)`). The manager runs plans, imports, drift scans, graphs and saved-plan applies for that root only, in the CLI-selected workspace. Execution profiles bind its plans through `Hub.LaunchBinder()`.
 - **Hub read contexts.** `projects.Hub.OpenWith` creates an immutable read scope (`projects.Context`): project ID, canonical root, engine name and executable, UI-selected workspace, data directory and optional profile context, with its own `workspace.Store`. The engine is wrapped in `readOnly`, so only `Version`, `Workspace` and `State` are reachable, and the scoped capabilities are always `canPlan`, `canApplySavedPlan` and `canImport` false with `projects.ReadOnlyReason`.
 
 Hub writes that exist today are reviewed init, reviewed workspace commands and read-only project tools, all through `operations.Inits` and the shared `rootlock.Set` (`Hub.Locks`, also given to the launch manager).

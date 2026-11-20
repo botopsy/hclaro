@@ -5,11 +5,9 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
-	"hclaro/internal/operations"
 	"hclaro/internal/plan"
 	"hclaro/internal/state"
 )
@@ -88,115 +86,88 @@ func rootID(root string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-func (s *Store) project(r operations.Record) (id, name string, registered bool) {
-	if s.Project != nil && r.Root != "" {
-		id, name, registered = s.Project(r.Root)
+func (s *Store) project(ev Event) (id, name string, registered bool) {
+	if s.sources.Project != nil && ev.Root != "" {
+		id, name, registered = s.sources.Project(ev.Root)
 	}
-	if r.Operation.ProjectID != "" && ValidID(r.Operation.ProjectID) {
-		id, registered = r.Operation.ProjectID, true
+	if ev.ProjectID != "" && ValidID(ev.ProjectID) {
+		id, registered = ev.ProjectID, true
 	}
-	if id == "" && r.Root != "" {
-		id = rootID(r.Root)
+	if id == "" && ev.Root != "" {
+		id = rootID(ev.Root)
 	}
-	if name == "" && r.Root != "" {
-		name = filepath.Base(r.Root)
+	if name == "" && ev.Root != "" {
+		name = filepath.Base(ev.Root)
+	}
+	if ev.ProjectName != "" {
+		name = ev.ProjectName
 	}
 	return id, clean(name, 120), registered
 }
 
-func status(op operations.Operation, final bool) string {
-	switch op.Status {
-	case operations.Succeeded:
-		return StatusSucceeded
-	case operations.Failed:
-		return StatusFailed
-	case operations.Cancelled:
-		return StatusCancelled
-	case operations.Unknown:
-		return StatusUnknown
+func status(ev Event) string {
+	switch ev.Status {
+	case StatusSucceeded, StatusFailed, StatusCancelled, StatusUnknown:
+		return ev.Status
 	}
-	if final {
+	if ev.Final {
 		// An operation reported as finished without a final status has no known outcome.
 		return StatusUnknown
 	}
 	return StatusRunning
 }
 
-func kind(op operations.Operation, p *operations.Plan) string {
-	switch op.Kind {
-	case "plan":
-		switch {
-		case p != nil && slices.Contains([]string{"plan", "replace", "import"}, p.Kind):
-			return p.Kind
-		case op.Import != nil:
-			return "import"
-		case len(op.Replace) > 0:
-			return "replace"
-		}
-		return "plan"
-	case "apply", "drift", "graph", "init", "workspace", "tool", "branch":
-		return op.Kind
-	}
-	return KindUnknown
-}
-
-// convert turns an operation record into a history entry. It copies only metadata that the
-// operation already exposes, and passes every string through clean.
-func (s *Store) convert(r operations.Record) HistoryEntry {
-	op := r.Operation
+// convert turns an event into a history entry, passing every string through clean.
+func (s *Store) convert(ev Event) HistoryEntry {
 	e := HistoryEntry{
-		ID: op.ID, Kind: kind(op, r.Plan), Status: status(op, r.Final), StartedAt: op.StartedAt, DurationMs: op.DurationMs,
-		Engine: word(r.Engine), Command: []string{}, Excerpt: []Line{},
+		ID: ev.ID, Kind: kindOf(ev.Kind).Kind, Action: word(ev.Action), Status: status(ev), StartedAt: ev.StartedAt, DurationMs: ev.DurationMs,
+		Engine: word(ev.Engine), Command: []string{}, Excerpt: []Line{}, Assist: scrubAssist(ev.Assist),
 	}
-	if r.Final {
-		e.FinishedAt = op.CompletedAt
-		if op.ExitCode != nil {
-			code := *op.ExitCode
+	if e.ID == "" && e.Kind == "assist-change" {
+		// A change decision is one event; operations carry their own ID for start and end.
+		e.ID = newSession()
+	}
+	if ev.Final {
+		e.FinishedAt = ev.FinishedAt
+		if ev.ExitCode != nil {
+			code := *ev.ExitCode
 			e.ExitCode = &code
 		}
 	} else {
 		e.Session = s.session
-		if s.Git != nil && r.Root != "" {
-			e.Git = s.Git(r.Root)
+		if s.sources.Git != nil && ev.Root != "" {
+			e.Git = s.sources.Git(ev.Root)
 		}
 	}
-	if versionRe.MatchString(r.EngineVersion) {
-		e.EngineVersion = r.EngineVersion
+	if versionRe.MatchString(ev.EngineVersion) {
+		e.EngineVersion = ev.EngineVersion
 	}
-	e.ProjectID, e.ProjectName, e.Registered = s.project(r)
-	if workspaceRe.MatchString(r.Workspace) {
-		e.Workspace = r.Workspace
+	e.ProjectID, e.ProjectName, e.Registered = s.project(ev)
+	if workspaceRe.MatchString(ev.Workspace) {
+		e.Workspace = ev.Workspace
 	}
-	switch {
-	case op.Tool != nil:
-		e.Action = word(string(op.Tool.Tool))
-	case op.Workspace != nil:
-		e.Action = word(string(op.Workspace.Action))
+	if c := ev.Context; c != nil {
+		e.Context = &ContextSummary{Fingerprint: short(c.Fingerprint), ProfileName: clean(c.ProfileName, 120), ProfileRevision: c.ProfileRevision}
 	}
-	if c := op.Context; c != nil {
-		e.Context = &ContextSummary{Fingerprint: short(c.Fingerprint), ProfileName: clean(c.ProfileName, 120), ProfileRevision: c.Revision}
-	}
-	for i, arg := range op.Command {
+	for i, arg := range ev.Command {
 		if i == maxCommand {
 			e.Command = append(e.Command, "…")
 			break
 		}
 		e.Command = append(e.Command, clean(arg, maxText))
 	}
-	if d := op.Diagnostic; d != nil && codePattern.MatchString(d.Code) {
+	if d := ev.Diagnostic; d != nil && codePattern.MatchString(d.Code) {
 		e.Diagnostic = &Diagnostic{Code: d.Code, Message: clean(d.Message, maxMessage)}
 	}
-	if r.Plan != nil {
-		e.Plan = summarize(r.Plan)
+	if ev.Plan != nil {
+		e.Plan = summarize(ev.Plan)
 	}
-	e.Outcome = outcome(e, op, r)
-	if r.Final {
-		for _, event := range r.Excerpt {
-			e.Excerpt = append(e.Excerpt, Line{Time: event.Time, Level: word(event.Level), Text: clean(event.Text, maxText)})
+	e.Outcome = outcome(&e, ev)
+	if ev.Final {
+		for _, l := range ev.Excerpt {
+			e.Excerpt = append(e.Excerpt, Line{Time: l.Time, Level: word(l.Level), Text: clean(l.Text, maxText)})
 		}
-		if len(r.Excerpt) > 0 {
-			e.ExcerptOmitted = r.Excerpt[0].Seq - 1
-		}
+		e.ExcerptOmitted = ev.ExcerptOmitted
 		if len(e.Excerpt) > maxExcerpt {
 			e.ExcerptOmitted += int64(len(e.Excerpt) - maxExcerpt)
 			e.Excerpt = e.Excerpt[len(e.Excerpt)-maxExcerpt:]
@@ -205,12 +176,14 @@ func (s *Store) convert(r operations.Record) HistoryEntry {
 	return e
 }
 
-func summarize(p *operations.Plan) *PlanSummary {
+// summarize bounds and cleans the plan an event carries. Its changes still include no-op
+// instances; an instance imported without changes has the action "import".
+func summarize(p *PlanSummary) *PlanSummary {
 	out := &PlanSummary{
-		PlanID: p.ID, Kind: p.Kind, Counts: map[string]int{}, Changes: []PlannedChange{}, Errored: p.Errored, Destructive: p.Destructive,
-		Drift: len(p.Drift), VarFiles: []string{}, Replace: []string{}, Fingerprint: short(p.Fingerprint),
+		PlanID: p.PlanID, Kind: p.Kind, Counts: map[string]int{}, Changes: []PlannedChange{}, Errored: p.Errored, Destructive: p.Destructive,
+		Drift: p.Drift, Outputs: p.Outputs, VarFiles: []string{}, Replace: []string{}, Fingerprint: short(p.Fingerprint),
 	}
-	for action, n := range p.Summary {
+	for action, n := range p.Counts {
 		if word(action) != "" && n > 0 && action != plan.NoOp {
 			out.Counts[action] = n
 		}
@@ -218,8 +191,6 @@ func summarize(p *operations.Plan) *PlanSummary {
 	for _, c := range p.Changes {
 		action := word(c.Action)
 		switch {
-		case c.Importing && c.Action == plan.NoOp:
-			action = "import"
 		case c.Action == plan.NoOp:
 			continue
 		case action == "":
@@ -230,11 +201,6 @@ func summarize(p *operations.Plan) *PlanSummary {
 			continue
 		}
 		out.Changes = append(out.Changes, PlannedChange{Address: cleanAddress(c.Address), Action: action})
-	}
-	for _, o := range p.Outputs {
-		if o.Action != plan.NoOp {
-			out.Outputs++
-		}
 	}
 	for i, name := range p.VarFiles {
 		if i == maxListed {
@@ -248,13 +214,20 @@ func summarize(p *operations.Plan) *PlanSummary {
 		}
 		out.Replace = append(out.Replace, cleanAddress(address))
 	}
-	if p.Import != nil {
-		out.Import = cleanAddress(p.Import.Address)
+	if p.Import != "" {
+		out.Import = cleanAddress(p.Import)
 	}
 	return out
 }
 
-func outcome(e HistoryEntry, op operations.Operation, r operations.Record) Outcome {
+var changeSummaries = map[string]string{
+	"applied":  "A file change an AI assistant proposed was applied after review. A backup of the replaced file was kept. Nothing was run.",
+	"rejected": "A file change an AI assistant proposed was rejected. Nothing was written.",
+	"undone":   "An applied AI-proposed file change was undone. Nothing was run.",
+}
+
+// outcome derives the confirmed result. It may lower e.Status of an assist-change Hclaro refused.
+func outcome(e *HistoryEntry, ev Event) Outcome {
 	if e.Status == StatusRunning {
 		return Outcome{Result: "running", Summary: "In progress."}
 	}
@@ -272,11 +245,11 @@ func outcome(e HistoryEntry, op operations.Operation, r operations.Record) Outco
 		}
 		return Outcome{Result: "not_planned", Summary: "The plan did not finish and no plan was kept. Planning does not change infrastructure."}
 	case "apply":
-		o := Outcome{PlanID: op.PlanID, StateReloaded: op.StateReloaded}
+		o := Outcome{PlanID: ev.PlanID, StateReloaded: ev.StateReloaded}
 		switch {
-		case op.Outcome == "applied" && e.Status == StatusSucceeded:
+		case ev.Outcome == "applied" && e.Status == StatusSucceeded:
 			o.Result, o.Summary = "applied", "The engine reported that the apply finished. This is not proof that every resource is healthy; check them in your provider."
-		case op.Outcome == "uncertain" || e.Status == StatusCancelled || e.Status == StatusUnknown:
+		case ev.Outcome == "uncertain" || e.Status == StatusCancelled || e.Status == StatusUnknown:
 			o.Result, o.Summary = "partial", "The apply did not finish cleanly. Infrastructure and state may be partly changed. Review state and run a new plan."
 		default:
 			o.Result, o.Summary = "not_applied", "Nothing was applied: the apply was refused or stopped before the engine changed anything."
@@ -284,15 +257,16 @@ func outcome(e HistoryEntry, op operations.Operation, r operations.Record) Outco
 		return o
 	case "drift":
 		o := Outcome{Summary: "A refresh-only plan compared state with what providers report. It did not write state or change infrastructure."}
-		if r.Drift != nil {
-			o.Drift = &DriftCounts{Changed: r.Drift.Changed, Missing: r.Drift.Missing, CannotVerify: r.Drift.CannotVerify}
+		if ev.Drift != nil {
+			d := *ev.Drift
+			o.Drift = &d
 		}
 		switch {
-		case r.DriftStatus == operations.ScanCompleted && word(r.DriftOutcome) != "":
-			o.Result = r.DriftOutcome
-		case r.DriftStatus == operations.ScanPartial:
+		case ev.Outcome == "partial":
 			o.Result = "partial"
 			o.Summary = "The scan did not complete. Listed objects did drift; objects not listed were not necessarily checked."
+		case word(ev.Outcome) != "":
+			o.Result = ev.Outcome
 		default:
 			o.Result = "not_completed"
 		}
@@ -303,43 +277,49 @@ func outcome(e HistoryEntry, op operations.Operation, r operations.Record) Outco
 		}
 		return Outcome{Result: "not_completed", Summary: "The dependency graph was not read. Nothing was changed."}
 	case "init":
-		ran := op.LockfileChanged != nil
 		switch {
 		case e.Status == StatusSucceeded:
 			return Outcome{Result: "completed", Summary: "Initialization finished.", Verified: true}
 		case e.Status == StatusUnknown:
 			return Outcome{Result: "unverified", Summary: "The engine exited successfully, but the initialized data directory was not found afterwards."}
-		case ran:
+		case ev.Ran:
 			return Outcome{Result: "partial", Summary: "Initialization did not finish. Downloads under the data directory may be incomplete, and the lock file may already have been written."}
 		}
 		return Outcome{Result: "not_run", Summary: "Initialization was refused or stopped before the engine ran."}
 	case "workspace":
-		ran := op.Workspace != nil && op.Workspace.Ran
 		switch {
 		case e.Status == StatusSucceeded:
-			return Outcome{Result: "completed", Summary: "The workspace command finished.", Verified: op.Workspace != nil && op.Workspace.Verified}
-		case e.Status == StatusUnknown || ran:
+			return Outcome{Result: "completed", Summary: "The workspace command finished.", Verified: ev.Verified}
+		case e.Status == StatusUnknown || ev.Ran:
 			return Outcome{Result: "unverified", Summary: "The workspace command may or may not have taken effect. Check the workspace list with your CLI."}
 		}
 		return Outcome{Result: "not_run", Summary: "The workspace command was refused or stopped before the engine ran."}
 	case "branch":
-		b := op.Branch
-		if b == nil {
-			b = &operations.BranchSwitch{}
-		}
-		from, to := orUnknown(cleanBranch(b.From), "a detached HEAD"), orUnknown(cleanBranch(b.To), "a branch that was not found")
+		from, to := orUnknown(cleanBranch(ev.From), "a detached HEAD"), orUnknown(cleanBranch(ev.To), "a branch that was not found")
 		switch {
 		case e.Status == StatusSucceeded:
 			return Outcome{Result: "completed", Summary: "Switched the Git working tree from " + from + " to " + to + ". No Terraform/OpenTofu command ran; plans made before the switch must pass their checks again.", Verified: true}
-		case b.Ran:
+		case ev.Ran:
 			return Outcome{Result: "unverified", Summary: "Git was asked to switch from " + from + " to " + to + " but did not confirm it. Check the working tree with git status. It did not change infrastructure."}
 		}
 		return Outcome{Result: "not_run", Summary: "The switch to " + to + " was refused before Git changed anything."}
 	case "tool":
-		if e.Status == StatusSucceeded && op.Tool != nil {
-			return Outcome{Result: word(op.Tool.Outcome), Summary: "A read-only project tool ran."}
+		if e.Status == StatusSucceeded && ev.Action != "" {
+			return Outcome{Result: word(ev.Outcome), Summary: "A read-only project tool ran."}
 		}
 		return Outcome{Result: "not_completed", Summary: "The project tool did not finish. It does not change infrastructure."}
+	case "assist":
+		summary := "A sanitized context package was sent to an AI assistant. The package and the reply are not kept. Nothing was run, applied or approved."
+		if e.Assist != nil && e.Assist.ContextKind == "conversation" {
+			summary = "A conversation without project data was sent to an AI assistant. The messages and the reply are not kept. Nothing was run, applied or approved."
+		}
+		return Outcome{Result: map[bool]string{true: "answered", false: "not_answered"}[e.Status == StatusSucceeded], Summary: summary}
+	case "assist-change":
+		summary, ok := changeSummaries[ev.Outcome]
+		if !ok {
+			e.Status, summary = StatusFailed, "A file change an AI assistant proposed was refused by Hclaro's checks. Nothing was written."
+		}
+		return Outcome{Result: word(ev.Outcome), Summary: summary}
 	}
 	return Outcome{Result: "unknown", Summary: "This version of Hclaro does not know this kind of operation. It may have changed infrastructure or state; check state with your CLI and run a new plan."}
 }

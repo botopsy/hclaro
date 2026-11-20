@@ -3,10 +3,6 @@ package projects
 import (
 	"context"
 	"errors"
-	"hclaro/internal/awscli"
-	"hclaro/internal/gitctx"
-	"hclaro/internal/history"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -21,7 +17,6 @@ import (
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
-	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/rootlock"
 	"hclaro/internal/state"
@@ -159,15 +154,11 @@ type Hub struct {
 	// Tools resolves engines for the read-only project utilities, which also run through
 	// Inits. Nil disables them.
 	Tools ToolsFactory
-	// Locks is shared with the launch project's operation manager: one operation per root.
-	Locks *rootlock.Set
+	// Deps are shared with the launch project's operation manager and given to every
+	// execution scope's manager. Locks (one operation per root) is never nil; see Use.
+	operations.Deps
 	// Profiles holds execution profiles per project; nil disables them.
 	Profiles *profiles.Store
-	// History keeps operation metadata on disk; nil when it is not used. See UseHistory.
-	History *history.Store
-	// Git reads Git context, diffs and source locations of registered projects and opens
-	// approved files in an editor; nil disables those routes.
-	Git *gitctx.Service
 	// Launch is the canonical root Hclaro was started with, or "".
 	Launch string
 	// LaunchChanged runs after an init of the launch root has ended and released the root,
@@ -182,12 +173,8 @@ type Hub struct {
 	// scoped_execution_disabled and contexts stay read-only.
 	ScopedExecution bool
 	// Executors resolves the full engine of an execution scope; MaxScopes bounds scopes in
-	// memory; TempDir is where scopes keep saved plans ("" is the OS temp directory).
+	// memory.
 	Executors ExecutorFactory
-	// GitProbe and IdentityProbe gather apply preflight facts for execution scopes; nil
-	// reports them as unavailable.
-	GitProbe      preflight.GitProbe
-	IdentityProbe awscli.IdentityProbe
 	// Auth is the AWS authentication manager (M20): identity checks and sign-ins per
 	// execution profile. Its epochs invalidate apply preflights after a sign-in.
 	Auth *awsauth.Manager
@@ -200,11 +187,8 @@ type Hub struct {
 	// it must not call back into the Hub.
 	ContextClosed func(cid string)
 	MaxScopes     int
-	TempDir       string
-	// Terminal receives the folder of a scope's saved plan file that could not be deleted.
-	Terminal io.Writer
-	base     context.Context
-	stop     context.CancelFunc
+	base          context.Context
+	stop          context.CancelFunc
 	// mu guards the maps below. Lock order: mu, then an operations.Manager's own lock (Busy
 	// and Close read it under mu); never take mu while holding a manager's lock, and never run
 	// an engine command under either.
@@ -231,7 +215,20 @@ type Hub struct {
 // NewHub creates a Hub. Close cancels running reads.
 func NewHub(registry *Registry, launch string) *Hub {
 	base, stop := context.WithCancel(context.Background())
-	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), WorkspaceManagers: DefaultWorkspaceManagers, Tools: DefaultTools, Locks: rootlock.New(), Launch: launch, Now: time.Now, MaxContexts: 8, Executors: DefaultExecutors, MaxScopes: 4, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, reviews: map[string]*pendingReview{}, scopes: map[string]*Scope{}, envKey: newEnvKey(), loads: make(chan struct{}, 3)}
+	return &Hub{Registry: registry, Engines: DefaultEngines, Initers: DefaultIniters, Inits: operations.NewInits(), WorkspaceManagers: DefaultWorkspaceManagers, Tools: DefaultTools, Deps: operations.Deps{Locks: rootlock.New()}, Launch: launch, Now: time.Now, MaxContexts: 8, Executors: DefaultExecutors, MaxScopes: 4, base: base, stop: stop, inspections: map[string]*Inspection{}, contexts: map[string]*Context{}, closed: map[string]string{}, reviews: map[string]*pendingReview{}, scopes: map[string]*Scope{}, envKey: newEnvKey(), loads: make(chan struct{}, 3)}
+}
+
+// Use shares deps with the launch project's manager, every execution scope and every
+// initialization, workspace command and tool. It replaces every Deps field (only a nil Locks
+// keeps the Hub's own), so call it before setting any single Deps field on the Hub.
+func (h *Hub) Use(deps operations.Deps) {
+	if deps.Locks == nil {
+		deps.Locks = h.Locks
+	}
+	h.Deps = deps
+	if h.Inits != nil {
+		h.Inits.Recorder = deps.Recorder
+	}
 }
 
 // Applying reports whether any execution scope is running an apply.

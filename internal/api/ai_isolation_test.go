@@ -52,9 +52,9 @@ func TestAIEveryConversationRouteRefusesAnotherScope(t *testing.T) {
 	s := newScopedServer(t)
 	const proposed = "resource \"aws_s3_bucket\" \"isolated\" {}\n"
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: proposalReply("isolated.tf", "new", proposed)}
-	s.launch.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	config := t.TempDir()
-	s.launch.Assist.Store = assist.OpenStore(config, time.Now())
+	s.svc.Assist.Store = assist.OpenStore(config, time.Now())
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -150,20 +149,7 @@ func staticContext(p Record, name, executable string, environ []string, action e
 		return ""
 	}
 	info := workspace.Inspect(p.RootPath)
-	env := []string{}
-	for _, item := range environ {
-		key, _, _ := strings.Cut(item, "=")
-		if initEnvKey(key) {
-			env = append(env, item)
-		}
-	}
-	sort.Strings(env)
-	h := sha256.New()
-	for _, field := range append([]string{p.ID, p.RootPath, p.EnginePreference, name, executable, fileIdentity(executable), fingerprint, info.Backend, info.ExecutionMode, strconv.FormatBool(info.Initialized), string(action), target, "profile:" + profile}, env...) {
-		h.Write([]byte(field))
-		h.Write([]byte{0})
-	}
-	return hex.EncodeToString(h.Sum(nil))
+	return envHash(environ, p.ID, p.RootPath, p.EnginePreference, name, executable, fileIdentity(executable), fingerprint, info.Backend, info.ExecutionMode, strconv.FormatBool(info.Initialized), string(action), target, "profile:"+profile)
 }
 
 func listingID(static string, l engine.WorkspaceList) string {

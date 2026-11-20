@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"hclaro/internal/history"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,23 +26,23 @@ import (
 
 type switchRecords struct {
 	mu      sync.Mutex
-	records []operations.Record
+	records []history.Event
 	git     [][]string
 }
 
-func (r *switchRecords) Record(rec operations.Record) {
+func (r *switchRecords) Record(rec history.Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.records = append(r.records, rec)
 }
 
-func (r *switchRecords) finals() []operations.Operation {
+func (r *switchRecords) finals() []history.Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := []operations.Operation{}
+	out := []history.Event{}
 	for _, rec := range r.records {
-		if rec.Final && rec.Operation.Kind == "branch" {
-			out = append(out, rec.Operation)
+		if rec.Final && rec.Kind == "branch" {
+			out = append(out, rec)
 		}
 	}
 	return out
@@ -92,8 +93,9 @@ func newBranchServer(t *testing.T) (*planServer, string, *switchRecords) {
 		return preflight.GitResult{State: preflight.GitClean, Paths: []string{}}
 	}
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
-	h := Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
-	return &planServer{t, h, fake, manager}, root, rec
+	services := &Services{}
+	h := Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
+	return &planServer{t, h, fake, manager, services}, root, rec
 }
 
 func switchBody(target string, h *gitctx.Head) string {
@@ -149,7 +151,7 @@ func TestBranchSwitchOverHTTP(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 	finals := rec.finals()
-	if len(finals) != 2 || finals[0].Status != operations.Failed || finals[0].Diagnostic.Code != "head_changed" || finals[1].Status != operations.Succeeded || finals[1].Branch.From != "main" || finals[1].Branch.To != "dev" {
+	if len(finals) != 2 || finals[0].Status != operations.Failed || finals[0].Diagnostic.Code != "head_changed" || finals[1].Status != operations.Succeeded || finals[1].From != "main" || finals[1].To != "dev" {
 		t.Fatalf("%+v", finals)
 	}
 }
@@ -166,8 +168,8 @@ func TestBranchSwitchRefusals(t *testing.T) {
 		}
 	}
 	for _, op := range rec.finals() {
-		if op.Branch.To != "" || op.Status != operations.Failed || op.Branch.Ran {
-			t.Fatalf("a refused name was recorded: %+v", op.Branch)
+		if op.To != "" || op.Status != operations.Failed || op.Ran {
+			t.Fatalf("a refused name was recorded: %+v", op)
 		}
 	}
 	if w := s.do("POST", "/api/v1/git/switch", `{"branch":"dev","create":true}`); w.Code != 400 {

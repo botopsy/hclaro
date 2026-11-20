@@ -151,11 +151,11 @@ func openBrowser(ctx context.Context, url string) error {
 // ExportHistory writes the redacted history in the configuration directory to path. It
 // starts no server and reads no project.
 func ExportHistory(path string, output io.Writer, version string) error {
-	dir, err := projects.ConfigDir()
+	dir, err := configDir()
 	if err != nil {
 		return errors.New("the per-user configuration directory is unavailable")
 	}
-	store := history.Open(dir, time.Now())
+	store := history.Open(dir, time.Now(), history.Sources{})
 	status, notice, _ := store.Status()
 	if notice != "" {
 		fmt.Fprintln(output, "Operation history:", notice)
@@ -170,6 +170,44 @@ func ExportHistory(path string, output io.Writer, version string) error {
 	}
 	fmt.Fprintf(output, "Wrote %d operation(s) to %s. Log excerpts are not exported; values that looked like secrets were withheld when recorded.\n", len(report.Entries), path)
 	return nil
+}
+
+// sessionDeps are what the launch project's manager and every Hub execution scope,
+// initialization, workspace command and tool share.
+func sessionDeps(output io.Writer, recorder operations.Recorder, authEpoch func(projectID, profileID string) uint64) operations.Deps {
+	return operations.Deps{
+		Terminal: output,
+		Recorder: recorder,
+		// Git context (M15): read-only Git commands with fixed argv, source fingerprints of
+		// plans and validated editor links. One service, so file IDs match across routes.
+		Git: gitctx.New(),
+		// Apply preflight: Git status is read with a fixed argv; the AWS caller identity probe
+		// runs only when the user asks for it in the preflight dialog.
+		GitProbe: func(ctx context.Context, root string) preflight.GitResult {
+			return preflight.GitStatus(ctx, root, gitctx.Exec{}.Run)
+		},
+		IdentityProbe: awscli.AWSIdentity,
+		AuthEpoch:     authEpoch,
+		// Imports of objects already recorded in state under a catalogue ID are refused.
+		StateIDs: discovery.StateIDs,
+	}
+}
+
+// configDir is the per-user Hclaro configuration directory, shared by the Hub registry,
+// execution profiles, history, cost records and AI settings. HCLARO_CONFIG_DIR overrides it,
+// which keeps tests and demos away from the real files.
+func configDir() (string, error) {
+	if dir := os.Getenv("HCLARO_CONFIG_DIR"); dir != "" {
+		if !filepath.IsAbs(dir) {
+			return "", errors.New("HCLARO_CONFIG_DIR must be an absolute path")
+		}
+		return dir, nil
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "hclaro"), nil
 }
 
 func Run(ctx context.Context, o Options, output io.Writer, version string) error {
@@ -209,10 +247,13 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	registry := projects.Unavailable("The per-user configuration directory is unavailable, so projects cannot be registered.")
 	executionProfiles := profiles.Disabled("The per-user configuration directory is unavailable, so execution profiles cannot be saved.")
 	operationHistory := history.Disabled("The per-user configuration directory is unavailable, so operation history is not kept.")
-	if dir, err := projects.ConfigDir(); err == nil {
+	dir, dirErr := configDir()
+	if dirErr == nil {
 		registry = projects.Open(dir, time.Now())
 		executionProfiles = profiles.Open(dir, time.Now())
-		operationHistory = history.Open(dir, time.Now())
+		// Entries name projects by their Hub ID and alias; the commit checked out in the root
+		// is read from the repository files when an operation starts.
+		operationHistory = history.Open(dir, time.Now(), history.Sources{Git: history.ReadGit, Project: registry.Identify})
 	}
 	if _, notice, _ := operationHistory.Status(); notice != "" {
 		fmt.Fprintln(output, "Operation history:", notice)
@@ -233,8 +274,16 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	} else {
 		fmt.Fprintln(output, "Hub execution: off (--no-hub-execution); Hub workspaces are read-only.")
 	}
-	hub.UseHistory(operationHistory)
-	defer hub.Close()
+	// Everything started below is closed once, in reverse order, when Hclaro stops.
+	var closers []func()
+	closeAll := func() {
+		for i := len(closers) - 1; i >= 0; i-- {
+			closers[i]()
+		}
+		closers = nil
+	}
+	defer closeAll()
+	closers = append(closers, hub.Close)
 	listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(o.Port)))
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
@@ -252,60 +301,50 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		return errors.New("unable to create secure session")
 	}
 	host := listener.Addr().String()
-	manager := operations.NewManager(store, planner, root)
-	manager.Terminal, hub.Terminal = output, output
-	// Hub initialization and the launch project's plans share one claim per project root.
-	manager.Locks = hub.Locks
+	// AWS authentication (M20): STS checks and AWS CLI sign-ins only on explicit request.
+	hub.Auth = awsauth.New()
+	closers = append(closers, func() { hub.Auth.Close(5 * time.Second) })
+	// Hub initialization and the launch project's plans share one claim per project root
+	// (the Hub's Locks, kept by Use).
+	hub.Use(sessionDeps(output, operationHistory, hub.Auth.Epoch))
+	services := &api.Services{
+		History: operationHistory,
+		// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
+		Discovery: discovery.New(awscli.Exec{}),
+		// Cost estimation (M17): off until the user opts in after the disclosure; never in
+		// strict local-only mode. Only sanitized aggregates are saved in the config folder.
+		Cost: cost.New(cost.Exec{}, o.StrictLocal),
+		// AI assistance (AI-01.03, AI-01.04, AI-01.14): on by default unless turned off in Settings
+		// (saved in ai.json); being on starts no assistant and shares nothing without a click (assistants
+		// are detected only on request). Codex runs only on macOS behind its gates and local self-check
+		// (assist/codex.go). Packages and replies stay in
+		// memory unless the user saves a conversation. Strict local-only mode keeps handoff and never
+		// runs an assistant (OD-AI-4). History keeps request metadata only.
+		Assist: assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath}, assist.NewCodexCLI(o.CodexPath)),
+	}
+	hub.Discovery = services.Discovery
+	closers = append(closers, func() { services.Discovery.Close(5 * time.Second) })
+	cost.SweepStale("", time.Now())
+	closers = append(closers, func() { services.Cost.Close(5 * time.Second) })
+	services.Assist.Record = func(r assist.RunRecord) { operationHistory.Record(r.Event()) }
+	services.Assist.RecordChange = func(r assist.ChangeRecord) { operationHistory.Record(r.Event()) }
+	if dirErr == nil {
+		services.Cost.Store = cost.OpenStore(dir)
+		// Saved conversations (AI-01.11): opt-in per conversation, in the configuration folder;
+		// expired ones are deleted now.
+		services.Assist.UsePrefs(dir)
+		services.Assist.Store = assist.OpenStore(dir, time.Now())
+	}
+	// A closed, reloaded or evicted Hub context takes its AI packages and conversations with it.
+	hub.ContextClosed = services.Assist.DropScope
+	closers = append(closers, services.Assist.Close)
+	// Built last, so it is closed first: a running plan, apply or init is interrupted and its
+	// private temp files removed before the other services stop.
+	manager := operations.New(store, planner, root, hub.Deps)
+	closers = append(closers, func() { manager.Close(20 * time.Second) })
 	// Execution profiles of the launch project bind a plan to a profile's environment; the
 	// launch adapter itself is never changed.
 	manager.Binder = hub.LaunchBinder()
-	manager.Recorder = operationHistory
-	// Apply preflight: Git status is read with a fixed argv; the AWS caller identity probe
-	// runs only when the user asks for it in the preflight dialog.
-	gitProbe := func(ctx context.Context, root string) preflight.GitResult {
-		return preflight.GitStatus(ctx, root, gitctx.Exec{}.Run)
-	}
-	manager.GitProbe = gitProbe
-	// Git context (M15): read-only Git commands with fixed argv, source fingerprints of
-	// plans and validated editor links. One service, so file IDs match across routes.
-	gitService := gitctx.New()
-	manager.Git = gitService
-	hub.Git = gitService
-	manager.IdentityProbe = awscli.AWSIdentity
-	// Hub execution scopes (when enabled) gather the same preflight facts.
-	hub.GitProbe, hub.IdentityProbe = gitProbe, awscli.AWSIdentity
-	// AWS authentication (M20): STS checks and AWS CLI sign-ins only on explicit request.
-	hub.Auth = awsauth.New()
-	manager.AuthEpoch = hub.Auth.Epoch
-	// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
-	manager.Discovery = discovery.New(awscli.Exec{})
-	hub.Discovery = manager.Discovery
-	// Cost estimation (M17): off until the user opts in after the disclosure; never in
-	// strict local-only mode. Only sanitized aggregates are saved in the config folder.
-	manager.Cost = cost.New(cost.Exec{}, o.StrictLocal)
-	if dir, err := projects.ConfigDir(); err == nil {
-		manager.Cost.Store = cost.OpenStore(dir)
-	}
-	cost.SweepStale("", time.Now())
-	// AI assistance (AI-01.03, AI-01.04, AI-01.14): on by default unless turned off in Settings
-	// (saved in ai.json); being on starts no assistant and shares nothing without a click (assistants
-	// are detected only on request). Codex runs only on macOS behind its gates and local self-check
-	// (assist/codex.go). Packages and replies stay in
-	// memory unless the user saves a conversation. Strict local-only mode keeps handoff and never
-	// runs an assistant (OD-AI-4). History keeps request metadata only.
-	manager.Assist = assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath},
-		assist.NewCodexCLI(o.CodexPath))
-	manager.Assist.Record = operationHistory.RecordAssist
-	manager.Assist.RecordChange = operationHistory.RecordAssistChange
-	// Saved conversations (AI-01.11): opt-in per conversation, in the configuration folder;
-	// expired ones are deleted now.
-	if dir, err := projects.ConfigDir(); err == nil {
-		manager.Assist.UsePrefs(dir)
-		manager.Assist.Store = assist.OpenStore(dir, time.Now())
-	}
-	// A closed, reloaded or evicted Hub context takes its AI packages and conversations with it.
-	hub.ContextClosed = manager.Assist.DropScope
-	defer manager.Assist.Close()
 	if launchCLI != nil {
 		manager.Bind = func(environ []string, ws string) engine.Planner { return launchCLI.WithEnvironment(environ, ws) }
 	}
@@ -325,7 +364,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	// Request contexts derive from runCtx so event streams end promptly on shutdown.
 	// WriteTimeout covers short handlers only: SSE responses extend their own write deadline per
 	// event, and handlers that run engines or probes extend it past their own bound (withDeadline).
-	server := &http.Server{Handler: api.Handler(store, manager, hub, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	server := &http.Server{Handler: api.Handler(store, manager, hub, services, ui.Assets(), host, token, csrf, version), BaseContext: func(net.Listener) context.Context { return runCtx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	loaded := make(chan struct{})
 	// The startup read holds a shared claim, taken before the server accepts requests, so a
 	// Hub init or workspace command waits for it.
@@ -376,15 +415,12 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		fmt.Fprintf(output, "An apply is running. Hclaro interrupts it once and waits up to %s for the engine to finish writing state.\nDo not force-quit Hclaro: the engine writes to Hclaro and could be stopped mid-apply.\n", engine.ApplyGracePeriod)
 	}
 	cancel()
-	// A running plan or init is interrupted and its private temp files removed before exit.
-	manager.Close(20 * time.Second)
-	manager.Discovery.Close(5 * time.Second)
-	hub.Auth.Close(5 * time.Second)
-	manager.Cost.Close(5 * time.Second)
-	hub.Inits.Close(20 * time.Second)
+	// Request contexts derive from runCtx, so handlers return promptly; the services they use
+	// are closed only once no request can reach them.
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()
 	_ = server.Shutdown(shutdownCtx)
+	closeAll()
 	select {
 	case <-loaded:
 	case <-shutdownCtx.Done():

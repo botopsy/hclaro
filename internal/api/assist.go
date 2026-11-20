@@ -114,20 +114,20 @@ func providerNames(snap workspace.Snapshot) []string {
 	return out
 }
 
-func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, hub *projects.Hub) {
+func assistRoutes(mux *http.ServeMux, deps *Services, store *workspace.Store, manager *operations.Manager, hub *projects.Hub) {
 	on := func(w http.ResponseWriter) (*assist.Session, bool) {
-		if manager.Assist == nil || !manager.Assist.Enabled() {
+		if deps.Assist == nil || !deps.Assist.Enabled() {
 			reasonJSON(w, 409, "ai_disabled", "AI assistance is off. Turn it on in Settings to build a context package.")
 			return nil, false
 		}
-		return manager.Assist, true
+		return deps.Assist, true
 	}
 	mux.HandleFunc("GET /api/v1/ai/settings", func(w http.ResponseWriter, r *http.Request) {
-		if manager.Assist == nil {
+		if deps.Assist == nil {
 			writeJSON(w, 200, assist.Settings{})
 			return
 		}
-		writeJSON(w, 200, manager.Assist.Settings())
+		writeJSON(w, 200, deps.Assist.Settings())
 	})
 	// Detection on request (AI-01.14 review): the browser asks only when the user opens an AI
 	// preview or the AI Assistant page, or clicks Check in Settings. GET never starts a process.
@@ -135,11 +135,11 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 		if !decodeBody(w, r, &struct{}{}) {
 			return
 		}
-		if manager.Assist == nil {
+		if deps.Assist == nil {
 			reasonJSON(w, 409, "ai_unavailable", "AI assistance is not available in this session.")
 			return
 		}
-		writeJSON(w, 200, manager.Assist.Detect())
+		writeJSON(w, 200, deps.Assist.Detect())
 	})
 	// Settings changes: the master switch and the assistant (both saved, AI-01.14; the assistant
 	// must be one of the adapters) and accepting the disclosure for this session. Executable paths
@@ -157,29 +157,29 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			errorJSON(w, 400, "invalid_request")
 			return
 		}
-		if manager.Assist == nil {
+		if deps.Assist == nil {
 			reasonJSON(w, 409, "ai_unavailable", "AI assistance is not available in this session.")
 			return
 		}
 		if body.Enabled != nil {
-			if _, err := manager.Assist.SetEnabled(*body.Enabled); err != nil {
+			if _, err := deps.Assist.SetEnabled(*body.Enabled); err != nil {
 				aiRefusal(w, err)
 				return
 			}
 		}
 		if body.DefaultProvider != nil {
-			if err := manager.Assist.SetDefault(*body.DefaultProvider); err != nil {
+			if err := deps.Assist.SetDefault(*body.DefaultProvider); err != nil {
 				aiRefusal(w, err)
 				return
 			}
 		}
 		if body.AcceptDisclosure != nil {
-			if err := manager.Assist.Accept(*body.AcceptDisclosure); err != nil {
+			if err := deps.Assist.Accept(*body.AcceptDisclosure); err != nil {
 				aiRefusal(w, err)
 				return
 			}
 		}
-		writeJSON(w, 200, manager.Assist.Settings())
+		writeJSON(w, 200, deps.Assist.Settings())
 	})
 	launch := func(w http.ResponseWriter) (assistSource, bool) {
 		if manager.Root() == "" {
@@ -202,13 +202,13 @@ func assistRoutes(mux *http.ServeMux, store *workspace.Store, manager *operation
 			git:   manager.Git,
 			bound: func() bool { return store.Get().Info.Workspace == snap.Info.Workspace },
 			cost: func() ([]string, func() bool) {
-				if manager.Cost == nil {
+				if deps.Cost == nil {
 					return nil, nil
 				}
 				// usable: still the session's newest estimate, completed, opted in, and current for
 				// the launch workspace and its plan context.
 				usable := func(id string) (cost.CostEstimate, bool) {
-					e, b, ok := manager.Cost.LatestCompleted()
+					e, b, ok := deps.Cost.LatestCompleted()
 					if !ok || id != "" && e.ID != id {
 						return e, false
 					}

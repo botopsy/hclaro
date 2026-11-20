@@ -82,22 +82,6 @@ type Registry struct {
 	cached []Record
 }
 
-// ConfigDir is the per-user Hclaro configuration directory. HCLARO_CONFIG_DIR overrides it,
-// which keeps tests and demos away from the real registry.
-func ConfigDir() (string, error) {
-	if dir := os.Getenv("HCLARO_CONFIG_DIR"); dir != "" {
-		if !filepath.IsAbs(dir) {
-			return "", errors.New("HCLARO_CONFIG_DIR must be an absolute path")
-		}
-		return dir, nil
-	}
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "hclaro"), nil
-}
-
 // Open loads the registry in dir. A file that cannot be decoded is moved aside to a
 // timestamped backup and the registry starts empty; a file from a newer schema or one
 // that cannot be read is left untouched and the registry becomes read-only.

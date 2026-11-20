@@ -21,7 +21,8 @@ func TestLaunchReloadReinspectsAndRereads(t *testing.T) {
 	store.Load(context.Background(), fake, "terraform", nil)
 	manager := operations.NewManager(store, fake, t.TempDir())
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
-	s := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}
+	services := &Services{}
+	s := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager, services}
 	if w := s.do("POST", "/api/v1/workspace/reload", `{}`); w.Code != 409 || !strings.Contains(w.Body.String(), "reload_unavailable") {
 		t.Fatalf("without a launch reload: %d %s", w.Code, w.Body)
 	}

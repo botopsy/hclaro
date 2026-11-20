@@ -301,7 +301,7 @@ func recordSwitch(rec operations.Recorder, root, from, target string) func(error
 		return append([]string{"git"}, gitctx.SwitchArgs(b.To)...)
 	}
 	op.Command = command()
-	rec.Record(operations.Record{Operation: op, Root: root})
+	rec.Record(operations.Record{Operation: op, Root: root}.Event())
 	return func(err error) {
 		var se *gitctx.SwitchError
 		errors.As(err, &se)
@@ -318,6 +318,6 @@ func recordSwitch(rec operations.Recorder, root, from, target string) func(error
 		} else if err != nil {
 			op.Status = operations.Failed
 		}
-		rec.Record(operations.Record{Operation: op, Root: root, Final: true})
+		rec.Record(operations.Record{Operation: op, Root: root, Final: true}.Event())
 	}
 }

@@ -1,7 +1,8 @@
-package history
+package history_test
 
 import (
 	"context"
+	. "hclaro/internal/history"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func newHarness(t *testing.T, fake *engine.Fake, dir string) *harness {
 	m := operations.NewManager(ws, fake, root)
 	m.TempDir = t.TempDir()
 	m.Reload = func(context.Context) {}
-	store := Open(dir, time.Now())
+	store := Open(dir, time.Now(), Sources{})
 	m.Recorder = store
 	t.Cleanup(func() { m.Close(5 * time.Second) })
 	return &harness{t, fake, m, ws, store, dir, root}
@@ -83,7 +84,7 @@ func (h *harness) waitStage(id, stage string) {
 
 func (h *harness) assertClean() {
 	h.t.Helper()
-	b, err := os.ReadFile(filepath.Join(h.dir, fileName))
+	b, err := os.ReadFile(filepath.Join(h.dir, FileName))
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -186,7 +187,7 @@ func TestCancelledReplaceAndFailedPlanAreRecordedHonestly(t *testing.T) {
 		t.Fatalf("excerpt: %s", excerpt)
 	}
 	h.assertClean()
-	b, _ := os.ReadFile(filepath.Join(h.store.path))
+	b, _ := os.ReadFile(filepath.Join(h.store.Path()))
 	report := NewReport(h.store.List(Filter{}), Filter{}, "test", time.Now())
 	if strings.Contains(report.Markdown(), canary) || strings.Contains(report.Markdown(), knownValue) || strings.Contains(string(b), "x_unknown_field") {
 		t.Fatal("secret in export")
@@ -225,9 +226,9 @@ func TestCancelledApplyIsPartialAndLinkedToItsPlan(t *testing.T) {
 }
 
 func TestHubInitIsRecordedWithProject(t *testing.T) {
-	store := Open(t.TempDir(), time.Now())
+	store := Open(t.TempDir(), time.Now(), Sources{})
 	root := t.TempDir()
-	store.Project = func(r string) (string, string, bool) { return id(77), "network", r == root }
+	store.UseProject(func(r string) (string, string, bool) { return id(77), "network", r == root })
 	inits := operations.NewInits()
 	inits.Recorder = store
 	t.Cleanup(func() { inits.Close(5 * time.Second) })
@@ -264,7 +265,7 @@ func TestHubInitIsRecordedWithProject(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	b, _ := os.ReadFile(store.path)
+	b, _ := os.ReadFile(store.Path())
 	if strings.Contains(string(b), canary) || strings.Contains(string(b), root) {
 		t.Fatal("secret or root path in history")
 	}

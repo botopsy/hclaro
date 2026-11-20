@@ -232,10 +232,10 @@ func TestAIQuickCostLifecycle(t *testing.T) {
 func TestAIHubQuickActionsGetNoCost(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.launch.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	svc := cost.New(costtest.New(), false)
 	svc.TempDir = t.TempDir()
-	s.launch.Cost = svc
+	s.svc.Cost = svc
 	t.Cleanup(func() { svc.Close(5 * time.Second) })
 	if _, err := svc.OptIn(context.Background(), cost.DisclosureVersion); err != nil {
 		t.Fatal(err)

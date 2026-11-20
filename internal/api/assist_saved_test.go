@@ -27,8 +27,8 @@ type savedList struct {
 // configuration folder.
 func restart(s *planServer, config string, a assist.Assistant) {
 	s.t.Helper()
-	s.manager.Assist = assist.NewSession(false, a)
-	s.manager.Assist.Store = assist.OpenStore(config, time.Now())
+	s.svc.Assist = assist.NewSession(false, a)
+	s.svc.Assist.Store = assist.OpenStore(config, time.Now())
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 }
@@ -271,9 +271,9 @@ func TestAISavedConversationIsolatedPerProject(t *testing.T) {
 func TestAIHubSavedConversationsArePerProject(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.launch.Assist = assist.NewSession(false, stub)
+	s.svc.Assist = assist.NewSession(false, stub)
 	config := t.TempDir()
-	s.launch.Assist.Store = assist.OpenStore(config, time.Now())
+	s.svc.Assist.Store = assist.OpenStore(config, time.Now())
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")

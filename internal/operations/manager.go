@@ -18,10 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"hclaro/internal/assist"
 	"hclaro/internal/awscli"
 	"hclaro/internal/cost"
-	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/imports"
@@ -179,9 +177,8 @@ type Manager struct {
 	planner engine.Planner
 	applier engine.Applier
 	root    string
-	TempDir string
-	// Terminal receives the folder of a saved plan file Hclaro could not delete. Nil in tests.
-	Terminal io.Writer
+	// Deps are the services shared by every manager of a session (see New).
+	Deps
 	// chmod makes saved plan folders and files private; tests replace it to make it fail.
 	chmod   func(string, fs.FileMode) error
 	Timeout time.Duration
@@ -195,37 +192,13 @@ type Manager struct {
 	// Reinspect reads the launch project's folder metadata again. With Reload it lets
 	// Reread pick up changes made outside Hclaro's plans, such as an init. Nil disables Reread.
 	Reinspect func() workspace.Info
-	// Locks is shared with the Hub so a plan, import or apply never runs in a root that is
-	// being initialized, and the other way around. NewManager gives a private set; the
-	// server replaces it with the Hub's. It must not be nil.
-	Locks *rootlock.Set
 	// Binder resolves execution profiles of the launch project; nil disables profiles.
 	// Bind returns the planner for a profile's environment and workspace; nil keeps the
 	// launch planner (tests).
 	Binder Binder
 	Bind   func(environ []string, workspace string) engine.Planner
-	// Recorder, when set, keeps metadata of every plan, apply, drift scan and graph.
-	Recorder Recorder
-	// GitProbe and IdentityProbe gather preflight facts; nil reports them as unavailable.
 	// PreflightTTL bounds how long a passed preflight can be used for an approval.
-	GitProbe      preflight.GitProbe
-	IdentityProbe awscli.IdentityProbe
-	// AuthEpoch returns the AWS authentication epoch of a project's execution profile
-	// (awsauth.Manager.Epoch). A sign-in or identity change after a preflight refuses it.
-	AuthEpoch    func(projectID, profileID string) uint64
 	PreflightTTL time.Duration
-	// Git reads the launch project's Git context and records each plan's source
-	// fingerprint; nil disables source tracking (tests that do not need it).
-	Git *gitctx.Service
-	// Discovery lists existing AWS objects for the launch workspace on request (M16); nil
-	// disables cloud discovery.
-	Discovery *discovery.Service
-	// Cost estimates the monthly cost impact of reviewed plans on request (M17); nil
-	// disables cost estimation.
-	Cost *cost.Service
-	// Assist holds the session's AI switch and handoff packages (AI-01.03); nil means AI is
-	// unavailable. It has no access to plans, approvals or operations.
-	Assist *assist.Session
 	// Verify, when set, revalidates the execution scope of a Hub workspace (M24.04) with the
 	// project root claim held, immediately before an operation's first engine command; kind
 	// is "plan", "drift", "graph" or "apply", or "import" before an import block is written.
@@ -267,10 +240,46 @@ const (
 	logBytes      = 2 << 20
 )
 
+// Deps are what every operation manager of a session shares: the launch project's and each
+// Hub workspace's. Adding one is a change here and where the session builds its Deps.
+type Deps struct {
+	// Locks is shared with the Hub so a plan, import or apply never runs in a root that is
+	// being initialized, and the other way around. Nil gives the manager a private set.
+	Locks *rootlock.Set
+	// TempDir is where saved plans are kept ("" is the OS temp directory).
+	TempDir string
+	// Terminal receives the folder of a saved plan file Hclaro could not delete. Nil in tests.
+	Terminal io.Writer
+	// Recorder, when set, keeps metadata of every plan, apply, drift scan and graph.
+	Recorder Recorder
+	// GitProbe and IdentityProbe gather preflight facts; nil reports them as unavailable.
+	GitProbe      preflight.GitProbe
+	IdentityProbe awscli.IdentityProbe
+	// AuthEpoch returns the AWS authentication epoch of a project's execution profile
+	// (awsauth.Manager.Epoch). A sign-in or identity change after a preflight refuses it.
+	AuthEpoch func(projectID, profileID string) uint64
+	// Git reads the project's Git context and records each plan's source fingerprint; nil
+	// disables source tracking (tests that do not need it).
+	Git *gitctx.Service
+	// StateIDs returns the import IDs a state instance records for types cloud discovery
+	// knows (discovery.StateIDs); an import of one of them is refused as already managed.
+	// Nil compares only the id attribute.
+	StateIDs func(typ string, attrs map[string]any) ([]string, bool)
+}
+
+// NewManager is New without shared services (tests).
 func NewManager(store *workspace.Store, planner engine.Planner, root string) *Manager {
+	return New(store, planner, root, Deps{})
+}
+
+// New returns the operation manager of one project root and workspace.
+func New(store *workspace.Store, planner engine.Planner, root string, deps Deps) *Manager {
 	base, stop := context.WithCancel(context.Background())
 	applier, _ := planner.(engine.Applier)
-	return &Manager{store: store, planner: planner, applier: applier, root: root, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, Locks: rootlock.New(), chmod: os.Chmod}
+	if deps.Locks == nil {
+		deps.Locks = rootlock.New()
+	}
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Deps: deps, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, chmod: os.Chmod}
 }
 
 func newID() string {

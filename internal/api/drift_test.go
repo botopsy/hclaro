@@ -55,7 +55,8 @@ func newDriftServer(t *testing.T, fake *engine.Fake) (*planServer, *workspace.St
 	manager := operations.NewManager(store, fake, t.TempDir())
 	manager.TempDir = t.TempDir()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
-	return &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager}, store
+	services := &Services{}
+	return &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), fake, manager, services}, store
 }
 
 func TestDriftScanAPI(t *testing.T) {
@@ -164,7 +165,8 @@ func TestDriftScanAPIFailuresAndUnsupported(t *testing.T) {
 	store.Load(context.Background(), remote, "terraform", nil)
 	manager := operations.NewManager(store, remote, t.TempDir())
 	t.Cleanup(func() { manager.Close(time.Second) })
-	rs := &planServer{t, Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), remote, manager}
+	services := &Services{}
+	rs := &planServer{t, Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test"), remote, manager, services}
 	options := decode[struct {
 		CanScan bool   `json:"canScan"`
 		Reason  string `json:"reason"`

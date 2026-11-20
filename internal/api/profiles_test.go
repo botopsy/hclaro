@@ -203,7 +203,7 @@ func TestLaunchPlanWithProfileOverHTTP(t *testing.T) {
 	manager.Binder = s.hub.LaunchBinder()
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
 	s.hub.Launch = network.RootPath
-	s.handler = Handler(store, manager, s.hub, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
+	s.handler = Handler(store, manager, s.hub, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
 	p := decode[profileView](t, s.do("POST", "/api/v1/projects/"+network.ID+"/execution-profiles", `{"name":"dev","awsProfile":"dev-sso","parallelism":3}`))
 	options := decode[struct {
 		ProjectID string            `json:"projectId"`

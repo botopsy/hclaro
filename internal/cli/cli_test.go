@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -56,8 +57,8 @@ func TestExportHistory(t *testing.T) {
 	}
 	config := t.TempDir()
 	t.Setenv("HCLARO_CONFIG_DIR", config)
-	store := history.Open(config, time.Now())
-	store.Record(operations.Record{Operation: operations.Operation{ID: strings.Repeat("a", 32), Kind: "plan", Status: operations.Failed, StartedAt: time.Now().UTC().Format(time.RFC3339), Diagnostic: &operations.Diagnostic{Code: "plan_failed", Message: "password=" + fixtures.Canary}}, Root: "/synthetic/net", Engine: "terraform", Final: true})
+	store := history.Open(config, time.Now(), history.Sources{})
+	store.Record(operations.Record{Operation: operations.Operation{ID: strings.Repeat("a", 32), Kind: "plan", Status: operations.Failed, StartedAt: time.Now().UTC().Format(time.RFC3339), Diagnostic: &operations.Diagnostic{Code: "plan_failed", Message: "password=" + fixtures.Canary}}, Root: "/synthetic/net", Engine: "terraform", Final: true}.Event())
 	out := filepath.Join(t.TempDir(), "history.json")
 	var log strings.Builder
 	// Export runs no server and reads no project, even when a path is given.
@@ -106,5 +107,19 @@ func TestStrictLocalArgument(t *testing.T) {
 	}
 	if o, err := Parse([]string{"--strict-local"}, io.Discard); err != nil || !o.StrictLocal {
 		t.Fatalf("--strict-local: %+v %v", o, err)
+	}
+}
+
+// The import collision check is opt-in on operations.Deps; the session must opt in, or an
+// import of an object already managed under a catalogue ID (hashicorp/aws v5 records an RDS
+// instance's import ID as identifier, not id) would be accepted.
+func TestSessionDepsRefuseImportsOfManagedObjects(t *testing.T) {
+	deps := sessionDeps(io.Discard, nil, func(string, string) uint64 { return 0 })
+	if deps.StateIDs == nil || deps.Git == nil || deps.GitProbe == nil || deps.IdentityProbe == nil || deps.AuthEpoch == nil {
+		t.Fatalf("session deps incomplete: %+v", deps)
+	}
+	ids, ok := deps.StateIDs("aws_db_instance", map[string]any{"id": "db-ABCDEFGHIJKLMNOPQRSTUVWXYZ", "identifier": "orders"})
+	if !ok || !slices.Contains(ids, "orders") {
+		t.Fatalf("state IDs %v %v", ids, ok)
 	}
 }

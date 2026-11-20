@@ -3,6 +3,7 @@ package operations
 import (
 	"context"
 	"errors"
+	"hclaro/internal/discovery"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,6 +205,7 @@ func TestImportRefusalsWriteNothingAndRunNothing(t *testing.T) {
 func TestImportRefusesAnRDSInstanceManagedUnderAWSv5(t *testing.T) {
 	fake := &engine.Fake{}
 	m, _ := importSetup(t, fake, map[string]string{"main.tf": `resource "aws_db_instance" "copy" {}` + "\n"})
+	m.StateIDs = discovery.StateIDs
 	fake.StateJSON = []byte(`{"format_version": "1.0", "values": {"root_module": {"resources": [{"address": "aws_db_instance.orders", "mode": "managed", "type": "aws_db_instance", "name": "orders", "provider_name": "registry.terraform.io/hashicorp/aws", "values": {"id": "db-ABCDEFGHIJKLMNOPQRSTUVWXYZ", "identifier": "orders"}, "sensitive_values": {}}]}}}`)
 	m.store.Load(context.Background(), fake, "terraform", nil)
 	req := imports.Request{Address: "aws_db_instance.copy", ID: "orders", File: "imports.tf"}

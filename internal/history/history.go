@@ -23,8 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"hclaro/internal/assist"
-	"hclaro/internal/operations"
 	"hclaro/internal/safefile"
 )
 
@@ -130,6 +128,43 @@ type HistoryEntry struct {
 	ExcerptOmitted int64 `json:"excerptOmitted,omitempty"`
 	// Session identifies the Hclaro process that wrote a running entry.
 	Session string `json:"session,omitempty"`
+}
+
+// Event is what the packages that run operations and AI requests hand to Record: one start
+// or end. Record cleans and bounds every field; Root is never stored.
+type Event struct {
+	ID string
+	// Kind is one of Kinds; any other value is recorded as KindUnknown.
+	Kind, Action string
+	// Status is a Status* value; any other value is running, or unknown when Final.
+	Status                string
+	Final                 bool
+	StartedAt, FinishedAt string
+	DurationMs            int64
+	ExitCode              *int
+	// Root names the project for Sources; a valid ProjectID (a Hub ID) and a ProjectName
+	// replace what Sources found.
+	Root, ProjectID, ProjectName     string
+	Engine, EngineVersion, Workspace string
+	Context                          *ContextSummary
+	Command                          []string
+	Diagnostic                       *Diagnostic
+	// Plan is the reviewed plan, unbounded: Changes include no-op instances, and an instance
+	// imported without changes has the action "import".
+	Plan           *PlanSummary
+	Assist         *AssistSummary
+	Excerpt        []Line
+	ExcerptOmitted int64
+	// What the outcome is derived from. Outcome is an apply's outcome, a completed drift
+	// scan's outcome ("partial" for a partial scan), a tool's outcome or an AI change decision.
+	Outcome       string
+	PlanID        string
+	StateReloaded bool
+	Drift         *DriftCounts
+	// Ran: the engine (init, workspace) or git switch (branch) was started. Verified: a
+	// workspace command was confirmed. From and To are a branch switch's branches.
+	Ran, Verified bool
+	From, To      string
 }
 
 // ContextSummary identifies the execution context without holding environment values.
@@ -279,14 +314,19 @@ type Store struct {
 	session string
 	doc     document
 	stamp   fileStamp
+	sources Sources
 	// Now is the clock; tests replace it.
 	Now func() time.Time
-	// Project resolves a project root to its ID, display name and whether it is registered.
-	Project func(root string) (id, name string, registered bool)
-	// Git reads the commit checked out in a root; nil disables it.
-	Git func(root string) *GitIdentity
 	// Migrations maps a schema version to the migration that upgrades it to the next one.
 	Migrations map[int]Migration
+}
+
+// Sources resolves what an event names only by its project root. Either may be nil.
+type Sources struct {
+	// Project resolves a project root to its ID, display name and whether it is registered.
+	Project func(root string) (id, name string, registered bool)
+	// Git reads the commit checked out in a root.
+	Git func(root string) *GitIdentity
 }
 
 type fileStamp struct {
@@ -306,8 +346,9 @@ func ValidID(id string) bool { return idPattern.MatchString(id) }
 // removed. A file that cannot be decoded is moved aside to a timestamped backup and history
 // starts empty; a file from a newer schema is left untouched and nothing is recorded.
 // Entries still marked running by an earlier process are marked interrupted.
-func Open(dir string, now time.Time) *Store {
+func Open(dir string, now time.Time, sources Sources) *Store {
 	s := newStore(filepath.Join(dir, fileName))
+	s.sources = sources
 	s.Migrations = DefaultMigrations()
 	s.load(now)
 	return s
@@ -794,15 +835,16 @@ func (s *Store) Clear(f Filter) (int, error) {
 	return removed, err
 }
 
-// Record keeps the start or end of an operation. Failures to write are reported through
-// Status and never affect the operation.
-func (s *Store) Record(r operations.Record) {
+// Record keeps the start or end of an operation, or one finished AI request or AI change
+// decision. An event with the ID of an entry replaces it. Failures to write are reported
+// through Status and never affect the caller.
+func (s *Store) Record(ev Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.status != Ready {
 		return
 	}
-	entry := s.convert(r)
+	entry := s.convert(ev)
 	// A failed write is kept in s.notice (shown with the history) and never affects the caller.
 	_ = s.mutate(func(d *document) error {
 		i := slices.IndexFunc(d.Entries, func(e HistoryEntry) bool { return e.ID == entry.ID })
@@ -829,79 +871,6 @@ func (s *Store) Record(r operations.Record) {
 				}
 			}
 		}
-		return nil
-	})
-}
-
-// RecordAssist keeps the metadata of one finished AI conversation turn. Since AI-01.07 the
-// hash (stored as packageSha256 for format compatibility) is that of the turn's exact stdin.
-func (s *Store) RecordAssist(r assist.RunRecord) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.status != Ready {
-		return
-	}
-	status := map[string]string{assist.RunCompleted: StatusSucceeded, assist.RunFailed: StatusFailed, assist.RunCancelled: StatusCancelled}[r.Status]
-	if status == "" {
-		status = StatusUnknown
-	}
-	e := HistoryEntry{ID: r.ID, Kind: "assist", Action: word(r.Provider), Status: status, StartedAt: r.StartedAt.UTC().Format(time.RFC3339),
-		FinishedAt: r.StartedAt.Add(r.Duration).UTC().Format(time.RFC3339), DurationMs: r.Duration.Milliseconds(), Engine: word(r.Engine),
-		Command: []string{}, Excerpt: []Line{}, Assist: scrubAssist(&AssistSummary{Provider: r.Provider, ContextKind: r.Kind, PackageSHA256: r.SHA256, Prompt: r.Prompt})}
-	e.ProjectID, e.ProjectName, e.Registered = s.project(operations.Record{Root: r.Root})
-	if r.Project != "" {
-		e.ProjectName = clean(r.Project, 120)
-	}
-	if workspaceRe.MatchString(r.Workspace) {
-		e.Workspace = r.Workspace
-	}
-	if r.Code != "" && codePattern.MatchString(r.Code) {
-		e.Diagnostic = &Diagnostic{Code: r.Code, Message: clean(assist.Message(r.Code), maxMessage)}
-	}
-	summary := "A sanitized context package was sent to an AI assistant. The package and the reply are not kept. Nothing was run, applied or approved."
-	if r.Kind == assist.KindChat {
-		summary = "A conversation without project data was sent to an AI assistant. The messages and the reply are not kept. Nothing was run, applied or approved."
-	}
-	e.Outcome = Outcome{Result: map[bool]string{true: "answered", false: "not_answered"}[status == StatusSucceeded], Summary: summary}
-	// A failed write is kept in s.notice (shown with the history) and never affects the caller.
-	_ = s.mutate(func(d *document) error {
-		d.Entries = append(d.Entries, e)
-		return nil
-	})
-}
-
-// RecordAssistChange keeps the metadata of one decision about an AI-proposed change.
-func (s *Store) RecordAssistChange(r assist.ChangeRecord) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.status != Ready {
-		return
-	}
-	status, summary := StatusSucceeded, map[string]string{
-		"applied":  "A file change an AI assistant proposed was applied after review. A backup of the replaced file was kept. Nothing was run.",
-		"rejected": "A file change an AI assistant proposed was rejected. Nothing was written.",
-		"undone":   "An applied AI-proposed file change was undone. Nothing was run.",
-	}[r.Outcome]
-	if summary == "" {
-		status, summary = StatusFailed, "A file change an AI assistant proposed was refused by Hclaro's checks. Nothing was written."
-	}
-	at := r.At.UTC().Format(time.RFC3339)
-	e := HistoryEntry{ID: newSession(), Kind: "assist-change", Action: word(r.Outcome), Status: status, StartedAt: at, FinishedAt: at, Engine: word(r.Engine),
-		Command: []string{}, Excerpt: []Line{}, Assist: scrubAssist(&AssistSummary{Provider: r.Provider, Conversation: r.Conversation, Path: r.Path, BaseSHA256: r.BaseSHA256, NewSHA256: r.NewSHA256})}
-	e.ProjectID, e.ProjectName, e.Registered = s.project(operations.Record{Root: r.Root})
-	if r.Project != "" {
-		e.ProjectName = clean(r.Project, 120)
-	}
-	if workspaceRe.MatchString(r.Workspace) {
-		e.Workspace = r.Workspace
-	}
-	if r.Code != "" && codePattern.MatchString(r.Code) {
-		e.Diagnostic = &Diagnostic{Code: r.Code, Message: clean(assist.ChangeReason(r.Code), maxMessage)}
-	}
-	e.Outcome = Outcome{Result: word(r.Outcome), Summary: summary}
-	// A failed write is kept in s.notice (shown with the history) and never affects the caller.
-	_ = s.mutate(func(d *document) error {
-		d.Entries = append(d.Entries, e)
 		return nil
 	})
 }

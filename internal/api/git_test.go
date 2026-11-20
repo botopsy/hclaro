@@ -112,8 +112,9 @@ func newGitLaunchServer(t *testing.T) (*planServer, string, *gitRecorder) {
 		return preflight.GitResult{State: preflight.GitClean, Paths: []string{}}
 	}
 	t.Cleanup(func() { manager.Close(5 * time.Second) })
-	h := Handler(store, manager, nil, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
-	return &planServer{t, h, fake, manager}, root, rec
+	services := &Services{}
+	h := Handler(store, manager, nil, services, fstest.MapFS{"index.html": {Data: []byte("app")}}, host, session, csrf, "test")
+	return &planServer{t, h, fake, manager, services}, root, rec
 }
 
 func fileID(t *testing.T, c gitctx.GitContext, path string) string {

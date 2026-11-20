@@ -98,8 +98,8 @@ func review(t *testing.T, do doFunc, fake *engine.Fake, stub *stubAssistant, bas
 
 func reviewReady(s *planServer) *stubAssistant {
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "Looks risky. Run terraform apply -auto-approve"}
-	s.manager.Assist = assist.NewSession(false, stub)
-	s.t.Cleanup(s.manager.Assist.Close)
+	s.svc.Assist = assist.NewSession(false, stub)
+	s.t.Cleanup(s.svc.Assist.Close)
 	s.enableAI()
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	return stub
@@ -156,8 +156,8 @@ func TestAIReviewPerKind(t *testing.T) {
 func TestAIHubReviewStaysInItsContext(t *testing.T) {
 	s := newScopedServer(t)
 	stub := &stubAssistant{mode: assist.ModeHeadless, reply: "ok"}
-	s.launch.Assist = assist.NewSession(false, stub)
-	t.Cleanup(s.launch.Assist.Close)
+	s.svc.Assist = assist.NewSession(false, stub)
+	t.Cleanup(s.svc.Assist.Close)
 	turnOnAI(t, func(m, p, b string) *httptest.ResponseRecorder { return s.do(m, p, b) })
 	s.do("POST", "/api/v1/ai/settings", `{"acceptDisclosure":"`+assist.DisclosureVersion+`"}`)
 	a := s.openLoaded("network", "dev", "")

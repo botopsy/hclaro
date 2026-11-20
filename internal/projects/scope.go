@@ -586,14 +586,12 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot, hash bool) (*Scope, 
 	if execution != nil {
 		id.profileRevision, id.profileFingerprint = execution.Revision, execution.Fingerprint
 	}
-	m := operations.NewManager(c.store, planner, p.RootPath)
-	m.Locks = h.Locks
-	m.TempDir = h.TempDir
-	m.Terminal = h.Terminal
-	m.Git = h.Git
-	if h.History != nil {
-		m.Recorder = h.History
+	deps := h.Deps
+	if deps.AuthEpoch == nil && h.Auth != nil {
+		// A sign-in or identity change after a preflight must refuse this scope's apply.
+		deps.AuthEpoch = h.Auth.Epoch
 	}
+	m := operations.New(c.store, planner, p.RootPath, deps)
 	// The profile is the scope's own: any other profile is refused, and its planner is the
 	// scope's, already bound to the profile's environment and the workspace.
 	profileID := c.profileID
@@ -608,12 +606,6 @@ func (h *Hub) newScope(c *Context, snap workspace.Snapshot, hash bool) (*Scope, 
 		return operations.Binding{Context: *execution, Environ: environ}, nil
 	}
 	m.Bind = func([]string, string) engine.Planner { return planner }
-	// Apply preflight facts, as for the launch project. The identity probe contacts AWS only
-	// when the user asks for it in the preflight.
-	m.GitProbe, m.IdentityProbe = h.GitProbe, h.IdentityProbe
-	if h.Auth != nil {
-		m.AuthEpoch = h.Auth.Epoch
-	}
 	// After an apply, only this workspace's snapshot is read again, with the root claim
 	// still held; other contexts and the launch project are not touched.
 	m.Reload = func(ctx context.Context) { c.store.Load(ctx, readOnly{read}, name, environ) }
