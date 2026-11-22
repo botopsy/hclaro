@@ -14,6 +14,8 @@ export function useModal(dialog: RefObject<HTMLElement | null>, initial: RefObje
     const previous = document.activeElement as HTMLElement | null;
     initial.current?.focus();
     function key(event: KeyboardEvent) {
+      // An open popover inside the dialog takes Escape first.
+      if (event.key === 'Escape' && (event.target as Element | null)?.closest?.('.popover')) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
         close.current();

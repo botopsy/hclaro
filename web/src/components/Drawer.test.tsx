@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Drawer } from './Drawer';
+import { navigate } from '../router';
 
 afterEach(cleanup);
 
@@ -38,5 +39,25 @@ describe('Drawer Escape', () => {
     window.removeEventListener('keydown', modal, true);
     expect(top).not.toHaveBeenCalled();
     expect(below).not.toHaveBeenCalled();
+  });
+});
+
+describe('Drawer redesign behaviour', () => {
+  it('opens at 520px over a backdrop that closes it', () => {
+    localStorage.clear();
+    const close = vi.fn();
+    const { container } = render(<Drawer label="Details" onClose={close}>x</Drawer>);
+    expect(container.querySelector('aside')).toHaveStyle({ width: '520px' });
+    fireEvent.click(container.querySelector('.drawer-backdrop')!);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes on navigation', () => {
+    const close = vi.fn();
+    render(<Drawer label="Details" onClose={close}>x</Drawer>);
+    navigate('/somewhere-else');
+    expect(close).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(close).toHaveBeenCalledTimes(2);
   });
 });
