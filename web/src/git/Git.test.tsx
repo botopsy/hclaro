@@ -84,7 +84,7 @@ describe('Git changes', () => {
   it('shows branch, HEAD and changed IaC files, and diffs only an explicitly selected .tf file', async () => {
     stub();
     app();
-    expect(await screen.findByRole('heading', { name: 'Git changes' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Git', level: 1 })).toBeInTheDocument();
     const summary = await screen.findByRole('region', { name: 'Repository' });
     expect(summary).toHaveTextContent('infra');
     expect(summary).toHaveTextContent('feature/vpc');
@@ -129,7 +129,7 @@ describe('Git changes', () => {
     const badge = await screen.findByRole('button', { name: /Git feature\/vpc @ 0123456/ });
     expect(calls.some(c => c.path.endsWith('git/status'))).toBe(false);
     await userEvent.setup().click(badge);
-    expect(await screen.findByRole('heading', { name: 'Git changes' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Git', level: 1 })).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/projects/${id}/workspaces/dev/git`);
   });
 

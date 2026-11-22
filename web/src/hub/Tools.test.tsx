@@ -85,7 +85,7 @@ describe('Project tools', () => {
   it('runs nothing until asked and explains what each tool reads', async () => {
     stub({});
     app();
-    expect(await screen.findByRole('heading', { name: 'Project tools' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Tools', level: 1 })).toBeInTheDocument();
     await screen.findByRole('region', { name: 'Validate' });
     expect(card('Validate')).toHaveTextContent('terraform validate -json');
     expect(card('Validate')).toHaveTextContent('Configuration only');
@@ -238,7 +238,7 @@ describe('Project tools', () => {
         expect(window.location.pathname).toBe('/');
         await user.click(screen.getByRole('button', { name: 'Open tools for workspace dev' }));
         expect(window.location.pathname).toBe(`/projects/${id}/workspaces/dev/tools`);
-        expect(await screen.findByRole('heading', { name: 'Project tools' })).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: 'Tools', level: 1 })).toBeInTheDocument();
       } else {
         expect(screen.getByRole('heading', { name: 'Save this project to the Hub first' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Open tools/ })).not.toBeInTheDocument();

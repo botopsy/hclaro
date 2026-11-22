@@ -220,13 +220,6 @@
   padding: 35px 32px 24px;
 }
 
-.page-heading {
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 30px;
-  display: flex;
-}
-
 .eyebrow {
   letter-spacing: 1.7px;
   color: var(--accent-text);
@@ -240,28 +233,6 @@ h1 {
   font-size: 27px;
   font-weight: 580;
   line-height: 1.2;
-}
-
-.page-heading p {
-  color: var(--muted);
-  margin-top: 10px;
-  font-size: 14px;
-}
-
-.read-only-badge {
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 5px;
-  align-items: center;
-  gap: 6px;
-  margin-top: 24px;
-  padding: 5px 8px;
-  font-size: 12px;
-  display: flex;
-}
-
-.read-only-badge svg {
-  color: var(--accent-text);
 }
 
 .explorer-toolbar {

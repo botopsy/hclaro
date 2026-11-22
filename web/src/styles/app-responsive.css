@@ -21,7 +21,6 @@
     max-height: calc(100vh - 340px);
   }
 
-
   .module-panel {
     width: 220px;
   }
@@ -33,8 +32,6 @@
 }
 
 @media (width <= 1350px) {
-
-
 
   .main-content, .topbar, .context-bar, .statusbar {
     padding-left: 24px;
@@ -111,8 +108,6 @@
     padding-right: 5px;
   }
 
-
-
   .inspector-title .resource-icon {
     display: flex;
   }
@@ -124,14 +119,6 @@
 
   .filter-row select {
     max-width: 165px;
-  }
-
-  .page-heading p {
-    font-size: 13px;
-  }
-
-  .read-only-badge {
-    font-size: 11px;
   }
 
   .filter-count {
@@ -200,18 +187,12 @@
     width: 160px;
   }
 
-
   .context-bar {
     min-height: 42px;
   }
 
   .filter-row select {
     max-width: 155px;
-  }
-
-
-  .page-heading {
-    margin-bottom: 25px;
   }
 
   .hide-small {
