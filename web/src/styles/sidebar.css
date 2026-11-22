@@ -524,3 +524,17 @@
   padding: 2px 10px 8px;
 }
 
+
+.palette-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.palette-list .switcher-option {
+  cursor: pointer;
+}
+
+.palette-list .switcher-option[aria-selected="true"] {
+  background: var(--surface-hover);
+}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, Command,    FolderTree, Layers3, LoaderCircle,  Menu,  Network, Search,  SlidersHorizontal,  X } from 'lucide-react';
+import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp,    FolderTree, Layers3, LoaderCircle,  Menu,  Network, Search,  SlidersHorizontal,  X } from 'lucide-react';
 import { ApiError, api, openInNewTab, send } from './api';
 import type { ReplaceTarget, Resource, ResourcePage } from './types';
 import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
@@ -20,12 +20,13 @@ import { ToolsView } from './hub/ToolsView';
 import { LaunchTools } from './hub/LaunchTools';
 import { ContextSelector } from './profiles/ContextSelector';
 import { GitView, gitPrefix } from './git/GitView';
-import { globalPages, importDiscoveryTabs, onProjectPage, pageOf, type NavContext, type NavItem, type NavMode, type View } from './navigation/config';
+import { globalPages, importDiscoveryTabs, navItem, onProjectPage, pageOf, type NavContext, type NavItem, type NavMode, type View } from './navigation/config';
 import { ImportDiscoveryTabs, Sidebar } from './navigation/Sidebar';
 import { ProjectSwitcher, switchTargets, type CurrentProject } from './navigation/ProjectSwitcher';
 import { ConfirmSwitch } from './navigation/ConfirmSwitch';
 import { WorkspaceSwitcher } from './navigation/WorkspaceSwitcher';
 import { WorkspaceDialog } from './hub/WorkspaceDialog';
+import { CommandPalette } from './navigation/CommandPalette';
 import { WarningChips } from './navigation/WarningChips';
 import type { DiscoveryPrefill } from './types';
 import { useWorkbenchContext } from './workbench/useWorkbenchContext';
@@ -88,6 +89,7 @@ function Workbench({
   const [addingProject, setAddingProject] = useState(false);
   // The name typed in the workspace switcher; the reviewed, confirmed create dialog is open.
   const [creatingWorkspace, setCreatingWorkspace] = useState<string>();
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { preferences, changePreference } = usePreferences();
   // Icon-only mode is a desktop preference; the narrow-screen drawer always shows labels.
   const compact = preferences.sidebar === 'compact' && !narrow;
@@ -249,21 +251,20 @@ function Workbench({
     enabled: !!selected && !!readScope
   });
   useEffect(() => {
-    if (onHub) return;
     function keyboard(event: globalThis.KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        setView('Resources');
-        requestAnimationFrame(() => searchRef.current?.focus());
+        // Never on top of another dialog: its focus trap and checks stay in charge.
+        if (!document.querySelector('[aria-modal="true"]')) setPaletteOpen(true);
       }
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !onHub) {
         setSelected(undefined);
         setNotice('');
       }
     }
     window.addEventListener('keydown', keyboard);
     return () => window.removeEventListener('keydown', keyboard);
-  }, [onHub]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onHub]);
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [page, query, provider, type, mode, module, sort]);
@@ -312,10 +313,7 @@ function Workbench({
     {scoped && productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}
     <div className="topbar-actions">
      {!onHub && <WarningChips workspace={w} gitPrefix={gitBase} onOpen={setView} />}
-     {!onHub && !noLaunch && <Button variant="outline" size="small" className="topbar-search" onClick={() => {
-        setView('Resources');
-        requestAnimationFrame(() => searchRef.current?.focus());
-      }}><Search size={14} aria-hidden="true" /><span className="hide-small">Search</span><kbd aria-hidden="true">⌘K</kbd></Button>}
+     <Button variant="outline" size="small" className="topbar-search" onClick={() => setPaletteOpen(true)}><Search size={14} aria-hidden="true" /><span className="hide-small">Search</span><kbd aria-hidden="true">⌘K</kbd></Button>
      {profileProject ? <ContextSelector projectId={profileProject} selection={profile} workspaces={scoped ? project?.inspection?.workspaces : undefined} onChosen={p => {
         // A profile that selects a workspace opens that workspace in this tab.
         if (scoped && p?.workspace && p.workspace !== scoped.workspace) navigate(contextPath(scoped.projectId, p.workspace, isExplorerView(view) ? view : 'Resources'));
@@ -378,7 +376,7 @@ function Workbench({
           void workspace.refetch();
         }} retryLabel={closed ? 'Open again' : undefined} /> : w?.diagnostic ? <ErrorState title={diagnosticTitles[w.diagnostic.code] || 'Workspace needs attention'} message={w.diagnostic.message} retry={scoped ? reread : noLaunch ? undefined : () => void rereadLaunch()} retryLabel="Read again" /> : w && <>
      {view === 'Resources' && <>
-      <div className="explorer-toolbar"><div className="search-field"><Search size={16} /><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search resources, addresses, providers…" aria-label="Search resources" /><kbd><Command size={10} />K</kbd>{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div><Button variant="outline" aria-label="Toggle module tree" aria-pressed={treeVisible} onClick={() => setTreeVisible(!treeVisible)}><FolderTree size={15} /><span className="hide-small">Modules</span></Button><Button variant="outline" aria-label={sort === 'asc' ? 'Sort descending' : 'Sort ascending'} onClick={() => {
+      <div className="explorer-toolbar"><div className="search-field"><Search size={16} /><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search resources, addresses, providers…" aria-label="Search resources" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div><Button variant="outline" aria-label="Toggle module tree" aria-pressed={treeVisible} onClick={() => setTreeVisible(!treeVisible)}><FolderTree size={15} /><span className="hide-small">Modules</span></Button><Button variant="outline" aria-label={sort === 'asc' ? 'Sort descending' : 'Sort ascending'} onClick={() => {
                 setSort(sort === 'asc' ? 'desc' : 'asc');
                 setPage(0);
               }}><ArrowDownAZ size={15} /><span className="hide-small">{sort === 'asc' ? 'A–Z' : 'Z–A'}</span></Button></div>
@@ -424,6 +422,16 @@ function Workbench({
       const path = pendingSwitch;
       setPendingSwitch(undefined);
       navigate(path);
+    }} />}
+  {paletteOpen && <CommandPalette context={navContext} targets={targets} resourceScope={ready ? readScope : undefined} addDisabled={!!projects.data?.registry && projects.data.registry.status !== 'ready'} onClose={() => setPaletteOpen(false)} onSwitch={requestSwitch} onPage={go} onAction={a => {
+      if (a === 'add') setAddingProject(true);
+      else if (a === 'plans' && navMode === 'launch') {
+        setPlanRequested(true);
+        setView('Plans');
+      } else go(navItem(a));
+    }} onResource={id => {
+      setSelected(id);
+      setView('Resources');
     }} />}
   {addingProject && <AddProjectDialog onClose={() => setAddingProject(false)} onAdded={p => {
       setAddingProject(false);
