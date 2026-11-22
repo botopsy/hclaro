@@ -91,17 +91,18 @@ export function navigate(path: string, replace = false) {
   else window.history.pushState(null, '', path);
   listeners.forEach(l => l());
 }
+// onNavigate calls listener after every in-app navigation and browser back/forward.
+export function onNavigate(listener: () => void) {
+  listeners.add(listener);
+  window.addEventListener('popstate', listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener('popstate', listener);
+  };
+}
 export function useRoute(): Route {
   const [pathname, setPathname] = useState(() => window.location.pathname);
-  useEffect(() => {
-    const update = () => setPathname(window.location.pathname);
-    listeners.add(update);
-    window.addEventListener('popstate', update);
-    return () => {
-      listeners.delete(update);
-      window.removeEventListener('popstate', update);
-    };
-  }, []);
+  useEffect(() => onNavigate(() => setPathname(window.location.pathname)), []);
   return parseRoute(pathname);
 }
 // Names are labels only. A production-like word in a name is a hint, never a guarantee.

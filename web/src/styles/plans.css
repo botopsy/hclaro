@@ -469,7 +469,7 @@
 }
 
 .dialog-backdrop {
-  z-index: 30;
+  z-index: 45; /* above drawers */
   background: var(--scrim);
   justify-content: center;
   align-items: center;

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { readStorage, storageKeys, writeStorage } from '../lib/storage';
+import { onNavigate } from '../router';
 
 const minWidth = 360;
-const defaultWidth = 720;
+const defaultWidth = 520;
 const step = 40;
 
 function maxWidth() {
@@ -24,9 +25,11 @@ function savedWidth() {
   return Number.isFinite(value) && value > 0 ? value : defaultWidth;
 }
 
-// Drawer is a non-modal details panel docked to the right edge of the window. The list
-// behind it stays usable, so selecting another row updates the drawer in place.
-export function Drawer({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+// Drawer is a details panel docked to the right edge of the window over a dimmed backdrop.
+// It closes on Escape, a backdrop click or navigation; focus is not trapped.
+// shortcut: backdrop={false} keeps the page behind usable for pages not yet redesigned; each
+// page's redesign task removes it.
+export function Drawer({ label, onClose, backdrop = true, children }: { label: string; onClose: () => void; backdrop?: boolean; children: ReactNode }) {
   const [preferred, setPreferred] = useState(() => bound(savedWidth()));
   const [, setViewport] = useState(() => window.innerWidth);
   const width = clamp(preferred);
@@ -52,6 +55,8 @@ export function Drawer({ label, onClose, children }: { label: string; onClose: (
   useEffect(() => {
     writeStorage('local', storageKeys.drawerWidth, String(preferred));
   }, [preferred]);
+
+  useEffect(() => onNavigate(onClose), [onClose]);
 
   useEffect(() => {
     function key(event: globalThis.KeyboardEvent) {
@@ -96,8 +101,11 @@ export function Drawer({ label, onClose, children }: { label: string; onClose: (
     setPreferred(clamp(width + change));
   }
 
-  return <aside ref={panel} className="inspector" aria-label={label} style={{ width }}>
+  return <>
+   {backdrop && <div className="drawer-backdrop" aria-hidden="true" onClick={onClose} />}
+   <aside ref={panel} className="inspector" aria-label={label} style={{ width }}>
    <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label={`Resize ${label.toLowerCase()}`} aria-valuemin={minWidth} aria-valuemax={maxWidth()} aria-valuenow={width} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onKeyDown={keyDown} />
    {children}
-  </aside>;
+   </aside>
+  </>;
 }
