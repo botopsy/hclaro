@@ -47,6 +47,8 @@
 .status-dot.chip-tone-read { background: var(--read); }
 .status-dot.chip-tone-ok { background: var(--ok); }
 .status-dot.chip-tone-accent { background: var(--accent); }
+.topbar-warning { cursor: pointer; font-family: inherit; }
+.topbar-warning .status-dot { background: currentColor; }
 
 .empty-box {
   display: flex;
