@@ -52,6 +52,11 @@ describe('Drawer redesign behaviour', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('can leave the page behind usable', () => {
+    const { container } = render(<Drawer label="Details" backdrop={false} onClose={() => {}}>x</Drawer>);
+    expect(container.querySelector('.drawer-backdrop')).toBeNull();
+  });
+
   it('closes on navigation', () => {
     const close = vi.fn();
     render(<Drawer label="Details" onClose={close}>x</Drawer>);

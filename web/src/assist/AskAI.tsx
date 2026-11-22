@@ -143,7 +143,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
   // A quick action's first turn exists only in the preview; export returns plain packages and reviews.
   const quick = 'action' in request && !!request.action;
   const attached = 'cost' in request && !!request.cost;
-  return <Drawer label="AI context preview" onClose={onClose}>
+  return <Drawer label="AI context preview" backdrop={false} onClose={onClose}>
    <div className="inspector-header"><span><Sparkles size={15} />{title}</span><Button variant="ghost" size="icon" aria-label="Close AI context preview" onClick={onClose}><X size={16} /></Button></div>
    <div className="inspector-body assist-preview">
     {pkg.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Building the context package on this machine…</p></div>

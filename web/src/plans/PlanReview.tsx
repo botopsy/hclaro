@@ -162,7 +162,7 @@ function ChangeInspector({ scope, planId, changeId, close, copy }: { scope: Plan
   const detail = useQuery({ queryKey: ['plan-change', scopeKey(scope), planId, changeId], queryFn: () => api<ChangeDetail>(scopedPath(scope, `plans/${planId}/changes/${changeId}`)) });
   const d = detail.data;
   const order = d && replaceOrder(d.actions);
-  return <Drawer label="Change details" onClose={close}>
+  return <Drawer label="Change details" backdrop={false} onClose={close}>
    <div className="inspector-header"><span><Braces size={15} />Change details</span><Button variant="ghost" size="icon" aria-label="Close change details" onClick={close}><X size={16} /></Button></div>
    {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading change…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : d && <div className="inspector-body">
     <div className="inspector-title"><ActionBadge action={d.action} /><span className="mono muted">{d.actions.join(', ')}</span></div>

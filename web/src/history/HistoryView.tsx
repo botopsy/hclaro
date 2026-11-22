@@ -208,7 +208,7 @@ function HistoryDetails({ id, copy, writable, onClose, onDeleted }: { id: string
   const changes = e?.plan?.changes ?? [];
   const shown = allChanges ? changes : changes.slice(0, 25);
   const sortedCounts = e?.plan ? Object.entries(e.plan.counts).sort(([a], [b]) => actionOrder.indexOf(a as never) - actionOrder.indexOf(b as never)) : [];
-  return <Drawer label="Operation details" onClose={onClose}>
+  return <Drawer label="Operation details" backdrop={false} onClose={onClose}>
    <div className="inspector-header"><span><History size={15} />Operation details</span><Button variant="ghost" size="icon" aria-label="Close operation details" onClick={onClose}><X size={16} /></Button></div>
    {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : e && <div className="inspector-body history-details">
     <div className="inspector-title"><StatusBadge status={e.status} /><strong>{label(e)}</strong></div>

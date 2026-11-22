@@ -253,7 +253,7 @@ function Observed({ value, kind, side }: { value: unknown; kind: string; side: '
 function DriftInspector({ scope, scanId, changeId, close, openResource, copy }: { scope: PlanScope; scanId: string; changeId: string; close: () => void; openResource: (id: string) => void; copy: (value: string, label: string) => Promise<void> }) {
   const detail = useQuery({ queryKey: ['drift-detail', scopeKey(scope), scanId, changeId], queryFn: () => api<DriftDetail>(scopedPath(scope, `drift-scans/${scanId}/resources/${changeId}`)) });
   const d = detail.data;
-  return <Drawer label="Drift details" onClose={close}>
+  return <Drawer label="Drift details" backdrop={false} onClose={close}>
    <div className="inspector-header"><span><Braces size={15} />Drift details</span><Button variant="ghost" size="icon" aria-label="Close drift details" onClick={close}><X size={16} /></Button></div>
    {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : d && <div className="inspector-body">
     <div className="inspector-title"><ClassBadge value={d.classification} /><span className="mono muted">{d.actions.join(', ')}</span></div>

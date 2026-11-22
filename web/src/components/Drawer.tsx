@@ -27,7 +27,9 @@ function savedWidth() {
 
 // Drawer is a details panel docked to the right edge of the window over a dimmed backdrop.
 // It closes on Escape, a backdrop click or navigation; focus is not trapped.
-export function Drawer({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
+// shortcut: backdrop={false} keeps the page behind usable for pages not yet redesigned; each
+// page's redesign task removes it.
+export function Drawer({ label, onClose, backdrop = true, children }: { label: string; onClose: () => void; backdrop?: boolean; children: ReactNode }) {
   const [preferred, setPreferred] = useState(() => bound(savedWidth()));
   const [, setViewport] = useState(() => window.innerWidth);
   const width = clamp(preferred);
@@ -100,7 +102,7 @@ export function Drawer({ label, onClose, children }: { label: string; onClose: (
   }
 
   return <>
-   <div className="drawer-backdrop" aria-hidden="true" onClick={onClose} />
+   {backdrop && <div className="drawer-backdrop" aria-hidden="true" onClick={onClose} />}
    <aside ref={panel} className="inspector" aria-label={label} style={{ width }}>
    <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label={`Resize ${label.toLowerCase()}`} aria-valuemin={minWidth} aria-valuemax={maxWidth()} aria-valuenow={width} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onKeyDown={keyDown} />
    {children}

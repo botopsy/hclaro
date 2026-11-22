@@ -433,7 +433,7 @@ function MatchInspector({ comparison, matchId, close, copy }: { comparison: Comp
   const d = detail.data;
   const rows = d?.attributes.filter(a => showSame || a.status !== 'same' || a.normalized) ?? [];
   const same = d?.attributes.filter(a => a.status === 'same' && !a.normalized).length ?? 0;
-  return <Drawer label="Comparison details" onClose={close}>
+  return <Drawer label="Comparison details" backdrop={false} onClose={close}>
    <div className="inspector-header"><span><GitCompareArrows size={15} />Comparison details</span><Button variant="ghost" size="icon" aria-label="Close comparison details" onClick={close}><X size={16} /></Button></div>
    {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : d && <div className="inspector-body">
     <div className="inspector-title"><StatusBadge value={d.status} /><span className="mono muted">{d.type}{d.mode === 'data' ? ' · data source' : ''}</span></div>

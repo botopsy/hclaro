@@ -67,13 +67,13 @@ try{
   }
   return width
  }
- assert.equal(await drawerWidth(720),720,'details drawer opens at its default width')
+ assert.equal(await drawerWidth(520),520,'details drawer opens at its default width')
  await page.getByRole('separator',{name:'Resize resource inspector'}).press('ArrowLeft')
- assert.equal(await drawerWidth(760),760,'keyboard resizes the drawer')
- await page.setViewportSize({width:700,height:1050})
- assert.equal(await drawerWidth(620),620,'drawer is capped to a narrow window')
+ assert.equal(await drawerWidth(560),560,'keyboard resizes the drawer')
+ await page.setViewportSize({width:560,height:1050})
+ assert.equal(await drawerWidth(480),480,'drawer is capped to a narrow window')
  await page.setViewportSize({width:1512,height:1050})
- assert.equal(await drawerWidth(760),760,'a narrow window does not overwrite the chosen width')
+ assert.equal(await drawerWidth(560),560,'a narrow window does not overwrite the chosen width')
  await page.getByRole('separator',{name:'Resize resource inspector'}).press('ArrowRight')
  await page.getByRole('button',{name:'Close inspector',exact:true}).click()
  await page.getByLabel('Search resources',{exact:true}).fill('quote')
