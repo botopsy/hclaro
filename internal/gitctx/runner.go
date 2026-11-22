@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"hclaro/internal/bounded"
+	"hclaro/internal/proc"
 	"hclaro/internal/redact"
 )
 
@@ -147,7 +148,10 @@ func (e Exec) Switch(ctx context.Context, dir, branch string) error {
 }
 
 func (e Exec) run(ctx context.Context, dir string, limit int, args []string) ([]byte, bool, error) {
-	exe, err := exec.LookPath("git")
+	exe, err := proc.LookPath("git")
+	if errors.Is(err, proc.ErrBatchFile) {
+		return nil, false, err
+	}
 	if err != nil {
 		return nil, false, ErrGitMissing
 	}

@@ -51,6 +51,8 @@ type Services struct {
 	Cost *cost.Service
 	// History is the operation history; its routes are served only with the Hub.
 	History *history.Store
+	// Bootstrap is the browser launch link's one-time nonce; nil disables the exchange route.
+	Bootstrap *security.Bootstrap
 }
 
 // Handler serves the API and embedded UI. hub is nil when the Workspace Hub is disabled;
@@ -113,7 +115,7 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 		}
 		files.ServeHTTP(w, r)
 	})
-	return security.Guard(host, token, csrf, mux)
+	return security.Guard(host, token, csrf, deps.Bootstrap, mux)
 }
 
 // clientRoute matches the Hub's client-side routes: /projects, /projects/<id>,

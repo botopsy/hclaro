@@ -3,10 +3,10 @@ package api
 import (
 	"errors"
 	"net/http"
-	"os/exec"
 
 	"hclaro/internal/engine"
 	"hclaro/internal/ids"
+	"hclaro/internal/proc"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
 	"hclaro/internal/tfpolicy"
@@ -330,14 +330,14 @@ func contextSummary(hub *projects.Hub, p projects.Record, r profiles.Resolved, t
 	}
 	if s.Engine == "" {
 		for _, name := range []string{"terraform", "tofu"} {
-			if _, err := exec.LookPath(name); err == nil {
+			if _, err := proc.LookPath(name); err == nil {
 				s.Engine = name
 				break
 			}
 		}
 	}
 	if s.Engine != "" {
-		_, err := exec.LookPath(s.Engine)
+		_, err := proc.LookPath(s.Engine)
 		s.EngineFound = err == nil
 	}
 	if in := summary.Inspection; in != nil && in.Engine == s.Engine {

@@ -392,9 +392,12 @@ export function ProjectView({ id }: { id: string }) {
   </div>;
 }
 
-// Windows paths cannot contain a double quote; POSIX paths are single-quoted.
+// A folder name can come from a cloned repository, so nothing in it may expand. Windows paths
+// become a PowerShell single-quoted literal (no $, ` or % expansion), doubling every quote
+// PowerShell treats as a single quote; POSIX paths are single-quoted for sh.
+const windowsPath = (path: string) => /^[A-Za-z]:\\|^\\\\/.test(path);
 function shellQuote(path: string) {
-  return /^[A-Za-z]:\\|^\\\\/.test(path) ? `"${path}"` : `'${path.replaceAll("'", `'\\''`)}'`;
+  return windowsPath(path) ? `'${path.replace(/['\u2018\u2019\u201A\u201B]/g, q => q + q)}'` : `'${path.replaceAll("'", `'\\''`)}'`;
 }
 
 // An optional fallback: a second Hclaro process opened from one folder. It is not the Hub's
@@ -406,6 +409,7 @@ function SeparateSession({ rootPath, engine }: { rootPath: string; engine?: stri
    <summary>Open in a separate session (optional)</summary>
    <p>Starts another Hclaro process for this folder only, pinned to its CLI default workspace. It is an optional fallback; Hub tabs keep their own workspace and profile and are not affected.</p>
    <p><strong>The two sessions do not coordinate.</strong> Do not plan, apply, init or change workspaces of this folder in both at the same time.</p>
+   <p className="muted">Run in {windowsPath(rootPath) ? 'PowerShell' : 'a POSIX shell (sh, bash or zsh)'}.</p>
    <div className="init-command"><code>{command}</code><Button size="small" variant="outline" onClick={() => void navigator.clipboard.writeText(command).then(() => setNote('Command copied'), () => setNote('Clipboard is unavailable. Select and copy the command manually.'))}><Terminal size={13} />Copy command</Button><span className="muted" role="status">{note}</span></div>
   </details>;
 }

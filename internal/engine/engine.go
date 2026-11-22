@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hclaro/internal/awsvault"
+	"hclaro/internal/proc"
 	"hclaro/internal/state"
 	"hclaro/internal/tfpolicy"
 )
@@ -97,8 +98,12 @@ func Detect(root, preferred string) (*CLI, error) {
 		names = []string{preferred}
 	}
 	for _, name := range names {
-		if path, err := exec.LookPath(name); err == nil {
+		path, err := proc.LookPath(name)
+		if err == nil {
 			return &CLI{Name: name, Executable: path, Root: root}, nil
+		}
+		if errors.Is(err, proc.ErrBatchFile) {
+			return nil, fmt.Errorf("%s on PATH is a Windows batch file (.bat or .cmd), which Hclaro does not run because cmd.exe re-parses its arguments; put the %s .exe first on PATH", name, name)
 		}
 	}
 	return nil, errors.New("install Terraform or OpenTofu on PATH, or select --engine")

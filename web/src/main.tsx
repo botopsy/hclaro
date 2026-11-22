@@ -8,8 +8,6 @@ import { applyTheme, savedTheme } from './brand/theme';
 import '@fontsource/jetbrains-mono/latin-700.css';
 import './styles.css';
 applyTheme(savedTheme());
-initializeSession();
-consumeDeepLink();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -21,4 +19,7 @@ const queryClient = new QueryClient({
     }
   }
 });
-ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><QueryClientProvider client={queryClient}><App /></QueryClientProvider></React.StrictMode>);
+void initializeSession().then(() => {
+  consumeDeepLink();
+  ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><QueryClientProvider client={queryClient}><App /></QueryClientProvider></React.StrictMode>);
+});
