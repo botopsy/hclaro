@@ -250,9 +250,18 @@ try{
  // M15: Git context of a synthetic repository through the real Go handler and read-only Git.
  gitMode=true
  await page.reload()
+ // Redesign A5: no warning chip until the Git page has read the status; navigating never runs git.
+ const topBar=page.getByRole('banner',{name:'Top bar'})
+ await page.getByRole('heading',{level:1}).first().waitFor()
+ assert(await topBar.getByRole('button',{name:/uncommitted IaC|Backend unreachable/}).count()===0,'warning chip shown before anything was wrong')
  await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Git',exact:true}).click()
  await page.getByRole('heading',{name:'Git',level:1}).waitFor()
  const repo=page.getByRole('region',{name:'Repository'})
+ await repo.getByText('3 changed files').waitFor()
+ await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Overview',exact:true}).click()
+ await page.getByRole('heading',{name:'Overview',level:1}).waitFor()
+ await topBar.getByRole('button',{name:'3 uncommitted IaC files'}).click()
+ await page.getByRole('heading',{name:'Git',level:1}).waitFor()
  await repo.getByText('3 changed files').waitFor()
  await page.getByRole('button',{name:/prod\.tfvars/}).click()
  await page.getByLabel('Diff inspector').getByText(/never shown/).waitFor()
@@ -379,6 +388,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/changes/redacted diff/editor link/source reference/plan source/branch selector and blocked switch, cloud discovery verification/scan preview/labels/redaction/prepared import, grouped navigation/project switcher/compact sidebar/short window/narrow drawer, cost estimate opt-in gate/disclosure/coverage/redaction, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/uncommitted warning chip/changes/redacted diff/editor link/source reference/plan source/branch selector and blocked switch, cloud discovery verification/scan preview/labels/redaction/prepared import, grouped navigation/project switcher/compact sidebar/short window/narrow drawer, cost estimate opt-in gate/disclosure/coverage/redaction, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

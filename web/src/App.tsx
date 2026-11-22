@@ -24,6 +24,7 @@ import { globalPages, importDiscoveryTabs, onProjectPage, pageOf, type NavContex
 import { ImportDiscoveryTabs, Sidebar } from './navigation/Sidebar';
 import { ProjectSwitcher, type CurrentProject, type SwitchTarget, type SwitchTargets } from './navigation/ProjectSwitcher';
 import { ConfirmSwitch } from './navigation/ConfirmSwitch';
+import { WarningChips } from './navigation/WarningChips';
 import type { DiscoveryPrefill } from './types';
 import { useWorkbenchContext } from './workbench/useWorkbenchContext';
 import { useMedia, usePreferences } from './workbench/preferences';
@@ -309,6 +310,7 @@ function Workbench({
     <div className="context-switcher"><ProjectSwitcher project={currentProject} targets={switchTargets} onSwitch={requestSwitch} />{workspaceControl}</div>
     {scoped && productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}
     <div className="topbar-actions">
+     {!onHub && <WarningChips workspace={w} gitPrefix={gitBase} onOpen={setView} />}
      {!onHub && !noLaunch && <Button variant="outline" size="small" className="topbar-search" onClick={() => {
         setView('Resources');
         requestAnimationFrame(() => searchRef.current?.focus());
