@@ -4,6 +4,7 @@
 
 Added:
 
+- Redesign A1: graphite + lime palette in both themes (`web/src/styles/tokens.css`), fixed semantic colours for create, update, replace, delete, read, OK and the destructive button with light and dark shades each checked at 4.5:1, Inter (self-hosted) as the 13 px interface font, and the logo, favicons and app icons in the new colours (`make brand-assets`). No stylesheet other than `tokens.css` holds a raw hex value; `index.html`'s browser bar colour is filled from it at build. JetBrains Mono for code, addresses, types, versions and paths (`--font-mono`). New light mark, transparent wordmarks, 1024 px and light app icons and @2x wordmark PNGs (`make brand-assets`); brand sheet re-rendered (`scripts/brand-sheet.mjs`).
 - Fixed: two Hclaro processes sharing the configuration folder could overwrite each other's change to `history.json`, `projects.json` or `profiles.json` when they saved at the same moment. Each change now re-reads and writes the file under an OS file lock (`<file>.lock`); `cost-estimates.json` too.
 - Fixed: starting a second Hclaro, or running `hclaro --export-history`, while another Hclaro was running an operation marked that operation *interrupted* in history and made it deletable until it finished. A running process now holds a session lock (`.history-session-<id>.lock`), and only operations of processes that ended are marked interrupted. History's startup cleanup of leftover temporary files now runs under the history lock, so it no longer deletes another process's write in progress.
 

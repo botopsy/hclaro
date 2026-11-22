@@ -1,8 +1,20 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { readFileSync } from 'node:fs';
 export default defineConfig({
   plugins: [react(), tailwindcss(), {
+    // index.html's <meta name="theme-color"> cannot read CSS variables; fill __brand-<name>__ from tokens.css.
+    name: 'brand-colours',
+    transformIndexHtml(html) {
+      const tokens = readFileSync(new URL('./src/styles/tokens.css', import.meta.url), 'utf8');
+      return html.replace(/__brand-([a-z-]+)__/g, (_, name: string) => {
+        const value = tokens.match(new RegExp(`--brand-${name}: (#[0-9A-Fa-f]{6});`))?.[1];
+        if (!value) throw new Error(`index.html: no --brand-${name} in tokens.css`);
+        return value;
+      });
+    }
+  }, {
     name: 'local-development-boundary',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {

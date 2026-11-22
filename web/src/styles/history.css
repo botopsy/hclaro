@@ -53,7 +53,7 @@
   border: 1px solid color-mix(in srgb, currentColor, transparent 65%);
   border-radius: 4px;
   padding: 1px 6px;
-  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
 }
@@ -62,7 +62,7 @@
 .chip-update { color: var(--update); }
 .chip-replace,
 .chip-delete { color: var(--destroy); }
-.chip-import { color: var(--purple); }
+.chip-import { color: var(--read); }
 .chip-forget,
 .chip-unknown { color: var(--warn); }
 

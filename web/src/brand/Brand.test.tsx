@@ -23,16 +23,11 @@ function rule(selector: string) {
 const read = (file: string) => readFileSync(path.join(import.meta.dirname, '..', file), 'utf8').replace(/\r\n/g, '\n');
 const css = read('styles.css').replace(/^@import "\.\/(styles\/[\w-]+\.css)";.*$/gm, (_, file) => read(file));
 
-const reference = { navy: '#0B1220', ivory: '#F4F4F0', stone: '#E8E8E1', lime: '#C6F432', olive: '#6A8F00' };
+const reference = { graphite: '#0E1116', paper: '#F6F7F9', ink: '#151A21', letter: '#E6E8EB', lime: '#C5F04A', olive: '#3F6212', onLime: '#10140A', edge: '#2A323D' };
 
 // Every custom property of the leading :root block, resolved for one theme.
 function tokens(theme: 'light' | 'dark') {
-  const root = rule(':root');
-  const status = css.slice(css.indexOf('--create:') - 300).match(/:root \{([^}]*)\}/)![1].replace(/\/\*[\s\S]*?\*\//g, '');
-  const raw: Record<string, string> = {};
-  for (const [name, value] of [...Object.entries(root), ...status.split(';').map(d => d.trim()).filter(d => d.startsWith('--')).map(d => [d.slice(0, d.indexOf(':')), d.slice(d.indexOf(':') + 1).trim()])]) {
-    if (name.startsWith('--')) raw[name] = value;
-  }
+  const raw: Record<string, string> = rule(':root');
   const resolve = (value: string): string => {
     const pair = value.match(/^light-dark\((.+), (.+)\)$/);
     if (pair) return resolve(theme === 'light' ? pair[1] : pair[2]);
@@ -82,11 +77,11 @@ describe('HclaroLogo', () => {
   });
 
   it('pins each variant to the literal reference colours', () => {
-    expect(rule('.hclaro-logo.hclaro-light')).toMatchObject({ color: 'var(--brand-navy)', '--logo-chevron-color': 'var(--brand-olive)', '--logo-cursor-color': 'var(--brand-navy)' });
-    expect(rule('.hclaro-logo.hclaro-dark')).toMatchObject({ color: 'var(--brand-ivory)', '--logo-chevron-color': 'var(--brand-lime)', '--logo-cursor-color': 'var(--brand-lime)' });
-    expect(rule('.hclaro-logo.hclaro-inverse')).toMatchObject({ color: 'var(--brand-navy)', '--logo-chevron-color': 'var(--brand-navy)', '--logo-cursor-color': 'var(--brand-navy)' });
+    expect(rule('.hclaro-logo.hclaro-light')).toMatchObject({ color: 'var(--brand-ink)', '--logo-chevron-color': 'var(--brand-olive)', '--logo-cursor-color': 'var(--brand-ink)' });
+    expect(rule('.hclaro-logo.hclaro-dark')).toMatchObject({ color: 'var(--brand-letter)', '--logo-chevron-color': 'var(--brand-lime)', '--logo-cursor-color': 'var(--brand-lime)' });
+    expect(rule('.hclaro-logo.hclaro-inverse')).toMatchObject({ color: 'var(--brand-on-lime)', '--logo-chevron-color': 'var(--brand-on-lime)', '--logo-cursor-color': 'var(--brand-on-lime)' });
     // The theme-following logo resolves to the light and dark reference variants.
-    for (const [theme, text, chevron, cursor] of [['light', reference.navy, reference.olive, reference.navy], ['dark', reference.ivory, reference.lime, reference.lime]] as const) {
+    for (const [theme, text, chevron, cursor] of [['light', reference.ink, reference.olive, reference.ink], ['dark', reference.letter, reference.lime, reference.lime]] as const) {
       const t = tokens(theme);
       expect([t('logo-text'), t('logo-chevron'), t('logo-cursor')]).toEqual([text, chevron, cursor]);
     }
@@ -133,39 +128,42 @@ describe('HclaroMark', () => {
     expect(glyph.querySelector('.hclaro-cursor')).not.toBeNull();
   });
 
-  it('uses the navy tile, ivory letter and lime cursor', () => {
-    expect(rule('.hclaro-mark')).toMatchObject({ background: 'var(--brand-navy)', color: 'var(--brand-ivory)', '--logo-cursor-color': 'var(--brand-lime)' });
+  it('uses the graphite tile with its edge, light letter and lime cursor', () => {
+    expect(rule('.hclaro-mark')).toMatchObject({ background: 'var(--brand-graphite)', color: 'var(--brand-letter)', '--logo-cursor-color': 'var(--brand-lime)', 'box-shadow': 'inset 0 0 0 1px var(--brand-edge)' });
   });
 });
 
 describe('theme tokens', () => {
-  it('declares the five reference colours literally, once', () => {
+  it('declares the brand colours literally, once', () => {
     const root = rule(':root');
-    expect([root['--brand-navy'], root['--brand-ivory'], root['--brand-stone'], root['--brand-lime'], root['--brand-olive']]).toEqual(Object.values(reference));
+    expect(['graphite', 'paper', 'ink', 'letter', 'lime', 'olive', 'on-lime', 'edge'].map(name => root[`--brand-${name}`])).toEqual(Object.values(reference));
     for (const hex of Object.values(reference)) expect(css.match(new RegExp(hex, 'gi'))).toHaveLength(1);
   });
 
-  it('builds both themes on navy, ivory and stone', () => {
+  it('builds both themes on graphite + lime', () => {
     const light = tokens('light'), dark = tokens('dark');
-    expect([light('bg'), light('sidebar'), light('text'), light('accent')]).toEqual([reference.ivory, reference.stone, reference.navy, reference.olive]);
-    expect([dark('bg'), dark('text'), dark('accent'), dark('primary'), dark('primary-foreground')]).toEqual([reference.navy, reference.ivory, reference.lime, reference.lime, reference.navy]);
+    expect([light('bg'), light('text'), light('accent'), light('primary'), light('primary-foreground')]).toEqual([reference.paper, reference.ink, reference.olive, reference.lime, reference.onLime]);
+    expect([dark('bg'), dark('text'), dark('accent'), dark('primary'), dark('primary-foreground')]).toEqual([reference.graphite, reference.letter, reference.lime, reference.lime, reference.onLime]);
   });
 
   // Every pair here is documented with its ratio in docs/design/BRAND.md.
   const surfaces = ['bg', 'sidebar', 'surface', 'surface-hover', 'surface-selected', 'inset'];
   it.each(['light', 'dark'] as const)('meets WCAG AA for text and controls in the %s theme', theme => {
     const t = tokens(theme);
-    for (const fg of ['text', 'muted', 'subtle', 'accent-text', 'purple', 'create', 'update', 'destroy', 'warn']) {
+    for (const fg of ['text', 'muted', 'subtle', 'accent-text', 'read', 'create', 'update', 'replace', 'destroy']) {
       for (const bg of surfaces) expect(contrast(t(fg), t(bg)), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
     }
     expect(contrast(t('primary-foreground'), t('primary'))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(t('primary-foreground'), t('primary-hover'))).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(t('surface'), t('destroy')), 'destructive button label').toBeGreaterThanOrEqual(4.5);
+    expect(contrast(t('destructive-foreground'), t('destructive')), 'destructive button label').toBeGreaterThanOrEqual(4.5);
+    // Each semantic colour as text on its own tint (chips, banners).
+    for (const tone of ['create', 'update', 'replace', 'destroy']) expect(contrast(t(tone), t(`${tone}-bg`)), `${tone} on its tint`).toBeGreaterThanOrEqual(4.5);
     expect(contrast(t('accent-text'), t('accent-dim'))).toBeGreaterThanOrEqual(4.5);
     // Focus rings, accents and form-control boundaries are non-text UI: 3:1.
     for (const bg of surfaces) {
       expect(contrast(t('ring'), t(bg)), `ring on ${bg}`).toBeGreaterThanOrEqual(3);
       expect(contrast(t('accent'), t(bg)), `accent on ${bg}`).toBeGreaterThanOrEqual(3);
+      expect(contrast(t('ok'), t(bg)), `ok dot on ${bg}`).toBeGreaterThanOrEqual(3);
     }
     for (const bg of ['bg', 'surface', 'inset']) expect(contrast(t('input'), t(bg)), `input on ${bg}`).toBeGreaterThanOrEqual(3);
   });
@@ -173,7 +171,7 @@ describe('theme tokens', () => {
   it('keeps plan statuses distinct from the brand accent', () => {
     for (const theme of ['light', 'dark'] as const) {
       const t = tokens(theme);
-      const statuses = ['create', 'update', 'destroy', 'warn'].map(t);
+      const statuses = ['create', 'update', 'replace', 'destroy'].map(t);
       expect(statuses).not.toContain(t('accent'));
       expect(statuses).not.toContain(t('accent-text'));
       expect(new Set(statuses).size).toBe(4);
@@ -181,11 +179,10 @@ describe('theme tokens', () => {
   });
 
   it('leaves no old brand colours or hardcoded component colours behind', () => {
-    for (const old of ['#b0eac7', '#87cfa4', '#183323', '#a3e8bc', '#14211b', '#111516']) expect(css.toLowerCase()).not.toContain(old);
-    // Outside the token block only transparent/black shadow and scrim values remain.
-    const outside = css.slice(css.indexOf('\n* {')).replace(/:root \{[^}]*--create[^}]*\}/, '');
-    const hexes = new Set(outside.match(/#[0-9a-fA-F]{3,8}\b/g));
-    expect([...hexes].sort()).toEqual(['#000', '#0000', '#0001', '#0008']);
+    for (const old of ['#0b1220', '#f4f4f0', '#e8e8e1', '#c6f432', '#6a8f00', '#a3e8bc', '#14211b']) expect(css.toLowerCase()).not.toContain(old);
+    // Every colour lives in tokens.css; no other stylesheet has a raw hex value.
+    expect(css.replace(read('styles/tokens.css'), '').match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull();
+    expect(read('brand/theme.ts').match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull();
   });
 
   it('follows the system palette before any script runs', () => {
@@ -218,12 +215,12 @@ describe('theme preference', () => {
   });
 
   it('sets the document theme and the browser chrome colour', () => {
-    document.head.innerHTML = '<meta name="theme-color" content="#F4F4F0" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0B1220" media="(prefers-color-scheme: dark)">';
+    document.head.innerHTML = '<meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0E1116" media="(prefers-color-scheme: dark)">';
     applyTheme('light');
     expect(document.documentElement.dataset.theme).toBe('light');
-    expect([...document.querySelectorAll('meta[name="theme-color"]')].map(m => m.getAttribute('content'))).toEqual(['#F4F4F0', '#F4F4F0']);
+    expect([...document.querySelectorAll('meta[name="theme-color"]')].map(m => m.getAttribute('content'))).toEqual(['#F6F7F9', '#F6F7F9']);
     applyTheme('dark');
-    expect([...document.querySelectorAll('meta[name="theme-color"]')].map(m => m.getAttribute('content'))).toEqual(['#0B1220', '#0B1220']);
+    expect([...document.querySelectorAll('meta[name="theme-color"]')].map(m => m.getAttribute('content'))).toEqual(['#0E1116', '#0E1116']);
   });
 });
 
@@ -234,7 +231,9 @@ describe('document entry point', () => {
     expect(html).toContain('href="/favicon-32.png"');
     expect(html).toContain('href="/favicon-16.png"');
     expect(html).toContain('rel="apple-touch-icon"');
-    expect(html).toContain('<meta name="theme-color" content="#0B1220" media="(prefers-color-scheme: dark)"/>');
+    // Filled from tokens.css by the brand-colours Vite plugin (internal/ui/embed_test.go checks the built page).
+    expect(html).toContain('<meta name="theme-color" content="__brand-graphite__" media="(prefers-color-scheme: dark)"/>');
+    expect(html).toContain('<meta name="theme-color" content="__brand-paper__" media="(prefers-color-scheme: light)"/>');
     expect(html).not.toMatch(/https?:\/\//);
     expect(html).not.toMatch(/support\.js|vendor\/react|x-dc|fonts\.googleapis/);
     // The static splash has no inline style attribute: the CSP forbids them.
@@ -242,8 +241,8 @@ describe('document entry point', () => {
   });
 
   it('ships the hollow-cursor favicon, not the old H mark', () => {
-    expect(favicon).toContain(`fill="${reference.navy}"`);
-    expect(favicon).toContain(`fill="${reference.ivory}"`);
+    expect(favicon).toContain(`fill="${reference.graphite}"`);
+    expect(favicon).toContain(`fill="${reference.letter}"`);
     expect(favicon).toContain(`fill="${reference.lime}"`);
     expect(favicon).toContain('fill-rule="evenodd"');
     expect(favicon).not.toMatch(/#a3e8bc|#14211b|<text/i);

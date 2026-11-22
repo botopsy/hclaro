@@ -48,7 +48,7 @@
 }
 
 .compare-target .field input {
-  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-family: var(--font-mono);
 }
 
 .field-error {
@@ -146,7 +146,7 @@
   flex: 1 1 140px;
   min-width: 0;
   padding: 6px 9px;
-  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
@@ -262,8 +262,8 @@
 }
 
 .not-drift-badge {
-  border: 1px solid color-mix(in srgb, var(--purple), transparent 50%);
-  color: var(--purple);
+  border: 1px solid color-mix(in srgb, var(--read), transparent 50%);
+  color: var(--read);
   white-space: nowrap;
   border-radius: 999px;
   flex: none;

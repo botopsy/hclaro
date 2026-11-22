@@ -38,7 +38,7 @@
 .git-hunk-header { background: var(--inset); color: var(--muted); border-bottom: 1px solid var(--border); padding: 6px 10px; font-size: 12px; overflow-wrap: anywhere; }
 .git-diff-lines { border-collapse: collapse; width: 100%; font-size: 12.5px; line-height: 1.55; }
 .git-diff-lines td { vertical-align: top; padding: 0 6px; }
-.git-ln { color: var(--subtle); text-align: right; user-select: none; width: 1%; white-space: nowrap; font-family: SFMono-Regular, Consolas, Liberation Mono, monospace; }
+.git-ln { color: var(--subtle); text-align: right; user-select: none; width: 1%; white-space: nowrap; font-family: var(--font-mono); }
 .git-mark { user-select: none; width: 1%; color: var(--subtle); }
 .git-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .git-line-add { background: color-mix(in srgb, var(--create) 12%, transparent); }

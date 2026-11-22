@@ -8,22 +8,26 @@ the code that uses it. Nothing from the mockup's preview runtime is part of the 
 
 ![The shipped components rendered by the production stylesheet, laid out like the reference artboard](screenshots/brand-sheet.png)
 
-`screenshots/brand-sheet.png` is rendered from the **built** stylesheet in `internal/ui/dist`; against
-the reference artboard rendered with the same font it differs in 0.47 % of pixels (anti-aliasing).
+`screenshots/brand-sheet.png` is rendered from the **built** stylesheet in `internal/ui/dist` by
+`node scripts/brand-sheet.mjs` (run after `npm --prefix web run build`).
 
 ## 1. Source palette (exact)
 
-These five values are copied literally from the reference. They exist once, as raw tokens at the
-top of `web/src/styles/tokens.css`, and are never edited or approximated; every other colour is derived and
-listed separately in §2.
+Graphite + lime, from the redesign (`HCLARO_REDESIGN.md` §5, task A1); it replaced the M19 navy/ivory
+palette. The palette is still provisional (redesign Q4): a later palette swap edits only
+`web/src/styles/tokens.css`. These values exist once, as raw tokens at the top of that file; every
+other colour is listed in §2.
 
 | Raw token | Hex | Role |
 |---|---|---|
-| `--brand-navy` | `#0B1220` | Dark background, light-theme text, app-icon tile |
-| `--brand-ivory` | `#F4F4F0` | Light background, dark-theme text and wordmark |
-| `--brand-stone` | `#E8E8E1` | Secondary light surface (light sidebar), icon presentation |
-| `--brand-lime` | `#C6F432` | Dark-theme accent, hollow cursor, inverse logo surface |
-| `--brand-olive` | `#6A8F00` | Light-theme chevron and accent graphics |
+| `--brand-graphite` | `#0E1116` | Dark background, app-icon tile |
+| `--brand-paper` | `#F6F7F9` | Light background, light wordmark background |
+| `--brand-ink` | `#151A21` | Light-theme text, light wordmark letters and cursor |
+| `--brand-letter` | `#E6E8EB` | Dark-theme text, dark wordmark and mark letters |
+| `--brand-lime` | `#C5F04A` | Accent, primary button fill (both themes), hollow cursor, inverse logo surface |
+| `--brand-olive` | `#3F6212` | Light-theme chevron, accent graphics and accent text |
+| `--brand-on-lime` | `#10140A` | Text on lime (primary buttons, inverse wordmark) |
+| `--brand-edge` | `#2A323D` | Hairline edge of the app-icon tile |
 
 ## 2. Semantic tokens
 
@@ -33,53 +37,60 @@ system-theme user never sees the wrong palette flash; `data-theme="light|dark"` 
 preference before React renders, see `web/src/brand/theme.ts`) pins one. Lightning CSS compiles
 `light-dark()` into a custom-property fallback, so it also works in browsers without native support.
 
-The existing names (`--bg`, `--text`, …) were kept as the project convention. Mapping to the usual
-shadcn/ui vocabulary is given in the last column.
+The existing names (`--bg`, `--text`, …) were kept as the project convention; the redesign spec's
+names map as: `--bar` = `--sidebar`, `--surface-2` = `--inset`, `--line` = `--border-soft`,
+`--text-mid` = `--muted`, `--text-muted` = `--subtle`, `--accent-soft` = `--accent-dim`,
+`--on-accent` = `--primary-foreground`, delete = `--destroy`.
 
-| Token | Light | Dark | Derived? | shadcn name |
+| Token | Light | Dark | Notes |
+|---|---|---|---|
+| `--bg` | `--brand-paper` | `--brand-graphite` | content background |
+| `--sidebar` | `#FFFFFF` | `#0B0E12` | sidebar and top bar |
+| `--surface` | `#FFFFFF` | `#141920` | inputs, cards |
+| `--surface-hover` | `#EBEEF2` | `#1A2029` | hover |
+| `--surface-selected` | = `--accent-dim` | = `--accent-dim` | selected row/item |
+| `--inset` | `#F1F3F6` | `#12161C` | group rows, panels |
+| `--border` / `--border-soft` | `#D5DAE1` / `#E6E9EE` | `#232A33` / `#1A1F26` | dividers |
+| `--input` | `#7A8491` | `#66717F` | form-control boundary (3:1) |
+| `--text` | `--brand-ink` | `--brand-letter` | |
+| `--muted` / `--subtle` | `#3C4552` / `#5B6675` | `#B4BCC6` / `#8B949E` | secondary text |
+| `--accent` | `--brand-olive` | `--brand-lime` | graphics only |
+| `--accent-dim` | `#EEF7D4` | `#1A2110` | active navigation background |
+| `--accent-text` | `--brand-olive` | `--brand-lime` | accent as text |
+| `--accent-foreground` | `--brand-on-lime` | `--brand-on-lime` | |
+| `--primary` | `--brand-lime` | `--brand-lime` | primary button fill |
+| `--primary-hover` | `#B6E234` | `#D4F574` | |
+| `--primary-foreground` | `--brand-on-lime` | `--brand-on-lime` | |
+| `--ring` | `--brand-olive` | `--brand-lime` | focus ring |
+| `--logo-text` / `--logo-chevron` / `--logo-cursor` | ink / olive / ink | letter / lime / lime | |
+
+Fixed semantic colours (the same for every palette; text on a tinted background):
+
+| Meaning | Text light | Text dark | Tint light | Tint dark |
 |---|---|---|---|---|
-| `--bg` | `--brand-ivory` | `--brand-navy` | no | background |
-| `--sidebar` | `--brand-stone` | `#0E1626` | dark derived | sidebar |
-| `--surface` | `#FBFBF8` | `#131C2D` | derived | card / popover |
-| `--surface-hover` | `#EDEDE6` | `#1A2437` | derived | accent (hover) |
-| `--surface-selected` | `#E6EDCF` | `#1E2B25` | derived (olive/lime tint) | — |
-| `--inset` | `#EFEFE9` | `#0D1524` | derived | muted |
-| `--border` / `--border-soft` | `#D6D6CD` / `#E3E3DB` | `#253047` / `#1A2436` | derived | border |
-| `--input` | `#7E837A` | `#66728A` | derived (3:1 boundary) | input |
-| `--text` | `--brand-navy` | `--brand-ivory` | no | foreground |
-| `--muted` / `--subtle` | `#4B5363` / `#5D6573` | `#A4ACB9` / `#8891A0` | derived | muted-foreground |
-| `--accent` | `--brand-olive` | `--brand-lime` | no | — (brand accent, graphics only) |
-| `--accent-dim` | `#DDE8B8` | `#2D3B23` | derived | — |
-| `--accent-text` | `#4A6600` | `--brand-lime` | light derived | — (accent as text) |
-| `--accent-foreground` | `--brand-navy` | `--brand-navy` | no | accent-foreground |
-| `--primary` | `--brand-navy` | `--brand-lime` | no | primary |
-| `--primary-hover` | `#1E2A3F` | `#D4F75E` | derived | — |
-| `--primary-foreground` | `--brand-ivory` | `--brand-navy` | no | primary-foreground |
-| `--ring` | `#4A6600` | `--brand-lime` | light derived | ring |
-| `--purple` (data sources) | `#6650A8` | `#B3A5E5` | derived | — |
-| `--create` | `#1E6E3A` | `#8FDCAB` | derived | — |
-| `--update` | `#7F5400` | `#E3C27A` | derived | — |
-| `--destroy` | `#AE3326` | `#F09A8F` | derived | destructive |
-| `--warn` | `#835200` | `#E7B86A` | derived | — |
-| `--logo-text` / `--logo-chevron` / `--logo-cursor` | navy / olive / navy | ivory / lime / lime | no | — |
+| create (`--create`, `--create-bg`) | `#2F6B1A` | `#9BE37A` | `#E6F4DF` | `#13240F` |
+| update / warning (`--update`, `--update-bg`; `--warn` = `--update`) | `#8A6100` | `#F2CC60` | `#FBF1D4` | `#2A2410` |
+| replace (`--replace`, `--replace-bg`) | `#A6460C` | `#F0A35E` | `#FCEADC` | `#2D1C10` |
+| delete / error (`--destroy`, `--destroy-bg`) | `#B42318` | `#F08A7E` | `#FDE8E6` | `#2E1515` |
+| read / data sources (`--read`) | `#4338CA` | `#A5B4FC` | — | — |
+| status OK dot (`--ok`) | `#15803D` | `#6EE7A0` | — | — |
+| destructive button (`--destructive-foreground` on `--destructive`) | `#FFFFFF` on `#B42318` | `#2A0F0B` on `#F4A196` | — | — |
 
 Rules:
 
-- **Navy, ivory and stone dominate; lime is an accent.** Lime appears on the active-navigation
-  marker, selected borders, focus rings, progress bars and the primary button in dark mode. It is
-  never a large surface under body text.
-- **Primary actions** are navy with ivory text in light mode and lime with navy text in dark mode.
-  Lime on ivory would be readable text but an invisible button edge (1.16:1), so it is not used.
-- **The light-mode olive is not a text colour.** `#6A8F00` on `#F4F4F0` is 3.44:1, enough for the
-  chevron and other graphics (3:1) but not for small text. Text in the accent hue uses the derived
-  `--accent-text` `#4A6600` (≥ 5.35:1 on every light surface). The logo's chevron keeps the reference
-  olive unchanged.
-- **Statuses are not brand colours.** Create/update/destroy/warn keep their own green, amber and red,
-  distinct from lime and olive (asserted by `web/src/brand/Brand.test.tsx`). Plan actions always pair
+- **Graphite and paper dominate; lime is an accent.** Lime appears on the active-navigation marker,
+  selected borders, focus rings, progress bars and primary buttons. It is never a large surface under body text.
+- **Primary actions** are lime with near-black text in both themes. In light mode lime is only a fill:
+  lime on white is 1.2:1, so accent graphics, rings and accent text use olive instead.
+- **Statuses are not brand colours.** Create/update/replace/delete keep their own green, amber, orange
+  and red, distinct from lime and olive (asserted by `web/src/brand/Brand.test.tsx`). Plan actions always pair
   colour with an icon and a word (`web/src/plans/labels.ts`: Create +, Update ✎, Replace ↻, Delete −,
-  Read, Forget, Unknown ?, No change =), so meaning never depends on hue. The light values were darkened to pass 4.5:1 on the new surfaces.
-- Remaining literal colours outside the token block are only transparent/black shadows and the dialog
-  scrim (`#000`, `#0000`, `#0001`, `#0008`); the brand test fails if any other hex appears.
+  Read, Forget, Unknown ?, No change =), so meaning never depends on hue.
+- **No raw hex outside `tokens.css`.** Shadows and the dialog scrim are tokens too (`--shadow`,
+  `--shadow-sm`, `--scrim`); the brand test fails if any other stylesheet or `theme.ts` contains a hex
+  value. `<meta name="theme-color">` cannot read CSS variables, so `web/index.html` says
+  `__brand-paper__` / `__brand-graphite__` and the `brand-colours` Vite plugin fills them from
+  `tokens.css` (dev and build); `theme.ts` reads the colours back from those meta tags.
 
 ## 3. Contrast results
 
@@ -90,55 +101,61 @@ Text tokens (AA normal text, 4.5:1):
 
 | Token | Theme | bg | sidebar | surface | surface-hover | surface-selected | inset |
 |---|---|--:|--:|--:|--:|--:|--:|
-| `--text` | light | 16.98 | 15.21 | 18.06 | 15.92 | 15.49 | 16.22 |
-| `--text` | dark | 16.98 | 16.40 | 15.46 | 14.09 | 13.34 | 16.56 |
-| `--muted` | light | 7.01 | 6.28 | 7.46 | 6.57 | 6.40 | 6.70 |
-| `--muted` | dark | 8.18 | 7.90 | 7.45 | 6.79 | 6.43 | 7.98 |
-| `--subtle` | light | 5.33 | 4.77 | 5.67 | 5.00 | 4.86 | 5.09 |
-| `--subtle` | dark | 5.89 | 5.69 | 5.36 | 4.89 | 4.63 | 5.74 |
-| `--accent-text` | light | 5.97 | 5.35 | 6.35 | 5.59 | 5.45 | 5.70 |
-| `--accent-text` | dark | 14.61 | 14.11 | 13.30 | 12.13 | 11.48 | 14.25 |
-| `--purple` | light | 5.81 | 5.20 | 6.18 | 5.45 | 5.30 | 5.55 |
-| `--purple` | dark | 8.41 | 8.12 | 7.66 | 6.98 | 6.61 | 8.20 |
-| `--create` | light | 5.69 | 5.10 | 6.05 | 5.34 | 5.19 | 5.44 |
-| `--create` | dark | 11.58 | 11.19 | 10.55 | 9.61 | 9.10 | 11.30 |
-| `--update` | light | 6.01 | 5.38 | 6.39 | 5.63 | 5.48 | 5.74 |
-| `--update` | dark | 10.93 | 10.56 | 9.96 | 9.07 | 8.59 | 10.67 |
-| `--destroy` | light | 5.77 | 5.17 | 6.14 | 5.41 | 5.26 | 5.51 |
-| `--destroy` | dark | 8.67 | 8.37 | 7.89 | 7.20 | 6.81 | 8.46 |
-| `--warn` | light | 6.00 | 5.38 | 6.39 | 5.63 | 5.48 | 5.74 |
-| `--warn` | dark | 10.22 | 9.87 | 9.31 | 8.48 | 8.03 | 9.97 |
+| `--text` | light | 16.30 | 17.48 | 17.48 | 15.02 | 15.72 | 15.72 |
+| `--text` | dark | 15.41 | 15.76 | 14.38 | 13.34 | 13.48 | 14.78 |
+| `--muted` | light | 9.05 | 9.70 | 9.70 | 8.33 | 8.72 | 8.72 |
+| `--muted` | dark | 9.86 | 10.08 | 9.20 | 8.54 | 8.63 | 9.46 |
+| `--subtle` | light | 5.44 | 5.83 | 5.83 | 5.01 | 5.24 | 5.24 |
+| `--subtle` | dark | 6.15 | 6.29 | 5.74 | 5.32 | 5.38 | 5.90 |
+| `--accent-text` | light | 6.60 | 7.08 | 7.08 | 6.08 | 6.37 | 6.37 |
+| `--accent-text` | dark | 14.35 | 14.68 | 13.40 | 12.43 | 12.56 | 13.77 |
+| `--read` | light | 7.37 | 7.90 | 7.90 | 6.79 | 7.11 | 7.11 |
+| `--read` | dark | 9.49 | 9.70 | 8.85 | 8.21 | 8.30 | 9.10 |
+| `--create` | light | 6.05 | 6.48 | 6.48 | 5.57 | 5.83 | 5.83 |
+| `--create` | dark | 12.30 | 12.58 | 11.48 | 10.65 | 10.77 | 11.81 |
+| `--update` | light | 5.17 | 5.54 | 5.54 | 4.76 | 4.98 | 4.98 |
+| `--update` | dark | 12.23 | 12.51 | 11.42 | 10.59 | 10.70 | 11.74 |
+| `--replace` | light | 5.59 | 6.00 | 6.00 | 5.15 | 5.39 | 5.39 |
+| `--replace` | dark | 9.10 | 9.31 | 8.49 | 7.88 | 7.96 | 8.73 |
+| `--destroy` | light | 6.13 | 6.57 | 6.57 | 5.65 | 5.91 | 5.91 |
+| `--destroy` | dark | 7.78 | 7.96 | 7.26 | 6.74 | 6.81 | 7.47 |
 
-Non-text UI (focus indicators, accents, form-control boundaries, 3:1):
+Non-text UI (focus indicators, accents, form-control boundaries, status dots, 3:1):
 
 | Token | Theme | bg | sidebar | surface | surface-hover | surface-selected | inset |
 |---|---|--:|--:|--:|--:|--:|--:|
-| `--accent` | light | 3.44 | 3.08 | 3.66 | 3.22 | 3.14 | 3.28 |
-| `--accent` | dark | 14.61 | 14.11 | 13.30 | 12.13 | 11.48 | 14.25 |
-| `--ring` | light | 5.97 | 5.35 | 6.35 | 5.59 | 5.45 | 5.70 |
-| `--ring` | dark | 14.61 | 14.11 | 13.30 | 12.13 | 11.48 | 14.25 |
-| `--input` | light | 3.52 | 3.15 | 3.74 | 3.30 | 3.21 | 3.36 |
-| `--input` | dark | 3.87 | 3.74 | 3.52 | 3.21 | 3.04 | 3.77 |
+| `--accent` | light | 6.60 | 7.08 | 7.08 | 6.08 | 6.37 | 6.37 |
+| `--accent` | dark | 14.35 | 14.68 | 13.40 | 12.43 | 12.56 | 13.77 |
+| `--ring` | light | 6.60 | 7.08 | 7.08 | 6.08 | 6.37 | 6.37 |
+| `--ring` | dark | 14.35 | 14.68 | 13.40 | 12.43 | 12.56 | 13.77 |
+| `--input` | light | 3.54 | 3.79 | 3.79 | 3.26 | 3.41 | 3.41 |
+| `--input` | dark | 3.81 | 3.90 | 3.56 | 3.30 | 3.34 | 3.66 |
+| `--ok` | light | 4.68 | 5.02 | 5.02 | 4.31 | 4.51 | 4.51 |
+| `--ok` | dark | 12.25 | 12.53 | 11.43 | 10.60 | 10.72 | 11.75 |
 
-Pairs on filled controls:
+Pairs on filled controls and tints (4.5:1):
 
 | Pair | Light | Dark |
 |---|--:|--:|
-| `--primary-foreground` on `--primary` | 16.98 | 14.61 |
-| `--primary-foreground` on `--primary-hover` | 13.06 | 15.39 |
-| `--surface` (label) on `--destroy` (destructive button) | 6.14 | 7.89 |
-| `--accent-text` on `--accent-dim` (completed wizard step) | 5.11 | 9.30 |
+| `--primary-foreground` on `--primary` | 14.15 | 14.15 |
+| `--primary-foreground` on `--primary-hover` | 12.35 | 15.19 |
+| `--destructive-foreground` on `--destructive` | 6.57 | 8.86 |
+| `--accent-text` on `--accent-dim` | 6.37 | 12.56 |
+| `--create` on `--create-bg` | 5.67 | 10.62 |
+| `--update` on `--update-bg` | 4.92 | 10.00 |
+| `--replace` on `--replace-bg` | 5.12 | 7.86 |
+| `--destroy` on `--destroy-bg` | 5.59 | 7.00 |
 
 Logo variants (decorative logotype; recorded, not required to pass):
 
 | Pair | Ratio |
 |---|--:|
-| Navy wordmark on ivory / ivory wordmark on navy | 16.98 |
-| Olive chevron on ivory (light variant) | 3.44 |
-| Lime chevron and cursor on navy (dark variant, app icon) | 14.61 |
-| Navy wordmark, chevron and cursor on lime (inverse variant) | 14.61 |
+| Ink wordmark on paper / letter wordmark on graphite | 16.30 / 15.41 |
+| Olive chevron on paper (light variant) | 6.60 |
+| Lime chevron and cursor on graphite (dark variant, app icon) | 14.35 |
+| On-lime wordmark, chevron and cursor on lime (inverse variant) | 14.15 |
 
-Borders `--border`/`--border-soft` are decorative separators (about 1.4–1.5:1, as before M19); they
+Borders `--border`/`--border-soft` are decorative separators (about 1.3:1); they
 never carry meaning on their own. Form controls use `--input` instead.
 
 ## 4. Logo anatomy
@@ -160,16 +177,16 @@ and `l`.
 
 | Variant | Background | Wordmark | Chevron | Cursor |
 |---|---|---|---|---|
-| Light | `#F4F4F0` | `#0B1220` | `#6A8F00` | `#0B1220` |
-| Dark | `#0B1220` | `#F4F4F0` | `#C6F432` | `#C6F432` |
-| Inverse (lime) | `#C6F432` | `#0B1220` | `#0B1220` | `#0B1220` |
+| Light | `#F6F7F9` | `#151A21` | `#3F6212` | `#151A21` |
+| Dark | `#0E1116` | `#E6E8EB` | `#C5F04A` | `#C5F04A` |
+| Inverse (lime) | `#C5F04A` | `#10140A` | `#10140A` | `#10140A` |
 
 The reference also shows a secondary lockup without the cursor (`30px`, under the app icon), available
 as `<HclaroLogo cursor={false} />`.
 
 ### App icon / compact mark
 
-Lowercase ivory `h` plus the lime hollow cursor on a navy rounded square. Reference sizes:
+Lowercase `#E6E8EB` `h` plus the lime hollow cursor on a graphite rounded square with a `#2A323D` hairline edge (the favicons have no edge). Reference sizes:
 
 | Tile | Radius | Letter size |
 |---|---|---|
@@ -213,7 +230,7 @@ Where it is used:
 | Loading (before the bundle runs) | static mark in `web/index.html` (`.boot-splash`, 64 px; no inline styles, as the CSP forbids them) |
 | Workspace Hub first-run state | `HclaroMark` 40 px |
 | Settings → About Hclaro | `HclaroLogo` (auto), 24 px |
-| Browser tab | `favicon.svg`, `favicon-32.png`, `favicon-16.png`, `apple-touch-icon.png`; `<meta name="theme-color">` ivory/navy |
+| Browser tab | `favicon.svg`, `favicon-32.png`, `favicon-16.png`, `apple-touch-icon.png`; `<meta name="theme-color">` paper/graphite |
 
 The repository has no marketing site, Storybook or web manifest. The local server's CSP is
 `default-src 'none'` with no `manifest-src`, so a manifest would be blocked; the 192/512 px app icons
@@ -222,12 +239,13 @@ are kept in `assets/` for packagers instead of being shipped in the UI.
 ## 6. Typography
 
 - **Logo:** JetBrains Mono Bold, self-hosted from `@fontsource/jetbrains-mono` (SIL Open Font License
-  1.1, listed in `THIRD-PARTY-NOTICES.txt`). Only the Latin 700 subset is bundled (22 kB woff2 plus a
-  woff fallback). It is served from the binary under `font-src 'self'`; Vite's `assetsInlineLimit: 0`
+  1.1, listed in `THIRD-PARTY-NOTICES.txt`). The Latin 700 subset (22 kB woff2 plus a
+  woff fallback) and Latin 400 for code are bundled. They are served from the binary under `font-src 'self'`; Vite's `assetsInlineLimit: 0`
   keeps fonts out of `data:` URIs, which the CSP would block. No Google Fonts or other network request.
   If the font fails, the logo falls back to `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
   with the same geometry.
-- **Interface:** unchanged (Inter/system UI stack; SFMono/Consolas for code and addresses).
+- **Interface:** Inter (variable, `@fontsource-variable/inter`, SIL OFL 1.1, listed in `THIRD-PARTY-NOTICES.txt`), self-hosted the same way, 13 px base (`:root` font-size). All subsets are bundled (about 224 kB woff2); `unicode-range` makes the browser load only the ones a page needs, normally Latin (48 kB).
+- **Code, addresses, types, versions and paths:** JetBrains Mono through the `--font-mono` token (Latin 400 and 700 bundled; Tailwind's `font-mono` reads the same variable), falling back to `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`.
 
 ## 7. Assets
 
@@ -240,9 +258,11 @@ without the font. PNGs are rendered offline by the Playwright Chromium already u
 | `web/public/favicon.svg` | Browser tab (vector) |
 | `web/public/favicon-16.png`, `favicon-32.png` | Raster favicons (16 px pixel-snapped) |
 | `web/public/apple-touch-icon.png` | 180 px touch icon |
-| `docs/design/assets/hclaro-mark.svg` | Mark source |
+| `docs/design/assets/hclaro-mark.svg`, `hclaro-mark-light.svg` | Mark source (graphite, and paper for light backgrounds), with tile edge |
 | `docs/design/assets/hclaro-wordmark-{light,dark,inverse}.svg` | Wordmarks on their reference backgrounds |
-| `docs/design/assets/hclaro-icon-{192,512}.png` | App icons for packagers |
+| `docs/design/assets/hclaro-wordmark-{light,dark}-transparent.svg` | Wordmarks without a background |
+| `docs/design/assets/hclaro-icon-{192,512,1024}.png`, `hclaro-icon-light-{192,512,1024}.png` | App icons for packagers |
+| `docs/design/assets/hclaro-wordmark-*@2x.png` | 1200 px wordmarks for the README and social previews |
 
 The previous three-bar CSS mark and the green `H` favicon (`#a3e8bc`/`#14211b`) are removed; nothing
 else referenced them.
