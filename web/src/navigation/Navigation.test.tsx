@@ -142,6 +142,18 @@ describe('Navigation model', () => {
     for (const kind of ['hub', 'compare', 'history'] as const) expect(parseRoute(globalPages[kind].path)).toEqual({ kind });
   });
 
+  it('gives read-only pages no chip and risky pages exactly their §3 chip', () => {
+    for (const view of ['Overview', 'Resources', 'Modules', 'Providers', 'Settings'] as const) expect(pages[view].chip).toBeUndefined();
+    expect(globalPages.hub.chip).toBeUndefined();
+    expect(pages.Plans.chip).toBe('Nothing is applied until you confirm');
+    expect(pages.Drift.chip).toBe('Refresh-only · never writes state');
+    expect(globalPages.history.chip).toBe('On this machine · never re-runs');
+    // One Import & discovery page whose chip follows the open tab.
+    expect([pages.Import.title, pages.Discovery.title]).toEqual(['Import & discovery', 'Import & discovery']);
+    expect(pages.Import.chip).toBe('Nothing is imported until you apply a reviewed plan');
+    expect(pages.Discovery.chip).toBe('Read-only cloud reads');
+  });
+
   it('names pages for breadcrumbs and keys workbenches per context', () => {
     expect(viewTrail('Discovery')).toEqual(['Import & discovery', 'Discover cloud resources']);
     expect(viewTrail('Drift')).toEqual(['Drift detection']);
@@ -230,19 +242,19 @@ describe('Sidebar', () => {
     app();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Import & discovery' }));
-    expect(await screen.findByRole('heading', { name: 'Import an existing object' })).toBeInTheDocument();
+    expect(await screen.findByText('Nothing is imported until you apply a reviewed plan')).toBeInTheDocument();
     const tabs = screen.getByRole('navigation', { name: 'Import and discovery' });
     expect(within(tabs).getByRole('button', { name: 'Import existing' })).toHaveAttribute('aria-current', 'page');
     expect(navButton('Import & discovery')).toHaveAttribute('aria-current', 'page');
     await user.click(within(tabs).getByRole('button', { name: 'Discover cloud resources' }));
-    expect(await screen.findByRole('heading', { name: 'Cloud discovery' })).toBeInTheDocument();
+    expect(await screen.findByText('Read-only cloud reads')).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: /AWS context not verified/ })).toBeInTheDocument();
     expect(navButton('Import & discovery')).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Import & discoveryDiscover cloud resources');
     // The entry reopens the workflow last used in this tab.
     await user.click(navButton('Plans'));
     await user.click(navButton('Import & discovery'));
-    expect(await screen.findByRole('heading', { name: 'Cloud discovery' })).toBeInTheDocument();
+    expect(await screen.findByText('Read-only cloud reads')).toBeInTheDocument();
     expect(mutations()).toEqual([]);
   });
   it('keeps Git, Tools and Settings reachable from the sidebar footer', async () => {
@@ -252,17 +264,17 @@ describe('Sidebar', () => {
     expect(within(utilities).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Git', 'Tools', 'Settings']);
     await user.click(within(utilities).getByRole('button', { name: 'Tools' }));
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/dev/tools`);
-    expect(await screen.findByRole('heading', { name: 'Project tools' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Tools', level: 1 })).toBeInTheDocument();
     await user.click(within(utilities).getByRole('button', { name: 'Git' }));
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/dev/git`);
-    expect(await screen.findByRole('heading', { name: 'Git changes' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Git', level: 1 })).toBeInTheDocument();
     await user.click(within(utilities).getByRole('button', { name: 'Settings' }));
     expect(await screen.findByRole('heading', { name: 'Appearance' })).toBeInTheDocument();
     expect(within(utilities).getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
     // Back leaves Settings for the previous explorer view in the URL.
     window.history.back();
     await waitFor(() => expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/dev/tools`));
-    expect(await screen.findByRole('heading', { name: 'Project tools' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Tools', level: 1 })).toBeInTheDocument();
     expect(within(utilities).getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-current', 'page');
   });
   it('opens a Hub project page item in the workspace last used there', async () => {
