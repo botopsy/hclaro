@@ -106,7 +106,7 @@
   flex: none;
 }
 
-.project-pill:hover, .project-pill[aria-expanded="true"] {
+.project-pill:hover, .project-pill[aria-expanded="true"], button.workspace-pill:hover, .workspace-pill[aria-expanded="true"] {
   background: var(--surface-selected);
 }
 
@@ -116,16 +116,6 @@
 
 .workspace-pill strong {
   font-weight: 500;
-}
-
-.workspace-pill .workspace-switch {
-  color: var(--text);
-  background: none;
-  border: 0;
-  min-width: 0;
-  max-width: 200px;
-  padding: 0 2px;
-  font-size: 13px;
 }
 
 .topbar-actions {
