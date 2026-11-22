@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, Command,    FolderTree, Layers3, LoaderCircle,  Menu,  Network, Search,  SlidersHorizontal,  X } from 'lucide-react';
 import { ApiError, api, openInNewTab, send } from './api';
 import type { ReplaceTarget, Resource, ResourcePage } from './types';
-import { contextPath, isExplorerView, navigate, parseRoute, productionLike, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
+import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
 import { AddProjectDialog, HubView, ProjectView } from './hub/HubView';
 import { Button } from './components/ui/button';
 import { PlansView } from './plans/PlansView';
@@ -24,6 +24,8 @@ import { globalPages, importDiscoveryTabs, onProjectPage, pageOf, type NavContex
 import { ImportDiscoveryTabs, Sidebar } from './navigation/Sidebar';
 import { ProjectSwitcher, switchTargets, type CurrentProject } from './navigation/ProjectSwitcher';
 import { ConfirmSwitch } from './navigation/ConfirmSwitch';
+import { WorkspaceSwitcher } from './navigation/WorkspaceSwitcher';
+import { WorkspaceDialog } from './hub/WorkspaceDialog';
 import { WarningChips } from './navigation/WarningChips';
 import type { DiscoveryPrefill } from './types';
 import { useWorkbenchContext } from './workbench/useWorkbenchContext';
@@ -84,6 +86,8 @@ function Workbench({
   // A project or workspace switch waiting for confirmation (it would discard work in this tab).
   const [pendingSwitch, setPendingSwitch] = useState<string>();
   const [addingProject, setAddingProject] = useState(false);
+  // The name typed in the workspace switcher; the reviewed, confirmed create dialog is open.
+  const [creatingWorkspace, setCreatingWorkspace] = useState<string>();
   const { preferences, changePreference } = usePreferences();
   // Icon-only mode is a desktop preference; the narrow-screen drawer always shows labels.
   const compact = preferences.sidebar === 'compact' && !narrow;
@@ -290,7 +294,7 @@ function Workbench({
     setReplaceSelection(current => current.some(r => r.id === resource.id) ? current.filter(r => r.id !== resource.id) : current.length >= maxReplace ? current : [...current, { id: resource.id, address: resource.address }]);
   }
   const filtered = !!(query || module !== undefined || provider || type || mode);
-  const workspaceControl = scoped ? <div className="workspace-pill"><Layers3 size={14} aria-hidden="true" /><label htmlFor="workspace-switch" className="sr-only">Workspace</label><select id="workspace-switch" className="workspace-switch mono" value={scoped.workspace} title="Terraform/OpenTofu workspace this tab reads. Switching runs nothing and never selects a workspace in the CLI." onChange={e => requestSwitch(contextPath(scoped.projectId, e.target.value, isExplorerView(view) ? view : 'Resources'))}>{Array.from(new Set([scoped.workspace, ...(project?.inspection?.workspaces || [])])).map(ws => <option key={ws} value={ws}>{ws}{ws === project?.inspection?.cliDefault ? ' (CLI default)' : ''}</option>)}</select></div> : navMode === 'launch' && !onHub ? <div className="workspace-pill" title="Selected in this folder's CLI data directory. Hclaro reads it and never changes it. Save the project to the Hub to read other workspaces in their own tabs."><Layers3 size={14} aria-hidden="true" /><span className="sr-only">Workspace</span><strong className="mono">{w?.info.workspace || '—'}</strong><span className="hub-tag hub-tag-quiet">CLI</span></div> : undefined;
+  const workspaceControl = scoped ? <WorkspaceSwitcher project={project?.alias || opened.data?.alias || 'this project'} workspace={scoped.workspace} workspaces={Array.from(new Set([...(project?.inspection?.workspaces || []), scoped.workspace]))} cliDefault={project?.inspection?.cliDefault} onSwitch={ws => requestSwitch(contextPath(scoped.projectId, ws, isExplorerView(view) ? view : 'Resources'))} onCreate={setCreatingWorkspace} createDisabled={!project ? 'The project is still loading.' : !project.workspaceActions?.change ? project.workspaceActions?.reason || 'Workspace changes are unavailable.' : project.busy ? 'A command is running for this project.' : undefined} onManage={() => requestSwitch(projectPath(scoped.projectId))} /> :navMode === 'launch' && !onHub ? <div className="workspace-pill" title="Selected in this folder's CLI data directory. Hclaro reads it and never changes it. Save the project to the Hub to read other workspaces in their own tabs."><Layers3 size={14} aria-hidden="true" /><span className="sr-only">Workspace</span><strong className="mono">{w?.info.workspace || '—'}</strong><span className="hub-tag hub-tag-quiet">CLI</span></div> : undefined;
   const heading = route.kind === 'launch' || route.kind === 'context' ? pageOf(view) : globalPages[route.kind];
   return <div className={`app density-${preferences.density} ${compact ? 'sidebar-compact' : ''} ${navOpen ? 'nav-open' : ''}`}>
   <a className="skip-link" href="#main-content">Skip to workspace</a>
@@ -425,6 +429,13 @@ function Workbench({
       setAddingProject(false);
       setNotice(`${p.alias} added`);
       void projects.refetch();
+    }} />}
+  {creatingWorkspace !== undefined && scoped && <WorkspaceDialog projectId={scoped.projectId} profileId={profile.selected} action="new" initialName={creatingWorkspace} onClose={() => {
+      setCreatingWorkspace(undefined);
+      void projects.refetch();
+    }} onFinished={() => void projects.refetch()} onOpen={ws => {
+      setCreatingWorkspace(undefined);
+      requestSwitch(contextPath(scoped.projectId, ws, isExplorerView(view) ? view : 'Resources'));
     }} />}
   {notice && <div role="status" className="toast"><Check size={15} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={13} /></button></div>}
  </div>;

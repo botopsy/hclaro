@@ -10,6 +10,12 @@ import App from '../App';
 import { contextPath, parseRoute } from '../router';
 import type { DependencyGraph, DiscoveryOptions, DiscoveryPrefill, DiscoveryScan, DriftScan, Operation, Plan, PreflightReport, Project, ProjectList, ScopedPlanOptions, Workspace } from '../types';
 
+// Opens the top bar workspace switcher and chooses a workspace (this tab only).
+async function pickWorkspace(user: ReturnType<typeof userEvent.setup>, ws: string) {
+  await user.click(screen.getByRole('button', { name: /Switch workspace/ }));
+  await user.click(within(screen.getByRole('list', { name: 'Workspaces' })).getByRole('button', { name: new RegExp(`^${ws}`) }));
+}
+
 // M24.07: plans and applies of a Hub workspace go only to that workspace's own context.
 const network = 'a'.repeat(32);
 const planId = 'b'.repeat(32);
@@ -145,7 +151,7 @@ describe('Hub plan flow (M24.07)', { timeout: 20000 }, () => {
     await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
     expect(await screen.findByRole('dialog', { name: 'Apply to network / dev' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    await pickWorkspace(user, 'prod');
     expect(window.location.pathname).toBe(`/projects/${network}/workspaces/prod/plans`);
     expect(await screen.findByText('No plans yet')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Review and apply…' })).not.toBeInTheDocument();
@@ -332,7 +338,7 @@ describe('Hub drift scans and graphs (M24.09)', { timeout: 20000 }, () => {
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/drift-scans`)).toBe(true));
     expect(calls.find(c => c.method === 'POST' && c.url.endsWith('/drift-scans'))!.body).toEqual({ acknowledgeProviderAccess: true, varFiles: [], contextFingerprint: '' });
 
-    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    await pickWorkspace(user, 'prod');
     expect(window.location.pathname).toBe(`/projects/${network}/workspaces/prod/drift`);
     expect(await screen.findByText('No drift scans yet')).toBeInTheDocument();
     expect(screen.queryByLabelText('Scan history')).not.toBeInTheDocument();
@@ -355,7 +361,7 @@ describe('Hub drift scans and graphs (M24.09)', { timeout: 20000 }, () => {
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/graphs`)).toBe(true));
     expect(calls.find(c => c.method === 'POST' && c.url.endsWith('/graphs'))!.body).toEqual({ acknowledgeEngineRun: true, contextFingerprint: '' });
 
-    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    await pickWorkspace(user, 'prod');
     expect(await screen.findByText('No dependency graph yet')).toBeInTheDocument();
     expect(launchAnalysis()).toEqual([]);
   });
@@ -433,7 +439,7 @@ describe('Hub cloud discovery (M24.09)', { timeout: 20000 }, () => {
     expect(screen.getByLabelText('Import ID')).toHaveValue(prefill.importId);
 
     await user.click(screen.getByRole('button', { name: 'Discover cloud resources' }));
-    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    await pickWorkspace(user, 'prod');
     // The prepared import is unsaved work of dev's workbench: switching asks first.
     const leave = await screen.findByRole('dialog', { name: 'Leave this project?' });
     expect(leave).toHaveTextContent('An import prepared from cloud discovery');

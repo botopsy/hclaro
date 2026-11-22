@@ -32,42 +32,8 @@ export function ProjectSwitcher({ project, targets, onSwitch, onAdd, addDisabled
   // Why a project cannot be added now (a read-only registry), if it cannot.
   addDisabled?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, wrapper, trigger, panel, go, arrows } = useSwitcherPanel();
   const [search, setSearch] = useState('');
-  const wrapper = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    panel.current?.querySelector<HTMLElement>('input')?.focus();
-    function key(event: globalThis.KeyboardEvent) {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      setOpen(false);
-      trigger.current?.focus();
-    }
-    function pointer(event: PointerEvent) {
-      if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
-    }
-    window.addEventListener('keydown', key, true);
-    document.addEventListener('pointerdown', pointer);
-    return () => {
-      window.removeEventListener('keydown', key, true);
-      document.removeEventListener('pointerdown', pointer);
-    };
-  }, [open]);
-  function go(action: () => void) {
-    setOpen(false);
-    action();
-  }
-  // Up and Down move between the search box and the enabled entries.
-  function arrows(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    const items = Array.from(panel.current?.querySelectorAll<HTMLElement>('input, button:not(:disabled)') ?? []);
-    const at = items.indexOf(document.activeElement as HTMLElement);
-    event.preventDefault();
-    items[(at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
-  }
   const query = search.trim().toLowerCase();
   const shown = targets.filter(t => !query || `${t.label} ${t.detail}`.toLowerCase().includes(query));
   const Icon = project.status === 'missing' ? TriangleAlert : project.status === 'loading' ? LoaderCircle : Folder;
@@ -91,4 +57,45 @@ export function ProjectSwitcher({ project, targets, onSwitch, onAdd, addDisabled
     </ul>
    </div>}
   </div>;
+}
+
+// The open state of a top bar switcher: opening focuses the first field or entry, Esc closes
+// and returns focus to the pill, a click outside closes, and Up and Down move between the
+// panel's fields and enabled entries.
+export function useSwitcherPanel() {
+  const [open, setOpen] = useState(false);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    panel.current?.querySelector<HTMLElement>('input, button:not(:disabled)')?.focus();
+    function key(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    }
+    function pointer(event: PointerEvent) {
+      if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
+    }
+    window.addEventListener('keydown', key, true);
+    document.addEventListener('pointerdown', pointer);
+    return () => {
+      window.removeEventListener('keydown', key, true);
+      document.removeEventListener('pointerdown', pointer);
+    };
+  }, [open]);
+  function go(action: () => void) {
+    setOpen(false);
+    action();
+  }
+  function arrows(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const items = Array.from(panel.current?.querySelectorAll<HTMLElement>('input:not(:disabled), button:not(:disabled)') ?? []);
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    event.preventDefault();
+    items[(at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+  }
+  return { open, setOpen, wrapper, trigger, panel, go, arrows };
 }

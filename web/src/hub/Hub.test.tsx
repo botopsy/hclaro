@@ -6,6 +6,12 @@ import App from '../App';
 import { consumeDeepLink, parseRoute, productionLike } from '../router';
 import type { Project, ProjectList, Resource, Workspace } from '../types';
 
+// Opens the top bar workspace switcher and chooses a workspace (this tab only).
+async function pickWorkspace(user: ReturnType<typeof userEvent.setup>, ws: string) {
+  await user.click(screen.getByRole('button', { name: /Switch workspace/ }));
+  await user.click(within(screen.getByRole('list', { name: 'Workspaces' })).getByRole('button', { name: new RegExp(`^${ws}`) }));
+}
+
 const network = 'a'.repeat(32);
 const platform = 'b'.repeat(32);
 const project = (id: string, alias: string, extra: Partial<Project> = {}): Project => ({
@@ -207,7 +213,7 @@ describe('Workspace Hub', () => {
       release = r;
     });
     const user = userEvent.setup();
-    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    await pickWorkspace(user, 'prod');
     expect(window.location.pathname).toBe(`/projects/${network}/workspaces/prod/resources`);
     // While prod loads, nothing from dev remains on screen.
     expect(await screen.findByText('Reading your workspace')).toBeInTheDocument();
@@ -229,9 +235,9 @@ describe('Workspace Hub', () => {
       release = r;
     });
     const user = userEvent.setup();
-    await user.selectOptions(screen.getByLabelText('Workspace'), 'prod');
+    await pickWorkspace(user, 'prod');
     expect(await screen.findByText('Reading your workspace')).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Workspace'), 'dev');
+    await pickWorkspace(user, 'dev');
     expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/resources`);
     expect(await screen.findByRole('button', { name: /dev_logs/ })).toBeInTheDocument();
     // The slow prod answer arrives after the switch back and is never shown here.
@@ -239,7 +245,7 @@ describe('Workspace Hub', () => {
     await new Promise(r => setTimeout(r, 50));
     expect(screen.getByRole('button', { name: /dev_logs/ })).toBeInTheDocument();
     expect(screen.queryByText('prod_logs')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Workspace')).toHaveValue('dev');
+    expect(screen.getByRole('button', { name: /Switch workspace/ })).toHaveTextContent('dev');
   });
   it('opens Compare workspaces from the sidebar without reading anything', async () => {
     stub(listing(projects));

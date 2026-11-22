@@ -235,10 +235,22 @@ describe('Sidebar', () => {
   it('switches the Terraform workspace of a Hub project from the top bar, separate from the project', async () => {
     app(`/projects/${hubId}/workspaces/dev/overview`);
     const user = userEvent.setup();
-    const select = await screen.findByLabelText('Workspace');
-    expect(screen.getByRole('banner', { name: 'Top bar' })).toContainElement(select);
+    const trigger = await screen.findByRole('button', { name: /Switch workspace/ });
+    expect(screen.getByRole('banner', { name: 'Top bar' })).toContainElement(trigger);
+    expect(trigger).toHaveTextContent('dev');
     expect(await within(screen.getByRole('banner', { name: 'Top bar' })).findByText('network')).toBeInTheDocument();
-    await user.selectOptions(select, 'prod');
+    await user.click(trigger);
+    const menu = screen.getByRole('group', { name: 'Switch workspace' });
+    expect(menu).toHaveTextContent(/Workspaces in network/);
+    const list = within(menu).getByRole('list', { name: 'Workspaces' });
+    expect(within(list).getAllByRole('button').map(b => b.textContent)).toEqual(['default', 'devCLI default', 'prod']);
+    expect(within(list).getByRole('button', { name: /dev/ })).toHaveAttribute('aria-current', 'page');
+    expect(within(list).getByRole('button', { name: 'default' })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('group', { name: 'Switch workspace' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    await user.click(within(screen.getByRole('list', { name: 'Workspaces' })).getByRole('button', { name: 'prod' }));
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/prod/overview`);
     expect(await screen.findByText('Production-like name')).toBeInTheDocument();
     // The switcher offers this project's workspace page and the terminal project.
@@ -378,9 +390,39 @@ describe('Sidebar', () => {
     const user = userEvent.setup();
     const topbar = screen.getByRole('banner', { name: 'Top bar' });
     expect(within(topbar).getByRole('button', { name: /Switch project/ })).toBeInTheDocument();
-    await within(topbar).findByRole('option', { name: 'prod' });
-    await user.selectOptions(within(topbar).getByLabelText('Workspace'), 'prod');
+    await user.click(within(topbar).getByRole('button', { name: /Switch workspace/ }));
+    await user.click(await within(topbar).findByRole('button', { name: 'prod' }));
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/prod/resources`);
+  });
+  it('creates a workspace from the switcher only through the reviewed create dialog', async () => {
+    app(`/projects/${hubId}/workspaces/dev/resources`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Switch workspace/ }));
+    const menu = screen.getByRole('group', { name: 'Switch workspace' });
+    expect(within(menu).getByRole('button', { name: 'Create' })).toBeDisabled();
+    await user.type(within(menu).getByRole('textbox', { name: 'New workspace name' }), 'staging');
+    await user.click(within(menu).getByRole('button', { name: 'Create' }));
+    // The name only prefills the existing dialog: nothing runs until review and confirmation.
+    const dialog = screen.getByRole('dialog', { name: 'Create a workspace' });
+    expect(within(dialog).getByRole('textbox', { name: 'Workspace name' })).toHaveValue('staging');
+    expect(within(dialog).getByRole('button', { name: /Review/ })).toBeInTheDocument();
+    expect(mutations().filter(c => c.url.includes('workspace'))).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Create a workspace' })).not.toBeInTheDocument();
+    // Manage workspaces… opens the project's workspace page.
+    await user.click(screen.getByRole('button', { name: /Switch workspace/ }));
+    await user.click(within(screen.getByRole('group', { name: 'Switch workspace' })).getByRole('button', { name: 'Manage workspaces…' }));
+    expect(window.location.pathname).toBe(`/projects/${hubId}`);
+  });
+  it('disables Create with the reason when the backend does not allow workspace changes', async () => {
+    listed = { ...listing, projects: [{ ...network, workspaceActions: { change: false, delete: false, reason: 'The remote backend manages workspaces.' } }, platform] };
+    app(`/projects/${hubId}/workspaces/dev/resources`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Switch workspace/ }));
+    const menu = screen.getByRole('group', { name: 'Switch workspace' });
+    expect(within(menu).getByRole('textbox', { name: 'New workspace name' })).toBeDisabled();
+    expect(within(menu).getByRole('button', { name: 'Create' })).toBeDisabled();
+    expect(menu).toHaveTextContent('The remote backend manages workspaces.');
   });
   it('uses a dismissible drawer on narrow screens', async () => {
     app();
