@@ -285,6 +285,15 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		return errors.New("unable to create secure session")
 	}
 	host := listener.Addr().String()
+	// The browser opener gets a one-time nonce, not the token: its argv may be visible to
+	// other local users. The terminal keeps the full URL.
+	boot, err := security.NewBootstrap()
+	if err != nil {
+		return errors.New("unable to create secure session")
+	}
+	boot.OnReuse = func() {
+		fmt.Fprintln(output, "Warning: the browser launch link was used more than once. Another process on this computer may have this session. Stop Hclaro (Ctrl+C) and start it again.")
+	}
 	// AWS authentication (M20): STS checks and AWS CLI sign-ins only on explicit request.
 	hub.Auth = awsauth.New()
 	closers = append(closers, func() { hub.Auth.Close(5 * time.Second) })
@@ -297,7 +306,8 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		Discovery: discovery.New(awscli.Exec{}),
 		// Cost estimation (M17): off until the user opts in after the disclosure; never in
 		// strict local-only mode. Only sanitized aggregates are saved in the config folder.
-		Cost: cost.New(cost.Exec{}, o.StrictLocal),
+		Cost:      cost.New(cost.Exec{}, o.StrictLocal),
+		Bootstrap: boot,
 		// AI assistance (AI-01.03, AI-01.04, AI-01.14): on by default unless turned off in Settings
 		// (saved in ai.json); being on starts no assistant and shares nothing without a click (assistants
 		// are detected only on request). Codex runs only on macOS behind its gates and local self-check
@@ -369,11 +379,12 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	}()
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()
-	url := "http://" + host + "/#session=" + token
+	page := "/"
 	reading := "Reading recorded state; the CLI may contact the configured backend."
 	if root == "" || o.Hub {
-		url = "http://" + host + "/projects#session=" + token
+		page = "/projects"
 	}
+	url := "http://" + host + page + "#session=" + token
 	if root == "" {
 		reading = "Workspace Hub: nothing is read until you open a project."
 	}
@@ -382,7 +393,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		go func() {
 			browserCtx, done := context.WithTimeout(runCtx, 5*time.Second)
 			defer done()
-			if gitctx.OpenURL(browserCtx, url) != nil {
+			if gitctx.OpenURL(browserCtx, "http://"+host+page+"#boot="+boot.Nonce()) != nil {
 				fmt.Fprintln(output, "Browser did not open. Use the private session URL above.")
 			}
 		}()

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTokensAndRequestBounds(t *testing.T) {
@@ -20,7 +21,7 @@ func TestTokensAndRequestBounds(t *testing.T) {
 	if len(one) != 64 || one == two {
 		t.Fatal("weak or reused token")
 	}
-	handler := Guard("127.0.0.1:9273", one, two, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	handler := Guard("127.0.0.1:9273", one, two, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
 	for _, tc := range []struct {
 		name, host, origin, site, auth, body, path string
 		code                                       int
@@ -58,7 +59,7 @@ func TestTokensAndRequestBounds(t *testing.T) {
 
 func TestMutatingRequests(t *testing.T) {
 	token, csrf := strings.Repeat("a", 64), strings.Repeat("b", 64)
-	handler := Guard("127.0.0.1:9273", token, csrf, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(202) }))
+	handler := Guard("127.0.0.1:9273", token, csrf, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(202) }))
 	origin, id := "http://127.0.0.1:9273", strings.Repeat("0", 32)
 	// Every shape the router may serve is guarded the same way, so the checks are exercised on
 	// one path per method and the path list only proves the guard does not depend on it.
@@ -126,7 +127,7 @@ func TestMutatingRequests(t *testing.T) {
 func TestMaliciousLocalPage(t *testing.T) {
 	token, csrf := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	reached := false
-	handler := Guard("127.0.0.1:9273", token, csrf, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached = true }))
+	handler := Guard("127.0.0.1:9273", token, csrf, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached = true }))
 	apply := "/api/v1/contexts/" + strings.Repeat("0", 32) + "/plans/" + strings.Repeat("1", 32) + "/apply"
 	for _, tc := range []struct {
 		name, method, host, path, origin, site, auth string
@@ -175,7 +176,7 @@ func TestMaliciousLocalPage(t *testing.T) {
 // of "unable to reach the server"; the CSRF refusal has its own code the client retries on.
 func TestRefusalsAreJSON(t *testing.T) {
 	token, csrf := strings.Repeat("a", 64), strings.Repeat("b", 64)
-	handler := Guard("127.0.0.1:9273", token, csrf, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	handler := Guard("127.0.0.1:9273", token, csrf, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
 	origin := "http://127.0.0.1:9273"
 	for _, tc := range []struct {
 		name, method, host, origin, csrf, contentType, body, auth, code string
@@ -216,5 +217,66 @@ func TestRefusalsAreJSON(t *testing.T) {
 				t.Fatal("token in refusal")
 			}
 		})
+	}
+}
+
+// The launch link's nonce is traded once for the token, only from this origin, and never
+// reaches the router; with no bootstrap configured the route is an ordinary guarded POST.
+func TestBootstrapExchange(t *testing.T) {
+	token, csrf := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	boot, err := NewBootstrap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reused := 0
+	boot.OnReuse = func() { reused++ }
+	reached := false
+	handler := Guard("127.0.0.1:9273", token, csrf, boot, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached = true }))
+	post := func(origin, site, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "http://127.0.0.1:9273"+BootstrapPath, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		if site != "" {
+			r.Header.Set("Sec-Fetch-Site", site)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	origin, good := "http://127.0.0.1:9273", `{"bootstrap":"`+boot.Nonce()+`"}`
+	for _, tc := range []struct{ name, origin, site, body string }{
+		{"foreign origin", "http://evil.example", "", good},
+		{"origin required", "", "", good},
+		{"cross-site", origin, "cross-site", good},
+		{"wrong nonce", origin, "same-origin", `{"bootstrap":"` + strings.Repeat("c", 64) + `"}`},
+		{"unknown field", origin, "same-origin", `{"bootstrap":"x","token":"y"}`},
+	} {
+		if w := post(tc.origin, tc.site, tc.body); w.Code < 400 || strings.Contains(w.Body.String(), token) {
+			t.Fatalf("%s: status %d body %q", tc.name, w.Code, w.Body.String())
+		}
+	}
+	w := post(origin, "same-origin", good)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"token":"`+token+`"`) {
+		t.Fatalf("exchange: status %d body %q", w.Code, w.Body.String())
+	}
+	if w := post(origin, "same-origin", good); w.Code != 401 || strings.Contains(w.Body.String(), token) || reused != 1 {
+		t.Fatalf("second use: status %d reused %d", w.Code, reused)
+	}
+	if reached {
+		t.Fatal("bootstrap request reached the router")
+	}
+
+	expired, _ := NewBootstrap()
+	expired.expires = time.Now().Add(-time.Second)
+	handler = Guard("127.0.0.1:9273", token, csrf, expired, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	if w := post(origin, "", `{"bootstrap":"`+expired.Nonce()+`"}`); w.Code != 401 {
+		t.Fatalf("expired nonce: status %d", w.Code)
+	}
+
+	handler = Guard("127.0.0.1:9273", token, csrf, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(202) }))
+	if w := post(origin, "", good); w.Code != 403 {
+		t.Fatalf("without bootstrap the route needs CSRF: status %d", w.Code)
 	}
 }

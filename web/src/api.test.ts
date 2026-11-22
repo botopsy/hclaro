@@ -13,7 +13,7 @@ describe('session fragment', () => {
 
   it('moves the token out of the URL into this tab and sends it only as a header', async () => {
     window.history.pushState(null, '', `/projects?view=list#session=${token}`);
-    initializeSession();
+    await initializeSession();
     expect(window.location.href).not.toContain(token);
     expect(window.location.hash).toBe('');
     expect(window.location.search).toBe('?view=list');
@@ -26,9 +26,32 @@ describe('session fragment', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${token}`);
   });
 
-  it('ignores a malformed token but still clears the fragment', () => {
+  it('ignores a malformed token but still clears the fragment', async () => {
     window.history.pushState(null, '', '/#session=not-a-token');
-    initializeSession();
+    await initializeSession();
+    expect(window.location.hash).toBe('');
+    expect(sessionStorage.getItem('hclaro.session')).toBeNull();
+  });
+
+  // The launch link carries a one-time nonce, never the token; the page trades it once.
+  it('trades a launch nonce for the token without leaving either in the URL', async () => {
+    const boot = 'c'.repeat(64);
+    window.history.pushState(null, '', `/projects#boot=${boot}`);
+    const fetch = vi.fn(async () => Response.json({ token }));
+    vi.stubGlobal('fetch', fetch);
+    await initializeSession();
+    expect(window.location.hash).toBe('');
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/v1/session/bootstrap');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ bootstrap: boot });
+    expect(sessionStorage.getItem('hclaro.session')).toBe(token);
+  });
+
+  it('stays locked when the launch nonce is refused', async () => {
+    window.history.pushState(null, '', `/#boot=${'c'.repeat(64)}`);
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'bootstrap_invalid', reason: 'used' }, { status: 401 })));
+    await initializeSession();
     expect(window.location.hash).toBe('');
     expect(sessionStorage.getItem('hclaro.session')).toBeNull();
   });

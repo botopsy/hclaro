@@ -176,6 +176,20 @@ describe('Workspace Hub', () => {
     expect(await screen.findByText('Command copied')).toBeInTheDocument();
     expect(calls.filter(c => c.method === 'POST').map(c => c.url)).toEqual([`/api/v1/projects/${network}/inspect`]);
   });
+  // A repository can name its folders; PowerShell must not expand $(...), $var, ` or % in one.
+  it('quotes a Windows folder as an inert PowerShell literal', async () => {
+    const rootPath = "C:\\src\\it's\u2019 stack$(Start-Process calc)`%USERNAME%";
+    inspectReply = { ...inspected, rootPath };
+    stub(listing([inspectReply]));
+    app(`/projects/${network}`);
+    await screen.findByText('Open in a separate session (optional)');
+    const command = "hclaro --path 'C:\\src\\it''s\u2019\u2019 stack$(Start-Process calc)`%USERNAME%'";
+    expect(screen.getByText(command)).toBeInTheDocument();
+    expect(screen.getByText('Run in PowerShell.')).toBeInTheDocument();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Copy command' }));
+    expect(writeText).toHaveBeenCalledWith(command);
+  });
   it('scopes a workspace view to its own context and never shows the previous one', async () => {
     stub(listing(projects));
     app(`/projects/${network}/workspaces/dev/resources`);

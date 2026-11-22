@@ -11,9 +11,10 @@ package awsvault
 
 import (
 	"errors"
-	"os/exec"
 	"regexp"
 	"strings"
+
+	"hclaro/internal/proc"
 )
 
 // Marker names the aws-vault profile a composed environment runs through.
@@ -56,7 +57,10 @@ func Prefix(profile string) ([]string, error) {
 	if !ValidProfile(profile) {
 		return nil, errors.New("the aws-vault profile name is not valid")
 	}
-	vault, err := exec.LookPath("aws-vault")
+	vault, err := proc.LookPath("aws-vault")
+	if errors.Is(err, proc.ErrBatchFile) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, ErrMissing
 	}

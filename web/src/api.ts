@@ -3,17 +3,33 @@ import { saveFile } from './lib/download';
 import { storageKeys } from './lib/storage';
 let token = '';
 let csrf = '';
-export function initializeSession() {
+const credential = /^[a-f0-9]{64}$/;
+// The session arrives in the URL fragment: the token itself (the printed URL, new tabs) or
+// the launch link's one-time nonce, traded once for the token.
+export async function initializeSession() {
   const params = new URLSearchParams(window.location.hash.slice(1));
   const incoming = params.get('session');
-  try {
-    if (incoming && /^[a-f0-9]{64}$/.test(incoming)) sessionStorage.setItem(storageKeys.session, incoming);
-    token = sessionStorage.getItem(storageKeys.session) || '';
-  } catch {
-    token = incoming || '';
-  }
+  const boot = params.get('boot');
   // The credential never enters a request URL, referrer, or state cache.
   window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  let fresh = incoming && credential.test(incoming) ? incoming : '';
+  if (!fresh && boot && credential.test(boot)) fresh = await exchangeBootstrap(boot);
+  try {
+    if (fresh) sessionStorage.setItem(storageKeys.session, fresh);
+    token = sessionStorage.getItem(storageKeys.session) || '';
+  } catch {
+    token = fresh;
+  }
+}
+async function exchangeBootstrap(boot: string): Promise<string> {
+  try {
+    const response = await fetch('/api/v1/session/bootstrap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bootstrap: boot }), cache: 'no-store', credentials: 'omit' });
+    if (!response.ok) return '';
+    const body = await response.json() as { token?: unknown };
+    return typeof body.token === 'string' && credential.test(body.token) ? body.token : '';
+  } catch {
+    return '';
+  }
 }
 const messages: Record<string, string> = {
   operation_running: 'Another operation is already running. Wait for it to finish or cancel it.',
