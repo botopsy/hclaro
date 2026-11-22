@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"hclaro/internal/awscli"
+	"hclaro/internal/ids"
 	"hclaro/internal/preflight"
 	"hclaro/internal/tfpolicy"
 )
@@ -248,7 +249,7 @@ func (m *Manager) Preflight(ctx context.Context, id string, req PreflightRequest
 	if limit := a.created.Add(m.PlanMaxAge); limit.Before(expires) {
 		expires = limit
 	}
-	a.preflight = &preflightBinding{token: newID() + newID(), expires: expires, checkedAt: now, acknowledge: ack, identity: identity, policy: in.PolicyInfo.Source, epoch: m.authEpoch(a.context)}
+	a.preflight = &preflightBinding{token: ids.New() + ids.New(), expires: expires, checkedAt: now, acknowledge: ack, identity: identity, policy: in.PolicyInfo.Source, epoch: m.authEpoch(a.context)}
 	report.Binding = a.preflight.token
 	report.ExpiresAt = expires.UTC().Format(time.RFC3339)
 	return report, nil

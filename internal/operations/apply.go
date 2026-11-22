@@ -13,6 +13,7 @@ import (
 
 	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
+	"hclaro/internal/ids"
 	"hclaro/internal/plan"
 	"hclaro/internal/preflight"
 	"hclaro/internal/tfpolicy"
@@ -359,7 +360,7 @@ func (m *Manager) Approve(id string, req ApprovalRequest) (Approval, error) {
 	if !sameSet(b.acknowledge, req.Acknowledged) {
 		return Approval{}, reject("acknowledgement_required", "Acknowledge each preflight warning individually before approving. Nothing was approved.")
 	}
-	a.approval = &approval{token: newID() + newID(), expires: time.Now().Add(m.ApprovalTTL), binding: b.token}
+	a.approval = &approval{token: ids.New() + ids.New(), expires: time.Now().Add(m.ApprovalTTL), binding: b.token}
 	summary := map[string]int{}
 	for k, v := range p.Summary {
 		summary[k] = v

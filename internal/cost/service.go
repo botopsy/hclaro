@@ -9,14 +9,14 @@ package cost
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"hclaro/internal/ids"
 )
 
 // DisclosureVersion changes whenever the disclosure text changes; an opt-in names the
@@ -173,15 +173,7 @@ type Service struct {
 // New returns a service with estimation off. strictLocal makes it permanently unavailable.
 func New(runner Runner, strictLocal bool) *Service {
 	base, stop := context.WithCancel(context.Background())
-	return &Service{runner: runner, strict: strictLocal, Timeout: callTimeout, Now: time.Now, NewID: newID, base: base, stop: stop}
-}
-
-func newID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
+	return &Service{runner: runner, strict: strictLocal, Timeout: callTimeout, Now: time.Now, NewID: ids.New, base: base, stop: stop}
 }
 
 func (s *Service) environ() []string {

@@ -149,23 +149,25 @@ func TestLockedReadRetryReplacedByReread(t *testing.T) {
 	}
 }
 
-// A running operation stops the re-read without reading state alongside it.
-func TestLockedReadRetryStopsForAnOperation(t *testing.T) {
+// A running operation pauses the re-read: no read alongside it, and the remaining tries
+// read again once it finished.
+func TestLockedReadRetryWaitsForAnOperation(t *testing.T) {
 	m, fake := lockedManager(t, 100)
-	shortRetries(m, 3, 20*time.Millisecond)
+	shortRetries(m, 8, 20*time.Millisecond)
 	before := shows(fake)
 	m.mu.Lock()
 	m.running = &entry{}
 	m.mu.Unlock()
 	m.RetryLockedRead()
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(70 * time.Millisecond)
 	m.mu.Lock()
+	beside := shows(fake) - before
 	m.running = nil
 	m.mu.Unlock()
-	time.Sleep(100 * time.Millisecond)
-	if got := shows(fake); got != before {
-		t.Fatalf("%d reads beside or after an operation", got-before)
+	if beside != 0 {
+		t.Fatalf("%d reads beside an operation", beside)
 	}
+	eventually(t, "a read after the operation", func() bool { return shows(fake) > before })
 }
 
 // A read that fails for another reason is not retried.

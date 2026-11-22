@@ -7,8 +7,6 @@
 package profiles
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -423,7 +421,7 @@ func (s *Store) Create(projectID string, in Input) (Profile, error) {
 			return ErrTooMany
 		}
 		now := s.now()
-		created = apply(Profile{ID: NewID(), ProjectID: projectID, Revision: 1, CreatedAt: now, UpdatedAt: now}, in)
+		created = apply(Profile{ID: ids.New(), ProjectID: projectID, Revision: 1, CreatedAt: now, UpdatedAt: now}, in)
 		doc.Profiles = append(doc.Profiles, created)
 		return nil
 	})
@@ -547,15 +545,6 @@ var (
 	// awsRolePattern is an ARN in which * stands for part of one segment (see RoleMatches).
 	awsRolePattern = regexp.MustCompile(`^arn:aws[a-z-]{0,20}:(sts|iam)::([0-9]{12}|\*):[A-Za-z0-9+=,.@/_*-]{1,400}$`)
 )
-
-// NewID returns a random profile ID.
-func NewID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}
 
 // controlled names are set or neutralized by Hclaro itself, so a profile cannot list them.
 func controlled(name string) bool { return tfpolicy.Controlled(name) != tfpolicy.Passed }

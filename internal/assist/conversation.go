@@ -198,7 +198,7 @@ func (s *Session) SetDefault(id string) error {
 	case !s.providerKnown(id):
 		return refuse(RefuseProvider)
 	}
-	if err := s.savePrefs(true, id); err != nil {
+	if err := s.savePrefs(func(p *savedPrefs) { p.Assistant = id }); err != nil {
 		return ErrPrefs
 	}
 	s.chosen = id

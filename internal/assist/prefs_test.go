@@ -210,6 +210,28 @@ func TestPrefsPersistAcrossSessions(t *testing.T) {
 	}
 }
 
+// Two processes share ai.json: one choosing an assistant keeps the other's Off.
+func TestPrefsKeepOtherProcessChange(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hclaro")
+	open := func() *Session {
+		s := NewSession(false, &stub{id: "claude", mode: ModeHeadless}, &stub{id: "codex", mode: ModeHandoff})
+		s.UsePrefs(dir)
+		settled(t, s)
+		return s
+	}
+	a, b := open(), open()
+	if _, err := a.SetEnabled(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetDefault("codex"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, prefsFile))
+	if err != nil || string(got) != `{"enabled":false,"assistant":"codex"}`+"\n" {
+		t.Fatalf("%q %v", got, err)
+	}
+}
+
 // A failed write returns an error and changes nothing.
 func TestPrefsWriteFailureLeavesState(t *testing.T) {
 	dir := writePrefs(t, "")

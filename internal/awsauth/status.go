@@ -2,14 +2,13 @@ package awsauth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"os/exec"
 	"strings"
 	"time"
 
 	"hclaro/internal/awscli"
+	"hclaro/internal/ids"
 	"hclaro/internal/profiles"
 )
 
@@ -80,14 +79,6 @@ type Status struct {
 	Commands        []Command `json:"commands"`
 	Disclosure      string    `json:"disclosure"`
 	Tools           Tools     `json:"tools"`
-}
-
-func newID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
 }
 
 // commands are the nonsecret terminal commands for this binding.
@@ -262,7 +253,7 @@ func (m *Manager) StartLogin(ctx context.Context, t Target, mode string) (Status
 	}
 	// The sign-in outlives the request; Close (at Hclaro's shutdown) cancels it.
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), loginTimeout)
-	l := &Login{ID: newID(), Mode: mode, State: LoginRunning, Message: "Waiting for the AWS CLI sign-in. Complete it in the browser window the AWS CLI opened.", StartedAt: m.Now().UTC().Format(time.RFC3339), cancel: cancel, done: make(chan struct{})}
+	l := &Login{ID: ids.New(), Mode: mode, State: LoginRunning, Message: "Waiting for the AWS CLI sign-in. Complete it in the browser window the AWS CLI opened.", StartedAt: m.Now().UTC().Format(time.RFC3339), cancel: cancel, done: make(chan struct{})}
 	m.logins[k] = l
 	// Signing in may change the identity: an earlier preflight must be reviewed again.
 	m.epochs[k]++

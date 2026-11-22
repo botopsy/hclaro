@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"hclaro/internal/engine"
+	"hclaro/internal/ids"
 	"hclaro/internal/tfpolicy"
 )
 
@@ -72,7 +73,7 @@ const (
 
 func NewInits() *Inits {
 	base, stop := context.WithCancel(context.Background())
-	return &Inits{base: base, stop: stop, NewID: newID}
+	return &Inits{base: base, stop: stop, NewID: ids.New}
 }
 
 var initMessages = map[string]string{

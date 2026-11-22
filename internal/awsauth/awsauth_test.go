@@ -17,6 +17,7 @@ import (
 
 	"hclaro/internal/awscli"
 	"hclaro/internal/engine"
+	"hclaro/internal/ids"
 	"hclaro/internal/profiles"
 )
 
@@ -114,7 +115,7 @@ const projectA, projectB = "0123456789abcdef0123456789abcdef", "fedcba9876543210
 func target(t *testing.T, project string, p profiles.Profile) Target {
 	t.Helper()
 	if p.ID == "" {
-		p.ID = profiles.NewID()
+		p.ID = ids.New()
 	}
 	p.ProjectID, p.Revision = project, max(p.Revision, 1)
 	r := profiles.Resolve(p, t.TempDir(), os.Environ())
@@ -507,7 +508,7 @@ func TestEpochFollowsTheLastVerifiedIdentity(t *testing.T) {
 	}
 	i := 0
 	m.Probe = func(context.Context, []string) awscli.Identity { i++; return answers[i-1] }
-	tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: profiles.NewID(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
+	tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: ids.New(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
 	want := []uint64{0, 0, 0, 1}
 	for n := range answers {
 		if _, err := m.Verify(context.Background(), tg); err != nil {
@@ -553,7 +554,7 @@ func TestOneIdentityCheckAtATime(t *testing.T) {
 		<-release
 		return awscli.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:iam::111122223333:user/a"}
 	}
-	tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: profiles.NewID(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
+	tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: ids.New(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
 	done := make(chan struct{})
 	go func() { _, _ = m.Verify(context.Background(), tg); close(done) }()
 	for deadline := time.Now().Add(5 * time.Second); m.Status(context.Background(), tg).State != Checking; time.Sleep(5 * time.Millisecond) {
@@ -599,7 +600,7 @@ func TestStaleIdentityCheckIsDiscarded(t *testing.T) {
 				<-release
 				return awscli.Identity{State: "verified", Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/Deploy/old"}
 			}
-			tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: profiles.NewID(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
+			tg := Target{ProjectID: projectA, Context: profiles.Resolved{ProfileID: ids.New(), Revision: 1, AWSProfile: "dev", AWSAuth: profiles.AWSCLI}}
 			type result struct {
 				s   Status
 				err error

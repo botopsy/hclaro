@@ -51,11 +51,15 @@ func (m *Manager) lockRetryLoop(ctx context.Context, cancel context.CancelFunc) 
 		case <-time.After(d):
 		}
 		m.mu.Lock()
-		// Never alongside an operation, after Close, or once the snapshot is no longer
-		// locked (read again by the user, or changed by anything else).
-		if ctx.Err() != nil || m.closed || m.running != nil || m.starting || !m.store.Get().Locked() {
+		// Stop after Close or once the snapshot is no longer locked (read again by the user,
+		// or changed by anything else). Never read alongside an operation: wait for the next try.
+		if ctx.Err() != nil || m.closed || !m.store.Get().Locked() {
 			m.mu.Unlock()
 			return
+		}
+		if m.running != nil || m.starting {
+			m.mu.Unlock()
+			continue
 		}
 		// A shared claim, as for Reread: a Hub init or workspace command keeps the root.
 		release, ok := m.Locks.AcquireShared(m.root)

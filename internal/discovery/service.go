@@ -2,8 +2,6 @@ package discovery
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
@@ -16,6 +14,7 @@ import (
 	"time"
 
 	"hclaro/internal/awscli"
+	"hclaro/internal/ids"
 	"hclaro/internal/imports"
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
@@ -300,7 +299,7 @@ type Service struct {
 // New returns a service with runner.
 func New(runner awscli.Runner) *Service {
 	base, stop := context.WithCancel(context.Background())
-	return &Service{Runner: runner, Now: time.Now, Sleep: sleep, NewID: newID, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, MaxObjects: MaxObjects, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
+	return &Service{Runner: runner, Now: time.Now, Sleep: sleep, NewID: ids.New, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, MaxObjects: MaxObjects, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
@@ -312,12 +311,6 @@ func sleep(ctx context.Context, d time.Duration) error {
 	case <-t.C:
 		return nil
 	}
-}
-
-func newID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }
 
 // Close cancels running scans and waits for them.

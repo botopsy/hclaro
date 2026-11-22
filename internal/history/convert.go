@@ -125,7 +125,7 @@ func (s *Store) convert(ev Event) HistoryEntry {
 	}
 	if e.ID == "" && e.Kind == "assist-change" {
 		// A change decision is one event; operations carry their own ID for start and end.
-		e.ID = newSession()
+		e.ID = ids.New()
 	}
 	if ev.Final {
 		e.FinishedAt = ev.FinishedAt

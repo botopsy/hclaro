@@ -16,6 +16,7 @@ import (
 	"hclaro/internal/awsvault"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
+	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/profiles"
 	"hclaro/internal/rootlock"
@@ -410,7 +411,7 @@ func (h *Hub) Add(path, alias, preference string) (Summary, error) {
 			alias = string([]rune(alias)[:maxAlias])
 		}
 	}
-	record := Record{ID: NewID(), Alias: alias, RootPath: root, EnginePreference: preference, AddedAt: h.Now().UTC().Format(time.RFC3339)}
+	record := Record{ID: ids.New(), Alias: alias, RootPath: root, EnginePreference: preference, AddedAt: h.Now().UTC().Format(time.RFC3339)}
 	record, err = h.Registry.Add(record, func(existing string) bool { return sameDir(existing, root) })
 	if err != nil {
 		if errors.Is(err, ErrDuplicate) {
@@ -703,7 +704,7 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 	rootInfo, statErr := statIdentity(p.RootPath)
 	ctx, cancel := context.WithCancel(h.base)
 	info.Project = p.Alias
-	c := &Context{ID: NewID(), ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Engine: name, Executable: executable, Workspace: ws, DataDir: data, CreatedAt: h.Now().UTC().Format(time.RFC3339), Execution: execution, cancel: cancel, key: key, profileID: profileID}
+	c := &Context{ID: ids.New(), ProjectID: p.ID, Alias: p.Alias, RootPath: p.RootPath, Engine: name, Executable: executable, Workspace: ws, DataDir: data, CreatedAt: h.Now().UTC().Format(time.RFC3339), Execution: execution, cancel: cancel, key: key, profileID: profileID}
 	scope := workspace.Scope{Workspace: ws, ReadOnlyReason: ReadOnlyReason, Executable: h.ScopedExecution}
 	scope.Check = func(ctx context.Context) *workspace.Diagnostic {
 		if deferRead {
