@@ -173,7 +173,7 @@ function ProjectCard({ project: p, writable, first, last, onPin, onMove, onDialo
   </li>;
 }
 
-function AddProjectDialog({ initialPath = '', onClose, onAdded }: {
+export function AddProjectDialog({ initialPath = '', onClose, onAdded }: {
   initialPath?: string;
   onClose: () => void;
   onAdded: (p: Project) => void;

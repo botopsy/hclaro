@@ -38,6 +38,7 @@ const discovery = { ...(golden.options as unknown as DiscoveryOptions), identity
 
 type Call = { url: string; method: string };
 let calls: Call[];
+let listed: ProjectList;
 function stub() {
   calls = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -45,7 +46,7 @@ function stub() {
     calls.push({ url, method });
     const path = url.replace('/api/v1/', '').split('?')[0];
     if (path === 'session') return Response.json({ csrfToken: 'c'.repeat(64) });
-    if (path === 'projects') return Response.json(listing);
+    if (path === 'projects') return Response.json(listed);
     if (path === 'contexts') return Response.json(snapshot(JSON.parse(String(init.body)).workspace, true).context);
     const hub = path.match(/^contexts\/([0-9a-f]{32})(\/resources)?/);
     if (hub) return Response.json(hub[2] ? { resources: [resource], total: 1 } : snapshot(wsOf(hub[1]), true));
@@ -74,6 +75,7 @@ const navButton = (name: string) => within(nav()).getByRole('button', { name });
 const mutations = () => calls.filter(c => c.method !== 'GET' && !c.url.endsWith('/session'));
 
 beforeEach(() => {
+  listed = listing;
   localStorage.clear();
   stub();
 });
@@ -192,9 +194,15 @@ describe('Sidebar', () => {
     const trigger = await screen.findByRole('button', { name: /Switch project/ });
     await user.click(trigger);
     const panel = screen.getByRole('group', { name: 'Switch project' });
-    expect(within(panel).getByRole('button', { name: /All projects/ })).toBeInTheDocument();
-    const recent = await within(panel).findAllByRole('button', { name: /network|platform/ });
-    expect(recent.map(b => b.textContent)).toEqual(['networkWorkspace dev', 'platformChoose a workspace']);
+    expect(within(panel).getByRole('textbox', { name: 'Search projects' })).toHaveFocus();
+    // The terminal project first and checked, then Hub projects by last opened.
+    const list = within(panel).getByRole('list', { name: 'Projects' });
+    expect(within(list).getAllByRole('button').map(b => b.textContent)).toEqual(['launch-stackOpened from terminal · /infra/launch-stack', 'networkWorkspace dev', 'platformChoose a workspace']);
+    expect(within(list).getByRole('button', { name: /launch-stack/ })).toHaveAttribute('aria-current', 'page');
+    await user.keyboard('plat');
+    expect(within(list).getAllByRole('button').map(b => b.textContent)).toEqual(['platformChoose a workspace']);
+    await user.keyboard('zzz');
+    expect(within(panel).getByText('Nothing matches')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('group', { name: 'Switch project' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
@@ -204,6 +212,25 @@ describe('Sidebar', () => {
     expect(await screen.findByRole('button', { name: /logs.*aws_s3_bucket/ })).toBeInTheDocument();
     // Only the workspace read is opened; no plan, init, select or apply is requested.
     expect(mutations().map(c => c.url)).toEqual(['/api/v1/contexts']);
+  });
+  it('lists pinned projects first and offers Add project and Manage projects', async () => {
+    listed = { ...listing, projects: [network, { ...platform, pinned: true }] };
+    app();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Switch project/ }));
+    let panel = screen.getByRole('group', { name: 'Switch project' });
+    await waitFor(() => expect(within(within(panel).getByRole('list', { name: 'Projects' })).getAllByRole('button').map(b => b.textContent?.split(/Choose|Workspace|Opened/)[0])).toEqual(['launch-stack', 'platform', 'network']));
+    await user.keyboard('{ArrowDown}');
+    expect(within(panel).getByRole('button', { name: /launch-stack/ })).toHaveFocus();
+    await user.click(within(panel).getByRole('button', { name: 'Add project…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add a project' });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(window.location.pathname).toBe('/');
+    await user.click(screen.getByRole('button', { name: /Switch project/ }));
+    panel = screen.getByRole('group', { name: 'Switch project' });
+    await user.click(within(panel).getByRole('button', { name: 'Manage projects…' }));
+    expect(window.location.pathname).toBe('/projects');
+    expect(mutations()).toEqual([]);
   });
   it('switches the Terraform workspace of a Hub project from the top bar, separate from the project', async () => {
     app(`/projects/${hubId}/workspaces/dev/overview`);
@@ -217,7 +244,7 @@ describe('Sidebar', () => {
     // The switcher offers this project's workspace page and the terminal project.
     await user.click(screen.getByRole('button', { name: /Switch project/ }));
     const panel = screen.getByRole('group', { name: 'Switch project' });
-    expect(within(panel).getByRole('button', { name: /Workspaces of this project/ })).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: /network/ })).toHaveAttribute('aria-current', 'page');
     await user.click(within(panel).getByRole('button', { name: /launch-stack/ }));
     expect(window.location.pathname).toBe('/');
   });
