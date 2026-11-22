@@ -4,7 +4,6 @@ package operations
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -22,6 +21,7 @@ import (
 	"hclaro/internal/cost"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
+	"hclaro/internal/ids"
 	"hclaro/internal/imports"
 	"hclaro/internal/plan"
 	"hclaro/internal/preflight"
@@ -276,15 +276,7 @@ func New(store *workspace.Store, planner engine.Planner, root string, deps Deps)
 	if deps.Locks == nil {
 		deps.Locks = rootlock.New()
 	}
-	return &Manager{store: store, planner: planner, applier: applier, root: root, Deps: deps, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: newID, chmod: os.Chmod, lockRetryDelays: lockRetryDelays}
-}
-
-func newID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Deps: deps, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: ids.New, chmod: os.Chmod, lockRetryDelays: lockRetryDelays}
 }
 
 func engineLabel(name string) string {

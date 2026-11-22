@@ -4,8 +4,6 @@
 package projects
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -378,15 +376,6 @@ func (r *Registry) Reorder(ids []string) error {
 		return next, nil
 	})
 	return err
-}
-
-// NewID returns a random registry ID.
-func NewID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
 }
 
 // validAlias accepts display text only: 1–80 characters, no control or format characters

@@ -222,3 +222,22 @@ func asideCopies(path string) []string {
 	matches, _ := filepath.Glob(path + ".*")
 	return slices.DeleteFunc(matches, func(m string) bool { return m == path+".lock" })
 }
+
+// A file another process wrote that this one cannot decode (here a field it does not know,
+// under the same schema) is never replaced with the copy in memory.
+func TestUndecodableFileWrittenDuringSessionIsLeftAlone(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	finished(s, 1, "plan", operations.Succeeded, t0)
+	other := `{"version":1,"retention":{"maxEntries":500,"maxAgeDays":90,"maxBytes":4194304},"entries":[],"addedLater":true}` + "\n"
+	if err := os.WriteFile(s.Path(), []byte(other), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	finished(s, 2, "plan", operations.Succeeded, t0)
+	if string(mustRead(t, s.Path())) != other {
+		t.Fatal("history another process wrote was overwritten")
+	}
+	if status, _, _ := s.Status(); status != ReadOnly {
+		t.Fatalf("status %s", status)
+	}
+}

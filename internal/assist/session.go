@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -190,20 +191,36 @@ func (s *Session) UsePrefs(configDir string) {
 	}
 }
 
-// savePrefs writes the switch and the chosen assistant. Callers hold mu.
-func (s *Session) savePrefs(on bool, chosen string) error {
+// savePrefs applies change to the saved switch and assistant. Under the file lock it re-reads
+// ai.json, so a setting another Hclaro process saved is kept, not overwritten with this
+// process's copy. Callers hold mu.
+func (s *Session) savePrefs(change func(*savedPrefs)) error {
 	if s.prefs == "" {
 		return nil
 	}
-	b, _ := json.Marshal(savedPrefs{Enabled: &on, Assistant: chosen})
 	if err := os.MkdirAll(s.prefs, 0o700); err != nil {
 		return err
 	}
+	unlock, err := safefile.Lock(filepath.Join(s.prefs, prefsFile))
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	r, err := os.OpenRoot(s.prefs)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
+	on := s.enabled
+	p := savedPrefs{Enabled: &on, Assistant: s.chosen}
+	if b, err := readFile(r, prefsFile, 4<<10); err == nil {
+		var disk savedPrefs
+		if json.Unmarshal(b, &disk) == nil && disk.Enabled != nil {
+			p = disk
+		}
+	}
+	change(&p)
+	b, _ := json.Marshal(p)
 	return safefile.WriteAtomicIn(r, prefsFile, tempPrefix, append(b, '\n'))
 }
 
@@ -307,7 +324,7 @@ func (s *Session) Enabled() bool {
 // saving fails nothing changes.
 func (s *Session) SetEnabled(on bool) (Settings, error) {
 	s.mu.Lock()
-	if err := s.savePrefs(on, s.chosen); err != nil {
+	if err := s.savePrefs(func(p *savedPrefs) { p.Enabled = &on }); err != nil {
 		s.mu.Unlock()
 		return s.Settings(), ErrPrefs
 	}

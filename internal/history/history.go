@@ -8,8 +8,6 @@
 package history
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -361,7 +359,7 @@ func OpenWith(dir string, now time.Time, migrations map[int]Migration) *Store {
 }
 
 func newStore(path string) *Store {
-	return &Store{path: path, status: Ready, session: newSession(), doc: document{Version: SchemaVersion, Retention: DefaultPolicy, Entries: []HistoryEntry{}}, Now: time.Now}
+	return &Store{path: path, status: Ready, session: ids.New(), doc: document{Version: SchemaVersion, Retention: DefaultPolicy, Entries: []HistoryEntry{}}, Now: time.Now}
 }
 
 // DefaultMigrations is empty: schema 1 is the first history format. A later schema adds
@@ -373,14 +371,6 @@ func Disabled(notice string) *Store {
 	s := newStore("")
 	s.status, s.notice = Unavailable, notice
 	return s
-}
-
-func newSession() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
 }
 
 func (s *Store) load(now time.Time) {
@@ -681,6 +671,9 @@ func (s *Store) current() document {
 		// A newer Hclaro sharing the folder replaced the file. Writing now would downgrade it,
 		// so history becomes read-only for the rest of this session.
 		s.status, s.notice = ReadOnly, err.Error()
+	case err != nil:
+		// Writing the copy in memory would replace entries another process recorded.
+		s.status, s.notice = ReadOnly, "Operation history changed on disk and could not be read again, so the file was not changed and nothing new is recorded. Restart Hclaro to read it again."
 	}
 	return s.doc
 }

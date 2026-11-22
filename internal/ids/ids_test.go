@@ -17,3 +17,10 @@ func TestShapes(t *testing.T) {
 		}
 	}
 }
+
+func TestNew(t *testing.T) {
+	a, b := New(), New()
+	if !Valid(a) || !Valid(b) || a == b {
+		t.Fatalf("%q %q", a, b)
+	}
+}

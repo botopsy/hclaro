@@ -111,7 +111,7 @@ func (h *Hub) StartComparison(left, right ComparisonTarget, rules []compare.Rule
 	if left == right {
 		return nil, ErrSameTarget
 	}
-	c := &Comparison{ID: NewID(), CreatedAt: h.Now().UTC(), Rules: slices.Clone(rules)}
+	c := &Comparison{ID: ids.New(), CreatedAt: h.Now().UTC(), Rules: slices.Clone(rules)}
 	c.left = h.openSide(left, reload)
 	c.right = h.openSide(right, reload)
 	h.mu.Lock()

@@ -297,7 +297,7 @@ func TestVarFileResolutionIsSymlinkSafe(t *testing.T) {
 	if truncated || !slices.Equal(refs, []string{"env/prod.tfvars", "linked.tfvars"}) {
 		t.Fatalf("candidates %v (truncated %v)", refs, truncated)
 	}
-	p := Profile{ID: NewID(), ProjectID: projectA, Name: "x", Revision: 1, VarFiles: []string{"env/prod.tfvars", "escape.tfvars"}}
+	p := Profile{ID: ids.New(), ProjectID: projectA, Name: "x", Revision: 1, VarFiles: []string{"env/prod.tfvars", "escape.tfvars"}}
 	r := Resolve(p, root, nil)
 	if issue := r.Blocking(); issue == nil || issue.Code != "var_file_outside_root" || len(r.VarFiles) != 1 {
 		t.Fatalf("resolve with an escaping file: %+v", r)
@@ -307,7 +307,7 @@ func TestVarFileResolutionIsSymlinkSafe(t *testing.T) {
 // TF_CLI_ARGS* can add flags to any command. Composition refuses every injected flag, in any
 // letter case, instead of trying to remove individual ones.
 func TestComposeRefusesInjectedCLIArgs(t *testing.T) {
-	r := Resolve(Profile{ID: NewID(), ProjectID: projectA, Name: "x", Revision: 1}, t.TempDir(), nil)
+	r := Resolve(Profile{ID: ids.New(), ProjectID: projectA, Name: "x", Revision: 1}, t.TempDir(), nil)
 	for _, item := range []string{
 		"TF_CLI_ARGS=-lock=false",
 		"TF_CLI_ARGS_plan=-lock=false",
@@ -321,7 +321,7 @@ func TestComposeRefusesInjectedCLIArgs(t *testing.T) {
 		if _, err := Compose([]string{"PATH=/bin", item}, r); !errors.Is(err, tfpolicy.ErrUnsafeArgs) {
 			t.Errorf("%s accepted: %v", item, err)
 		}
-		if issue := Resolve(Profile{ID: NewID(), ProjectID: projectA, Name: "x", Revision: 1}, t.TempDir(), []string{item}).Blocking(); issue == nil || issue.Code != "unsafe_cli_args" {
+		if issue := Resolve(Profile{ID: ids.New(), ProjectID: projectA, Name: "x", Revision: 1}, t.TempDir(), []string{item}).Blocking(); issue == nil || issue.Code != "unsafe_cli_args" {
 			t.Errorf("%s not reported as an issue", item)
 		}
 	}
@@ -336,7 +336,7 @@ func TestComposeRefusesInjectedCLIArgs(t *testing.T) {
 
 func TestComposeUsesTheChosenAWSProfile(t *testing.T) {
 	base := []string{"PATH=/bin", "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AWS_SECRET_ACCESS_KEY=" + canary, "AWS_SESSION_TOKEN=" + canary, "AWS_PROFILE=other", "AWS_REGION=us-east-1", "AWS_CONFIG_FILE=/home/me/.aws/config", "TF_VAR_region=eu"}
-	p := Profile{ID: NewID(), ProjectID: projectA, Name: "prod", Revision: 1, AWSProfile: "prod-sso", AWSRegion: "eu-west-1"}
+	p := Profile{ID: ids.New(), ProjectID: projectA, Name: "prod", Revision: 1, AWSProfile: "prod-sso", AWSRegion: "eu-west-1"}
 	r := Resolve(p, t.TempDir(), base)
 	env, err := Compose(base, r)
 	if err != nil {
@@ -354,7 +354,7 @@ func TestComposeUsesTheChosenAWSProfile(t *testing.T) {
 		t.Fatalf("identity %q", r.Identity)
 	}
 	// Without an AWS profile the inherited credential chain is left alone.
-	plain := Resolve(Profile{ID: NewID(), ProjectID: projectA, Name: "plain", Revision: 1}, t.TempDir(), base)
+	plain := Resolve(Profile{ID: ids.New(), ProjectID: projectA, Name: "plain", Revision: 1}, t.TempDir(), base)
 	env, _ = Compose(base, plain)
 	if !slices.Contains(env, "AWS_PROFILE=other") || !slices.Contains(env, "AWS_SECRET_ACCESS_KEY="+canary) {
 		t.Fatalf("inherited chain changed: %v", env)
@@ -363,7 +363,7 @@ func TestComposeUsesTheChosenAWSProfile(t *testing.T) {
 
 func TestFingerprintChangesWithRevisionAndContext(t *testing.T) {
 	root := t.TempDir()
-	p := Profile{ID: NewID(), ProjectID: projectA, Name: "x", Revision: 1, AWSProfile: "a"}
+	p := Profile{ID: ids.New(), ProjectID: projectA, Name: "x", Revision: 1, AWSProfile: "a"}
 	first := Resolve(p, root, nil).Fingerprint
 	if again := Resolve(p, root, nil).Fingerprint; again != first {
 		t.Fatal("fingerprint is not deterministic")
@@ -435,7 +435,7 @@ func TestAuthBindingValidation(t *testing.T) {
 // container variables and an inherited marker are all dropped.
 func TestComposeIsolatesAWSVault(t *testing.T) {
 	base := []string{"PATH=/bin", "AWS_ACCESS_KEY_ID=AKIA_TEST_CANARY", "AWS_ROLE_ARN=arn:aws:iam::1:role/x", "AWS_WEB_IDENTITY_TOKEN_FILE=/t", "AWS_CONTAINER_CREDENTIALS_FULL_URI=http://x", "AWS_VAULT=other", "AWS_PROFILE=other", awsvault.Marker + "=evil"}
-	p := Profile{ID: NewID(), ProjectID: projectA, Name: "prod", Revision: 1, AWSProfile: "prod", AWSAuth: AWSVault}
+	p := Profile{ID: ids.New(), ProjectID: projectA, Name: "prod", Revision: 1, AWSProfile: "prod", AWSAuth: AWSVault}
 	r := Resolve(p, t.TempDir(), base)
 	env, err := Compose(base, r)
 	if err != nil {
@@ -449,7 +449,7 @@ func TestComposeIsolatesAWSVault(t *testing.T) {
 	}
 	// Without a profile nothing is composed; an inherited marker is still never honoured
 	// because only a composed environment reaches awsvault.Split.
-	none := Resolve(Profile{ID: NewID(), ProjectID: projectA, Name: "n", Revision: 1}, t.TempDir(), base)
+	none := Resolve(Profile{ID: ids.New(), ProjectID: projectA, Name: "n", Revision: 1}, t.TempDir(), base)
 	env, _ = Compose(base, none)
 	if slices.ContainsFunc(env, func(s string) bool { return strings.HasPrefix(s, awsvault.Marker) }) {
 		t.Fatalf("inherited marker passed: %v", env)
@@ -465,7 +465,7 @@ func TestComposeIsolatesAWSVault(t *testing.T) {
 // Profiles without an M20 binding keep the fingerprint they had: the aws-cli method is what
 // schema 1 did, so it adds nothing to the hash.
 func TestAWSCLIBindingKeepsTheFingerprint(t *testing.T) {
-	p := Profile{ID: NewID(), ProjectID: projectA, Name: "dev", Revision: 2, AWSProfile: "dev"}
+	p := Profile{ID: ids.New(), ProjectID: projectA, Name: "dev", Revision: 2, AWSProfile: "dev"}
 	r := Resolve(p, t.TempDir(), nil)
 	if r.AWSAuth != AWSCLI {
 		t.Fatal(r.AWSAuth)
