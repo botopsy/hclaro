@@ -9,28 +9,15 @@ import { errorMessage } from '../lib/errorMessage';
 
 const maxLines = 2000;
 
-// Streams one operation's sanitized log. Reconnects resume from the last received event.
-export function OperationLog({
-  operation: initial,
-  onFinished,
-  scope = launchScope
-}: {
-  operation: Operation;
-  onFinished?: (operation: Operation) => void;
-  // The project or Hub workspace the operation runs in; its log and cancel use only its routes.
-  scope?: PlanScope;
-}) {
+// useOperationStream follows one operation's sanitized log and status. Reconnects resume from
+// the last received event. Shared by OperationLog and the redesign's RunState.
+export function useOperationStream(initial: Operation, scope: PlanScope = launchScope) {
   const route = scopedPath(scope, `operations/${initial.id}`);
   const [events, setEvents] = useState<OperationEvent[]>([]);
   const [operation, setOperation] = useState(initial);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(false);
-  const finished = useRef(onFinished);
-  const body = useRef<HTMLOListElement>(null);
-  useEffect(() => {
-    finished.current = onFinished;
-  }, [onFinished]);
   useEffect(() => {
     const controller = new AbortController();
     let last = 0;
@@ -61,14 +48,6 @@ export function OperationLog({
       controller.abort();
     };
   }, [route]);
-  const done = !operationActive(operation);
-  const noun = operation.kind === 'apply' ? 'Apply' : operation.kind === 'init' ? 'Init' : operation.kind === 'workspace' || operation.kind === 'tool' ? 'Command' : operation.kind === 'drift' ? 'Scan' : operation.kind === 'graph' ? 'Graph' : 'Plan';
-  useEffect(() => {
-    if (done) finished.current?.(operation);
-  }, [done, operation]);
-  useEffect(() => {
-    body.current?.lastElementChild?.scrollIntoView?.({ block: 'nearest' });
-  }, [events.length]);
   async function cancel() {
     setCancelling(true);
     try {
@@ -78,6 +57,34 @@ export function OperationLog({
       setCancelling(false);
     }
   }
+  return { events, operation, truncated, error, cancelling, cancel };
+}
+
+// Streams one operation's sanitized log.
+export function OperationLog({
+  operation: initial,
+  onFinished,
+  scope = launchScope
+}: {
+  operation: Operation;
+  onFinished?: (operation: Operation) => void;
+  // The project or Hub workspace the operation runs in; its log and cancel use only its routes.
+  scope?: PlanScope;
+}) {
+  const { events, operation, truncated, error, cancelling, cancel } = useOperationStream(initial, scope);
+  const finished = useRef(onFinished);
+  const body = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    finished.current = onFinished;
+  }, [onFinished]);
+  const done = !operationActive(operation);
+  const noun = operation.kind === 'apply' ? 'Apply' : operation.kind === 'init' ? 'Init' : operation.kind === 'workspace' || operation.kind === 'tool' ? 'Command' : operation.kind === 'drift' ? 'Scan' : operation.kind === 'graph' ? 'Graph' : 'Plan';
+  useEffect(() => {
+    if (done) finished.current?.(operation);
+  }, [done, operation]);
+  useEffect(() => {
+    body.current?.lastElementChild?.scrollIntoView?.({ block: 'nearest' });
+  }, [events.length]);
   return <section className="operation-log" aria-label="Operation output">
    <header>
     <span className="operation-title"><Terminal size={14} /><strong>{operation.command.join(' ')}</strong></span>
