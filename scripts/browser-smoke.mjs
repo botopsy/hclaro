@@ -112,7 +112,9 @@ try{
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'tablet horizontal overflow')
  // Plans: review a plan produced by the real Go operations manager and plan parser.
  await page.setViewportSize({width:1512,height:1050})
- await page.getByRole('button',{name:'Toggle light and dark theme'}).click()
+ await page.getByRole('button',{name:'Settings',exact:true}).click()
+ await page.getByRole('button',{name:'dark',exact:true}).click()
+ assert.equal(await page.locator('html').getAttribute('data-theme'),'dark')
  await page.getByRole('button',{name:'Plans',exact:true}).click()
  await page.getByText(/10 resource changes and 4 output changes/).waitFor()
  // The fixture workspace executes locally, so the reviewed plan can be applied after confirmation.
@@ -248,9 +250,7 @@ try{
  // M15: Git context of a synthetic repository through the real Go handler and read-only Git.
  gitMode=true
  await page.reload()
- const badge=page.getByRole('button',{name:/^Git main @ [0-9a-f]{7}/})
- await badge.waitFor()
- await badge.click()
+ await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Git',exact:true}).click()
  await page.getByRole('heading',{name:'Git',level:1}).waitFor()
  const repo=page.getByRole('region',{name:'Repository'})
  await repo.getByText('3 changed files').waitFor()
@@ -266,14 +266,7 @@ try{
  await page.screenshot({path:'.cache/screenshots/git-changes-dark.png',fullPage:true})
  await diffPanel.getByRole('button',{name:'Open in VS Code'}).click()
  await page.getByRole('status').getByText(/Asked VS Code to open main\.tf:/).waitFor()
- await page.getByRole('button',{name:'Resources',exact:true}).click()
- await page.getByRole('button',{name:/deployer.*aws_iam_role/}).click()
- const inspectorPanel=page.getByLabel('Resource inspector')
- await inspectorPanel.getByText('main.tf:5').waitFor()
- await inspectorPanel.getByText('Best effort',{exact:true}).waitFor()
- await page.screenshot({path:'.cache/screenshots/resource-source-dark.png'})
- await page.keyboard.press('Escape')
- // Branch switching (M29): the uncommitted changes above block a switch; nothing is switched.
+ // Branch switching (M29), on the Git page: the uncommitted changes above block a switch; nothing is switched.
  await page.getByRole('button',{name:'Switch Git branch'}).click()
  const branchPanel=page.getByRole('group',{name:'Switch Git branch'})
  const branchList=branchPanel.getByRole('list',{name:'Local branches'})
@@ -289,6 +282,13 @@ try{
  await page.screenshot({path:'.cache/screenshots/git-switch-blocked-dark.png'})
  await switchDialog.getByRole('button',{name:'Cancel'}).click()
  await switchDialog.waitFor({state:'detached'})
+ await page.getByRole('button',{name:'Resources',exact:true}).click()
+ await page.getByRole('button',{name:/deployer.*aws_iam_role/}).click()
+ const inspectorPanel=page.getByLabel('Resource inspector')
+ await inspectorPanel.getByText('main.tf:5').waitFor()
+ await inspectorPanel.getByText('Best effort',{exact:true}).waitFor()
+ await page.screenshot({path:'.cache/screenshots/resource-source-dark.png'})
+ await page.keyboard.press('Escape')
  await page.getByRole('button',{name:'Plans',exact:true}).click()
  await page.getByText(/main @ [0-9a-f]{7} · 3 uncommitted IaC files/).waitFor()
  gitMode=false

@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CircleHelp, FileCode2, FileLock2, FolderGit2, GitBranch, GitCommitHorizontal, LoaderCircle, LockKeyhole, RefreshCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
-import { api, send } from '../api';
+import { CircleHelp, FileCode2, FileLock2, FolderGit2, GitCommitHorizontal, LoaderCircle, LockKeyhole, RefreshCcw, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { send } from '../api';
 import { EditorButtons } from './editor';
 import type { EditorName, GitContext, GitDiff, GitFileStatus } from '../types';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
 import { errorMessage } from '../lib/errorMessage';
 import { ErrorState } from '../components/ErrorState';
+import { BranchSwitcher } from './BranchSwitcher';
 
 // gitPrefix is the API prefix of a project's Git routes: the launch project's are at the
 // API root, a Hub project's under projects/<id>/.
@@ -27,30 +28,7 @@ export function shortCommit(commit?: string) {
   return commit ? commit.slice(0, 7) : '';
 }
 
-// The HEAD badge reads .git files on the server; it runs no Git command.
-function useGitHead(prefix: string | undefined) {
-  return useQuery({
-    queryKey: ['git-head', prefix],
-    queryFn: () => api<GitContext>(`${prefix}git/head`),
-    enabled: prefix !== undefined,
-    retry: false
-  });
-}
-export function GitBadge({ prefix, onOpen }: { prefix: string | undefined; onOpen: () => void }) {
-  const head = useGitHead(prefix);
-  // Shares the Git view's status query: the badge shows clean or dirty once it has run, and
-  // never runs Git itself.
-  const status = useQuery({ queryKey: ['git-status', prefix], queryFn: () => send<GitContext>('POST', `${prefix}git/status`, {}), enabled: false, staleTime: Infinity });
-  const h = head.data?.head;
-  if (!head.data) return null;
-  if (head.data.state === 'not_repository') return <div className="context-item muted" title="This project is not inside a Git repository.">No Git</div>;
-  if (!h) return <div className="context-item muted" title={head.data.message}>Git unavailable</div>;
-  const dirty = status.data?.state === 'repository' ? !status.data.clean : undefined;
-  const label = h.detached ? `detached @ ${shortCommit(h.commit)}` : h.unborn ? `${h.branch || 'branch'} · no commits` : `${h.branch} @ ${shortCommit(h.commit)}`;
-  return <button className="context-item git-badge" onClick={onOpen} title={`Git: ${label}${dirty === undefined ? '' : dirty ? ', uncommitted IaC changes' : ', IaC files clean'}${h.worktree ? ', linked worktree' : ''}. Open Git changes.`} aria-label={`Git ${label}${dirty ? ', uncommitted changes' : ''}. Open Git changes`}><GitBranch size={13} /><strong className="mono">{label}</strong>{dirty !== undefined && <span className={`git-dirty-dot ${dirty ? 'dirty' : 'clean'}`} aria-hidden="true" />}{h.detached && <TriangleAlert size={12} aria-hidden="true" />}</button>;
-}
-
-export function GitView({ projectId, editor, notify }: { projectId?: string; editor: EditorName; notify: (text: string) => void }) {
+export function GitView({ projectId, workspace, editor, notify }: { projectId?: string; workspace?: string; editor: EditorName; notify: (text: string) => void }) {
   const prefix = gitPrefix(projectId);
   const [selected, setSelected] = useState<string>();
   // Opening this view is the explicit request: it runs one read-only `git status`.
@@ -82,7 +60,7 @@ export function GitView({ projectId, editor, notify }: { projectId?: string; edi
     <div className="git-facts">
      <div><span className="muted">Repository</span><strong>{c.repository?.name}</strong>{c.repository?.worktree && <span className="pill">Linked worktree</span>}</div>
      <div><span className="muted">Project path</span><strong className="mono">{c.repository?.projectPath}</strong></div>
-     <div><span className="muted">Branch</span><strong className="mono">{h.detached ? 'Detached HEAD' : h.branch || '—'}</strong></div>
+     <div><span className="muted">Branch</span><strong className="mono">{h.detached ? 'Detached HEAD' : h.branch || '—'}<BranchSwitcher prefix={prefix} workspace={workspace} notify={notify} /></strong></div>
      <div><span className="muted">HEAD</span><strong className="mono" title={h.commit}><GitCommitHorizontal size={13} />{h.unborn ? 'No commits yet' : shortCommit(h.commit)}</strong></div>
      <div><span className="muted">IaC working tree</span><strong className={c.clean ? 'tone-text-create' : 'tone-text-update'}>{c.clean ? 'Clean' : `${c.counts.changed} changed file${c.counts.changed === 1 ? '' : 's'}`}</strong></div>
     </div>

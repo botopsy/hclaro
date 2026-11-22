@@ -31,7 +31,8 @@ const noOverflow=async label=>{
   const {scroll,inner}=await page.evaluate(()=>({scroll:document.documentElement.scrollWidth,inner:window.innerWidth}))
   assert(scroll<=inner,`${label}: page is ${scroll}px wide in a ${inner}px window`)
   // Scope and safety state stay visible at every width.
-  for(const text of [/Workspace/,/Profile/,/Read-only|Plan & apply/]) assert(await page.locator('.context-bar').getByText(text).first().isVisible(),`${label} at ${width}px: ${text} hidden`)
+  const topbar=page.getByRole('banner',{name:'Top bar'})
+  for(const control of [topbar.getByLabel('Workspace'),topbar.getByText('Profile',{exact:true}),topbar.getByRole('button',{name:'Read state again'})]) assert(await control.first().isVisible(),`${label} at ${width}px: top bar control hidden`)
  }
  await page.setViewportSize({width:1512,height:1050})
 }
@@ -41,7 +42,8 @@ try{
  page=opened.page
  const {origin,errors}=opened
  await page.goto(`${origin}/projects/${network}/workspaces/dev`)
- await page.locator('.context-bar').getByText('dev',{exact:true}).waitFor()
+ await page.getByRole('banner',{name:'Top bar'}).getByLabel('Workspace').waitFor()
+ assert.equal(await page.getByRole('banner',{name:'Top bar'}).getByLabel('Workspace').inputValue(),'dev')
  await page.getByRole('button',{name:/dev_main.*aws_db_instance/}).waitFor()
  await noOverflow('Hub workspace')
  await fs.mkdir('.cache/screenshots',{recursive:true})

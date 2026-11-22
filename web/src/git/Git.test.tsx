@@ -123,14 +123,16 @@ describe('Git changes', () => {
     for (const c of calls) expect(JSON.stringify(c.body || {})).not.toMatch(/infra\/|\/etc|checkout|commit|push/);
   }, 15000);
 
-  it('shows the Git badge in the context bar and opens the view from it', async () => {
+  it('runs no Git outside the Git page, which holds the branch switcher', async () => {
     stub();
     app(`/projects/${id}/workspaces/dev/resources`);
-    const badge = await screen.findByRole('button', { name: /Git feature\/vpc @ 0123456/ });
-    expect(calls.some(c => c.path.endsWith('git/status'))).toBe(false);
-    await userEvent.setup().click(badge);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Git' }));
     expect(await screen.findByRole('heading', { name: 'Git', level: 1 })).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/projects/${id}/workspaces/dev/git`);
+    expect(within(await screen.findByRole('region', { name: 'Repository' })).getByRole('button', { name: 'Switch Git branch' })).toBeInTheDocument();
+    expect(calls.filter(c => c.path.endsWith('git/status'))).toHaveLength(1);
+    expect(calls.some(c => c.path.endsWith('git/head'))).toBe(false);
   });
 
   it('warns about a detached HEAD and untracked IaC files, and explains a folder outside Git', async () => {
@@ -143,7 +145,6 @@ describe('Git changes', () => {
     stub({ state: 'not_repository', message: 'This project is not inside a Git repository.', head: undefined, repository: undefined, files: [] }, { state: 'not_repository', message: 'This project is not inside a Git repository.', clean: false, files: [], counts: { changed: 0, untracked: 0, outside: 0, other: 0 }, warnings: [], incomplete: false, checkedAt: '' });
     app();
     expect(await screen.findByRole('heading', { name: 'Not a Git repository' })).toBeInTheDocument();
-    expect(screen.getByText('No Git')).toBeInTheDocument();
   });
 
   it('uses the editor chosen in Settings', async () => {

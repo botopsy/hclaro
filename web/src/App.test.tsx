@@ -170,8 +170,9 @@ describe('Resource explorer', () => {
     const user = userEvent.setup();
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Initialize this workspace first');
-    // One in the context bar and one on the error screen.
-    expect(screen.getAllByRole('button', { name: 'Read again' })).toHaveLength(2);
+    // One icon button in the top bar and one on the error screen.
+    expect(screen.getByRole('button', { name: 'Read state again' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Read again' })).toHaveLength(1);
     await user.click(within(alert).getByRole('button', { name: 'Read again' }));
     expect(await screen.findByRole('button', { name: /main.*aws_subnet/ })).toBeInTheDocument();
     expect(posts).toEqual([{ url: '/api/v1/workspace/reload', body: {} }]);
@@ -225,7 +226,8 @@ describe('Resource explorer', () => {
     await user.click(screen.getByRole('button', { name: 'Plan replacement…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Plan a replacement' });
     expect(dialog).toHaveTextContent(resource.address);
-    expect(screen.getByText('Changes only from a reviewed, confirmed plan')).toBeInTheDocument();
+    // The footer and its safety line are gone (redesign §2.2).
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
   });
   it('shows the hollow-cursor brand once, with one accessible name', async () => {
     app();

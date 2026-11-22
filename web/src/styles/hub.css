@@ -4,17 +4,6 @@
   cursor: not-allowed;
 }
 
-.crumb {
-  color: inherit;
-  border-radius: 4px;
-  padding: 1px 3px;
-}
-
-.crumb:hover {
-  color: var(--text);
-  text-decoration: underline;
-}
-
 .hub {
   flex-direction: column;
   gap: 20px;

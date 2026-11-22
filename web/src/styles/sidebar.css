@@ -1,11 +1,12 @@
 .app {
   --sidebar-width: 232px;
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
+  overflow: hidden;
 }
 
-/* M21: the sidebar is a fixed column: brand and project context on top, groups scroll in
-   the middle, utilities and the local note stay at the bottom. */
+/* Redesign §2.3: a fixed full-height column: brand on top, groups scroll in the middle,
+   utilities, Help and Collapse stay at the bottom. */
 .sidebar {
   border-right: 1px solid var(--border);
   background: var(--sidebar);
@@ -107,7 +108,7 @@
   display: flex;
 }
 
-.sidebar-toggle, .sidebar-close {
+.sidebar-close {
   color: var(--muted);
   border-radius: 6px;
   flex-shrink: 0;
@@ -118,7 +119,7 @@
   display: grid;
 }
 
-.sidebar-toggle:hover, .sidebar-close:hover {
+.sidebar-close:hover {
   background: var(--surface-hover);
   color: var(--text);
 }
@@ -162,79 +163,6 @@
   border-radius: 4px;
   padding: 3px 4px;
   font-size: 11px;
-}
-
-.project-switcher {
-  margin: 14px 0 0;
-  position: relative;
-}
-
-.project-tile {
-  width: 100%;
-  min-width: 0;
-  color: var(--text);
-  text-align: left;
-  border: 1px solid var(--border);
-  background: var(--inset);
-  border-radius: 8px;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 8px 8px 7px;
-  display: flex;
-}
-
-.project-tile:hover, .project-tile[aria-expanded="true"] {
-  border-color: var(--input);
-  background: var(--surface-hover);
-}
-
-.project-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.project-text > * {
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
-  overflow: hidden;
-}
-
-.project-kicker {
-  letter-spacing: .9px;
-  text-transform: uppercase;
-  color: var(--subtle);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.project-text strong {
-  margin-top: 1px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.project-text > span:last-child {
-  color: var(--muted);
-  margin-top: 1px;
-  font-size: 12px;
-}
-
-.project-chevron {
-  color: var(--subtle);
-}
-
-.project-icon {
-  width: 24px;
-  height: 28px;
-  color: var(--read);
-  flex-shrink: 0;
-  place-items: center;
-  display: grid;
-}
-
-.status-missing .project-icon {
-  color: var(--update);
 }
 
 .switcher-popover {
@@ -319,41 +247,6 @@
   padding-top: 6px;
 }
 
-.switcher-workspace {
-  border-bottom: 1px solid var(--border-soft);
-  margin-bottom: 6px;
-  padding: 6px 4px 10px;
-}
-
-.sidebar-workspace {
-  margin: 6px 0 0;
-  padding: 0 2px 0 9px;
-}
-
-.workspace-control {
-  color: var(--muted);
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-size: 12px;
-  display: flex;
-}
-
-.workspace-control strong {
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 550;
-  overflow: hidden;
-}
-
-.workspace-control .workspace-switch {
-  flex: 1;
-  min-width: 0;
-  max-width: none;
-}
-
 .sidebar-nav {
   flex-direction: column;
   flex: 1;
@@ -405,6 +298,16 @@
   position: relative;
 }
 
+.nav-item > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.nav-item .running-dot {
+  margin-left: auto;
+}
+
 .nav-text {
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -435,55 +338,9 @@
   left: -12px;
 }
 
-.nav-count {
-  background: var(--accent-dim);
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  border-radius: 4px;
-  margin-left: auto;
-  padding: 0 6px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.soon {
-  letter-spacing: .6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  margin-left: auto;
-  padding: 3px 5px;
-  font-size: 11px;
-}
-
-.nav-item.unavailable {
-  opacity: .55;
-}
-
 .sidebar-bottom {
   border-top: 1px solid var(--border-soft);
   padding: 8px 0 4px;
-}
-
-.sidebar-foot {
-  color: var(--subtle);
-  border-top: 1px solid var(--border);
-  align-items: center;
-  gap: 6px;
-  padding: 10px 6px 12px;
-  font-size: 12px;
-  display: flex;
-}
-
-.sidebar-foot > svg {
-  color: var(--accent-text);
-}
-
-.foot-version {
-  white-space: nowrap;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  display: flex;
 }
 
 /* Compact-mode labels: fixed so the sidebar's scroll area cannot clip them. */
@@ -530,26 +387,17 @@
   padding: 0;
 }
 
-.sidebar-compact .sidebar-toggle {
-  margin: 0;
+.sidebar-compact .brand-wordmark, .sidebar-compact .brand .release-badge, .sidebar-compact .nav-label, .sidebar-compact .nav-text {
+  display: none;
 }
 
-.sidebar-compact .brand-wordmark, .sidebar-compact .brand .release-badge, .sidebar-compact .project-text, .sidebar-compact .project-chevron, .sidebar-compact .nav-label, .sidebar-compact .nav-text, .sidebar-compact .nav-count:not(.running-dot), .sidebar-compact .foot-version, .sidebar-compact .sidebar-foot .nav-text {
-  display: none;
+.sidebar-compact .nav-item > svg {
+  width: 22px;
+  height: 22px;
 }
 
 .sidebar-compact .brand-compact {
   display: inline-flex !important;
-}
-
-.sidebar-compact .project-tile {
-  justify-content: center;
-  padding: 6px 0;
-}
-
-.sidebar-compact .switcher-popover {
-  top: 0;
-  left: calc(100% + 12px);
 }
 
 .sidebar-compact .nav-item {
@@ -579,8 +427,3 @@
   padding: 2px 10px 8px;
 }
 
-.sidebar-compact .sidebar-foot {
-  justify-content: center;
-  padding-left: 0;
-  padding-right: 0;
-}

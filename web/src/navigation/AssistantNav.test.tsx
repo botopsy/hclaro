@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import { parseRoute } from '../router';
 import type { Workspace } from '../types';
-import { itemsIn, viewTrail } from './config';
+import { itemsIn } from './config';
 
 // AI-01.09: the AI Assistant rail entry exists only while AI is on.
 const hubId = 'a'.repeat(32);
@@ -43,10 +43,9 @@ function app() {
 }
 
 describe('AI Assistant navigation', () => {
-  it('adds the entry only with AI on and names it in breadcrumbs and Hub URLs', () => {
+  it('adds the entry only with AI on and names it in Hub URLs', () => {
     expect(itemsIn('analyze').map(i => i.label)).toEqual(['Plans', 'Drift detection', 'Dependency graph', 'Compare']);
     expect(itemsIn('analyze', true).map(i => i.label)).toEqual(['Plans', 'Drift detection', 'Dependency graph', 'Compare', 'AI Assistant']);
-    expect(viewTrail('Assistant')).toEqual(['AI Assistant']);
     expect(parseRoute(`/projects/${hubId}/workspaces/dev/assistant`)).toEqual({ kind: 'context', projectId: hubId, workspace: 'dev', view: 'Assistant' });
   });
 
