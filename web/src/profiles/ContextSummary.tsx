@@ -4,7 +4,7 @@ import { AuthIndicator } from './AuthPanel';
 import { engineLabel } from '../lib/format';
 
 
-const sources: Record<ExecutionSummary['workspaceSource'], string> = {
+export const workspaceSources: Record<ExecutionSummary['workspaceSource'], string> = {
   profile: 'selected by the profile',
   tab: 'this tab',
   launch: 'read when Hclaro started',
@@ -25,7 +25,7 @@ export function ContextSummary({ summary, title = 'Execution context' }: { summa
    <div className="context-summary-heading"><h3>{title}</h3><span className="hub-tag">{c.profileName ? <>Profile <strong>{c.profileName}</strong> · rev {c.profileRevision}</> : 'No profile · inherited environment'}</span>{c.profileId && c.awsProfile ? <AuthIndicator projectId={c.projectId} profileId={c.profileId} /> : <IdentityBadge />}</div>
    <dl className="metadata compact-metadata">
     <div><dt>Engine</dt><dd>{engineLabel(summary.engine, 'Automatic')}{summary.engineVersion ? ` ${summary.engineVersion}` : ''}{summary.engine && !summary.engineFound && ' (not found on PATH)'}</dd></div>
-    <div><dt>Workspace</dt><dd>{summary.workspace ? <><strong>{summary.workspace}</strong> <span className="muted">({sources[summary.workspaceSource]})</span></> : <span className="muted">CLI default (not listed yet)</span>}</dd></div>
+    <div><dt>Workspace</dt><dd>{summary.workspace ? <><strong>{summary.workspace}</strong> <span className="muted">({workspaceSources[summary.workspaceSource]})</span></> : <span className="muted">CLI default (not listed yet)</span>}</dd></div>
     <div><dt>Root folder</dt><dd className="mono">{summary.rootPath}</dd></div>
     <div><dt>Backend · mode</dt><dd>{summary.backend} · {summary.executionMode}</dd></div>
     <div><dt>Data directory</dt><dd className="mono">{summary.dataDir}</dd></div>

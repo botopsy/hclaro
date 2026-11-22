@@ -746,3 +746,10 @@
 .dialog p code {
   white-space: nowrap;
 }
+
+/* Redesign §2.4–2.5: shared run dialog and run states. */
+.run-sentence { margin: 0 0 12px; line-height: 1.55; }
+.run-state { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.run-state header { display: flex; align-items: center; gap: 10px; }
+.run-state header .button { margin-left: auto; }
+.run-actions { display: flex; gap: 8px; margin-top: 8px; }
