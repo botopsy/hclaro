@@ -340,7 +340,7 @@ try{
  await page.screenshot({path:'.cache/screenshots/navigation-expanded-dark.png'})
  const switcher=page.getByRole('button',{name:/Switch project/})
  await switcher.click()
- await page.getByRole('group',{name:'Switch project'}).getByRole('button',{name:/All projects/}).waitFor()
+ await page.getByRole('group',{name:'Switch project'}).getByRole('button',{name:'Manage projects…'}).waitFor()
  await page.screenshot({path:'.cache/screenshots/navigation-switcher-dark.png'})
  await page.keyboard.press('Escape')
  assert.equal(await page.getByRole('group',{name:'Switch project'}).count(),0,'switcher stays open after Escape')
