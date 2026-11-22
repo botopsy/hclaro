@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, Command,    FolderTree, Layers3, LoaderCircle,  Menu,  Network, Search,  SlidersHorizontal,  X } from 'lucide-react';
 import { ApiError, api, openInNewTab, send } from './api';
 import type { ReplaceTarget, Resource, ResourcePage } from './types';
-import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
-import { HubView, ProjectView } from './hub/HubView';
+import { contextPath, isExplorerView, navigate, parseRoute, productionLike, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
+import { AddProjectDialog, HubView, ProjectView } from './hub/HubView';
 import { Button } from './components/ui/button';
 import { PlansView } from './plans/PlansView';
 import { OperationsView } from './plans/OperationsView';
@@ -22,7 +22,7 @@ import { ContextSelector } from './profiles/ContextSelector';
 import { GitView, gitPrefix } from './git/GitView';
 import { globalPages, importDiscoveryTabs, onProjectPage, pageOf, type NavContext, type NavItem, type NavMode, type View } from './navigation/config';
 import { ImportDiscoveryTabs, Sidebar } from './navigation/Sidebar';
-import { ProjectSwitcher, type CurrentProject, type SwitchTarget, type SwitchTargets } from './navigation/ProjectSwitcher';
+import { ProjectSwitcher, switchTargets, type CurrentProject } from './navigation/ProjectSwitcher';
 import { ConfirmSwitch } from './navigation/ConfirmSwitch';
 import { WarningChips } from './navigation/WarningChips';
 import type { DiscoveryPrefill } from './types';
@@ -83,6 +83,7 @@ function Workbench({
   const menuButton = useRef<HTMLButtonElement>(null);
   // A project or workspace switch waiting for confirmation (it would discard work in this tab).
   const [pendingSwitch, setPendingSwitch] = useState<string>();
+  const [addingProject, setAddingProject] = useState(false);
   const { preferences, changePreference } = usePreferences();
   // Icon-only mode is a desktop preference; the narrow-screen drawer always shows labels.
   const compact = preferences.sidebar === 'compact' && !narrow;
@@ -145,11 +146,7 @@ function Workbench({
   const registry = projects.data?.projects || [];
   const launchRoot = projects.data?.launchRoot;
   const currentHubId = scoped?.projectId || (route.kind === 'project' ? route.projectId : undefined);
-  const switchTargets: SwitchTargets = {
-    launch: launchRoot && route.kind !== 'launch' ? { key: 'launch', label: registry.find(p => p.launch)?.alias || launchRoot.split(/[\\/]/).filter(Boolean).at(-1) || launchRoot, detail: launchRoot, path: '/' } : undefined,
-    recent: registry.filter(p => p.status === 'ready' && p.lastOpenedAt && p.id !== currentHubId).sort((a, b) => (b.lastOpenedAt || '').localeCompare(a.lastOpenedAt || '')).slice(0, 5).map((p): SwitchTarget => ({ key: p.id, label: p.alias, detail: p.lastWorkspace ? `Workspace ${p.lastWorkspace}` : 'Choose a workspace', path: p.lastWorkspace ? contextPath(p.id, p.lastWorkspace) : projectPath(p.id) })),
-    projectPage: currentHubId ? { key: 'page', label: scoped ? 'Workspaces of this project' : 'This project', detail: 'List, create or open workspaces', path: projectPath(currentHubId), current: route.kind === 'project' } : undefined
-  };
+  const targets = switchTargets(registry, launchRoot, { launch: route.kind === 'launch' && !noLaunch, hubId: currentHubId });
   // Work kept only in this tab's workbench, lost when another workbench takes over the tab.
   const unsaved = [
     ...(replaceSelection.length ? [`${replaceSelection.length} instance${replaceSelection.length === 1 ? '' : 's'} selected for replacement`] : []),
@@ -307,7 +304,7 @@ function Workbench({
   {navOpen && <div className="sidebar-backdrop" aria-hidden="true" onClick={() => setNavOpen(false)} />}
   <div className="workspace-shell">
    <header className="topbar" aria-label="Top bar"><Button ref={menuButton} variant="ghost" size="icon" className="nav-toggle" aria-label="Open navigation" aria-expanded={navOpen} aria-controls="app-sidebar" onClick={() => setNavOpen(true)}><Menu size={17} /></Button>
-    <div className="context-switcher"><ProjectSwitcher project={currentProject} targets={switchTargets} onSwitch={requestSwitch} />{workspaceControl}</div>
+    <div className="context-switcher"><ProjectSwitcher project={currentProject} targets={targets} onSwitch={requestSwitch} onAdd={() => setAddingProject(true)} addDisabled={!projects.data?.registry || projects.data.registry.status === 'ready' ? undefined : 'The project registry is read-only.'} />{workspaceControl}</div>
     {scoped && productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}
     <div className="topbar-actions">
      {!onHub && <WarningChips workspace={w} gitPrefix={gitBase} onOpen={setView} />}
@@ -423,6 +420,11 @@ function Workbench({
       const path = pendingSwitch;
       setPendingSwitch(undefined);
       navigate(path);
+    }} />}
+  {addingProject && <AddProjectDialog onClose={() => setAddingProject(false)} onAdded={p => {
+      setAddingProject(false);
+      setNotice(`${p.alias} added`);
+      void projects.refetch();
     }} />}
   {notice && <div role="status" className="toast"><Check size={15} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={13} /></button></div>}
  </div>;

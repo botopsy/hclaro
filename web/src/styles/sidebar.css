@@ -241,6 +241,50 @@
   background: var(--surface-selected);
 }
 
+.switcher-search {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 6px;
+  padding: 0 8px;
+  display: flex;
+}
+
+.switcher-search > svg {
+  color: var(--muted);
+  flex: none;
+}
+
+.switcher-search input {
+  min-width: 0;
+  color: var(--text);
+  font: inherit;
+  background: none;
+  border: 0;
+  outline: none;
+  flex: 1;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.switcher-search:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.switcher-option > .switcher-check {
+  color: var(--accent-text);
+  margin-left: auto;
+}
+
+.switcher-empty {
+  color: var(--muted);
+  margin: 0;
+  padding: 7px 8px;
+  font-size: 13px;
+}
+
 .switcher-popover > * + .switcher-all {
   border-top: 1px solid var(--border-soft);
   margin-top: 6px;
