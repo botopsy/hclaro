@@ -1,12 +1,13 @@
 import { useEffect, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
-import { CircleQuestionMark, LoaderCircle, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { Bug, CircleQuestionMark, FileText, Gift, LoaderCircle, PanelLeftClose, PanelLeftOpen, Star, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { sessionQuery } from '../api';
 import { HclaroLogo, HclaroMark } from '../brand/HclaroLogo';
+import { Menu, MenuItem } from '../components/Menu';
+import { hasUnseenRelease, helpLinks, markReleaseSeen, releaseUrl } from './help';
 import { groupLabels, importDiscoveryTabs, itemsIn, navState, type NavContext, type NavGroup, type NavItem, type View } from './config';
 
 type Tip = { text: string; top: number; left: number };
-
-// shortcut: Help opens the documentation until the Help menu (redesign B5) replaces it.
-const docsUrl = 'https://github.com/botopsy/hclaro#readme';
 
 export function Sidebar({ id, context, compact, onToggleCompact, onCloseDrawer, operationRunning, titleFor, onSelect, onHome }: {
   id: string;
@@ -39,6 +40,10 @@ export function Sidebar({ id, context, compact, onToggleCompact, onCloseDrawer, 
     setTip({ text, top: rect.top + rect.height / 2, left: rect.right + 10 });
   }
   const hideTip = () => setTip(undefined);
+  const version = useQuery(sessionQuery).data?.version;
+  // Set on the first Help open: whether that open found unseen release notes ("New" stays in the menu).
+  const [newRelease, setNewRelease] = useState<boolean>();
+  const unseen = newRelease === undefined && hasUnseenRelease(version);
   const tipProps = (text: string) => ({ onMouseEnter: (e: MouseEvent<HTMLElement>) => showTip(e, text), onMouseLeave: hideTip, onFocus: (e: FocusEvent<HTMLElement>) => showTip(e, text), onBlur: hideTip });
 
   function item(nav: NavItem) {
@@ -78,7 +83,16 @@ export function Sidebar({ id, context, compact, onToggleCompact, onCloseDrawer, 
     </div>
     <div className="sidebar-bottom">
      {group('utility', <>
-      <li><a className="nav-item" href={docsUrl} target="_blank" rel="noreferrer" aria-label="Help (opens in your browser)" {...tipProps('Help')}><CircleQuestionMark aria-hidden="true" /><span className="nav-text">Help</span></a></li>
+      <li><Menu className="help-menu" label={unseen ? 'Help, new release notes' : 'Help'} trigger={{ className: 'nav-item', ...tipProps('Help'), onClick: () => {
+        if (newRelease === undefined) setNewRelease(unseen);
+        markReleaseSeen(version);
+      } }} button={<><CircleQuestionMark aria-hidden="true" /><span className="nav-text">Help</span>{unseen && <span className="unseen-dot" aria-hidden="true" />}</>}>
+       <MenuItem href={helpLinks.docs}><FileText size={15} aria-hidden="true" />Documentation</MenuItem>
+       <MenuItem href={releaseUrl(version)}><Gift size={15} aria-hidden="true" />What's new{newRelease && <span className="menu-new">New</span>}</MenuItem>
+       <MenuItem href={helpLinks.bug}><Bug size={15} aria-hidden="true" />Report a bug</MenuItem>
+       <MenuItem href={helpLinks.star}><Star size={15} aria-hidden="true" />Star on GitHub</MenuItem>
+       <p className="help-note">Opens in your browser. Bug reports never include state, plans or values.</p>
+      </Menu></li>
       <li><button type="button" className="nav-item sidebar-toggle" aria-label={toggleLabel} aria-expanded={!compact} aria-controls={`${id}-nav`} onClick={onToggleCompact} {...tipProps(toggleLabel)}>{compact ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}<span className="nav-text">Collapse</span></button></li>
      </>)}
     </div>

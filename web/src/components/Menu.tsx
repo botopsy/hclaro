@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 
 const CloseContext = createContext<() => void>(() => {});
@@ -6,8 +6,9 @@ const CloseContext = createContext<() => void>(() => {});
 // Popover: a trigger button and a panel under it. Escape or Tab-out closes it and returns focus
 // to the trigger; a click outside closes it. With `menu`, the panel is role="menu" and the
 // arrow keys, Home and End move between its items. Other content (a search box, an inline
-// form) can sit in a plain popover.
-export function Popover({ button, label, menu = false, align = 'start', className = '', children }: { button: ReactNode; label?: string; menu?: boolean; align?: 'start' | 'end'; className?: string; children: ReactNode }) {
+// form) can sit in a plain popover. `trigger` adds props to the trigger button (a class, hover
+// handlers); its onClick runs before the toggle.
+export function Popover({ button, label, menu = false, align = 'start', className = '', trigger: triggerProps, children }: { button: ReactNode; label?: string; menu?: boolean; align?: 'start' | 'end'; className?: string; trigger?: ButtonHTMLAttributes<HTMLButtonElement>; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -51,7 +52,10 @@ export function Popover({ button, label, menu = false, align = 'start', classNam
   }
 
   return <span ref={root} className={`popover-root ${className}`}>
-   <button ref={trigger} type="button" className="popover-trigger" aria-label={label} aria-haspopup={menu ? 'menu' : 'dialog'} aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>{button}</button>
+   <button ref={trigger} type="button" {...triggerProps} className={`popover-trigger ${triggerProps?.className ?? ''}`} aria-label={label} aria-haspopup={menu ? 'menu' : 'dialog'} aria-expanded={open} aria-controls={open ? id : undefined} onClick={event => {
+     triggerProps?.onClick?.(event);
+     setOpen(!open);
+   }}>{button}</button>
    {open && <div ref={panel} id={id} className={`popover popover-${align}`} role={menu ? 'menu' : 'dialog'} aria-label={label} onKeyDown={keyDown}>
     <CloseContext.Provider value={close}>{children}</CloseContext.Provider>
    </div>}
@@ -63,10 +67,12 @@ export function Menu(props: Omit<Parameters<typeof Popover>[0], 'menu'>) {
 }
 
 // A menu entry. `checked` makes it a radio item (the current project, profile, workspace).
-export function MenuItem({ onSelect, checked, disabled, children }: { onSelect: () => void; checked?: boolean; disabled?: boolean; children: ReactNode }) {
+// `href` makes it a link that opens in a new browser tab.
+export function MenuItem({ onSelect, href, checked, disabled, children }: { onSelect?: () => void; href?: string; checked?: boolean; disabled?: boolean; children: ReactNode }) {
   const close = useContext(CloseContext);
+  if (href) return <a className="menu-item" role="menuitem" href={href} target="_blank" rel="noopener noreferrer" tabIndex={-1} onClick={() => close()}>{children}</a>;
   return <button type="button" className="menu-item" role={checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={checked} disabled={disabled} tabIndex={-1} onClick={() => {
     close();
-    onSelect();
+    onSelect?.();
   }}><span className="menu-check" aria-hidden="true">{checked && <Check size={13} />}</span>{children}</button>;
 }

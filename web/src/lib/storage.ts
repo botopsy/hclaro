@@ -6,6 +6,8 @@ export const storageKeys = {
   drawerWidth: 'hclaro.drawerWidth',
   compareDraft: 'hclaro.compare.draft',
   compareId: 'hclaro.compare.id',
+  // The build version whose release notes the Help menu last showed (unseen dot).
+  seenVersion: 'hclaro.seenVersion',
   // Per tab: another tab of the same project can use a different profile.
   profile: (projectId: string) => `hclaro.profile.${projectId}`
 };
