@@ -98,7 +98,7 @@
 
 .button {
   white-space: nowrap;
-  border: 1px solid #0000;
+  border: 1px solid transparent;
   border-radius: 6px;
   flex-shrink: 0;
   justify-content: center;
@@ -187,8 +187,8 @@
 }
 
 .engine-glyph {
-  color: var(--purple);
-  background: color-mix(in srgb,var(--purple),transparent 89%);
+  color: var(--read);
+  background: color-mix(in srgb,var(--read),transparent 89%);
   text-align: center;
   border-radius: 4px;
   width: 18px;
@@ -577,7 +577,7 @@ kbd {
 }
 
 .resource-icon.data-icon {
-  color: var(--purple);
+  color: var(--read);
 }
 
 .resource-text {
@@ -625,7 +625,7 @@ kbd {
 }
 
 .provider-dot {
-  background: var(--purple);
+  background: var(--read);
   border-radius: 2px;
   width: 5px;
   height: 5px;
@@ -641,8 +641,8 @@ kbd {
 }
 
 .mode-badge.data {
-  color: var(--purple);
-  border-color: color-mix(in srgb,var(--purple),transparent 70%);
+  color: var(--read);
+  border-color: color-mix(in srgb,var(--read),transparent 70%);
 }
 
 .density-compact .resources-table td {

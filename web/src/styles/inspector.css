@@ -169,7 +169,7 @@
 
 .json-viewer {
   overflow-wrap: anywhere;
-  font-family: SFMono-Regular, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.8;
 }
@@ -222,7 +222,7 @@
 }
 
 .json-value {
-  color: var(--purple);
+  color: var(--read);
 }
 
 .redacted {

@@ -37,21 +37,21 @@
 
 /* Pinned variants use the literal reference colours whatever the active theme. */
 .hclaro-logo.hclaro-light {
-  color: var(--brand-navy);
+  color: var(--brand-ink);
   --logo-chevron-color: var(--brand-olive);
-  --logo-cursor-color: var(--brand-navy);
+  --logo-cursor-color: var(--brand-ink);
 }
 
 .hclaro-logo.hclaro-dark {
-  color: var(--brand-ivory);
+  color: var(--brand-letter);
   --logo-chevron-color: var(--brand-lime);
   --logo-cursor-color: var(--brand-lime);
 }
 
 .hclaro-logo.hclaro-inverse {
-  color: var(--brand-navy);
-  --logo-chevron-color: var(--brand-navy);
-  --logo-cursor-color: var(--brand-navy);
+  color: var(--brand-on-lime);
+  --logo-chevron-color: var(--brand-on-lime);
+  --logo-cursor-color: var(--brand-on-lime);
 }
 
 .hclaro-chevron {
@@ -74,9 +74,10 @@
 }
 
 .hclaro-mark {
-  background: var(--brand-navy);
-  color: var(--brand-ivory);
+  background: var(--brand-graphite);
+  color: var(--brand-letter);
   --logo-cursor-color: var(--brand-lime);
+  box-shadow: inset 0 0 0 1px var(--brand-edge);
   flex-shrink: 0;
   justify-content: center;
   align-items: center;
@@ -226,7 +227,7 @@
 .project-icon {
   width: 24px;
   height: 28px;
-  color: var(--purple);
+  color: var(--read);
   flex-shrink: 0;
   place-items: center;
   display: grid;

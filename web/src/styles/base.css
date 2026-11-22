@@ -65,7 +65,7 @@ select {
 }
 
 code, .mono {
-  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-family: var(--font-mono);
   font-size: .88em;
 }
 

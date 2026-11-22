@@ -1,12 +1,4 @@
 /* M2: plans and operations */
-:root {
-  /* Plan and operation statuses stay distinct from the lime brand accent and are always paired
-     with a text label or icon. Light values are darkened for 4.5:1 on every light surface. */
-  --create: light-dark(#1E6E3A, #8FDCAB);
-  --update: light-dark(#7F5400, #E3C27A);
-  --destroy: light-dark(#AE3326, #F09A8F);
-  --warn: light-dark(#835200, #E7B86A);
-}
 
 .sr-only {
   clip: rect(0 0 0 0);
@@ -80,7 +72,7 @@
 .tone-update { color: var(--update); }
 .tone-destroy { color: var(--destroy); }
 .tone-warn { color: var(--warn); }
-.tone-neutral { color: var(--purple); }
+.tone-neutral { color: var(--read); }
 .tone-muted { color: var(--subtle); }
 
 .summary-grid {
@@ -164,7 +156,7 @@
 
 .hash {
   color: var(--text);
-  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-family: var(--font-mono);
   align-items: center;
   gap: 5px;
   padding: 0;
@@ -364,7 +356,7 @@
 .operation-title strong {
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-family: var(--font-mono);
   font-weight: 500;
   overflow: hidden;
 }
@@ -395,7 +387,7 @@
   max-height: 260px;
   margin: 0;
   padding: 10px 14px;
-  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.7;
   list-style: none;
@@ -478,7 +470,7 @@
 
 .dialog-backdrop {
   z-index: 30;
-  background: #0008;
+  background: var(--scrim);
   justify-content: center;
   align-items: center;
   padding: 20px;
@@ -615,13 +607,13 @@
 }
 
 .button-destructive {
-  background: var(--destroy);
-  border-color: var(--destroy);
-  color: var(--surface);
+  background: var(--destructive);
+  border-color: var(--destructive);
+  color: var(--destructive-foreground);
 }
 
 .button-destructive:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--destroy), #000 12%);
+  background: color-mix(in srgb, var(--destructive), black 12%);
 }
 
 .apply-banner.apply-unsupported {
@@ -749,7 +741,7 @@
   color: var(--text);
   border-radius: 6px;
   padding: 8px 10px;
-  font-family: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
 }
 

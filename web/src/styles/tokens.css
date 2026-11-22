@@ -1,54 +1,77 @@
 :root {
-  /* Raw brand palette: the five literal colours of the M19 reference mockup
-     (recorded in docs/design/BRAND.md). Never approximate or edit these; derive instead.
-     docs/design/BRAND.md documents every token below and its measured contrast. */
-  --brand-navy: #0B1220;
-  --brand-ivory: #F4F4F0;
-  --brand-stone: #E8E8E1;
-  --brand-lime: #C6F432;
-  --brand-olive: #6A8F00;
+  /* Raw brand palette: graphite + lime (redesign §5). The logo colours are recorded in
+     docs/design/BRAND.md; derive from these instead of approximating them. */
+  --brand-graphite: #0E1116;
+  --brand-paper: #F6F7F9;
+  --brand-ink: #151A21;
+  --brand-letter: #E6E8EB;
+  --brand-lime: #C5F04A;
+  --brand-olive: #3F6212;
+  --brand-on-lime: #10140A;
+  --brand-edge: #2A323D;
 
   /* Semantic tokens. Each is light-dark(<light theme>, <dark theme>) and follows color-scheme:
      "light dark" follows the system before any script runs (no flash of the wrong palette);
-     the saved preference pins data-theme. Components use only these names, never raw hex. */
+     the saved preference pins data-theme. Components use only these names, never raw hex.
+     The palette is not final (redesign Q4): swapping it edits only this block's neutrals and accent. */
   color-scheme: light dark;
-  --bg: light-dark(var(--brand-ivory), var(--brand-navy));
-  --sidebar: light-dark(var(--brand-stone), #0E1626);
-  --surface: light-dark(#FBFBF8, #131C2D);
-  --surface-hover: light-dark(#EDEDE6, #1A2437);
-  --surface-selected: light-dark(#E6EDCF, #1E2B25);
-  --inset: light-dark(#EFEFE9, #0D1524);
-  --border: light-dark(#D6D6CD, #253047);
-  --border-soft: light-dark(#E3E3DB, #1A2436);
+  --bg: light-dark(var(--brand-paper), var(--brand-graphite));
+  --sidebar: light-dark(#FFFFFF, #0B0E12);
+  --surface: light-dark(#FFFFFF, #141920);
+  --surface-hover: light-dark(#EBEEF2, #1A2029);
+  --surface-selected: var(--accent-dim);
+  --inset: light-dark(#F1F3F6, #12161C);
+  --border: light-dark(#D5DAE1, #232A33);
+  --border-soft: light-dark(#E6E9EE, #1A1F26);
   /* Form-control boundaries: at least 3:1 against the surfaces they sit on. */
-  --input: light-dark(#7E837A, #66728A);
-  --text: light-dark(var(--brand-navy), var(--brand-ivory));
-  --muted: light-dark(#4B5363, #A4ACB9);
-  --subtle: light-dark(#5D6573, #8891A0);
-  /* Brand accent for marks, indicators and selected borders (graphics, 3:1). In light mode this is
-     the reference olive; it is never used for small text, which takes --accent-text instead. */
+  --input: light-dark(#7A8491, #66717F);
+  --text: light-dark(var(--brand-ink), var(--brand-letter));
+  --muted: light-dark(#3C4552, #B4BCC6);
+  --subtle: light-dark(#5B6675, #8B949E);
+  /* Brand accent for marks, indicators and selected borders (graphics, 3:1). Lime fails 3:1 on
+     light surfaces, so the light theme uses olive here and keeps lime only as the button fill. */
   --accent: light-dark(var(--brand-olive), var(--brand-lime));
-  --accent-dim: light-dark(#DDE8B8, #2D3B23);
-  --accent-text: light-dark(#4A6600, var(--brand-lime));
-  --accent-foreground: var(--brand-navy);
-  /* Primary actions: navy on light surfaces, lime on dark ones. */
-  --primary: light-dark(var(--brand-navy), var(--brand-lime));
-  --primary-hover: light-dark(#1E2A3F, #D4F75E);
-  --primary-foreground: light-dark(var(--brand-ivory), var(--brand-navy));
-  --ring: light-dark(#4A6600, var(--brand-lime));
-  --purple: light-dark(#6650A8, #B3A5E5);
+  --accent-dim: light-dark(#EEF7D4, #1A2110);
+  --accent-text: light-dark(var(--brand-olive), var(--brand-lime));
+  --accent-foreground: var(--brand-on-lime);
+  /* Primary actions: lime with near-black text in both themes. */
+  --primary: var(--brand-lime);
+  --primary-hover: light-dark(#B6E234, #D4F574);
+  --primary-foreground: var(--brand-on-lime);
+  --ring: light-dark(var(--brand-olive), var(--brand-lime));
+
+  /* Fixed semantic colours, the same for every palette. Text on a tinted background; always
+     paired with a symbol or word. Light shades are darkened for 4.5:1 on every light surface. */
+  --create: light-dark(#2F6B1A, #9BE37A);
+  --create-bg: light-dark(#E6F4DF, #13240F);
+  --update: light-dark(#8A6100, #F2CC60);
+  --update-bg: light-dark(#FBF1D4, #2A2410);
+  --replace: light-dark(#A6460C, #F0A35E);
+  --replace-bg: light-dark(#FCEADC, #2D1C10);
+  --destroy: light-dark(#B42318, #F08A7E);
+  --destroy-bg: light-dark(#FDE8E6, #2E1515);
+  --warn: var(--update);
+  --read: light-dark(#4338CA, #A5B4FC);
+  --ok: light-dark(#15803D, #6EE7A0);
+  --destructive: light-dark(#B42318, #F4A196);
+  --destructive-foreground: light-dark(#FFFFFF, #2A0F0B);
+
   /* Logo colours for the theme-following ("auto") wordmark; see HclaroLogo. */
-  --logo-text: light-dark(var(--brand-navy), var(--brand-ivory));
+  --logo-text: light-dark(var(--brand-ink), var(--brand-letter));
   --logo-chevron: light-dark(var(--brand-olive), var(--brand-lime));
-  --logo-cursor: light-dark(var(--brand-navy), var(--brand-lime));
-  --shadow: 0 8px 28px light-dark(color-mix(in srgb, var(--brand-navy) 7%, transparent), #0003);
+  --logo-cursor: light-dark(var(--brand-ink), var(--brand-lime));
+  --shadow: 0 8px 28px light-dark(color-mix(in srgb, var(--brand-ink) 7%, transparent), #0003);
+  --shadow-sm: 0 1px 4px #0001;
+  --scrim: #0008;
   background: var(--bg);
   color: var(--text);
   font-synthesis: none;
   text-rendering: optimizelegibility;
   -webkit-font-smoothing: antialiased;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
-  font-size: 15px;
+  /* Addresses, types, versions, paths and code. Tailwind's font-mono reads the same variable. */
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
+  font-size: 13px;
 }
 
 :root[data-theme="light"] {

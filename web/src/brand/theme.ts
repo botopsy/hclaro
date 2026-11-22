@@ -4,8 +4,6 @@ import { readJSON, storageKeys } from '../lib/storage';
 // applying the saved preference before React renders keeps a pinned theme from flashing.
 type ThemePreference = 'system' | 'light' | 'dark';
 
-// The browser chrome colour of each theme is the page background: navy or ivory.
-const chrome = { dark: '#0B1220', light: '#F4F4F0' } as const;
 
 export function savedTheme(): ThemePreference {
   const theme = (readJSON('local', storageKeys.preferences) as { theme?: unknown } | null | undefined)?.theme;
@@ -20,8 +18,11 @@ export function resolveTheme(preference: ThemePreference): 'light' | 'dark' {
 export function applyTheme(preference: ThemePreference) {
   const theme = resolveTheme(preference);
   document.documentElement.dataset.theme = theme;
-  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach(meta => {
-    meta.content = chrome[theme];
-  });
+  // The browser chrome colour of each theme is the page background. index.html carries it per
+  // media query (filled from tokens.css at build); remember the originals before pinning one.
+  const metas = [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
+  for (const meta of metas) meta.dataset.colour ??= meta.content;
+  const colour = metas.find(meta => meta.getAttribute('media')?.includes(theme))?.dataset.colour;
+  if (colour) for (const meta of metas) meta.content = colour;
   return theme;
 }

@@ -12,8 +12,8 @@ import {pathToFileURL, fileURLToPath} from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-// The five literal reference colours. Nothing in this file derives or approximates them.
-export const brand = {navy: '#0B1220', ivory: '#F4F4F0', stone: '#E8E8E1', lime: '#C6F432', olive: '#6A8F00'}
+// The literal graphite + lime brand colours (web/src/styles/tokens.css --brand-*). Nothing here derives them.
+export const brand = {graphite: '#0E1116', paper: '#F6F7F9', ink: '#151A21', letter: '#E6E8EB', lime: '#C5F04A', olive: '#3F6212', onLime: '#10140A', edge: '#2A323D', edgeLight: '#D5DAE1'}
 
 const glyphs = {
  h: 'M77 0V730H202V550L199 445H201Q208 493 239 522Q278 560 347 560Q428 560 476.5 506.0Q525 452 525 361V0H400V348Q400 398 374.0 425.0Q348 452 301 452Q255 452 228.5 424.0Q202 396 202 344V0Z',
@@ -53,9 +53,9 @@ function chevronPath(x, baseline, stroke) {
 }
 
 const wordmarkColours = {
- light: {background: brand.ivory, text: brand.navy, chevron: brand.olive, cursor: brand.navy},
- dark: {background: brand.navy, text: brand.ivory, chevron: brand.lime, cursor: brand.lime},
- inverse: {background: brand.lime, text: brand.navy, chevron: brand.navy, cursor: brand.navy}
+ light: {background: brand.paper, text: brand.ink, chevron: brand.olive, cursor: brand.ink},
+ dark: {background: brand.graphite, text: brand.letter, chevron: brand.lime, cursor: brand.lime},
+ inverse: {background: brand.lime, text: brand.onLime, chevron: brand.onLime, cursor: brand.onLime}
 }
 
 // The full wordmark: chevron, "hclaro", hollow cursor. Transparent unless a background is asked for.
@@ -70,16 +70,20 @@ export function wordmarkSVG(variant, {background = false} = {}) {
  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-pad} ${top} ${width + pad * 2} ${height}" role="img" aria-label="Hclaro"><title>Hclaro</title>${bg}${body}</svg>\n`
 }
 
-// The compact app mark: an ivory "h" and a lime hollow cursor on a navy rounded square.
+// The compact app mark: a light "h" and a lime hollow cursor on a graphite rounded square.
+// The docs copy has a thin tile edge so it stays visible on dark pages; favicons have none.
+// The light variant (paper tile, ink "h", olive cursor) is for light backgrounds and always has its edge.
 // Reference containers 88/64/40/24 px use font sizes 54/40/25/15 and radius = size / 4; the
 // icons below use the 64/40/24 ratio (0.625) so every raster size has identical proportions.
-export function markSVG({fontRatio = 0.625, label = true} = {}) {
+export function markSVG({fontRatio = 0.625, label = true, edge = false, light = false} = {}) {
+ const [tile, letter, cursorFill, edgeColour] = light ? [brand.paper, brand.ink, brand.olive, brand.edgeLight] : [brand.graphite, brand.letter, brand.lime, brand.edge]
+ if (light) edge = true
  const size = em / fontRatio, radius = size / 4
  const content = advance + tracking + cursor.gap + cursor.width
  const x = (size - content) / 2
  const baseline = (size - em) / 2 + baselineInLineBox
  const title = label ? ' role="img" aria-label="Hclaro"><title>Hclaro</title' : ' aria-hidden="true"'
- return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${round(size)} ${round(size)}"${title}><rect width="${round(size)}" height="${round(size)}" rx="${round(radius)}" fill="${brand.navy}"/>${glyphRun('h', round(x), round(baseline), brand.ivory)}<path fill="${brand.lime}" fill-rule="evenodd" d="${cursorRing(round(x + advance + tracking + cursor.gap), round(baseline))}"/></svg>\n`
+ return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${round(size)} ${round(size)}"${title}>${edge ? `<rect x="12" y="12" width="${round(size - 24)}" height="${round(size - 24)}" rx="${round(radius - 10)}" fill="${tile}" stroke="${edgeColour}" stroke-width="24"/>` : `<rect width="${round(size)}" height="${round(size)}" rx="${round(radius)}" fill="${tile}"/>`}${glyphRun('h', round(x), round(baseline), letter)}<path fill="${cursorFill}" fill-rule="evenodd" d="${cursorRing(round(x + advance + tracking + cursor.gap), round(baseline))}"/></svg>\n`
 }
 
 // Favicons and the touch icon ship in the embedded UI. The 192/512 app icons are kept with the
@@ -88,19 +92,28 @@ export function markSVG({fontRatio = 0.625, label = true} = {}) {
 // the 16 px favicon snaps the same shapes to the pixel grid: 1 px ring, 3 × 6 px hollow, h on 4–12.
 export function markSVG16() {
  const scale = 0.011, x = 3 - 77 * scale
- return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="4" fill="${brand.navy}"/><path fill="${brand.ivory}" transform="translate(${round(x)} 12) scale(${scale} -${scale})" d="${glyphs.h}"/><path fill="${brand.lime}" fill-rule="evenodd" d="M9.5 4H13.5Q14 4 14 4.5V11.5Q14 12 13.5 12H9.5Q9 12 9 11.5V4.5Q9 4 9.5 4ZM10 5V11H13V5Z"/></svg>\n`
+ return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="4" fill="${brand.graphite}"/><path fill="${brand.letter}" transform="translate(${round(x)} 12) scale(${scale} -${scale})" d="${glyphs.h}"/><path fill="${brand.lime}" fill-rule="evenodd" d="M9.5 4H13.5Q14 4 14 4.5V11.5Q14 12 13.5 12H9.5Q9 12 9 11.5V4.5Q9 4 9.5 4ZM10 5V11H13V5Z"/></svg>\n`
 }
 
-const rasters = [['web/public/favicon-16.png', 16], ['web/public/favicon-32.png', 32], ['web/public/apple-touch-icon.png', 180], ['docs/design/assets/hclaro-icon-192.png', 192], ['docs/design/assets/hclaro-icon-512.png', 512]]
+// [file, width, height, svg]. The light icons and @2x wordmarks are for the README and social previews.
+const lightMark = markSVG({light: true})
+const rasters = [
+ ['web/public/favicon-16.png', 16, 16, markSVG16()], ['web/public/favicon-32.png', 32, 32, markSVG()], ['web/public/apple-touch-icon.png', 180, 180, markSVG()],
+ ...[192, 512, 1024].flatMap(size => [[`docs/design/assets/hclaro-icon-${size}.png`, size, size, markSVG()], [`docs/design/assets/hclaro-icon-light-${size}.png`, size, size, lightMark]]),
+ ...['light', 'dark', 'inverse'].map(variant => [`docs/design/assets/hclaro-wordmark-${variant}@2x.png`, 1200, 215, wordmarkSVG(variant, {background: true})]),
+ ...['light', 'dark'].map(variant => [`docs/design/assets/hclaro-wordmark-${variant}-transparent@2x.png`, 1200, 215, wordmarkSVG(variant)])
+]
 
 async function main() {
  const pub = path.join(root, 'web/public'), docs = path.join(root, 'docs/design/assets')
  await fs.mkdir(docs, {recursive: true})
  const mark = markSVG()
  await fs.writeFile(path.join(pub, 'favicon.svg'), mark)
- await fs.writeFile(path.join(docs, 'hclaro-mark.svg'), mark)
+ await fs.writeFile(path.join(docs, 'hclaro-mark.svg'), markSVG({edge: true}))
+ await fs.writeFile(path.join(docs, 'hclaro-mark-light.svg'), lightMark)
  for (const variant of Object.keys(wordmarkColours)) {
   await fs.writeFile(path.join(docs, `hclaro-wordmark-${variant}.svg`), wordmarkSVG(variant, {background: true}))
+  if (variant !== 'inverse') await fs.writeFile(path.join(docs, `hclaro-wordmark-${variant}-transparent.svg`), wordmarkSVG(variant))
  }
  if (process.argv.includes('--no-png')) return
  const modules = path.join(root, 'web/node_modules')
@@ -110,10 +123,9 @@ async function main() {
   const page = await browser.newPage({deviceScaleFactor: 1})
   // Offline by construction: the SVG is inlined and every other request is refused.
   await page.route('**/*', route => route.abort())
-  for (const [name, size] of rasters) {
-   await page.setViewportSize({width: size, height: size})
-   const svg = size === 16 ? markSVG16() : mark
-   await page.setContent(`<!doctype html><html><body style="margin:0;background:transparent">${svg.replace('<svg ', `<svg width="${size}" height="${size}" `)}</body></html>`)
+  for (const [name, width, height, svg] of rasters) {
+   await page.setViewportSize({width, height})
+   await page.setContent(`<!doctype html><html><body style="margin:0;background:transparent">${svg.replace('<svg ', `<svg width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet" `)}</body></html>`)
    await page.locator('svg').screenshot({path: path.join(root, name), omitBackground: true})
   }
  } finally {

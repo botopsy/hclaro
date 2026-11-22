@@ -46,8 +46,12 @@ func TestEmbeddedBrandAssetsAreLocal(t *testing.T) {
 		}
 	}
 	favicon, _ := fs.ReadFile(assets, "favicon.svg")
-	if !bytes.Contains(favicon, []byte("#C6F432")) || !bytes.Contains(favicon, []byte("#0B1220")) {
+	if !bytes.Contains(favicon, []byte("#C5F04A")) || !bytes.Contains(favicon, []byte("#0E1116")) {
 		t.Fatal("favicon is not the hollow-cursor mark")
+	}
+	page, _ := fs.ReadFile(assets, "index.html")
+	if bytes.Contains(page, []byte("__brand-")) || !bytes.Contains(page, []byte(`content="#0E1116"`)) || !bytes.Contains(page, []byte(`content="#F6F7F9"`)) {
+		t.Fatal("index.html theme-color was not filled from tokens.css")
 	}
 	fonts := 0
 	err := fs.WalkDir(assets, ".", func(name string, entry fs.DirEntry, err error) error {

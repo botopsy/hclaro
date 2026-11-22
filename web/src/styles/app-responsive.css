@@ -161,7 +161,7 @@
 
   .sidebar-backdrop {
     z-index: 24;
-    background: #0008;
+    background: var(--scrim);
     display: block;
     position: fixed;
     inset: 0;

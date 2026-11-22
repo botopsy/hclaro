@@ -27,7 +27,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--inset);
-  font-family: SFMono-Regular, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -102,7 +102,7 @@
   padding: 8px 10px;
   border-radius: 6px;
   background: var(--inset);
-  font-family: SFMono-Regular, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
 }
