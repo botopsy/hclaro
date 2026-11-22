@@ -41,17 +41,6 @@ export function HubView({ notify }: { notify: (text: string) => void }) {
   const list = useQuery(projectsQuery);
   const [search, setSearch] = useState('');
   const [dialog, setDialog] = useState<{ kind: 'add'; path?: string } | { kind: 'rename' | 'repair' | 'remove'; project: Project }>();
-  const searchRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    function keyboard(event: globalThis.KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-    }
-    window.addEventListener('keydown', keyboard);
-    return () => window.removeEventListener('keydown', keyboard);
-  }, []);
   const data = list.data;
   const projects = data?.projects || [];
   const writable = data?.registry.status === 'ready';
@@ -91,7 +80,7 @@ export function HubView({ notify }: { notify: (text: string) => void }) {
    {env.dataDirShared && <div className="hub-banner hub-banner-warn" role="alert"><AlertTriangle size={15} /><span><strong>TF_DATA_DIR is an absolute path.</strong> Every project would share one data directory, so Hub workspaces cannot be read. Restart Hclaro without it, or with a relative path.</span></div>}
    {env.workspaceInherited && <div className="hub-banner" role="status"><Layers3 size={15} /><span>Hclaro was started with <code>TF_WORKSPACE</code>{env.inheritedWorkspace ? <> set to <code>{env.inheritedWorkspace}</code></> : ''}. Hub workspaces replace it for each command they run; the project opened from the terminal still uses it.</span></div>}
    <div className="hub-toolbar">
-    <div className="search-field"><Search size={16} /><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects, paths, workspaces…" aria-label="Search projects" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div>
+    <div className="search-field"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects, paths, workspaces…" aria-label="Search projects" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div>
     <Button onClick={() => setDialog({ kind: 'add' })} disabled={!writable} title={writable ? undefined : 'The project registry is read-only.'}><Plus size={15} />Add project</Button>
    </div>
    {data.launchRoot && !launchRegistered && <section className="surface hub-launch" aria-label="Project opened from the terminal"><div><span className="eyebrow">OPENED FROM TERMINAL</span><p className="mono">{data.launchRoot}</p><p className="muted">This project is open in this session. Save it to the Hub to find it again later.</p></div><div className="hub-actions"><Button variant="outline" onClick={() => navigate('/')}>Open<ArrowRight size={14} /></Button><Button variant="outline" disabled={!writable} onClick={() => setDialog({ kind: 'add', path: data.launchRoot })}><FolderPlus size={14} />Save to Hub</Button></div></section>}
