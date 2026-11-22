@@ -32,7 +32,7 @@ const noOverflow=async label=>{
   assert(scroll<=inner,`${label}: page is ${scroll}px wide in a ${inner}px window`)
   // Scope and safety state stay visible at every width.
   const topbar=page.getByRole('banner',{name:'Top bar'})
-  for(const control of [topbar.getByRole('button',{name:/Switch workspace/}),topbar.getByText('Profile',{exact:true}),topbar.getByRole('button',{name:'Read state again'})]) assert(await control.first().isVisible(),`${label} at ${width}px: top bar control hidden`)
+  for(const control of [topbar.getByRole('button',{name:/Switch workspace/}),topbar.getByRole('button',{name:/^Profile: /}),topbar.getByRole('button',{name:'Read state again'})]) assert(await control.first().isVisible(),`${label} at ${width}px: top bar control hidden`)
  }
  await page.setViewportSize({width:1512,height:1050})
 }

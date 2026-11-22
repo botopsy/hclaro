@@ -12,8 +12,33 @@
   vertical-align: middle;
 }
 
-.context-selector .workspace-switch {
-  max-width: 220px;
+.profile-trigger {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 9px;
+  display: inline-flex;
+}
+
+.profile-menu .popover {
+  min-width: 260px;
+}
+
+.profile-option {
+  flex-direction: column;
+  display: flex;
+}
+
+.profile-option small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.profile-menu .menu-separator {
+  border-top: 1px solid var(--border-soft);
+  margin: 4px 0;
 }
 
 .context-selector .issue-text {

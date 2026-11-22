@@ -13,7 +13,7 @@ const projectId = '1'.repeat(32);
 const prodId = '2'.repeat(32);
 const devId = '3'.repeat(32);
 const profile = (id: string, name: string, extra: Partial<ExecutionProfile> = {}): ExecutionProfile => ({ id, projectId, name, engine: '', workspace: '', varFiles: [], parallelism: 0, lockTimeoutSeconds: 0, awsProfile: '', awsRegion: '', awsAuth: '', awsExpectedAccount: '', awsExpectedRole: '', envNames: [], revision: 1, createdAt: '2026-11-05T09:00:00Z', updatedAt: '2026-11-05T09:00:00Z', default: false, ...extra });
-const profiles = [profile(prodId, 'Production', { default: true, awsProfile: 'prod-sso', varFiles: ['env/prod.tfvars'] }), profile(devId, 'Development', { awsProfile: 'dev-sso' })];
+const profiles = [profile(prodId, 'Production', { default: true, awsProfile: 'prod-sso', awsRegion: 'eu-west-1', varFiles: ['env/prod.tfvars'] }), profile(devId, 'Development', { awsProfile: 'dev-sso' })];
 const summary = (fingerprint: string, issues: ExecutionSummary['issues'] = []): ExecutionSummary => ({
   projectId, alias: 'network', rootPath: '/work/network', status: 'ready', backend: 's3', executionMode: 'local-cli', engine: 'terraform', engineFound: true, engineVersion: '1.9.8', workspace: 'demo', workspaceSource: 'launch', dataDir: '.terraform',
   context: { projectId, profileId: prodId, profileName: 'Production', profileRevision: 1, varFiles: [{ ref: 'env/prod.tfvars', path: 'env/prod.tfvars', size: 12, modifiedAt: '2026-11-05T09:00:00Z', linked: false }], options: { parallelism: 4 }, awsProfile: 'prod-sso', awsRegion: 'eu-west-1', env: [{ name: 'TF_VAR_db_password', present: true }], identity: 'not_verified', notices: [], issues, varFileIssues: [], fingerprint },
@@ -63,16 +63,22 @@ afterEach(() => {
 describe('Execution profiles', () => {
   it('starts from the project default and keeps the choice per tab', async () => {
     render(<QueryClientProvider client={client()}><Selector /></QueryClientProvider>);
-    const select = await screen.findByLabelText('Profile') as HTMLSelectElement;
-    await waitFor(() => expect(select.value).toBe(prodId));
+    await userEvent.click(await screen.findByRole('button', { name: 'Profile: Production' }));
+    // The menu lists none, then the project's profiles with AWS_PROFILE and region; the current one is checked.
+    const items = screen.getAllByRole('menuitemradio');
+    expect(items.map(i => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+    expect(items[0]).toHaveTextContent('None (inherited environment)');
+    expect(items[1]).toHaveTextContent('AWS_PROFILE=prod-sso · eu-west-1');
     // The header shows the profile's AWS state in words; reading it never contacts AWS.
     expect(await screen.findByText('Not checked')).toBeInTheDocument();
-    await userEvent.selectOptions(select, devId);
+    await userEvent.click(items[2]);
     expect(sessionStorage.getItem(`hclaro.profile.${projectId}`)).toBe(devId);
     // Choosing a profile is a tab-local choice: nothing is sent to the server.
     expect(posts).toEqual([]);
-    await userEvent.selectOptions(select, '');
+    await userEvent.click(screen.getByRole('button', { name: /^Profile: / }));
+    await userEvent.click(screen.getByRole('menuitemradio', { name: /None/ }));
     expect(sessionStorage.getItem(`hclaro.profile.${projectId}`)).toBe('none');
+    expect(screen.getByRole('button', { name: 'Profile: none' })).toBeInTheDocument();
     expect(screen.queryByText('Not checked')).not.toBeInTheDocument();
   });
 
@@ -108,7 +114,8 @@ describe('Execution profiles', () => {
 
   it('creates a profile with names only', async () => {
     render(<QueryClientProvider client={client()}><Selector /></QueryClientProvider>);
-    await userEvent.click(await screen.findByRole('button', { name: 'Manage' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Profile: Production' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Manage profiles…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Execution profiles' });
     await userEvent.click(within(dialog).getByRole('button', { name: 'New profile' }));
     await userEvent.type(within(dialog).getByLabelText(/Profile name/), 'Staging');
