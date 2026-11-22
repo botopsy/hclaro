@@ -33,17 +33,9 @@
 
 @media (width <= 1350px) {
 
-  .main-content, .topbar, .context-bar, .statusbar {
+  .main-content, .topbar {
     padding-left: 24px;
     padding-right: 24px;
-  }
-
-  .context-bar {
-    column-gap: 12px;
-  }
-
-  .app {
-    --sidebar-width: 216px;
   }
 
   .module-panel {
@@ -56,23 +48,6 @@
 }
 
 @media (width <= 1100px) {
-  .session-label, .snapshot-time {
-    display: none;
-  }
-
-  .context-bar {
-    column-gap: 10px;
-    font-size: 12px;
-  }
-
-  .context-item {
-    gap: 5px;
-  }
-
-  .app {
-    --sidebar-width: 204px;
-  }
-
   .brand {
     gap: 6px;
     font-size: 20px;
@@ -167,28 +142,12 @@
     display: inline-flex !important;
   }
 
-  .topbar {
-    justify-content: flex-start;
-  }
-
-  .topbar-actions {
-    margin-left: auto;
-  }
-
-  .topbar {
-    height: 58px;
-  }
-
   .main-content {
     padding: 28px 20px 20px;
   }
 
   .module-panel {
     width: 160px;
-  }
-
-  .context-bar {
-    min-height: 42px;
   }
 
   .filter-row select {
@@ -215,18 +174,6 @@
     padding: 7px;
   }
 
-  .breadcrumbs {
-    font-size: 13px;
-  }
-
-  .context-item .mono {
-    font-size: 12px;
-  }
-
-  .statusbar {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -235,10 +182,6 @@
     transition: none !important;
     animation: none !important;
   }
-}
-
-:root[data-theme="dark"] .theme-to-dark, :root[data-theme="light"] .theme-to-light {
-  display: none;
 }
 
 .skip-link {

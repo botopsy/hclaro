@@ -11,9 +11,6 @@
 .git-badge:hover { background: var(--surface-hover); }
 .git-badge:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .git-badge strong { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.git-dirty-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
-.git-dirty-dot.dirty { background: var(--update); }
-.git-dirty-dot.clean { background: var(--create); }
 .git-view { flex-direction: column; gap: 14px; display: flex; }
 .git-summary { flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; padding: 14px 16px; display: flex; }
 .git-facts { flex-wrap: wrap; gap: 10px 28px; display: flex; }

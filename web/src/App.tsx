@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, Command, Database, ExternalLink, Folder, FolderTree, Layers3, LoaderCircle, LockKeyhole, Menu, Moon, Network, Search, ShieldCheck, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, Command,    FolderTree, Layers3, LoaderCircle,  Menu,  Network, Search,  SlidersHorizontal,  X } from 'lucide-react';
 import { ApiError, api, openInNewTab, send } from './api';
 import type { ReplaceTarget, Resource, ResourcePage } from './types';
 import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
@@ -19,10 +19,10 @@ import { HistoryView } from './history/HistoryView';
 import { ToolsView } from './hub/ToolsView';
 import { LaunchTools } from './hub/LaunchTools';
 import { ContextSelector } from './profiles/ContextSelector';
-import { GitBadge, GitView, gitPrefix } from './git/GitView';
-import { BranchSwitcher } from './git/BranchSwitcher';
-import { globalPages, importDiscoveryTabs, onProjectPage, pageOf, viewTrail, type NavContext, type NavItem, type NavMode, type View } from './navigation/config';
-import { ImportDiscoveryTabs, Sidebar, type SidebarProject, type SwitchTarget, type SwitchTargets } from './navigation/Sidebar';
+import { GitView, gitPrefix } from './git/GitView';
+import { globalPages, importDiscoveryTabs, onProjectPage, pageOf, type NavContext, type NavItem, type NavMode, type View } from './navigation/config';
+import { ImportDiscoveryTabs, Sidebar } from './navigation/Sidebar';
+import { ProjectSwitcher, type CurrentProject, type SwitchTarget, type SwitchTargets } from './navigation/ProjectSwitcher';
 import { ConfirmSwitch } from './navigation/ConfirmSwitch';
 import type { DiscoveryPrefill } from './types';
 import { useWorkbenchContext } from './workbench/useWorkbenchContext';
@@ -34,7 +34,7 @@ import { SettingsPanel } from './workbench/SettingsPanel';
 import { PageHeader } from './components/PageHeader';
 import { useAssistEnabled } from './assist/AskAI';
 import { AssistantPage } from './assist/AssistantPage';
-import { moduleName, providerName, timeLabel } from './lib/format';
+import { moduleName, providerName } from './lib/format';
 import { ProductionBadge } from './components/ProductionBadge';
 import { errorMessage } from './lib/errorMessage';
 import { useDebounced } from './lib/useDebounced';
@@ -140,7 +140,7 @@ function Workbench({
   const navMode: NavMode = scoped ? 'hub-workspace' : route.kind === 'project' ? 'hub-project' : noLaunch ? 'none' : 'launch';
   const aiEnabled = useAssistEnabled();
   const navContext: NavContext = { route, mode: navMode, view, projectWorkspace: pageProjectWorkspace, scopedExecution: hubExecution, ai: aiEnabled };
-  const sidebarProject: SidebarProject = scoped ? project ? { name: project.alias, detail: 'Hub project', status: 'ready' } : projects.isPending ? { name: opened.data?.alias || 'Hub project', detail: 'Loading…', status: 'loading' } : { name: opened.data?.alias || 'Unknown project', detail: 'Not found in the Hub', status: 'missing' } : route.kind === 'project' ? pageProject ? { name: pageProject.alias, detail: 'Choose a workspace', status: 'ready' } : projects.isPending ? { name: 'Hub project', detail: 'Loading…', status: 'loading' } : { name: 'Unknown project', detail: 'Not found in the Hub', status: 'missing' } : noLaunch ? { name: 'No project open', detail: 'Choose one in Projects', status: 'none' } : w ? { name: w.info.project || 'Local workspace', detail: 'Opened from terminal', status: 'ready' } : { name: 'Local workspace', detail: 'Opened from terminal', status: workspace.isPending ? 'loading' : 'ready' };
+  const currentProject: CurrentProject = scoped ? project ? { name: project.alias, detail: 'Hub project', status: 'ready' } : projects.isPending ? { name: opened.data?.alias || 'Hub project', detail: 'Loading…', status: 'loading' } : { name: opened.data?.alias || 'Unknown project', detail: 'Not found in the Hub', status: 'missing' } : route.kind === 'project' ? pageProject ? { name: pageProject.alias, detail: 'Choose a workspace', status: 'ready' } : projects.isPending ? { name: 'Hub project', detail: 'Loading…', status: 'loading' } : { name: 'Unknown project', detail: 'Not found in the Hub', status: 'missing' } : noLaunch ? { name: 'No project open', detail: 'Choose one in Projects', status: 'none' } : w ? { name: w.info.project || 'Local workspace', detail: 'Opened from terminal', status: 'ready' } : { name: 'Local workspace', detail: 'Opened from terminal', status: workspace.isPending ? 'loading' : 'ready' };
   const registry = projects.data?.projects || [];
   const launchRoot = projects.data?.launchRoot;
   const currentHubId = scoped?.projectId || (route.kind === 'project' ? route.projectId : undefined);
@@ -292,30 +292,34 @@ function Workbench({
     setReplaceSelection(current => current.some(r => r.id === resource.id) ? current.filter(r => r.id !== resource.id) : current.length >= maxReplace ? current : [...current, { id: resource.id, address: resource.address }]);
   }
   const filtered = !!(query || module !== undefined || provider || type || mode);
-  const workspaceControl = scoped ? <div className="workspace-control"><Layers3 size={13} aria-hidden="true" /><label htmlFor="workspace-switch">Workspace</label><select id="workspace-switch" className="workspace-switch" value={scoped.workspace} title="Terraform/OpenTofu workspace this tab reads. Switching runs nothing and never selects a workspace in the CLI." onChange={e => requestSwitch(contextPath(scoped.projectId, e.target.value, isExplorerView(view) ? view : 'Resources'))}>{Array.from(new Set([scoped.workspace, ...(project?.inspection?.workspaces || [])])).map(ws => <option key={ws} value={ws}>{ws}{ws === project?.inspection?.cliDefault ? ' (CLI default)' : ''}</option>)}</select></div> : navMode === 'launch' && !onHub ? <div className="workspace-control" title="Selected in this folder's CLI data directory. Hclaro reads it and never changes it. Save the project to the Hub to read other workspaces in their own tabs."><Layers3 size={13} aria-hidden="true" /><span>Workspace</span><strong>{w?.info.workspace || '—'}</strong><span className="hub-tag hub-tag-quiet">CLI</span></div> : undefined;
-  const trail = viewTrail(view).map((label, i, all) => <span className="crumb-step" key={label}><ChevronRight size={13} />{i === all.length - 1 ? <strong>{label}</strong> : <span>{label}</span>}</span>);
+  const workspaceControl = scoped ? <div className="workspace-pill"><Layers3 size={14} aria-hidden="true" /><label htmlFor="workspace-switch" className="sr-only">Workspace</label><select id="workspace-switch" className="workspace-switch mono" value={scoped.workspace} title="Terraform/OpenTofu workspace this tab reads. Switching runs nothing and never selects a workspace in the CLI." onChange={e => requestSwitch(contextPath(scoped.projectId, e.target.value, isExplorerView(view) ? view : 'Resources'))}>{Array.from(new Set([scoped.workspace, ...(project?.inspection?.workspaces || [])])).map(ws => <option key={ws} value={ws}>{ws}{ws === project?.inspection?.cliDefault ? ' (CLI default)' : ''}</option>)}</select></div> : navMode === 'launch' && !onHub ? <div className="workspace-pill" title="Selected in this folder's CLI data directory. Hclaro reads it and never changes it. Save the project to the Hub to read other workspaces in their own tabs."><Layers3 size={14} aria-hidden="true" /><span className="sr-only">Workspace</span><strong className="mono">{w?.info.workspace || '—'}</strong><span className="hub-tag hub-tag-quiet">CLI</span></div> : undefined;
   const heading = route.kind === 'launch' || route.kind === 'context' ? pageOf(view) : globalPages[route.kind];
   return <div className={`app density-${preferences.density} ${compact ? 'sidebar-compact' : ''} ${navOpen ? 'nav-open' : ''}`}>
   <a className="skip-link" href="#main-content">Skip to workspace</a>
   <Sidebar id="app-sidebar" context={navContext} compact={compact} onToggleCompact={() => changePreference({ sidebar: compact ? 'expanded' : 'compact' })} onCloseDrawer={() => {
       setNavOpen(false);
       menuButton.current?.focus();
-    }} project={sidebarProject} targets={switchTargets} workspace={workspaceControl} resourceCount={ready && !onHub ? total : undefined} operationRunning={!!runningOperation} onSelect={go} onHome={() => {
+    }} operationRunning={!!runningOperation} onSelect={go} onHome={() => {
       setNavOpen(false);
       setView('Overview');
-    }} onSwitch={requestSwitch} />
+    }} />
   {navOpen && <div className="sidebar-backdrop" aria-hidden="true" onClick={() => setNavOpen(false)} />}
   <div className="workspace-shell">
-   <header className="topbar"><Button ref={menuButton} variant="ghost" size="icon" className="nav-toggle" aria-label="Open navigation" aria-expanded={navOpen} aria-controls="app-sidebar" onClick={() => setNavOpen(true)}><Menu size={17} /></Button><nav className="breadcrumbs" aria-label="Breadcrumb"><Folder size={15} />{historyPage ? <strong>{globalPages.history.title}</strong> : comparing ? <><button className="crumb" onClick={() => navigate(globalPages.hub.path)}>Projects</button><ChevronRight size={13} /><strong>{globalPages.compare.title}</strong></> : onHub || scoped ? <><button className="crumb" onClick={() => navigate(globalPages.hub.path)}>Projects</button>{route.kind !== 'hub' && <><ChevronRight size={13} />{scoped ? <button className="crumb" onClick={() => navigate(projectPath(scoped.projectId))}>{project?.alias || opened.data?.alias || 'Project'}</button> : <strong>{projects.data?.projects?.find(p => p.id === (route.kind === 'project' ? route.projectId : ''))?.alias || 'Project'}</strong>}</>}{scoped && <><ChevronRight size={13} /><span>{scoped.workspace}</span>{trail}</>}</> : <><span>{w?.info.project || 'Workspace'}</span>{trail}</>}</nav><div className="topbar-actions">{!onHub && !noLaunch && <Button variant="ghost" size="small" aria-label="Find a resource" onClick={() => {
-            setView('Resources');
-            requestAnimationFrame(() => searchRef.current?.focus());
-          }}><Search size={14} /><span className="hide-small">Search</span></Button>}<span className="session-label"><LockKeyhole size={12} />Private local session</span><Button variant="ghost" size="icon" aria-label="Toggle light and dark theme" onClick={() => changePreference({
-            theme: document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
-          })}><Sun className="theme-to-light" size={17} /><Moon className="theme-to-dark" size={17} /></Button></div></header>
-   {!onHub && !noLaunch && <div className="context-bar"><div className="context-item"><span className="engine-glyph">{w?.info.engine === 'tofu' ? 'O' : 'T'}</span><strong>{w?.info.engine === 'tofu' ? 'OpenTofu' : w?.info.engine === 'terraform' ? 'Terraform' : 'Engine'}</strong><span className="mono">{w?.info.version || '—'}</span></div><span className="context-divider" />{scoped ? <div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{scoped.workspace}</strong>{productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}</div> : <div className="context-item"><Layers3 size={13} /><span>Workspace</span><strong>{w?.info.workspace || 'unavailable'}</strong></div>}{profileProject ? <><span className="context-divider" /><ContextSelector projectId={profileProject} selection={profile} workspaces={scoped ? project?.inspection?.workspaces : undefined} onChosen={p => {
-          // A profile that selects a workspace opens that workspace in this tab.
-          if (scoped && p?.workspace && p.workspace !== scoped.workspace) navigate(contextPath(scoped.projectId, p.workspace, isExplorerView(view) ? view : 'Resources'));
-        }} /></> : !scoped && w && <><span className="context-divider" /><div className="context-item muted" title="Execution profiles belong to Hub projects. Save this project to the Hub to use them.">Profile: none</div></>}<span className="context-divider" /><div className="context-item" title={w?.info.executionMode ? `Execution mode: ${w.info.executionMode}` : undefined}><Database size={13} /><span>Backend</span><strong>{w?.info.backend || 'unknown'}</strong>{w?.info.executionMode && <span className="muted">{w.info.executionMode}</span>}<span className={`dot ${ready ? '' : 'dot-muted'}`} /></div>{scoped && w && <span className="hub-tag hub-tag-quiet" title={hubExecution ? w.info.capabilities.canPlan ? 'Plans and applies run in this workspace only, after review and confirmation.' : w.info.capabilities.planReason : 'This session was started without Hub execution.'}>{hubExecution && w.info.capabilities.canPlan ? 'Plan & apply' : 'Read-only'}</span>}{gitBase !== undefined && <><span className="context-divider" /><GitBadge prefix={gitBase} onOpen={() => setView('Git')} /><BranchSwitcher prefix={gitBase} workspace={w?.info.workspace} notify={setNotice} /></>}<span className="context-spacer" />{scoped && <><Button variant="ghost" size="small" onClick={reread} disabled={w?.status === 'loading'} title="Read this workspace's recorded state again. No refresh is run."><RefreshCcw size={12} />Read again</Button><Button variant="ghost" size="small" onClick={() => openInNewTab(contextPath(scoped.projectId, scoped.workspace, isExplorerView(view) ? view : 'Resources'))} title="Open this workspace in a new browser tab"><ExternalLink size={12} />New tab</Button></>}{!scoped && <Button variant="ghost" size="small" onClick={() => void rereadLaunch()} disabled={rereading || w?.status === 'loading' || !!runningOperation} title="Inspect this folder and read its recorded state again, as at startup. No init, plan or refresh is run."><RefreshCcw size={12} />Read again</Button>}{!scoped && runningOperation && <button className="context-running" onClick={() => setView(runningOperation.kind === 'drift' ? 'Drift' : runningOperation.kind === 'graph' ? 'Graph' : 'Plans')}><LoaderCircle className="spin" size={12} />{runningOperation.kind === 'apply' ? 'Apply' : runningOperation.kind === 'drift' ? 'Drift scan' : runningOperation.kind === 'graph' ? 'Graph' : runningOperation.import ? 'Import plan' : 'Plan'} running · {runningOperation.stage}</button>}<span className="snapshot-time">Snapshot {timeLabel(w?.capturedAt)}</span></div>}
+   <header className="topbar" aria-label="Top bar"><Button ref={menuButton} variant="ghost" size="icon" className="nav-toggle" aria-label="Open navigation" aria-expanded={navOpen} aria-controls="app-sidebar" onClick={() => setNavOpen(true)}><Menu size={17} /></Button>
+    <div className="context-switcher"><ProjectSwitcher project={currentProject} targets={switchTargets} onSwitch={requestSwitch} />{workspaceControl}</div>
+    {scoped && productionLike(scoped.workspace, project?.alias) && <ProductionBadge />}
+    <div className="topbar-actions">
+     {!onHub && !noLaunch && <Button variant="outline" size="small" className="topbar-search" onClick={() => {
+        setView('Resources');
+        requestAnimationFrame(() => searchRef.current?.focus());
+      }}><Search size={14} aria-hidden="true" /><span className="hide-small">Search</span><kbd aria-hidden="true">⌘K</kbd></Button>}
+     {profileProject ? <ContextSelector projectId={profileProject} selection={profile} workspaces={scoped ? project?.inspection?.workspaces : undefined} onChosen={p => {
+        // A profile that selects a workspace opens that workspace in this tab.
+        if (scoped && p?.workspace && p.workspace !== scoped.workspace) navigate(contextPath(scoped.projectId, p.workspace, isExplorerView(view) ? view : 'Resources'));
+      }} /> : !scoped && !onHub && w && <span className="context-item muted" title="Execution profiles belong to Hub projects. Save this project to the Hub to use them.">Profile: none</span>}
+     {scoped ? <Button variant="ghost" size="icon" aria-label="Read state again" title="Read this workspace's recorded state again. No refresh is run." onClick={reread} disabled={w?.status === 'loading'}><RefreshCcw size={15} /></Button> : !onHub && !noLaunch && <Button variant="ghost" size="icon" aria-label="Read state again" title="Inspect this folder and read its recorded state again, as at startup. No init, plan or refresh is run." onClick={() => void rereadLaunch()} disabled={rereading || w?.status === 'loading' || !!runningOperation}><RefreshCcw size={15} /></Button>}
+    </div>
+   </header>
    <main id="main-content" tabIndex={-1} className="main-content">
     <PageHeader title={heading.title} chip={heading.chip} />
     {!onHub && (!scoped || hubExecution) && isImportTab(view) && <ImportDiscoveryTabs view={view} onChange={setView} />}
@@ -363,7 +367,7 @@ function Workbench({
         }} /> : view === 'Operations' ? <OperationsView openPlan={id => {
           setPlanId(id);
           setView('Plans');
-        }} /> : view === 'Git' && gitBase !== undefined ? <GitView projectId={scoped?.projectId} editor={preferences.editor} notify={setNotice} /> : view === 'Tools' && !scoped ? projects.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Looking up this folder in the Hub…</p></div> : <LaunchTools workspace={launchToolsWorkspace} registered={!!launchProject} onOpen={openLaunchTools} onOpenNewTab={() => launchProject && openInNewTab(contextPath(launchProject.id, launchToolsWorkspace, 'Tools'))} onSave={openLaunchTools} /> : view === 'Tools' && scoped ? opened.data ? <ToolsView context={opened.data} /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
+        }} /> : view === 'Git' && gitBase !== undefined ? <GitView projectId={scoped?.projectId} workspace={w?.info.workspace} editor={preferences.editor} notify={setNotice} /> : view === 'Tools' && !scoped ? projects.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Looking up this folder in the Hub…</p></div> : <LaunchTools workspace={launchToolsWorkspace} registered={!!launchProject} onOpen={openLaunchTools} onOpenNewTab={() => launchProject && openInNewTab(contextPath(launchProject.id, launchToolsWorkspace, 'Tools'))} onSave={openLaunchTools} /> : view === 'Tools' && scoped ? opened.data ? <ToolsView context={opened.data} /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
           void opened.refetch();
         }} retryLabel="Try again" /> : <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Opening this workspace…</p></div> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
           void opened.refetch();
@@ -412,7 +416,6 @@ function Workbench({
      
     </>}
    </main>
-   <footer className="statusbar"><span><ShieldCheck size={12} />{!onHub && w?.info.capabilities.canApplySavedPlan ? 'Changes only from a reviewed, confirmed plan' : 'Read-only · No infrastructure changes'}</span><span>{onHub ? 'Workspace Hub' : ready ? `${total} instances in state` : 'Waiting for workspace'}<span className="footer-divider">/</span>127.0.0.1</span></footer>
   </div>
   {pendingSwitch && <ConfirmSwitch items={unsaved} onCancel={() => setPendingSwitch(undefined)} onConfirm={() => {
       const path = pendingSwitch;

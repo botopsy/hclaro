@@ -6,7 +6,7 @@ import golden from '../../../fixtures/discovery/scan.golden.json';
 import App from '../App';
 import { contextPath, isExplorerView, parseRoute, workbenchKey } from '../router';
 import type { DiscoveryOptions, Project, ProjectList, Resource, Workspace } from '../types';
-import { globalPages, importDiscoveryTabs, isActive, navItem, navItems, navState, pages, viewTrail, type NavContext, type View } from './config';
+import { globalPages, importDiscoveryTabs, isActive, navItem, navItems, navState, pages, type NavContext, type View } from './config';
 
 const hubId = 'a'.repeat(32);
 const otherId = 'b'.repeat(32);
@@ -154,9 +154,7 @@ describe('Navigation model', () => {
     expect(pages.Discovery.chip).toBe('Read-only cloud reads');
   });
 
-  it('names pages for breadcrumbs and keys workbenches per context', () => {
-    expect(viewTrail('Discovery')).toEqual(['Import & discovery', 'Discover cloud resources']);
-    expect(viewTrail('Drift')).toEqual(['Drift detection']);
+  it('keys workbenches per context', () => {
     expect(importDiscoveryTabs.map(t => t.view)).toEqual(['Import', 'Discovery']);
     expect(workbenchKey(parseRoute('/compare'))).toBe(workbenchKey(parseRoute('/')));
     expect(workbenchKey(parseRoute(`/projects/${hubId}/workspaces/dev/git`))).toBe(`${hubId}/dev`);
@@ -164,20 +162,28 @@ describe('Navigation model', () => {
 });
 
 describe('Sidebar', () => {
-  it('renders grouped navigation with one current page and the project context on top', async () => {
+  it('renders grouped navigation with one current page and the project context in the top bar', async () => {
     app();
     expect(await within(nav()).findByRole('group', { name: 'Plan & analyze' })).toBeInTheDocument();
     expect(within(nav()).getByRole('group', { name: 'Manage' })).toBeInTheDocument();
     expect(within(within(nav()).getByRole('group', { name: 'Project' })).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Overview', 'Resources', 'Modules', 'Providers']);
-    await waitFor(() => expect(navButton('Resources')).toHaveTextContent('1'));
     expect(navButton('Resources')).toHaveAttribute('aria-current', 'page');
     expect(within(nav()).getAllByRole('button').filter(b => b.getAttribute('aria-current') === 'page')).toHaveLength(1);
-    const sidebar = screen.getByRole('complementary', { name: 'Application navigation' });
-    expect(await within(sidebar).findByText('launch-stack')).toBeInTheDocument();
-    expect(within(sidebar).getByText('Opened from terminal')).toBeInTheDocument();
+    const topbar = screen.getByRole('banner', { name: 'Top bar' });
+    expect(await within(topbar).findByText('launch-stack')).toBeInTheDocument();
     // The terminal project's workspace is shown, not switchable: Hclaro never selects one.
-    expect(within(sidebar).getByText('demo')).toBeInTheDocument();
-    expect(within(sidebar).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(await within(topbar).findByText('demo')).toBeInTheDocument();
+    expect(within(topbar).queryByLabelText('Workspace', { selector: 'select' })).not.toBeInTheDocument();
+    expect(within(topbar).getByRole('button', { name: /Search/ })).toBeInTheDocument();
+    expect(within(topbar).getByRole('button', { name: 'Read state again' })).toBeInTheDocument();
+    // The sidebar holds navigation only: no project card, counts or footer text (§2.2, §2.3).
+    const sidebar = screen.getByRole('complementary', { name: 'Application navigation' });
+    expect(within(sidebar).queryByText('launch-stack')).not.toBeInTheDocument();
+    expect(navButton('Resources')).toHaveTextContent(/^Resources$/);
+    expect(within(nav()).getByRole('link', { name: /Help/ })).toHaveAttribute('target', '_blank');
+    for (const gone of ['Local by design', 'Private local session', /Snapshot/, /instances in state/, '127.0.0.1', 'Plan & apply']) expect(screen.queryByText(gone)).not.toBeInTheDocument();
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument();
     expect(mutations()).toEqual([]);
   });
   it('switches projects from the switcher without running anything', async () => {
@@ -199,12 +205,12 @@ describe('Sidebar', () => {
     // Only the workspace read is opened; no plan, init, select or apply is requested.
     expect(mutations().map(c => c.url)).toEqual(['/api/v1/contexts']);
   });
-  it('switches the Terraform workspace of a Hub project from the sidebar, separate from the project', async () => {
+  it('switches the Terraform workspace of a Hub project from the top bar, separate from the project', async () => {
     app(`/projects/${hubId}/workspaces/dev/overview`);
     const user = userEvent.setup();
     const select = await screen.findByLabelText('Workspace');
-    expect(screen.getByRole('complementary', { name: 'Application navigation' })).toContainElement(select);
-    expect(await screen.findByText('Hub project')).toBeInTheDocument();
+    expect(screen.getByRole('banner', { name: 'Top bar' })).toContainElement(select);
+    expect(await within(screen.getByRole('banner', { name: 'Top bar' })).findByText('network')).toBeInTheDocument();
     await user.selectOptions(select, 'prod');
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/prod/overview`);
     expect(await screen.findByText('Production-like name')).toBeInTheDocument();
@@ -250,7 +256,6 @@ describe('Sidebar', () => {
     expect(await screen.findByText('Read-only cloud reads')).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: /AWS context not verified/ })).toBeInTheDocument();
     expect(navButton('Import & discovery')).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Import & discoveryDiscover cloud resources');
     // The entry reopens the workflow last used in this tab.
     await user.click(navButton('Plans'));
     await user.click(navButton('Import & discovery'));
@@ -261,7 +266,7 @@ describe('Sidebar', () => {
     app(`/projects/${hubId}/workspaces/dev/resources`);
     const user = userEvent.setup();
     const utilities = within(nav()).getByRole('group', { name: 'Project utilities' });
-    expect(within(utilities).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Git', 'Tools', 'Settings']);
+    expect(within(utilities).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Git', 'Tools', 'Settings', 'Collapse sidebar']);
     await user.click(within(utilities).getByRole('button', { name: 'Tools' }));
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/dev/tools`);
     expect(await screen.findByRole('heading', { name: 'Tools', level: 1 })).toBeInTheDocument();
@@ -302,8 +307,8 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
     await user.keyboard('{Enter}');
     expect(await screen.findByRole('heading', { name: 'Drift detection' })).toBeInTheDocument();
-    // The project context stays reachable from the compact rail.
-    expect(screen.getByRole('button', { name: /^Project launch-stack\. Switch project/ })).toBeInTheDocument();
+    // Collapse is the last row of the sidebar.
+    expect(within(nav()).getAllByRole('button').at(-1)).toBe(screen.getByRole('button', { name: 'Expand sidebar' }));
     view.unmount();
     app();
     const expand = await screen.findByRole('button', { name: 'Expand sidebar' });
@@ -311,14 +316,15 @@ describe('Sidebar', () => {
     expect(JSON.parse(localStorage.getItem('hclaro.preferences')!).sidebar).toBe('expanded');
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
-  it('shows the workspace selector inside the compact switcher of a Hub workspace', async () => {
+  it('keeps the project and workspace switchers in the top bar when the sidebar is compact', async () => {
     desktop();
     localStorage.setItem('hclaro.preferences', JSON.stringify({ sidebar: 'compact' }));
     app(`/projects/${hubId}/workspaces/dev/resources`);
     const user = userEvent.setup();
-    expect(screen.queryByLabelText('Workspace')).not.toBeInTheDocument();
-    await user.click(await screen.findByRole('button', { name: /Switch project/ }));
-    await user.selectOptions(within(screen.getByRole('group', { name: 'Switch project' })).getByLabelText('Workspace'), 'prod');
+    const topbar = screen.getByRole('banner', { name: 'Top bar' });
+    expect(within(topbar).getByRole('button', { name: /Switch project/ })).toBeInTheDocument();
+    await within(topbar).findByRole('option', { name: 'prod' });
+    await user.selectOptions(within(topbar).getByLabelText('Workspace'), 'prod');
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/prod/resources`);
   });
   it('uses a dismissible drawer on narrow screens', async () => {

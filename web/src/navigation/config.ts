@@ -71,7 +71,7 @@ type NavTarget = {
   route: 'compare' | 'history';
 };
 
-type NavBadge = 'resources' | 'operations';
+type NavBadge = 'operations';
 
 export type NavItem = {
   id: string;
@@ -86,7 +86,7 @@ export type NavItem = {
 
 export const navItems: readonly NavItem[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'project', target: { kind: 'view', view: 'Overview' } },
-  { id: 'resources', label: 'Resources', icon: Layers3, group: 'project', target: { kind: 'view', view: 'Resources' }, badge: 'resources' },
+  { id: 'resources', label: 'Resources', icon: Layers3, group: 'project', target: { kind: 'view', view: 'Resources' } },
   { id: 'modules', label: 'Modules', icon: FolderTree, group: 'project', target: { kind: 'view', view: 'Modules' } },
   { id: 'providers', label: 'Providers', icon: Network, group: 'project', target: { kind: 'view', view: 'Providers' } },
   { id: 'plans', label: 'Plans', icon: Workflow, group: 'analyze', target: { kind: 'view', view: 'Plans' } },
@@ -176,12 +176,4 @@ export function navItem(id: string) {
   const item = navItems.find(i => i.id === id);
   if (!item) throw new Error(`Unknown navigation item ${id}`);
   return item;
-}
-
-// Page labels for breadcrumbs: the navigation label, with the Import & discovery parent.
-export function viewTrail(view: View): string[] {
-  const tab = importDiscoveryTabs.find(t => t.view === view);
-  if (tab) return ['Import & discovery', tab.label];
-  const item = [...navItems, ...aiNavItems].find(i => i.target.kind === 'view' && i.target.view === view);
-  return [item?.label || view];
 }

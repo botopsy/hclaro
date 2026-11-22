@@ -83,7 +83,7 @@ function SwitchDialog({ prefix, target, workspace, notify, onClose }: { prefix: 
     mutationFn: () => send<{ git: GitContext }>('POST', `${prefix}git/switch`, { branch: target, expectedBranch: p!.from.branch ?? '', expectedCommit: p!.from.commit ?? '' }),
     onSuccess: () => {
       for (const key of sourceQueries) void client.invalidateQueries({ queryKey: [key] });
-      notify(`Switched to ${target}. No Terraform/OpenTofu command ran; plans made before the switch must pass their checks again. Use Read again to re-inspect backend settings.`);
+      notify(`Switched to ${target}. No Terraform/OpenTofu command ran; plans made before the switch must pass their checks again. Use Read state again to re-inspect backend settings.`);
       onClose();
     },
     onSettled: () => void client.invalidateQueries({ queryKey: ['git-switch-preview', prefix, target] })

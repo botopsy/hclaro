@@ -234,35 +234,6 @@
   display: inline-flex;
 }
 
-.statusbar {
-  border-top: 1px solid var(--border-soft);
-  height: 30px;
-  color: var(--subtle);
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  margin-top: auto;
-  padding: 0 32px;
-  font-size: 11px;
-  display: flex;
-}
-
-.statusbar > span {
-  white-space: nowrap;
-  align-items: center;
-  gap: 6px;
-  display: flex;
-}
-
-.statusbar > span:first-child > svg {
-  color: var(--accent-text);
-}
-
-.footer-divider {
-  color: var(--border);
-  margin: 0 8px;
-}
-
 .toast {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);

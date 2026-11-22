@@ -24,12 +24,6 @@
   font-weight: 600;
 }
 
-.crumb-step {
-  align-items: center;
-  gap: 11px;
-  display: flex;
-}
-
 .switch-losses {
   margin: 0;
   padding-left: 20px;
@@ -48,6 +42,7 @@
   background: var(--subtle);
 }
 
+/* Redesign §2: the top bar stays put and only the content area scrolls. */
 .workspace-shell {
   flex-direction: column;
   width: calc(100% - var(--sidebar-width));
@@ -58,42 +53,90 @@
 
 .topbar {
   border-bottom: 1px solid var(--border-soft);
-  justify-content: space-between;
+  flex: none;
   align-items: center;
-  height: 66px;
+  gap: 10px;
+  height: 56px;
   padding: 0 32px;
   display: flex;
 }
 
-.breadcrumbs {
-  color: var(--muted);
+/* Project and workspace pills in one rounded container (§2.1). */
+.context-switcher {
+  border: 1px solid var(--border);
+  border-radius: 10px;
   align-items: center;
-  gap: 11px;
-  font-size: 14px;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px;
   display: flex;
 }
 
-.breadcrumbs > svg {
-  color: var(--subtle);
+.project-switcher {
+  min-width: 0;
+  position: relative;
 }
 
-.breadcrumbs strong {
+.project-pill, .workspace-pill {
   color: var(--text);
-  font-weight: 450;
+  white-space: nowrap;
+  border-radius: 7px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 260px;
+  height: 28px;
+  padding: 0 9px;
+  font-size: 13px;
+  display: flex;
+}
+
+.project-pill {
+  background: var(--surface-hover);
+}
+
+.project-pill strong, .workspace-pill strong {
+  text-overflow: ellipsis;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.project-pill > svg, .workspace-pill > svg {
+  color: var(--muted);
+  flex: none;
+}
+
+.project-pill:hover, .project-pill[aria-expanded="true"] {
+  background: var(--surface-selected);
+}
+
+.status-missing > svg:first-child {
+  color: var(--update);
+}
+
+.workspace-pill strong {
+  font-weight: 500;
+}
+
+.workspace-pill .workspace-switch {
+  color: var(--text);
+  background: none;
+  border: 0;
+  min-width: 0;
+  max-width: 200px;
+  padding: 0 2px;
+  font-size: 13px;
 }
 
 .topbar-actions {
   align-items: center;
-  gap: 17px;
+  gap: 10px;
+  margin-left: auto;
   display: flex;
 }
 
-.session-label {
-  color: var(--subtle);
-  align-items: center;
-  gap: 5px;
-  font-size: 13px;
-  display: flex;
+.topbar-search kbd {
+  margin-left: 4px;
 }
 
 .button {
@@ -153,19 +196,6 @@
   font-size: 13px;
 }
 
-.context-bar {
-  border-bottom: 1px solid var(--border-soft);
-  min-height: 45px;
-  color: var(--muted);
-  background: var(--inset);
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 18px;
-  padding: 6px 32px;
-  font-size: 13px;
-  display: flex;
-}
-
 .context-item {
   white-space: nowrap;
   align-items: center;
@@ -182,42 +212,16 @@
   color: var(--subtle);
 }
 
-.context-item .mono {
-  font-size: 13px;
-}
-
-.engine-glyph {
-  color: var(--read);
-  background: color-mix(in srgb,var(--read),transparent 89%);
-  text-align: center;
-  border-radius: 4px;
-  width: 18px;
-  height: 18px;
-  font-size: 13px;
-  font-weight: 750;
-  line-height: 18px;
-}
-
-.context-divider {
-  background: var(--border);
-  width: 1px;
-  height: 12px;
-}
-
 .context-spacer {
   flex: 1;
-}
-
-.snapshot-time {
-  color: var(--subtle);
-  white-space: nowrap;
-  font-size: 12px;
 }
 
 .main-content {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   padding: 35px 32px 24px;
+  overflow-y: auto;
 }
 
 .eyebrow {
