@@ -45,7 +45,7 @@ function stub() {
     const method = init.method || 'GET';
     calls.push({ url, method });
     const path = url.replace('/api/v1/', '').split('?')[0];
-    if (path === 'session') return Response.json({ csrfToken: 'c'.repeat(64) });
+    if (path === 'session') return Response.json({ csrfToken: 'c'.repeat(64), version: '0.1.0-beta.5' });
     if (path === 'projects') return Response.json(listed);
     if (path === 'contexts') return Response.json(snapshot(JSON.parse(String(init.body)).workspace, true).context);
     const hub = path.match(/^contexts\/([0-9a-f]{32})(\/resources)?/);
@@ -182,7 +182,7 @@ describe('Sidebar', () => {
     const sidebar = screen.getByRole('complementary', { name: 'Application navigation' });
     expect(within(sidebar).queryByText('launch-stack')).not.toBeInTheDocument();
     expect(navButton('Resources')).toHaveTextContent(/^Resources$/);
-    expect(within(nav()).getByRole('link', { name: /Help/ })).toHaveAttribute('target', '_blank');
+    expect(within(nav()).getByRole('button', { name: /^Help/ })).toHaveAttribute('aria-haspopup', 'menu');
     for (const gone of ['Local by design', 'Private local session', /Snapshot/, /instances in state/, '127.0.0.1', 'Plan & apply']) expect(screen.queryByText(gone)).not.toBeInTheDocument();
     expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument();
@@ -293,7 +293,7 @@ describe('Sidebar', () => {
     app(`/projects/${hubId}/workspaces/dev/resources`);
     const user = userEvent.setup();
     const utilities = within(nav()).getByRole('group', { name: 'Project utilities' });
-    expect(within(utilities).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Git', 'Tools', 'Settings', 'Collapse sidebar']);
+    expect(within(utilities).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Git', 'Tools', 'Settings', expect.stringMatching(/^Help/), 'Collapse sidebar']);
     await user.click(within(utilities).getByRole('button', { name: 'Tools' }));
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/dev/tools`);
     expect(await screen.findByRole('heading', { name: 'Tools', level: 1 })).toBeInTheDocument();
@@ -342,6 +342,34 @@ describe('Sidebar', () => {
     await user.click(expand);
     expect(JSON.parse(localStorage.getItem('hclaro.preferences')!).sidebar).toBe('expanded');
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+  it('opens the Help menu with browser links and clears the unseen release dot', async () => {
+    desktop();
+    localStorage.setItem('hclaro.preferences', JSON.stringify({ sidebar: 'compact' }));
+    app();
+    const user = userEvent.setup();
+    const help = await within(nav()).findByRole('button', { name: 'Help, new release notes' });
+    expect(help.querySelector('.unseen-dot')).not.toBeNull();
+    await user.click(help);
+    const menu = screen.getByRole('menu', { name: /Help/ });
+    const links = within(menu).getAllByRole('menuitem');
+    expect(links.map(l => l.textContent)).toEqual(['Documentation', "What's newNew", 'Report a bug', 'Star on GitHub']);
+    for (const link of links) {
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    }
+    expect(links[1]).toHaveAttribute('href', 'https://github.com/botopsy/hclaro/releases/tag/v0.1.0-beta.5');
+    expect(links[0]).toHaveFocus();
+    expect(within(menu).getByText(/Bug reports never include state, plans or values/)).toBeInTheDocument();
+    await user.keyboard('{ArrowDown}');
+    expect(links[1]).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    const seen = within(nav()).getByRole('button', { name: 'Help' });
+    expect(seen).toHaveFocus();
+    expect(seen.querySelector('.unseen-dot')).toBeNull();
+    expect(localStorage.getItem('hclaro.seenVersion')).toBe('0.1.0-beta.5');
+    expect(mutations()).toEqual([]);
   });
   it('keeps the project and workspace switchers in the top bar when the sidebar is compact', async () => {
     desktop();

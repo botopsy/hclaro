@@ -103,7 +103,7 @@ async function failure(response: Response): Promise<ApiError> {
   } catch {/* Non-JSON errors use the generic message. */}
   return new ApiError(code, reason || messages[code] || 'Unable to reach the local Hclaro server. Check that it is still running, then retry.', fields);
 }
-type Session = { csrfToken: string; capabilities?: { scopedExecution?: boolean } };
+type Session = { csrfToken: string; version?: string; capabilities?: { scopedExecution?: boolean } };
 // The one /session read: it serves the capabilities query and the CSRF header of mutations.
 // Concurrent callers share the request in flight; nothing is kept after it settles.
 let pendingSession: Promise<Session> | undefined;
