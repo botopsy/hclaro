@@ -54,63 +54,92 @@ describe('Drift', () => {
     for (const [label, count] of [['Changed', '2'], ['Missing remotely', '1'], ['Cannot verify', '1']]) {
       expect(within(counts).getByRole('button', { name: new RegExp(`${label}\\s*${count}`) })).toBeInTheDocument();
     }
-    const list = screen.getByRole('region', { name: 'Drifted resources' });
-    expect(within(list).getByText('aws_security_group.web')).toBeInTheDocument();
+    const list = screen.getByRole('table', { name: 'Drifted resources' });
+    expect(within(list).getByRole('button', { name: /aws_security_group\.web/ })).toBeInTheDocument();
     expect(within(list).getByText('Not found during scan')).toBeInTheDocument();
+    // Drift chips carry a symbol and a word.
+    expect(within(list).getAllByText('changed').length).toBeGreaterThan(0);
+    expect(within(list).getByText('missing')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Check again/ })).toBeEnabled();
     expect(screen.getByText(/data source record/)).toBeInTheDocument();
     expect(screen.queryByText('No drift found')).not.toBeInTheDocument();
-    expect(screen.getByText(/The last 10 scan results are kept in memory for up to 12 hours/)).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(canary);
   });
 
-  it('filters, groups by provider and module, and searches', async () => {
+  it('filters, groups by module or none, and searches', async () => {
     view();
     const user = userEvent.setup();
-    const list = await screen.findByRole('region', { name: 'Drifted resources' });
-    expect(within(list).getByText('module.compute')).toBeInTheDocument();
+    const list = await screen.findByRole('table', { name: 'Drifted resources' });
+    expect(within(list).getByRole('button', { name: /module\.compute/, expanded: true })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Missing remotely/ }));
-    expect(within(list).getAllByRole('row')).toHaveLength(2);
-    expect(within(list).getByText('module.compute.aws_instance.main[3]')).toBeInTheDocument();
+    // Header, one group row and the missing instance.
+    expect(within(list).getAllByRole('row')).toHaveLength(3);
+    expect(within(list).getByRole('button', { name: /module\.compute\.aws_instance\.main\[3\]/ })).toBeInTheDocument();
+    expect(screen.getByText('1 shown')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Reset' }));
-    await user.selectOptions(screen.getByLabelText('Group by'), 'provider');
-    expect(within(list).getByText('aws')).toBeInTheDocument();
+    expect([...(screen.getByLabelText('Group by') as HTMLSelectElement).options].map(o => o.text)).toEqual(['Module', 'None']);
+    await user.selectOptions(screen.getByLabelText('Group by'), 'none');
     await user.type(screen.getByLabelText('Filter drifted resources'), 'security');
     expect(within(list).getAllByRole('row')).toHaveLength(2);
+    await user.type(screen.getByLabelText('Filter drifted resources'), 'zzz');
+    expect(screen.getByText('No drift matches “securityzzz”.')).toBeInTheDocument();
   });
 
-  it('shows recorded and observed values with redaction and deep-links the inspector', async () => {
+  it('opens a drawer with recorded and reported values, redaction and next steps', async () => {
     const { openResource, runPlan } = view();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: /aws_security_group\.web/ }));
-    const drawer = await screen.findByRole('complementary', { name: 'Drift details' });
-    await within(drawer).findByText('Recorded in state');
+    const row = await screen.findByRole('button', { name: /aws_security_group\.web/ });
+    await user.click(row);
+    let drawer = await screen.findByRole('complementary', { name: 'Drift details' });
+    await within(drawer).findByText('What changed');
+    expect(row.closest('tr')).toHaveClass('active');
+    expect(within(drawer).getByRole('heading', { name: 'aws_security_group.web' })).toBeInTheDocument();
     expect(within(drawer).getByRole('columnheader', { name: 'Recorded in state' })).toBeInTheDocument();
-    expect(within(drawer).getByRole('columnheader', { name: 'Observed during scan' })).toBeInTheDocument();
+    expect(within(drawer).getByRole('columnheader', { name: 'Provider reports now' })).toBeInTheDocument();
     expect(within(drawer).getAllByText('0.0.0.0/0').length).toBeGreaterThan(0);
     expect(within(drawer).getAllByText('redacted').length).toBeGreaterThan(0);
-    expect(within(drawer).getByText('Not in the current snapshot')).toBeInTheDocument();
+    expect(within(drawer).getByText('Nothing here changes state or infrastructure.')).toBeInTheDocument();
+    // Not in the current snapshot: no resource details to open.
+    expect(within(drawer).getByRole('button', { name: 'Resource details' })).toBeDisabled();
     expect(document.body).not.toHaveTextContent('AKIAABCDEFGHIJKLMNOP');
-    await user.click(screen.getByRole('button', { name: 'Open aws_s3_bucket.artifacts in the resource inspector' }));
+    expect(document.body).not.toHaveTextContent(canary);
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: /^aws_s3_bucket\.artifacts/ }));
+    drawer = await screen.findByRole('complementary', { name: 'Drift details' });
+    await user.click(await within(drawer).findByRole('button', { name: 'Resource details' }));
     expect(openResource).toHaveBeenCalledWith(scan.resources.find(r => r.address === 'aws_s3_bucket.artifacts')!.resourceId);
+    await user.click(within(drawer).getByRole('button', { name: /Run plan/ }));
+    expect(runPlan).toHaveBeenCalledTimes(1);
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: /^module\.compute\.aws_instance\.main\[3\]/ }));
+    drawer = await screen.findByRole('complementary', { name: 'Drift details' });
+    expect((await within(drawer).findByText('Not found by the provider')).parentElement).toHaveTextContent('with ID i-0demo3');
+    await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: /^module\.network\.aws_subnet\.main\[0\]/ }));
-    expect(await screen.findByText('cannot verify')).toBeInTheDocument();
+    drawer = await screen.findByRole('complementary', { name: 'Drift details' });
+    expect((await within(drawer).findAllByText('cannot verify')).length).toBeGreaterThan(0);
+    await user.keyboard('{Escape}');
     // A normal plan is a separate, explicit action.
     await user.click(screen.getByRole('button', { name: /Run a normal plan/ }));
-    expect(runPlan).toHaveBeenCalled();
+    expect(runPlan).toHaveBeenCalledTimes(2);
     expect(posts).toHaveLength(0);
-  });
+  }, 15000);
 
   it('asks before scanning and sends only the reviewed request', async () => {
     serve(url => url.endsWith('/drift-scans') ? Response.json({ scans: [] }) : undefined, (url, init) => init?.method === 'POST' && url.endsWith('/drift-scans') ? Response.json({ operation: { ...finished, status: 'running' }, scan: { ...scan, status: 'running' } }, { status: 202 }) : undefined);
     view();
     const user = userEvent.setup();
     expect(await screen.findByText('No drift scans yet')).toBeInTheDocument();
-    await user.click(screen.getAllByRole('button', { name: /Check drift/ })[0]);
+    expect(screen.getByText(/The last 10 scan results are kept in memory for up to 12 hours/)).toBeInTheDocument();
+    // One primary button: the empty state's.
+    expect(screen.getAllByRole('button', { name: /Check drift/ })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: /Check drift/ }));
     const dialog = screen.getByRole('dialog', { name: 'Check drift' });
     expect(dialog).toHaveTextContent('plan -refresh-only');
     expect(dialog).toHaveTextContent('Queries provider APIs');
     expect(dialog).toHaveTextContent('May lock the state');
     expect(dialog).toHaveTextContent('Writes no state');
+    expect(within(dialog).getByRole('region', { name: 'This scan will use' })).toHaveTextContent('platform-infra');
     expect(posts).toHaveLength(0);
     await user.click(within(dialog).getByLabelText('prod.tfvars'));
     await user.click(within(dialog).getByRole('button', { name: 'Check drift' }));
@@ -122,6 +151,7 @@ describe('Drift', () => {
     serve(url => url.endsWith('/drift-scans') ? Response.json({ scans: [clean] }) : url.endsWith(`/drift-scans/${scan.id}`) ? Response.json(clean) : undefined);
     view();
     expect(await screen.findByText('No drift found')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Check again/ })).toBeInTheDocument();
     cleanup();
     // The same counts from a scan that failed on permissions are never "no drift".
     const denied: DriftScan = { ...clean, status: 'failed', outcome: undefined, exhaustive: false, diagnostic: { code: 'credentials', message: 'The engine could not authenticate with the backend or a provider.' }, engineDiagnostics: [{ severity: 'error', summary: 'No valid credential sources found', detail: '[redacted]' }] };
@@ -131,6 +161,15 @@ describe('Drift', () => {
     expect(screen.getByText(/not the same as no drift/)).toBeInTheDocument();
     expect(screen.queryByText('No drift found')).not.toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Filter by classification' })).not.toBeInTheDocument();
+    cleanup();
+    // With its operation still listed, the shared failed state names the cause and offers the log.
+    const failedOp: Operation = { ...finished, status: 'failed', exitCode: 1, diagnostic: { code: 'credentials', message: 'm' } };
+    serve(url => url.endsWith('/drift-scans') ? Response.json({ scans: [denied] }) : url.endsWith(`/drift-scans/${scan.id}`) ? Response.json(denied) : url.endsWith('/operations') ? Response.json({ operations: [failedOp] }) : url.includes('/events') ? new Response(`event: status\ndata: ${JSON.stringify(failedOp)}\n\nevent: end\ndata: {}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } }) : undefined);
+    view();
+    expect(await screen.findByRole('heading', { name: 'Credentials missing or expired' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View log' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Try again/ })).toBeInTheDocument();
+    expect(screen.getByText(/not the same as no drift/)).toBeInTheDocument();
   });
 
   it('labels a partial scan and a stale scan truthfully', async () => {
@@ -145,7 +184,7 @@ describe('Drift', () => {
     view();
     expect(await screen.findByText(/This scan no longer matches/)).toBeInTheDocument();
     expect(screen.getByText(/now reads workspace prod/)).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Drifted resources' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Drifted resources' })).not.toBeInTheDocument();
   });
 
   it('explains an unsupported workspace and disables the scan', async () => {
@@ -153,6 +192,6 @@ describe('Drift', () => {
     view();
     expect(await screen.findByText(/Drift scans are unavailable here/)).toBeInTheDocument();
     expect(screen.getByText(/runs plans remotely/)).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /Check drift/ })[0]).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Check drift/ })).toBeDisabled();
   });
 });
