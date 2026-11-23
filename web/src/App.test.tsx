@@ -317,6 +317,21 @@ describe('Resource explorer', () => {
       name: /apply/i
     })).not.toBeInTheDocument();
   });
+  it('opens Resources grouped by module from a module card, and by type from a provider card', async () => {
+    app();
+    const user = userEvent.setup();
+    await screen.findByRole('table', { name: 'Resources' });
+    await user.click(screen.getByRole('button', { name: 'Modules' }));
+    await user.click(within(await screen.findByRole('article', { name: 'network' })).getByRole('button', { name: 'View resources →' }));
+    expect(await screen.findByLabelText('Search resources')).toHaveValue('module.network.');
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('query=module.network.'), expect.anything()));
+    expect(within(screen.getByRole('group', { name: 'Group by' })).getByRole('button', { name: 'Module' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Providers' }));
+    await user.click(within(await screen.findByRole('article', { name: 'aws' })).getByRole('button', { name: 'View resources →' }));
+    expect(await screen.findByLabelText('Search resources')).toHaveValue('');
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('provider=registry.terraform.io'), expect.anything()));
+    expect(within(screen.getByRole('group', { name: 'Group by' })).getByRole('button', { name: 'Type' })).toHaveAttribute('aria-pressed', 'true');
+  });
 });
 it('renders hostile JSON as text', () => {
   render(<JsonTree value={{
