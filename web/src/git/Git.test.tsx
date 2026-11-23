@@ -183,7 +183,7 @@ describe('Resource source links', () => {
     }));
     app(`/projects/${id}/workspaces/dev/resources`);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: /logs.*aws_s3_bucket/ }));
+    await user.click(await screen.findByRole('button', { name: 'aws_s3_bucket.logs' }));
     const inspector = await screen.findByLabelText('Resource inspector');
     expect(await within(inspector).findByText('network/main.tf:12')).toBeInTheDocument();
     expect(within(inspector).getByText('Best effort')).toBeInTheDocument();

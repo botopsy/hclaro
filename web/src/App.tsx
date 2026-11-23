@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownAZ, ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp,    FolderTree, Layers3, LoaderCircle,  Menu,  Network, Search,  SlidersHorizontal,  X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, FolderTree, Layers3, LoaderCircle, Menu, Network, Search, X } from 'lucide-react';
 import { ApiError, api, openInNewTab, send } from './api';
-import type { ReplaceTarget, Resource, ResourcePage } from './types';
+import type { DriftScan, ReplaceTarget, Resource, ResourcePage } from './types';
 import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
 import { AddProjectDialog, HubView, ProjectView } from './hub/HubView';
 import { Button } from './components/ui/button';
@@ -32,7 +32,9 @@ import type { DiscoveryPrefill } from './types';
 import { useWorkbenchContext } from './workbench/useWorkbenchContext';
 import { useMedia, usePreferences } from './workbench/preferences';
 import { ErrorState } from './components/ErrorState';
-import { Inspector, ModuleTree, ResourceRow } from './workbench/Explorer';
+import { Inspector, ResourceTable, driftOf, targetFlags, type GroupBy } from './workbench/Explorer';
+import { Segmented } from './components/Segmented';
+import { EmptyState } from './components/EmptyState';
 import { Overview } from './workbench/Overview';
 import { SettingsPanel } from './workbench/SettingsPanel';
 import { PageHeader } from './components/PageHeader';
@@ -111,11 +113,12 @@ function Workbench({
   }
   // A deep link (for example from a comparison) may name the resource to inspect.
   const [selected, setSelected] = useState<string | undefined>(() => scoped ? takeLinkedResource() : undefined);
-  const [treeVisible, setTreeVisible] = useState(true);
+  const [groupBy, setGroupBy] = useState<GroupBy>(() => preferences.grouping === 'module' ? 'module' : 'none');
   const [notice, setNotice] = useState('');
   const [planId, setPlanId] = useState<string>();
-  // Managed instances chosen for a replacement plan, kept across pages and filters.
-  const [replaceSelection, setReplaceSelection] = useState<ReplaceTarget[]>([]);
+  // Rows checked in Resources, kept across pages and filters. Only the managed ones can be
+  // planned for replacement.
+  const [selection, setSelection] = useState<ReadonlyMap<string, Resource>>(new Map());
   const [pendingReplace, setPendingReplace] = useState<ReplaceTarget[]>();
   // Set when Drift asks for a separate normal plan: Plans opens its preflight once.
   const [planRequested, setPlanRequested] = useState(false);
@@ -136,7 +139,7 @@ function Workbench({
   const [selectionContext, setSelectionContext] = useState(contextId);
   if (selectionContext !== contextId) {
     setSelectionContext(contextId);
-    setReplaceSelection([]);
+    setSelection(new Map());
     setPendingReplace(undefined);
   }
   // Git routes of this tab's project: the launch project's at the API root, a Hub project's by ID.
@@ -155,7 +158,7 @@ function Workbench({
   const targets = switchTargets(registry, launchRoot, { launch: route.kind === 'launch' && !noLaunch, hubId: currentHubId });
   // Work kept only in this tab's workbench, lost when another workbench takes over the tab.
   const unsaved = [
-    ...(replaceSelection.length ? [`${replaceSelection.length} instance${replaceSelection.length === 1 ? '' : 's'} selected for replacement`] : []),
+    ...(selection.size ? [`${selection.size} resource${selection.size === 1 ? '' : 's'} selected`] : []),
     ...(pendingReplace ? ['A replacement plan that was not started'] : []),
     ...(importPrefill ? ['An import prepared from cloud discovery'] : [])
   ];
@@ -250,6 +253,13 @@ function Workbench({
     queryFn: () => api<Resource>(scopedPath(readScope!, `resources/${selected}`)),
     enabled: !!selected && !!readScope
   });
+  // The DRIFT column: the latest scan of this workspace, shared with Drift detection's cache.
+  const driftScans = useQuery({
+    queryKey: ['drift-scans', planScope ? scopeKey(planScope) : 'none', w?.status],
+    queryFn: () => api<{ scans: DriftScan[] }>(scopedPath(planScope!, 'drift-scans')),
+    enabled: ready && !!planScope && view === 'Resources'
+  });
+  const drift = (id: string) => driftOf(driftScans.data?.scans, id);
   useEffect(() => {
     function keyboard(event: globalThis.KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -291,9 +301,14 @@ function Workbench({
   }
   const total = w ? w.managed + w.data : 0;
   const maxReplace = 50;
-  function toggleReplace(resource: Resource) {
-    setReplaceSelection(current => current.some(r => r.id === resource.id) ? current.filter(r => r.id !== resource.id) : current.length >= maxReplace ? current : [...current, { id: resource.id, address: resource.address }]);
+  const checked = Array.from(selection.values());
+  const replaceTargets: ReplaceTarget[] = checked.filter(r => r.mode === 'managed').map(r => ({ id: r.id, address: r.address }));
+  const replaceBlocked = !w?.info.capabilities.canPlan ? w?.info.capabilities.planReason || 'Plans are unavailable for this workspace.' : runningOperation ? 'A command is running for this project.' : !replaceTargets.length ? 'Only managed instances can be replaced; data sources cannot.' : replaceTargets.length > maxReplace ? `Select at most ${maxReplace} managed instances to replace.` : undefined;
+  function choose(keys: Set<string>) {
+    const rows = resources.data?.resources ?? [];
+    setSelection(current => new Map(Array.from(keys, k => [k, current.get(k) ?? rows.find(r => r.id === k)] as const).filter((e): e is [string, Resource] => !!e[1])));
   }
+  const browsing = view === 'Resources' && !onHub && ready && !w?.diagnostic;
   const filtered = !!(query || module !== undefined || provider || type || mode);
   const workspaceControl = scoped ? <WorkspaceSwitcher project={project?.alias || opened.data?.alias || 'this project'} workspace={scoped.workspace} workspaces={Array.from(new Set([...(project?.inspection?.workspaces || []), scoped.workspace]))} cliDefault={project?.inspection?.cliDefault} onSwitch={ws => requestSwitch(contextPath(scoped.projectId, ws, isExplorerView(view) ? view : 'Resources'))} onCreate={setCreatingWorkspace} createDisabled={!project ? 'The project is still loading.' : !project.workspaceActions?.change ? project.workspaceActions?.reason || 'Workspace changes are unavailable.' : project.busy ? 'A command is running for this project.' : undefined} onManage={() => requestSwitch(projectPath(scoped.projectId))} /> :navMode === 'launch' && !onHub ? <div className="workspace-pill" title="Selected in this folder's CLI data directory. Hclaro reads it and never changes it. Save the project to the Hub to read other workspaces in their own tabs."><Layers3 size={14} aria-hidden="true" /><span className="sr-only">Workspace</span><strong className="mono">{w?.info.workspace || '—'}</strong><span className="hub-tag hub-tag-quiet">CLI</span></div> : undefined;
   const heading = route.kind === 'launch' || route.kind === 'context' ? pageOf(view) : globalPages[route.kind];
@@ -322,7 +337,7 @@ function Workbench({
     </div>
    </header>
    <main id="main-content" tabIndex={-1} className="main-content">
-    <PageHeader title={heading.title} chip={heading.chip} />
+    <PageHeader title={heading.title} chip={heading.chip} count={browsing ? total : undefined}>{browsing && <div className="search-field"><Search size={15} aria-hidden="true" /><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search addresses, types, providers…" aria-label="Search resources" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div>}</PageHeader>
     {!onHub && (!scoped || hubExecution) && isImportTab(view) && <ImportDiscoveryTabs view={view} onChange={setView} />}
     {historyPage ? <HistoryView copy={copy} /> : comparing ? <CompareView copy={copy} /> : route.kind === 'hub' ? <HubView notify={setNotice} /> : route.kind === 'project' ? <ProjectView id={route.projectId} /> : view === 'Settings' ? <SettingsPanel preferences={preferences} changePreference={changePreference} /> : view === 'Assistant' ? <AssistantPage scope={readScope} project={scoped ? opened.data?.alias || 'this project' : w?.info.project || 'this project'} workspace={scoped ? scoped.workspace : w?.info.workspace || 'default'} noProject={noLaunch} /> : scoped && pageOf(view).scope === 'execution' ? !hubExecution ? session.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /></div> : <ErrorState title="Hub workspaces are read-only in this session" message="Plans and applies run only for the project opened from the terminal. Nothing ran." /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {
           void opened.refetch();
@@ -376,32 +391,30 @@ function Workbench({
           void workspace.refetch();
         }} retryLabel={closed ? 'Open again' : undefined} /> : w?.diagnostic ? <ErrorState title={diagnosticTitles[w.diagnostic.code] || 'Workspace needs attention'} message={w.diagnostic.message} retry={scoped ? reread : noLaunch ? undefined : () => void rereadLaunch()} retryLabel="Read again" /> : w && <>
      {view === 'Resources' && <>
-      <div className="explorer-toolbar"><div className="search-field"><Search size={16} /><input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search resources, addresses, providers…" aria-label="Search resources" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div><Button variant="outline" aria-label="Toggle module tree" aria-pressed={treeVisible} onClick={() => setTreeVisible(!treeVisible)}><FolderTree size={15} /><span className="hide-small">Modules</span></Button><Button variant="outline" aria-label={sort === 'asc' ? 'Sort descending' : 'Sort ascending'} onClick={() => {
-                setSort(sort === 'asc' ? 'desc' : 'asc');
-                setPage(0);
-              }}><ArrowDownAZ size={15} /><span className="hide-small">{sort === 'asc' ? 'A–Z' : 'Z–A'}</span></Button></div>
-      <div className="filter-row"><SlidersHorizontal size={13} /><select aria-label="Filter provider" value={provider} onChange={e => {
+      <div className="filter-row resource-filters"><select aria-label="Filter provider" value={provider} onChange={e => {
                 setProvider(e.target.value);
                 setPage(0);
               }}><option value="">All providers</option>{Object.keys(w.providers).sort().map(p => <option key={p} value={p}>{providerName(p)}</option>)}</select><select aria-label="Filter resource type" value={type} onChange={e => {
                 setType(e.target.value);
                 setPage(0);
-              }}><option value="">All resource types</option>{Object.keys(w.types).sort().map(t => <option key={t}>{t}</option>)}</select><select aria-label="Filter resource mode" value={mode} onChange={e => {
+              }}><option value="">All types</option>{Object.keys(w.types).sort().map(t => <option key={t}>{t}</option>)}</select><select aria-label="Filter module" value={module ?? '*'} onChange={e => chooseModule(e.target.value === '*' ? undefined : e.target.value)}><option value="*">All modules</option>{w.modules.map(m => <option key={m.address} value={m.address}>{m.address || 'Root module'}</option>)}</select><select aria-label="Filter resource mode" value={mode} onChange={e => {
                 setMode(e.target.value);
                 setPage(0);
-              }}><option value="">Managed & data</option><option value="managed">Managed resources</option><option value="data">Data sources</option></select>{filtered && <Button variant="ghost" size="small" onClick={resetFilters}><X size={12} />Reset</Button>}<span className="filter-count">{resources.data?.total ?? '…'} resources</span></div>
-      <div className={`explorer ${selected ? 'with-inspector' : ''}`}>
-       {treeVisible && preferences.grouping === 'module' && <aside className="module-panel" aria-label="Module navigation"><div className="panel-label">MODULE TREE <span>{Math.max(w.modules.length - 1, 0)}</span></div><button className={`all-resources ${module === undefined ? 'chosen' : ''}`} onClick={() => chooseModule(undefined)}><Layers3 size={14} /><span>All resources</span><span className="tree-count">{total}</span></button><ModuleTree modules={w.modules} selected={module} choose={chooseModule} /><div className="tree-hint"><CircleHelp size={13} /><span>Modules group resource instances from your recorded state.</span></div></aside>}
-       <section ref={listRef} className="resource-list" aria-label="Resources"><div className="list-caption"><span>{module === undefined ? 'All resources' : moduleName(module)}</span><span>RECORDED STATE</span></div>
+              }}><option value="">Managed & data</option><option value="managed">Managed resources</option><option value="data">Data sources</option></select>{filtered && <Button variant="ghost" size="small" onClick={resetFilters}><X size={12} />Reset</Button>}
+       <div className="filter-row-end"><span>Group by</span><Segmented label="Group by" value={groupBy} onChange={setGroupBy} options={[{ value: 'none', label: 'None' }, { value: 'type', label: 'Type' }, { value: 'module', label: 'Module' }]} /><select aria-label="Sort" value={sort} onChange={e => {
+                setSort(e.target.value as 'asc' | 'desc');
+                setPage(0);
+              }}><option value="asc">A–Z</option><option value="desc">Z–A</option></select></div></div>
+      {selection.size > 0 && <div className="selection-bar" role="region" aria-label="Selection"><span><strong>{selection.size}</strong> selected</span><Button size="small" onClick={() => void copy(checked.map(r => r.address).join('\n'), 'Addresses')}>Copy addresses</Button><Button variant="outline" size="small" onClick={() => void copy(targetFlags(checked.map(r => r.address)), '-target flags')}>Copy -target flags</Button>{(!scoped || hubExecution) && <Button variant="outline" size="small" disabled={!!replaceBlocked} title={replaceBlocked ?? `Plan a replacement of the ${replaceTargets.length} managed instance${replaceTargets.length === 1 ? '' : 's'} selected.`} onClick={() => {
+                  setPendingReplace(replaceTargets);
+                  setView('Plans');
+                }}><RefreshCcw size={12} />Plan replacement…</Button>}<Button variant="ghost" size="small" onClick={() => setSelection(new Map())}><X size={12} />Clear</Button></div>}
+      <section ref={listRef} className="resource-list" aria-label="Resource list">
         {resources.isPending ? <div role="status" className="empty-state"><LoaderCircle className="spin" /><p>Loading resources…</p></div> : resources.error ? <ErrorState message={resources.error.message} retry={() => {
                   void resources.refetch();
-                }} /> : resources.data?.total === 0 ? <div className="empty-state"><Box size={28} /><h2>{filtered ? 'No matching resources' : 'A clean slate'}</h2><p>{filtered ? 'Try a different search or clear your filters.' : 'The state contains no resource instances. Hclaro reads state without creating resources.'}</p>{filtered && <Button variant="outline" onClick={resetFilters}>Clear filters</Button>}</div> : <>{replaceSelection.length > 0 && <div className="selection-bar" role="region" aria-label="Replacement selection"><RefreshCcw size={14} /><span><strong>{replaceSelection.length}</strong> instance{replaceSelection.length === 1 ? '' : 's'} selected for replacement{replaceSelection.length >= maxReplace && ` (maximum ${maxReplace})`}</span><Button size="small" disabled={!w.info.capabilities.canPlan || !!runningOperation} title={w.info.capabilities.canPlan ? undefined : w.info.capabilities.planReason} onClick={() => {
-                  setPendingReplace(replaceSelection);
-                  setView('Plans');
-                }}>Plan replacement…</Button><Button variant="ghost" size="small" onClick={() => setReplaceSelection([])}><X size={12} />Clear</Button></div>}<table className="resources-table"><thead><tr><th scope="col" className="select-column"><span className="sr-only">Select for replacement</span></th><th scope="col">Resource</th><th scope="col" className="provider-column">Provider</th><th scope="col">Mode</th></tr></thead><tbody>{resources.data?.resources.map(r => <ResourceRow key={r.id} resource={r} selected={selected === r.id} onSelect={() => setSelected(r.id)} selectable={!scoped || hubExecution} chosen={replaceSelection.some(c => c.id === r.id)} onChoose={() => toggleReplace(r)} />)}</tbody></table><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
-       </section>
-       {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && readScope && detail.data ? { path: scopedPath(readScope, `resources/${detail.data.id}/source`), prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} ai={readScope} />}
-      </div>
+                }} /> : resources.data?.total === 0 ? <EmptyState icon={<Box size={28} />} title={filtered ? 'No matching resources' : 'A clean slate'} action={filtered && <Button variant="outline" onClick={resetFilters}>Clear filters</Button>}>{filtered ? 'Try a different search or clear your filters.' : 'The state contains no resource instances. Hclaro reads state without creating resources.'}</EmptyState> : <><ResourceTable resources={resources.data?.resources ?? []} groupBy={groupBy} showProvider={Object.keys(w.providers).length > 1} drift={drift} selected={new Set(selection.keys())} onSelectedChange={choose} active={selected} onOpen={setSelected} density={preferences.density} /><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
+      </section>
+      {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && readScope && detail.data ? { path: scopedPath(readScope, `resources/${detail.data.id}/source`), prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} drift={drift(selected)} ai={readScope} />}
      </>}
      {view === 'Overview' && <Overview workspace={w} browse={() => setView('Resources')} chooseType={t => {
             resetFilters();

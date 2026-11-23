@@ -278,7 +278,7 @@ describe('Hub import and replace (M24.08)', { timeout: 20000 }, () => {
     override = path => /^contexts\/[0-9a-f]{32}\/resources$/.test(path) ? Response.json(page) : undefined;
     app(contextPath(network, 'dev', 'Resources'));
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('checkbox', { name: 'Select aws_s3_bucket.b1 for replacement' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Select aws_s3_bucket.b1' }));
     await user.click(screen.getByRole('button', { name: 'Plan replacement…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Plan a replacement' });
     expect(dialog).toHaveTextContent('This is a full plan, not a targeted one');
@@ -289,12 +289,14 @@ describe('Hub import and replace (M24.08)', { timeout: 20000 }, () => {
     expect(launchCalls()).toEqual([]);
   });
 
-  it('offers no replacement selection while Hub execution is off', async () => {
+  it('offers no replacement plan while Hub execution is off', async () => {
     gate = false;
     override = path => /^contexts\/[0-9a-f]{32}\/resources$/.test(path) ? Response.json({ resources: [resource(1)], total: 1 }) : undefined;
     app(contextPath(network, 'dev', 'Resources'));
-    await screen.findByText('aws_s3_bucket.b1');
-    expect(screen.queryByRole('checkbox', { name: /for replacement/ })).toBeNull();
+    // Rows can still be checked to copy addresses, but a replacement plan is not offered.
+    await userEvent.setup().click(await screen.findByRole('checkbox', { name: 'Select aws_s3_bucket.b1' }));
+    expect(screen.getByRole('region', { name: 'Selection' })).toHaveTextContent('1 selected');
+    expect(screen.queryByRole('button', { name: /Plan replacement/ })).toBeNull();
   });
 });
 
