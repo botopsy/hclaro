@@ -5,68 +5,14 @@
   opacity: .6;
 }
 
-.history-table td {
-  vertical-align: top;
-}
-
-.history-table td:first-child {
-  width: 28px;
-  padding-right: 0;
-}
-
-.history-when,
-.history-target {
-  white-space: nowrap;
-  flex-direction: column;
-  gap: 2px;
-  display: flex;
-}
-
-.history-target strong {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .history-result {
   white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
 }
 
-.history-applied {
-  white-space: nowrap;
-  align-items: center;
-  gap: 3px;
-  margin-top: 3px;
-  font-size: 12px;
-  display: flex;
-}
-
-.history-chips {
-  flex-wrap: wrap;
-  gap: 4px;
-  display: inline-flex;
-}
-
-.history-chip {
-  border: 1px solid color-mix(in srgb, currentColor, transparent 65%);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.chip-create { color: var(--create); }
-.chip-update { color: var(--update); }
-.chip-replace,
-.chip-delete { color: var(--destroy); }
-.chip-import { color: var(--read); }
-.chip-forget,
-.chip-unknown { color: var(--warn); }
-
 .history-command {
+  display: block;
   background: var(--inset);
   border-radius: 6px;
   overflow-wrap: anywhere;
@@ -173,23 +119,36 @@
   display: flex;
 }
 
-.resources-table.history-table { min-width: 980px; }
-.resources-table.history-table th:nth-child(1) { width: 40px; }
-.resources-table.history-table th:nth-child(2) { width: 130px; }
-.resources-table.history-table th:nth-child(3) { width: auto; }
-.resources-table.history-table th:nth-child(4) { width: 200px; }
-.resources-table.history-table th:nth-child(5) { width: 130px; }
-.resources-table.history-table th:nth-child(6) { width: 200px; }
-.resources-table.history-table th:nth-child(7) { width: 190px; }
-
-.history-table .resource-address {
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
 .history-git {
   justify-content: flex-end;
   align-items: center;
   gap: 5px;
   display: flex;
 }
+
+/* Redesign D1: Operations and History */
+.page-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.page-toolbar .link-button { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.menu-note { margin: 0; padding: 6px 8px 2px; color: var(--muted); font-size: 11.5px; max-width: 220px; }
+.operations-table { border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }
+.operations-table .data-table { min-width: 760px; }
+.operations-table .operations-status { width: 130px; }
+.operations-table .operations-time { width: 100px; }
+.operations-table .operations-result { width: 170px; }
+.operations-table .link-button { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.operation-details { display: flex; flex-direction: column; gap: 8px; }
+.operation-details .history-command { margin: 0; }
+.history-table .data-table { min-width: 980px; }
+.history-table .history-started { width: 160px; }
+.history-table .history-status { width: 120px; }
+.history-table .history-changes-column { width: 200px; }
+.history-table .history-result-column { width: 220px; }
+.row-button { padding: 0; color: var(--text); font-weight: 500; text-align: left; }
+.row-button:hover { text-decoration: underline; }
+.change-counts { display: inline-flex; gap: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+.change-create { color: var(--create); }
+.change-update { color: var(--update); }
+.change-replace { color: var(--replace); }
+.change-delete { color: var(--destroy); }
+.change-import { color: var(--read); }
+.change-forget, .change-unknown { color: var(--warn); }

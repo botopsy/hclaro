@@ -218,7 +218,7 @@ try{
  await page.keyboard.press('Escape')
  await page.getByRole('dialog').waitFor({state:'detached'})
  await page.getByRole('button',{name:'Operations',exact:true}).click()
- await page.getByRole('button',{name:/terraform plan/}).click()
+ await page.getByRole('button',{name:/^Expand Plan/}).first().click()
  await page.getByText(/Plan ready for review/).waitFor()
  assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in operation log')
  // Import wizard: preview against the real Go checks; nothing is written before consent.

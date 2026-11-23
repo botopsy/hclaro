@@ -232,12 +232,6 @@
   word-break: break-all;
 }
 
-.operations-table th:first-child { width: auto; }
-.operations-table th:nth-child(2) { width: 130px; }
-.operations-table th:nth-child(3) { width: 110px; }
-.operations-table th:nth-child(4) { width: 90px; }
-.operations-table th:nth-child(5) { width: 210px; }
-
 .change-why {
   color: var(--muted);
   font-size: 13px;
@@ -443,11 +437,6 @@
 
 .diag-error strong { color: var(--destroy); }
 .diag-warning strong { color: var(--warn); }
-
-.operations-table td {
-  vertical-align: middle;
-  font-size: 14px;
-}
 
 .dialog-backdrop {
   z-index: 45; /* above drawers */

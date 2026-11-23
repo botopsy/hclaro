@@ -60,7 +60,9 @@ describe('Operation history', () => {
     expect(within(applyRow).getByText('Engine reported applied')).toBeInTheDocument();
     const planRow = rows.find(r => r.textContent?.includes('Planned · not applied') && r.textContent.includes('Engine reported applied'))!;
     expect(planRow).toBeTruthy();
-    expect(within(planRow).getByTitle(/to create/)).toBeInTheDocument();
+    expect(within(planRow).getByTitle(/to create/)).toHaveClass('change-create');
+    // The command is kept in the row details, not repeated in the list.
+    for (const e of page.entries) if (e.command.length) expect(table.textContent).not.toContain(e.command.join(' '));
     expect(screen.getByText(`${page.total} of ${page.stored}`)).toBeInTheDocument();
     // Retention and fidelity: metadata only, nothing applicable.
     expect(screen.getByText(/no state, plan files or attribute values, so nothing here can re-run an operation or apply a plan/)).toHaveTextContent(/operations for \d+ days within [\d.]+ MiB/);
@@ -169,13 +171,15 @@ describe('Operation history', () => {
     view();
     await screen.findByRole('table');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Filter by project' }), page.projects[0].id);
-    await user.click(screen.getByRole('button', { name: /Clear…/ }));
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Clear history…' }));
     const dialog = screen.getByRole('dialog', { name: 'Clear operation history' });
     expect(within(dialog).getByText(/does not change infrastructure, state, plans or project files/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: /Clear history/ }));
     await waitFor(() => expect(mutations().at(-1)).toEqual({ method: 'DELETE', url: '/api/v1/history', body: { confirm: true, projectId: page.projects[0].id } }));
 
-    await user.click(screen.getByRole('button', { name: /Retention/ }));
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Retention…' }));
     const retention = screen.getByRole('dialog', { name: 'History retention' });
     await user.clear(within(retention).getByLabelText('Operations to keep'));
     await user.type(within(retention).getByLabelText('Operations to keep'), '100');
@@ -191,8 +195,10 @@ describe('Operation history', () => {
     expect(await screen.findByText(/written by a newer Hclaro/)).toBeInTheDocument();
     expect(screen.getByText('No operations recorded yet')).toBeInTheDocument();
     expect(screen.getByText(/not being recorded in this session/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Retention/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Clear…/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(screen.getByRole('menuitem', { name: 'Retention…' })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Clear history…' })).toBeDisabled();
   });
 
   it('exports through an authenticated download, never a server path', async () => {
@@ -201,7 +207,9 @@ describe('Operation history', () => {
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create, revokeObjectURL: () => {} }));
     view();
     await screen.findByRole('table');
-    await user.click(screen.getByRole('button', { name: /Markdown/ }));
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    expect(screen.getByRole('menu')).toHaveTextContent('Exports are redacted and leave out log lines.');
+    await user.click(screen.getByRole('menuitem', { name: 'Markdown' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     const exported = requests.find(r => r.url.includes('/history/export?'))!;
     expect(exported.method).toBe('GET');

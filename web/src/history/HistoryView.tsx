@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, ChevronLeft, ChevronRight, CircleCheck, CircleDashed, CircleHelp, CircleX, Copy, Download, GitBranch, GitCompareArrows, History, Info, LoaderCircle, LockKeyhole, Search, Settings2, ShieldCheck, Trash2, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, CircleDashed, CircleHelp, CircleX, Copy, Download, Ellipsis, GitBranch, GitCompareArrows, History, Info, LoaderCircle, LockKeyhole, Search, Settings2, Trash2, TriangleAlert, X } from 'lucide-react';
 import { api, download, send } from '../api';
 import type { HistoryEntry, HistoryKind, HistoryPage, HistoryRetention, HistoryStatus, Operation, PlanComparison } from '../types';
 import { Button } from '../components/ui/button';
@@ -13,6 +13,10 @@ import { dayTime, duration, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
 import { useDebounced } from '../lib/useDebounced';
 import { ErrorState } from '../components/ErrorState';
+import { EmptyState } from '../components/EmptyState';
+import { Disclosure } from '../components/Disclosure';
+import { Menu, MenuItem } from '../components/Menu';
+import { DataTable, type Column } from '../components/DataTable';
 
 const PAGE = 50;
 const kinds: Record<HistoryKind, string> = {
@@ -77,7 +81,10 @@ function ResultBadge({ result }: { result: string }) {
   return <span className={`history-result tone-${r.tone}`}>{r.label}</span>;
 }
 
-function Chips({ entry }: { entry: HistoryEntry }) {
+const symbols: Record<string, string> = { create: '+', update: '~', replace: '±', delete: '−', forget: '⊘' };
+
+// Change counts as coloured text with a symbol; the word stays for screen readers and in the tooltip.
+function Changes({ entry }: { entry: HistoryEntry }) {
   if (!entry.plan) {
     const d = entry.outcome.drift;
     if (d) return <span className="muted">{d.changed} changed · {d.missing} missing</span>;
@@ -86,8 +93,7 @@ function Chips({ entry }: { entry: HistoryEntry }) {
   const counts = entry.plan.counts;
   const shown = chipActions.filter(a => counts[a]);
   if (!shown.length) return <span className="muted">No changes</span>;
-  const symbols: Record<string, string> = { create: '+', delete: '−', update: '~', replace: '±' };
-  return <span className="history-chips">{shown.map(a => <span key={a} className={`history-chip chip-${a}`} title={`${counts[a]} to ${a}`}>{symbols[a] ? <>{symbols[a]}{counts[a]}<span className="sr-only"> {a}</span></> : `${counts[a]} ${a}`}</span>)}</span>;
+  return <span className="change-counts">{shown.map(a => <span key={a} className={`change-${a}`} title={`${counts[a]} to ${a}`}>{symbols[a] ? <>{symbols[a]}{counts[a]}<span className="sr-only"> {a}</span></> : `${counts[a]} ${a}`}</span>)}</span>;
 }
 
 export function HistoryView({ copy }: { copy: (value: string, label: string) => Promise<void> }) {
@@ -137,7 +143,28 @@ export function HistoryView({ copy }: { copy: (value: string, label: string) => 
     }
   }
   const writable = data?.status === 'ready';
+  const columns: Column<HistoryEntry>[] = [
+    { key: 'select', header: <span className="sr-only">Compare</span>, className: 'data-table-check', cell: e => isPlan(e) && <input type="checkbox" aria-label={`Select ${label(e)} of ${dayTime(e.startedAt)} for comparison`} checked={compare.includes(e.id)} onChange={() => toggleCompare(e)} /> },
+    { key: 'started', header: 'Started', className: 'history-started', cell: e => <><time dateTime={e.startedAt}>{dayTime(e.startedAt)}</time> <span className="muted">· {e.status === 'running' ? 'running' : duration(e.durationMs)}</span></> },
+    { key: 'op', header: 'Operation', cell: e => <button className="row-button" aria-pressed={selected === e.id} onClick={() => setSelected(e.id)}>{label(e)}</button> },
+    { key: 'target', header: 'Project · workspace', cell: e => <span title={`${e.projectName || '—'} · ${e.workspace || 'no workspace'}`}><strong>{e.projectName || '—'}</strong> <span className="muted">· {e.workspace || 'no workspace'} · {engineLabel(e.engine)}{e.engineVersion ? ` ${e.engineVersion}` : ''}</span></span> },
+    { key: 'status', header: 'Status', className: 'history-status', cell: e => <StatusBadge status={e.status} /> },
+    { key: 'changes', header: 'Changes', className: 'history-changes-column', cell: e => <Changes entry={e} /> },
+    { key: 'result', header: 'Result', className: 'history-result-column', cell: e => <><ResultBadge result={e.outcome.result} />{e.plan?.execution && <span className="muted"> → {results[e.plan.execution.result]?.label ?? e.plan.execution.result}</span>}</> }
+  ];
   return <div className="plans history-page">
+   <div className="page-toolbar">
+    <Button variant="outline" size="small" disabled={!compatible} title={chosen.length < 2 ? 'Tick two plans of the same project, workspace and engine.' : compatible ? undefined : 'These plans belong to different projects, workspaces or engines.'} onClick={() => setComparing(true)}><GitCompareArrows size={14} />Compare summaries{chosen.length > 0 && ` (${chosen.length}/2)`}</Button>
+    <Menu align="end" trigger={{ className: 'button button-outline button-small', disabled: !data?.total }} button={<><Download size={14} aria-hidden="true" />Export<ChevronDown size={13} aria-hidden="true" /></>}>
+     <MenuItem onSelect={() => void exportAs('markdown')}>Markdown</MenuItem>
+     <MenuItem onSelect={() => void exportAs('json')}>JSON</MenuItem>
+     <p className="menu-note">Exports are redacted and leave out log lines.</p>
+    </Menu>
+    <Menu align="end" label="More actions" trigger={{ className: 'button button-outline button-small button-icon' }} button={<Ellipsis size={15} aria-hidden="true" />}>
+     <MenuItem disabled={!writable} onSelect={() => setDialog('retention')}><Settings2 size={14} aria-hidden="true" />Retention…</MenuItem>
+     <MenuItem disabled={!writable || !data?.stored} onSelect={() => setDialog('clear')}><Trash2 size={14} aria-hidden="true" />Clear history…</MenuItem>
+    </Menu>
+   </div>
    {data?.notice && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span>{data.notice}</span></div>}
    <div className="filter-row plan-filters history-filters">
     <div className="search-field compact"><Search size={14} /><input value={search} maxLength={200} onChange={e => setSearch(e.target.value)} placeholder="Search operations, addresses, commits…" aria-label="Search history" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={12} /></button>}</div>
@@ -148,31 +175,12 @@ export function HistoryView({ copy }: { copy: (value: string, label: string) => 
     {filtered && <Button variant="ghost" size="small" onClick={() => { setProjectId(''); setWorkspace(''); setKind(''); setStatus(''); setSearch(''); }}><X size={12} />Reset</Button>}
     <span className="filter-count">{data ? `${data.total} of ${data.stored}` : '…'}</span>
    </div>
-   <div className="plans-toolbar">
-    <Button variant="outline" size="small" disabled={!compatible} title={chosen.length < 2 ? 'Tick two plans of the same project, workspace and engine.' : compatible ? undefined : 'These plans belong to different projects, workspaces or engines.'} onClick={() => setComparing(true)}><GitCompareArrows size={14} />Compare summaries{chosen.length > 0 && ` (${chosen.length}/2)`}</Button>
-    <Button variant="ghost" size="small" disabled={!data?.total} onClick={() => void exportAs('markdown')}><Download size={14} />Markdown</Button>
-    <Button variant="ghost" size="small" disabled={!data?.total} onClick={() => void exportAs('json')}><Download size={14} />JSON</Button>
-    <Button variant="ghost" size="small" disabled={!writable} onClick={() => setDialog('retention')}><Settings2 size={14} />Retention</Button>
-    <Button variant="ghost" size="small" disabled={!writable || !data?.stored} onClick={() => setDialog('clear')}><Trash2 size={14} />Clear…</Button>
-    <span className="toolbar-note">Exports are redacted and leave out log lines.</span>
-   </div>
    {error && <p className="dialog-error" role="alert">{error}</p>}
-   {list.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading history…</p></div> : list.error ? <ErrorState inline message={list.error.message}><Button variant="outline" size="small" onClick={() => void list.refetch()}>Retry</Button></ErrorState> : !data!.stored ? <div className="empty-state"><History size={30} /><h2>No operations recorded yet</h2><p>{data!.status === 'ready' ? 'Plans, applies, drift scans, graphs, initializations, workspace commands and project tools you run appear here, also after Hclaro restarts. Only redacted metadata is kept: no plan files, state, variable values or credentials.' : 'Operation history is not being recorded in this session.'}</p></div> : !data!.total ? <div className="empty-state"><Search size={26} /><h2>No matching operations</h2><p>Change or reset the filters.</p></div> : <>
-    <div className="table-scroll"><table className="resources-table history-table">
-     <thead><tr><th scope="col"><span className="sr-only">Compare</span></th><th scope="col">Started</th><th scope="col">Operation</th><th scope="col">Project · workspace</th><th scope="col">Status</th><th scope="col">Changes</th><th scope="col">Result</th></tr></thead>
-     <tbody>{data!.entries.map(e => <tr key={e.id} className={selected === e.id ? 'selected' : ''}>
-      <td>{isPlan(e) && <input type="checkbox" aria-label={`Select ${label(e)} of ${dayTime(e.startedAt)} for comparison`} checked={compare.includes(e.id)} onChange={() => toggleCompare(e)} />}</td>
-      <td className="history-when"><time dateTime={e.startedAt}>{dayTime(e.startedAt)}</time><span className="muted">{e.status === 'running' ? 'running' : duration(e.durationMs)}</span></td>
-      <td><button className="resource-button" aria-pressed={selected === e.id} onClick={() => setSelected(e.id)}><span className="resource-text"><strong>{label(e)}</strong><span className="resource-address mono">{e.command.join(' ')}</span></span></button></td>
-      <td><span className="history-target"><strong>{e.projectName || '—'}</strong><span className="muted">{e.workspace || 'no workspace'} · {engineLabel(e.engine)}{e.engineVersion ? ` ${e.engineVersion}` : ''}</span></span></td>
-      <td><StatusBadge status={e.status} /></td>
-      <td><Chips entry={e} /></td>
-      <td><ResultBadge result={e.outcome.result} />{e.plan?.execution && <span className="muted history-applied"><ArrowRight size={11} />{results[e.plan.execution.result]?.label ?? e.plan.execution.result}</span>}</td>
-     </tr>)}</tbody>
-    </table></div>
+   {list.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading history…</p></div> : list.error ? <ErrorState inline message={list.error.message}><Button variant="outline" size="small" onClick={() => void list.refetch()}>Retry</Button></ErrorState> : !data!.stored ? <EmptyState icon={<History size={28} />} title="No operations recorded yet">{data!.status === 'ready' ? 'Plans, applies, drift scans, graphs, initializations, workspace commands and project tools you run appear here, also after Hclaro restarts.' : 'Operation history is not being recorded in this session.'}</EmptyState> : !data!.total ? <EmptyState icon={<Search size={26} />} title="No matching operations">Change or reset the filters.</EmptyState> : <>
+    <div className="operations-table history-table"><DataTable label="Operation history" columns={columns} rows={data!.entries} rowKey={e => e.id} active={selected} /></div>
     {data!.total > PAGE && <div className="pager"><Button variant="ghost" size="small" disabled={page === 0} onClick={() => setPage(page - 1)}><ChevronLeft size={13} />Newer</Button><span className="muted">{page * PAGE + 1}–{Math.min(data!.total, (page + 1) * PAGE)} of {data!.total}</span><Button variant="ghost" size="small" disabled={(page + 1) * PAGE >= data!.total} onClick={() => setPage(page + 1)}>Older<ChevronRight size={13} /></Button></div>}
    </>}
-   <p className="info-line"><ShieldCheck size={13} />History is stored on this machine only, with owner-only permissions{data ? `, keeping up to ${data.retention.maxEntries} operations for ${data.retention.maxAgeDays} days within ${Math.round(data.retention.maxBytes / (1 << 20) * 10) / 10} MiB` : ''}. It records metadata and sanitized log excerpts only: no state, plan files or attribute values, so nothing here can re-run an operation or apply a plan. Live logs and drift and graph results stay in the running session only.</p>
+   <Disclosure summary="How history is stored"><p>History is stored on this machine only, with owner-only permissions{data ? `, keeping up to ${data.retention.maxEntries} operations for ${data.retention.maxAgeDays} days within ${Math.round(data.retention.maxBytes / (1 << 20) * 10) / 10} MiB` : ''}. It records metadata and sanitized log excerpts only: no state, plan files or attribute values, so nothing here can re-run an operation or apply a plan. Live logs and drift and graph results stay in the running session only.</p></Disclosure>
    {selected && <HistoryDetails key={selected} id={selected} copy={copy} writable={writable} onClose={() => setSelected(undefined)} onDeleted={() => { setSelected(undefined); setCompare(c => c.filter(id => id !== selected)); void refresh(); }} />}
    {comparing && compatible && <CompareDialog left={chosen[0]} right={chosen[1]} onClose={() => setComparing(false)} />}
    {dialog === 'retention' && data && <RetentionDialog current={data.retention} onClose={() => setDialog(undefined)} onSaved={() => { setDialog(undefined); void refresh(); }} />}
