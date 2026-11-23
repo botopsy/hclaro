@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, Box, RefreshCcw, Check, ChevronRight, CircleHelp, FolderTree, Layers3, LoaderCircle, Menu, Network, Search, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Box, RefreshCcw, Check, Layers3, LoaderCircle, Menu, Search, X } from 'lucide-react';
 import { ApiError, api, openInNewTab, send } from './api';
 import type { DriftScan, ReplaceTarget, Resource, ResourcePage } from './types';
 import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
@@ -40,7 +40,8 @@ import { SettingsPanel } from './workbench/SettingsPanel';
 import { PageHeader } from './components/PageHeader';
 import { useAssistEnabled } from './assist/AskAI';
 import { AssistantPage } from './assist/AssistantPage';
-import { moduleName, providerName } from './lib/format';
+import { providerName } from './lib/format';
+import { ModulesGrid, ProvidersGrid } from './workbench/Directory';
 import { ProductionBadge } from './components/ProductionBadge';
 import { errorMessage } from './lib/errorMessage';
 import { useDebounced } from './lib/useDebounced';
@@ -425,12 +426,19 @@ function Workbench({
             setMode(m);
             setView('Resources');
           }} />}
-     {view === 'Modules' && <div className="directory-grid">{w.modules.map(m => <button className="directory-card" key={m.address} onClick={() => chooseModule(m.address)}><span className="directory-icon"><FolderTree size={21} /></span><h2>{moduleName(m.address)}</h2><p className="mono">{m.address || 'root'}</p><div><span>{m.count} direct resource{m.count === 1 ? '' : 's'}</span><ArrowRight size={15} /></div></button>)}</div>}
-     {view === 'Providers' && <div className="provider-directory">{Object.entries(w.providers).sort().map(([p, count]) => <button key={p} className="provider-card" onClick={() => {
+     {view === 'Modules' && <ModulesGrid modules={w.modules} open={address => {
+              resetFilters();
+              setGroupBy('module');
+              // shortcut: the server's module filter is exact, so a module with its children is found by address prefix (a deeper module of the same name matches too); add a prefix filter server-side if that misleads.
+              if (address) setSearch(`${address}.`);
+              chooseModule(address ? undefined : '');
+            }} />}
+     {view === 'Providers' && <ProvidersGrid providers={w.providers} lockfile={w.info.providerLock} open={p => {
               resetFilters();
               setProvider(p);
+              setGroupBy('type');
               setView('Resources');
-            }}><span className="provider-icon"><Network size={23} /></span><div><h2>{providerName(p)}</h2><p className="mono">{p || 'Provider not recorded'}</p></div><span>{count} resource{count === 1 ? '' : 's'}</span><ChevronRight size={17} /></button>)}<div className="info-note"><CircleHelp size={15} /><span>These are provider sources in state. Provider aliases and installed plugin versions are not present in the resource JSON.</span></div></div>}
+            }} />}
      
     </>}
    </main>

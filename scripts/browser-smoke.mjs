@@ -386,6 +386,7 @@ try{
  await menu.click()
  await nav.getByRole('button',{name:'Providers',exact:true}).click()
  await page.getByRole('heading',{name:'Providers'}).waitFor()
+ await page.getByRole('article').first().getByRole('button',{name:'View resources →'}).waitFor()
  assert.equal(await page.locator('aside.sidebar').isVisible(),false,'drawer stays open after choosing a page')
  await page.setViewportSize({width:1512,height:1050})
  // Exercise 1,000 resources through the same handler; rendering stays bounded to 50 rows.
