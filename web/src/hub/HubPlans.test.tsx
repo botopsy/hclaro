@@ -328,10 +328,10 @@ describe('Hub drift scans and graphs (M24.09)', { timeout: 20000 }, () => {
     serveAnalysis();
     app(contextPath(network, 'dev', 'Drift'));
     const user = userEvent.setup();
-    expect(await screen.findByLabelText('Scan history')).toBeInTheDocument();
+    expect(await screen.findByText(/changed outside Terraform/)).toBeInTheDocument();
     // Opening the view runs nothing.
     expect(calls.filter(c => c.method === 'POST' && c.url !== '/api/v1/contexts')).toEqual([]);
-    await user.click(screen.getAllByRole('button', { name: 'Check drift' })[0]);
+    await user.click(screen.getByRole('button', { name: 'Check again' }));
     const dialog = await screen.findByRole('dialog', { name: 'Check drift' });
     const uses = within(dialog).getByLabelText('This scan will use');
     expect(uses).toHaveTextContent('/infra/network');

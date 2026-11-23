@@ -349,7 +349,7 @@ function Workbench({
         }} onPrepared={prefill => {
           setImportPrefill(prefill);
           setView('Import');
-        }} /> : view === 'Drift' ? <DriftView key={opened.data.id} scope={planScope} reopen={reread} project={opened.data.alias} workspaceStatus={w?.status} copy={copy} openResource={id => {
+        }} /> : view === 'Drift' ? <DriftView key={opened.data.id} scope={planScope} reopen={reread} project={opened.data.alias} workspaceStatus={w?.status} copy={copy} source={gitBase !== undefined ? { prefix: gitBase, editor: preferences.editor, notify: setNotice } : undefined} openResource={id => {
           setSelected(id);
           setView('Resources');
         }} runPlan={() => setView('Plans')} /> : view === 'Graph' ? <GraphView key={opened.data.id} scope={planScope} reopen={reread} project={opened.data.alias} workspaceStatus={w?.status} copy={copy} openResource={id => {
@@ -364,7 +364,7 @@ function Workbench({
         }} openPlan={id => {
           setPlanId(id);
           setView('Plans');
-        }} /> : view === 'Drift' ? <DriftView project={w?.info.project || 'this project'} profileId={profile.selected} workspaceStatus={w?.status} copy={copy} openResource={id => {
+        }} /> : view === 'Drift' ? <DriftView project={w?.info.project || 'this project'} profileId={profile.selected} workspaceStatus={w?.status} copy={copy} source={gitBase !== undefined ? { prefix: gitBase, editor: preferences.editor, notify: setNotice } : undefined} openResource={id => {
           setSelected(id);
           setView('Resources');
         }} runPlan={() => {
