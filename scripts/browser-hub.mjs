@@ -44,7 +44,7 @@ try{
  await page.goto(`${origin}/projects/${network}/workspaces/dev`)
  await page.getByRole('banner',{name:'Top bar'}).getByRole('button',{name:/Switch workspace/}).waitFor()
  assert.equal(await page.getByRole('banner',{name:'Top bar'}).getByRole('button',{name:/Switch workspace/}).locator('strong').textContent(),'dev')
- await page.getByRole('button',{name:/dev_main.*aws_db_instance/}).waitFor()
+ await page.getByRole('button',{name:/aws_db_instance\.dev_main/}).waitFor()
  await noOverflow('Hub workspace')
  await fs.mkdir('.cache/screenshots',{recursive:true})
  await page.screenshot({path:'.cache/screenshots/hub-workspace-dark.png',fullPage:true})

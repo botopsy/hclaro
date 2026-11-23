@@ -209,7 +209,7 @@ describe('Sidebar', () => {
     await user.click(trigger);
     await user.click(within(screen.getByRole('group', { name: 'Switch project' })).getByRole('button', { name: /network/ }));
     expect(window.location.pathname).toBe(`/projects/${hubId}/workspaces/dev/resources`);
-    expect(await screen.findByRole('button', { name: /logs.*aws_s3_bucket/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'aws_s3_bucket.logs' })).toBeInTheDocument();
     // Only the workspace read is opened; no plan, init, select or apply is requested.
     expect(mutations().map(c => c.url)).toEqual(['/api/v1/contexts']);
   });
@@ -260,17 +260,17 @@ describe('Sidebar', () => {
     await user.click(within(panel).getByRole('button', { name: /launch-stack/ }));
     expect(window.location.pathname).toBe('/');
   });
-  it('asks before a switch would discard a replacement selection', async () => {
+  it('asks before a switch would discard a resource selection', async () => {
     app();
     const user = userEvent.setup();
-    await user.click(await screen.findByLabelText('Select aws_s3_bucket.logs for replacement'));
+    await user.click(await screen.findByLabelText('Select aws_s3_bucket.logs'));
     await user.click(screen.getByRole('button', { name: /Switch project/ }));
     await user.click(within(screen.getByRole('group', { name: 'Switch project' })).getByRole('button', { name: /network/ }));
     const dialog = screen.getByRole('dialog', { name: 'Leave this project?' });
-    expect(dialog).toHaveTextContent('1 instance selected for replacement');
+    expect(dialog).toHaveTextContent('1 resource selected');
     expect(window.location.pathname).toBe('/');
     await user.click(within(dialog).getByRole('button', { name: 'Stay here' }));
-    expect(screen.getByRole('region', { name: 'Replacement selection' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Selection' })).toBeInTheDocument();
     // Global pages share this workbench, so going there keeps the selection without asking.
     await user.click(navButton('Compare'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

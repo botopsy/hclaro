@@ -229,12 +229,6 @@ h1 {
   line-height: 1.2;
 }
 
-.explorer-toolbar {
-  align-items: center;
-  gap: 8px;
-  display: flex;
-}
-
 .search-field {
   border: 1px solid var(--input);
   background: var(--surface);
@@ -328,114 +322,9 @@ kbd {
   overflow: hidden;
 }
 
-.module-panel {
-  background: var(--inset);
-  border-right: 1px solid var(--border);
-  flex-shrink: 0;
-  width: 195px;
-  padding: 18px 10px;
-  overflow: auto;
-}
-
-.panel-label {
-  color: var(--subtle);
-  letter-spacing: 1px;
-  justify-content: space-between;
-  margin-bottom: 17px;
-  padding: 0 9px;
-  font-size: 11px;
-  font-weight: 550;
-  display: flex;
-}
-
-.panel-label > span {
-  letter-spacing: 0;
-  font-size: 12px;
-}
-
-.all-resources, .tree-resource {
-  text-align: left;
-  width: 100%;
-  color: var(--muted);
-  border-radius: 4px;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  padding: 8px;
-  font-size: 13px;
-  display: flex;
-}
-
-.all-resources {
-  margin-bottom: 12px;
-}
-
-.all-resources:hover, .tree-resource:hover {
-  background: var(--surface-hover);
-}
-
 .chosen {
   background: var(--surface-selected);
   color: var(--accent-text);
-}
-
-.tree-count {
-  color: var(--subtle);
-  font-variant-numeric: tabular-nums;
-  margin-left: auto;
-  font-size: 12px;
-}
-
-.module-tree, .module-tree ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.module-tree ul {
-  border-left: 1px solid var(--border);
-  margin: 2px 0 5px 7px;
-  padding-left: 6px;
-}
-
-.module-tree > li {
-  margin: 2px 0;
-}
-
-.module-tree summary {
-  cursor: pointer;
-  color: var(--muted);
-  align-items: center;
-  gap: 5px;
-  padding: 8px 3px;
-  font-size: 13px;
-  list-style: none;
-  display: flex;
-}
-
-.module-tree summary::-webkit-details-marker {
-  display: none;
-}
-
-.module-tree details:not([open]) > summary > svg {
-  transform: rotate(-90deg);
-}
-
-.tree-resource > span:not(.tree-count), .module-tree summary > span {
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.tree-hint {
-  border-top: 1px solid var(--border);
-  color: var(--subtle);
-  gap: 6px;
-  margin-top: 23px;
-  padding: 16px 5px 0;
-  font-size: 12px;
-  line-height: 1.7;
-  display: flex;
 }
 
 .resource-list {
@@ -541,9 +430,39 @@ kbd {
   display: flex;
 }
 
-.resource-icon.data-icon {
-  color: var(--read);
+/* Resources page (§4.2): one-line DataTable rows; the address prefix is dimmed. */
+.page-header .search-field { flex: 0 1 360px; height: 32px; }
+.resource-filters { flex-wrap: wrap; }
+.filter-row-end { display: flex; align-items: center; gap: 8px; margin-left: auto; white-space: nowrap; }
+.filter-row + .selection-bar { margin: -8px 0 10px; border: 1px solid var(--border); border-radius: 6px; }
+.address-button {
+  display: inline-block;
+  max-width: calc(100% - 48px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text);
 }
+.address-button:only-child { max-width: 100%; }
+.address-button:hover { text-decoration: underline; }
+.address-prefix { color: var(--subtle); }
+.data-badge {
+  margin-left: 8px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--read), transparent 70%);
+  border-radius: 4px;
+  color: var(--read);
+  font-size: 11px;
+  vertical-align: middle;
+}
+.data-table .type-column { width: 28%; }
+.data-table .type-column .chip { font-family: var(--font-mono); }
+.data-table .provider-column { width: 110px; }
+.data-table .drift-column { width: 120px; }
+.inspector-name { flex: 1; min-width: 0; margin: 0 12px; }
 
 .resource-text {
   flex-direction: column;
@@ -560,13 +479,6 @@ kbd {
   overflow: hidden;
 }
 
-.instance-key {
-  color: var(--muted);
-  margin-left: 3px;
-  font-size: 13px;
-  font-weight: 400;
-}
-
 .resource-type {
   color: var(--muted);
   font-size: 12px;
@@ -579,21 +491,6 @@ kbd {
   margin-top: 2px;
   font-size: 11px;
   overflow: hidden;
-}
-
-.provider-label {
-  color: var(--muted);
-  align-items: center;
-  gap: 5px;
-  font-size: 13px;
-  display: flex;
-}
-
-.provider-dot {
-  background: var(--read);
-  border-radius: 2px;
-  width: 5px;
-  height: 5px;
 }
 
 .mode-badge {

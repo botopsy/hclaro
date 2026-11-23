@@ -92,7 +92,7 @@ describe('Resource explorer', () => {
     app();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', {
-      name: /main.*aws_subnet/
+      name: resource.address
     }));
     expect(await screen.findByLabelText('Resource inspector')).toBeInTheDocument();
     expect(await screen.findByText('subnet-demo')).toBeInTheDocument();
@@ -112,6 +112,51 @@ describe('Resource explorer', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('query=aws_subnet'), expect.anything()));
     await user.selectOptions(screen.getByLabelText('Filter resource mode'), 'data');
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('mode=data'), expect.anything()));
+  });
+  it('shows one-line rows with the latest drift scan, Group by and a module filter instead of a tree', async () => {
+    const other: Resource = { ...resource, id: 'other', address: 'aws_vpc.main', type: 'aws_vpc', module: '', index: undefined };
+    const scan = { id: 's', status: 'completed', exhaustive: true, current: true, withheld: false, resources: [{ id: 'c', resourceId: 'test', classification: 'changed' }] };
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('workspace')) return Response.json(workspace);
+      if (url.endsWith('operations')) return Response.json({ operations: [] });
+      if (url.endsWith('drift-scans')) return Response.json({ scans: [scan] });
+      if (url.includes('resources/test')) return Response.json(resource);
+      return Response.json({ resources: [resource, other], total: 2 });
+    }));
+    app();
+    const user = userEvent.setup();
+    const table = await screen.findByRole('table', { name: 'Resources' });
+    expect(screen.queryByRole('complementary', { name: 'Module navigation' })).not.toBeInTheDocument();
+    const row = (address: string) => within(table).getByRole('button', { name: address }).closest('tr')!;
+    await waitFor(() => expect(row(resource.address)).toHaveTextContent('Drifted'));
+    expect(row(other.address)).toHaveTextContent('No drift');
+    // Module grouping is the default; group rows collapse.
+    const group = within(table).getByRole('button', { name: /^module\.network\s*1$/ });
+    await user.click(group);
+    expect(group).toHaveAttribute('aria-expanded', 'false');
+    expect(within(table).queryByRole('button', { name: resource.address })).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole('group', { name: 'Group by' })).getByRole('button', { name: 'None' }));
+    expect(within(table).queryByRole('button', { name: /^module\.network\s*1$/ })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Filter module'), 'module.network');
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('module=module.network'), expect.anything()));
+    // The drawer shows the same drift result and closes on a backdrop click.
+    await user.click(await screen.findByRole('button', { name: resource.address }));
+    const drawer = await screen.findByLabelText('Resource inspector');
+    expect(within(drawer).getByText('Drifted')).toBeInTheDocument();
+    await user.click(document.querySelector('.drawer-backdrop')!);
+    expect(screen.queryByLabelText('Resource inspector')).not.toBeInTheDocument();
+  });
+  it('says Not checked when no current scan exists', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('workspace')) return Response.json(workspace);
+      if (url.endsWith('operations')) return Response.json({ operations: [] });
+      if (url.endsWith('drift-scans')) return Response.json({ scans: [{ id: 's', status: 'completed', exhaustive: true, current: false, withheld: true, resources: [] }] });
+      return Response.json({ resources: [resource], total: 1 });
+    }));
+    app();
+    const table = await screen.findByRole('table', { name: 'Resources' });
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('drift-scans'), expect.anything()));
+    expect(within(table).getByText('Not checked')).toBeInTheDocument();
   });
   it('distinguishes an unavailable workspace from an empty state', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({
@@ -174,7 +219,7 @@ describe('Resource explorer', () => {
     expect(screen.getByRole('button', { name: 'Read state again' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Read again' })).toHaveLength(1);
     await user.click(within(alert).getByRole('button', { name: 'Read again' }));
-    expect(await screen.findByRole('button', { name: /main.*aws_subnet/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: resource.address })).toBeInTheDocument();
     expect(posts).toEqual([{ url: '/api/v1/workspace/reload', body: {} }]);
   });
   it('opens Drift without scanning and offers a separate normal plan', async () => {
@@ -208,7 +253,7 @@ describe('Resource explorer', () => {
     app();
     expect(await screen.findByText('A clean slate')).toBeInTheDocument();
   });
-  it('selects only managed instances for a replacement plan', async () => {
+  it('copies any selection and plans a replacement of the managed instances only', async () => {
     const data: Resource = { ...resource, id: 'data', address: 'data.aws_caller_identity.current', mode: 'data', type: 'aws_caller_identity', name: 'current' };
     const ready = { ...workspace, info: { ...workspace.info, capabilities: { canReadState: true, canPlan: true, canApplySavedPlan: true } } };
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -220,12 +265,21 @@ describe('Resource explorer', () => {
     }));
     app();
     const user = userEvent.setup();
-    await user.click(await screen.findByLabelText(`Select ${resource.address} for replacement`));
-    expect(screen.queryByLabelText(`Select ${data.address} for replacement`)).not.toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Replacement selection' })).toHaveTextContent('1 instance selected for replacement');
-    await user.click(screen.getByRole('button', { name: 'Plan replacement…' }));
+    // A data source alone can be copied but never planned for replacement.
+    await user.click(await screen.findByLabelText(`Select ${data.address}`));
+    const bar = screen.getByRole('region', { name: 'Selection' });
+    expect(bar).toHaveTextContent('1 selected');
+    expect(within(bar).getByRole('button', { name: /Plan replacement/ })).toBeDisabled();
+    await user.click(screen.getByLabelText(`Select ${resource.address}`));
+    expect(bar).toHaveTextContent('2 selected');
+    await user.click(within(bar).getByRole('button', { name: 'Copy addresses' }));
+    expect(await navigator.clipboard.readText()).toBe(`${data.address}\n${resource.address}`);
+    await user.click(within(bar).getByRole('button', { name: 'Copy -target flags' }));
+    expect(await navigator.clipboard.readText()).toBe(`'-target=${data.address}' '-target=${resource.address}'`);
+    await user.click(within(bar).getByRole('button', { name: /Plan replacement/ }));
     const dialog = await screen.findByRole('dialog', { name: 'Plan a replacement' });
     expect(dialog).toHaveTextContent(resource.address);
+    expect(dialog).not.toHaveTextContent(data.address);
     // The footer and its safety line are gone (redesign §2.2).
     expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
   });
