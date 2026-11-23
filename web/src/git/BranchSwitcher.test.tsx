@@ -38,7 +38,7 @@ function stub(preview: GitSwitchPreview) {
 }
 function renderSwitcher(notify = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><BranchSwitcher prefix="" workspace="default" notify={notify} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><BranchSwitcher prefix="" current="main" workspace="default" notify={notify} /></QueryClientProvider>);
   return notify;
 }
 
@@ -53,7 +53,7 @@ describe('Git branch switcher', () => {
     const notify = renderSwitcher();
     // Nothing runs Git until the selector is opened.
     expect(calls.filter(c => c.path.startsWith('git/'))).toEqual([]);
-    await userEvent.click(screen.getByRole('button', { name: 'Switch Git branch' }));
+    await userEvent.click(screen.getByRole('button', { name: 'main' }));
     const list = await screen.findByRole('list', { name: 'Local branches' });
     expect(within(list).getByRole('button', { name: /main/ })).toHaveAttribute('aria-current', 'true');
     expect(within(list).getByRole('button', { name: /main/ })).toBeDisabled();
@@ -62,12 +62,13 @@ describe('Git branch switcher', () => {
     expect(within(list).queryByRole('button', { name: /dev/ })).toBeNull();
     await userEvent.clear(screen.getByLabelText('Filter branches'));
     await userEvent.click(within(list).getByRole('button', { name: /dev/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Switch Git branch?' });
+    const dialog = await screen.findByRole('dialog', { name: 'Switch to dev?' });
     await within(dialog).findByText('Clean');
     expect(within(dialog).getByText(/3 files differ · 2 IaC · 1 in this project/)).toBeInTheDocument();
     expect(within(dialog).getByText('default')).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('This runs git switch dev in the repository. Plans made before the switch');
     expect(calls.some(c => c.path === 'git/switch')).toBe(false);
-    await userEvent.click(within(dialog).getByRole('button', { name: /Switch to dev/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Switch branch' }));
     await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^Switched to dev\. No Terraform/)));
     expect(calls.find(c => c.path === 'git/switch')?.body).toEqual({ branch: 'dev', expectedBranch: 'main', expectedCommit: main });
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -76,13 +77,14 @@ describe('Git branch switcher', () => {
   it('blocks a switch with uncommitted changes and explains why', async () => {
     stub(dirty);
     renderSwitcher();
-    await userEvent.click(screen.getByRole('button', { name: 'Switch Git branch' }));
+    await userEvent.click(screen.getByRole('button', { name: 'main' }));
     await userEvent.click(within(await screen.findByRole('list', { name: 'Local branches' })).getByRole('button', { name: /dev/ }));
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText(/Commit or stash them with your preferred Git client/)).toBeInTheDocument();
     expect(within(dialog).getByText('1 staged, 2 modified')).toBeInTheDocument();
-    const button = within(dialog).getByRole('button', { name: /Switch to dev/ });
+    const button = within(dialog).getByRole('button', { name: 'Switch branch' });
     expect(button).toBeDisabled();
+    expect(dialog).not.toHaveTextContent('This runs git switch');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(calls.some(c => c.path === 'git/switch')).toBe(false);
   });

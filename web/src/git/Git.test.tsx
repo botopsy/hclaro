@@ -89,8 +89,10 @@ describe('Git changes', () => {
     expect(summary).toHaveTextContent('infra');
     expect(summary).toHaveTextContent('feature/vpc');
     expect(summary).toHaveTextContent('0123456');
-    expect(summary).toHaveTextContent('2 changed files');
+    expect(summary).toHaveTextContent('2 uncommitted files');
     expect(screen.getByText(/IaC files changed elsewhere/)).toBeInTheDocument();
+    expect(screen.getByText('2 changed IaC files')).toBeInTheDocument();
+    expect(screen.getByText('3 other changed files (not IaC)')).toBeInTheDocument();
     // Status is one POST with an empty body; nothing is diffed until a file is chosen.
     const statusCalls = calls.filter(c => c.path.endsWith('git/status'));
     expect(statusCalls).toHaveLength(1);
@@ -99,19 +101,21 @@ describe('Git changes', () => {
     expect(calls.some(c => c.path.endsWith('git/diff'))).toBe(false);
     const user = userEvent.setup();
     // A variable file shows why it is never displayed and is not requested.
-    await user.click(screen.getByRole('button', { name: /network\/prod\.tfvars/ }));
-    const drawer = await screen.findByLabelText('Diff inspector');
-    expect(drawer).toHaveTextContent('never shown');
+    await user.click(screen.getByRole('button', { name: 'Expand network/prod.tfvars' }));
+    expect(screen.getByRole('button', { name: 'Collapse network/prod.tfvars' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('region', { name: 'Diff of network/prod.tfvars' })).toHaveTextContent('never shown');
     expect(calls.some(c => c.path.endsWith('git/diff'))).toBe(false);
-    await user.click(screen.getByRole('button', { name: /network\/main\.tf/ }));
+    await user.click(screen.getByRole('button', { name: 'Expand network/main.tf' }));
     await waitFor(() => expect(calls.filter(c => c.path.endsWith('git/diff'))).toHaveLength(1));
     const diffCall = calls.find(c => c.path.endsWith('git/diff'))!;
     expect(diffCall.body).toEqual({ fileId: mainID });
-    const inspector = screen.getByLabelText('Diff inspector');
+    const inspector = screen.getByRole('region', { name: 'Diff of network/main.tf' });
     await waitFor(() => expect(inspector).toHaveTextContent('Added: enable_dns = true'));
     expect(inspector).toHaveTextContent('password = "[redacted]"');
     expect(within(inspector).getByText(/1 line redacted/)).toBeInTheDocument();
-    expect(within(inspector).getByText(/Only a plan shows which resources actually change/)).toBeInTheDocument();
+    // The row shows +N −N once its diff has been read.
+    expect(within(screen.getByRole('table', { name: 'Changed IaC files' })).getAllByText('+2')).toHaveLength(2);
+    expect(screen.getByText(/Only a plan shows which resources actually change/)).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(canary);
     // Open in editor sends only the opaque ID, a line and an editor name.
     await user.click(within(inspector).getByRole('button', { name: 'Open in VS Code' }));
@@ -130,7 +134,7 @@ describe('Git changes', () => {
     await user.click(await screen.findByRole('button', { name: 'Git' }));
     expect(await screen.findByRole('heading', { name: 'Git', level: 1 })).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/projects/${id}/workspaces/dev/git`);
-    expect(within(await screen.findByRole('region', { name: 'Repository' })).getByRole('button', { name: 'Switch Git branch' })).toBeInTheDocument();
+    expect(within(await screen.findByRole('region', { name: 'Repository' })).getByRole('button', { name: 'feature/vpc' })).toBeInTheDocument();
     expect(calls.filter(c => c.path.endsWith('git/status'))).toHaveLength(1);
     expect(calls.some(c => c.path.endsWith('git/head'))).toBe(false);
   });
@@ -152,7 +156,7 @@ describe('Git changes', () => {
     stub();
     app();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: /network\/main\.tf/ }));
+    await user.click(await screen.findByRole('button', { name: 'Expand network/main.tf' }));
     await user.click(await screen.findByRole('button', { name: 'Open in Cursor' }));
     await waitFor(() => expect(calls.find(c => c.path.endsWith('editor/open'))?.body).toMatchObject({ editor: 'cursor' }));
   });
