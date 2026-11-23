@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, ExternalLink, Folder, FolderOpen, FolderPlus, Layers3, LoaderCircle, Pencil, Play, Pin, PinOff, Plus, RefreshCcw, Search, ShieldCheck, Terminal, Trash2, Wrench, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ExternalLink, Folder, FolderOpen, FolderPlus, Layers3, LoaderCircle, Pin, Play, Plus, RefreshCcw, Search, ShieldCheck, Terminal, Trash2, Wrench, X } from 'lucide-react';
 import { ApiError, openInNewTab, send } from '../api';
-import type { FolderListing, Project, WorkspaceAction } from '../types';
+import type { FolderListing, GitContext, Project, WorkspaceAction } from '../types';
 import { Button } from '../components/ui/button';
 import { useModal } from '../components/useModal';
 import { contextPath, navigate, productionLike, projectPath } from '../router';
@@ -13,10 +13,17 @@ import { InitWizard } from './InitWizard';
 import { WorkspaceDialog } from './WorkspaceDialog';
 import { ContextSelector } from '../profiles/ContextSelector';
 import { useProfileSelection } from '../profiles/selection';
-import { HclaroMark } from '../brand/HclaroLogo';
 import { dateTime, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
 import { ErrorState } from '../components/ErrorState';
+import { PageHeader } from '../components/PageHeader';
+import { EmptyState } from '../components/EmptyState';
+import { Disclosure } from '../components/Disclosure';
+import { Dialog } from '../components/Dialog';
+import { Drawer } from '../components/Drawer';
+import { DataTable, type Column } from '../components/DataTable';
+import { Chip, StatusDot, type Tone } from '../components/Chip';
+import { gitPrefix, shortCommit } from '../git/GitView';
 
 const when = (time?: string) => time ? dateTime(time) : 'Never opened';
 const statusLabel: Record<Project['status'], string> = {
@@ -26,6 +33,18 @@ const statusLabel: Record<Project['status'], string> = {
   not_project: 'Not a project',
   path_changed: 'Path changed'
 };
+// The one status a project row shows: a running command, then a folder problem, then init.
+function projectStatus(p: Project): { tone: Tone; label: string } {
+  if (p.busy === 'init') return { tone: 'read', label: 'Initializing' };
+  if (p.busy === 'workspace') return { tone: 'read', label: 'Changing workspaces' };
+  if (p.status !== 'ready') return { tone: 'delete', label: statusLabel[p.status] };
+  if (!p.initialized) return { tone: 'update', label: 'Not initialized' };
+  return { tone: 'ok', label: 'Available' };
+}
+const engineText = (p: Project) => p.inspection?.engine ? `${engineLabel(p.inspection.engine, 'Automatic')} ${p.inspection.version || ''}`.trim() : p.enginePreference ? `${engineLabel(p.enginePreference, 'Automatic')} · version not checked` : 'Not checked';
+const listed = (p: Project) => p.inspection && !p.inspection.diagnostic ? p.inspection : undefined;
+// Opens the last workspace used here, as the project switcher does, else the workspace list.
+const openPath = (p: Project) => p.lastWorkspace ? contextPath(p.id, p.lastWorkspace) : projectPath(p.id);
 // Moves focus between items marked data-hub-item with the arrow keys.
 function arrowKeys(event: KeyboardEvent<HTMLElement>) {
   if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -36,18 +55,21 @@ function arrowKeys(event: KeyboardEvent<HTMLElement>) {
   items[Math.max(0, Math.min(items.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus();
 }
 
+// §4.10: the Projects page. Listing projects reads only the registry; nothing runs.
 export function HubView({ notify }: { notify: (text: string) => void }) {
   const client = useQueryClient();
   const list = useQuery(projectsQuery);
   const [search, setSearch] = useState('');
-  const [dialog, setDialog] = useState<{ kind: 'add'; path?: string } | { kind: 'rename' | 'repair' | 'remove'; project: Project }>();
+  const [details, setDetails] = useState<string>();
+  const [dialog, setDialog] = useState<{ kind: 'add'; path?: string } | { kind: 'repair' | 'remove'; project: Project }>();
+  const closeDetails = useCallback(() => setDetails(undefined), []);
   const data = list.data;
   const projects = data?.projects || [];
   const writable = data?.registry.status === 'ready';
+  const readOnly = writable ? undefined : 'The project registry is read-only.';
   const query = search.trim().toLowerCase();
   const matches = projects.filter(p => !query || [p.alias, p.rootPath, ...(p.inspection?.workspaces || [])].some(v => v.toLowerCase().includes(query)));
   const ordered = [...matches.filter(p => p.pinned), ...matches.filter(p => !p.pinned)];
-  const recent = projects.filter(p => p.lastOpenedAt && p.status === 'ready').sort((a, b) => (b.lastOpenedAt || '').localeCompare(a.lastOpenedAt || '')).slice(0, 3);
   const launchRegistered = projects.some(p => p.launch);
   const refresh = () => client.invalidateQueries({ queryKey: ['projects'] });
   async function update(p: Project, change: Record<string, unknown>, done: string) {
@@ -72,33 +94,50 @@ export function HubView({ notify }: { notify: (text: string) => void }) {
     }
     await refresh();
   }
-  if (list.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading your projects…</p></div>;
-  if (list.error || !data) return <ErrorState inline icon={AlertTriangle} title="Unable to load the Hub" message={errorMessage(list.error)} retry={() => void list.refetch()} retryLabel="Retry" />;
+  const header = <PageHeader title="Projects" count={data ? projects.length : undefined}>{projects.length > 0 && <>
+    <div className="search-field"><Search size={15} aria-hidden="true" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects, paths, workspaces…" aria-label="Search projects" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div>
+    <Button onClick={() => setDialog({ kind: 'add' })} disabled={!writable} title={readOnly}><Plus size={15} />Add project</Button>
+   </>}</PageHeader>;
+  if (list.isPending) return <div className="hub">{header}<div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading your projects…</p></div></div>;
+  if (list.error || !data) return <div className="hub">{header}<ErrorState inline icon={AlertTriangle} title="Unable to load projects" message={errorMessage(list.error)} retry={() => void list.refetch()} retryLabel="Retry" /></div>;
   const env = data.environment;
+  const open = projects.find(p => p.id === details);
+  const columns: Column<Project>[] = [
+    { key: 'pin', header: <span className="sr-only">Pinned</span>, className: 'projects-pin', cell: p => <Button variant="ghost" size="icon" aria-label={p.pinned ? `Unpin ${p.alias}` : `Pin ${p.alias}`} aria-pressed={p.pinned} title={readOnly ?? (p.pinned ? 'Pinned: listed first' : 'Pin to list first')} disabled={!writable} onClick={() => void update(p, { pinned: !p.pinned }, p.pinned ? 'Project unpinned' : 'Project pinned')}><Pin size={14} className={p.pinned ? 'projects-pinned' : 'muted'} /></Button> },
+    { key: 'project', header: 'Project', cell: p => <button type="button" className="projects-name" data-hub-item title={p.rootPath} onClick={() => setDetails(p.id)}><span><strong>{p.alias}</strong>{p.launch && <Chip tone="accent" title="Opened from the terminal in this session">OPEN</Chip>}{productionLike(p.alias, p.rootPath.split(/[\\/]/).at(-1)) && <ProductionBadge />}</span><span className="mono muted">{p.rootPath}</span></button> },
+    { key: 'status', header: 'Status', className: 'projects-nowrap', cell: p => {
+      const s = projectStatus(p);
+      return <span title={p.problem}><StatusDot tone={s.tone} label={s.label} /></span>;
+    } },
+    { key: 'engine', header: 'Engine', className: 'projects-nowrap muted', cell: engineText },
+    { key: 'backend', header: 'Backend', className: 'projects-nowrap muted', cell: p => p.status === 'ready' ? p.backend : '—' },
+    { key: 'workspaces', header: 'Workspaces', className: 'projects-nowrap muted', cell: p => listed(p)?.workspaces.length ?? <span title="Listed when you open the project or its details">—</span> },
+    { key: 'opened', header: 'Last opened', className: 'projects-nowrap muted', cell: p => when(p.lastOpenedAt) },
+    { key: 'actions', header: <span className="sr-only">Actions</span>, className: 'projects-actions', cell: p => {
+      const at = projects.indexOf(p);
+      return <>
+       <Button variant="ghost" size="icon" aria-label={`Move ${p.alias} up`} title={readOnly} disabled={!writable || at === 0} onClick={() => void move(p, -1)}><ArrowUp size={14} /></Button>
+       <Button variant="ghost" size="icon" aria-label={`Move ${p.alias} down`} title={readOnly} disabled={!writable || at === projects.length - 1} onClick={() => void move(p, 1)}><ArrowDown size={14} /></Button>
+       <Button variant="ghost" size="small" aria-label={`Details for ${p.alias}`} onClick={() => setDetails(p.id)}>Details</Button>
+       {p.status === 'ready' ? <Button variant="outline" size="small" aria-label={`Open ${p.alias}`} onClick={() => navigate(openPath(p))}>Open<ArrowRight size={13} /></Button> : <Button variant="outline" size="small" title={readOnly} disabled={!writable} onClick={() => setDialog({ kind: 'repair', project: p })}><Wrench size={13} />Repair path</Button>}
+      </>;
+    } }
+  ];
   return <div className="hub">
+   {header}
    {data.registry.notice && <div className={`hub-banner ${writable ? '' : 'hub-banner-warn'}`} role={writable ? 'status' : 'alert'}><AlertTriangle size={15} /><span>{data.registry.notice}</span></div>}
    {env.dataDirShared && <div className="hub-banner hub-banner-warn" role="alert"><AlertTriangle size={15} /><span><strong>TF_DATA_DIR is an absolute path.</strong> Every project would share one data directory, so Hub workspaces cannot be read. Restart Hclaro without it, or with a relative path.</span></div>}
    {env.workspaceInherited && <div className="hub-banner" role="status"><Layers3 size={15} /><span>Hclaro was started with <code>TF_WORKSPACE</code>{env.inheritedWorkspace ? <> set to <code>{env.inheritedWorkspace}</code></> : ''}. Hub workspaces replace it for each command they run; the project opened from the terminal still uses it.</span></div>}
-   <div className="hub-toolbar">
-    <div className="search-field"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects, paths, workspaces…" aria-label="Search projects" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={13} /></button>}</div>
-    <Button onClick={() => setDialog({ kind: 'add' })} disabled={!writable} title={writable ? undefined : 'The project registry is read-only.'}><Plus size={15} />Add project</Button>
-   </div>
-   {data.launchRoot && !launchRegistered && <section className="surface hub-launch" aria-label="Project opened from the terminal"><div><span className="eyebrow">OPENED FROM TERMINAL</span><p className="mono">{data.launchRoot}</p><p className="muted">This project is open in this session. Save it to the Hub to find it again later.</p></div><div className="hub-actions"><Button variant="outline" onClick={() => navigate('/')}>Open<ArrowRight size={14} /></Button><Button variant="outline" disabled={!writable} onClick={() => setDialog({ kind: 'add', path: data.launchRoot })}><FolderPlus size={14} />Save to Hub</Button></div></section>}
-   {recent.length > 0 && !query && <section aria-label="Recently opened"><h2 className="hub-section">Recently opened</h2><div className="hub-recent">{recent.map(p => <button key={p.id} className="hub-recent-item" onClick={() => navigate(p.lastWorkspace ? contextPath(p.id, p.lastWorkspace) : projectPath(p.id))}><Clock size={14} /><span><strong>{p.alias}</strong><span className="muted">{p.lastWorkspace ? `Workspace ${p.lastWorkspace}` : 'Project'} · {when(p.lastOpenedAt)}</span></span><ArrowRight size={14} /></button>)}</div></section>}
-   <section aria-label="Projects"><h2 className="hub-section">Projects <span className="muted">{projects.length}</span></h2>
-    {projects.length === 0 ? <div className="empty-state"><HclaroMark size={40} decorative /><h2>Add your first project</h2><p>Register each Terraform or OpenTofu root folder you work with, such as <code>infra/dev</code> and <code>infra/prod</code>. Hclaro stores the path and a name, nothing else, and does not scan your disk.</p><Button onClick={() => setDialog({ kind: 'add' })} disabled={!writable}><Plus size={15} />Add project</Button></div> : ordered.length === 0 ? <div className="empty-state"><Search size={24} /><h2>No matching projects</h2><p>Workspaces are searchable once a project has been opened in this session.</p><Button variant="outline" onClick={() => setSearch('')}>Clear search</Button></div> : <ul className="hub-list" onKeyDown={arrowKeys}>{ordered.map(p => <ProjectCard key={p.id} project={p} writable={writable} first={projects[0]?.id === p.id} last={projects.at(-1)?.id === p.id} onPin={() => void update(p, { pinned: !p.pinned }, p.pinned ? 'Project unpinned' : 'Project pinned')} onMove={step => void move(p, step)} onDialog={kind => setDialog({ kind, project: p })} />)}</ul>}
-   </section>
-   <p className="info-note"><ShieldCheck size={15} /><span>Opening a project lists its workspaces with the CLI and opening a workspace reads its recorded state; either may contact the backend. Init and workspace changes (create, set CLI default, delete) run only after you review and confirm them on a project's page. Opening a workspace never selects it, and Hclaro never refreshes state. Removing a project only forgets it here.</span></p>
+   {data.launchRoot && !launchRegistered && <section className="hub-launch" aria-label="Project opened from the terminal"><span>Opened from the terminal: <span className="mono">{data.launchRoot}</span>. Save it to find it here again later.</span><Button variant="outline" size="small" onClick={() => navigate('/')}>Open<ArrowRight size={13} /></Button><Button variant="outline" size="small" disabled={!writable} title={readOnly} onClick={() => setDialog({ kind: 'add', path: data.launchRoot })}><FolderPlus size={13} />Save to Hub</Button></section>}
+   {projects.length === 0 ? <EmptyState icon={<Folder size={28} />} title="No projects yet" action={<Button onClick={() => setDialog({ kind: 'add' })} disabled={!writable} title={readOnly}><Plus size={15} />Add project</Button>}>Add a Terraform or OpenTofu root folder to start. Hclaro saves only its path and name.</EmptyState>
+    : ordered.length === 0 ? <EmptyState icon={<Search size={28} />} title="No matching projects" action={<Button variant="outline" onClick={() => setSearch('')}>Clear search</Button>}>Workspaces are searchable once a project's workspaces have been listed in this session.</EmptyState>
+    : <div className="projects-table" onKeyDown={arrowKeys}><DataTable label="Projects" columns={columns} rows={ordered} rowKey={p => p.id} rowLabel={p => p.alias} active={details} /></div>}
+   <Disclosure summary="How this works"><p>Listing projects reads only Hclaro's registry. Listing a project's workspaces runs <code>workspace list</code> with the CLI and opening a workspace reads its recorded state; either may contact the backend. Init and workspace changes (create, set CLI default, delete) run only after you review and confirm them. Opening a workspace never selects it, and Hclaro never refreshes state. Removing a project only forgets it here.</p></Disclosure>
+   {open && <ProjectDrawer project={open} writable={writable} notify={notify} onClose={closeDetails} onRepair={() => setDialog({ kind: 'repair', project: open })} onRemove={() => setDialog({ kind: 'remove', project: open })} />}
    {dialog?.kind === 'add' && <AddProjectDialog initialPath={dialog.path} onClose={() => setDialog(undefined)} onAdded={p => {
         setDialog(undefined);
         notify(`${p.alias} added`);
         void refresh();
-      }} />}
-   {dialog?.kind === 'rename' && <TextDialog title="Rename project" label="Name" initial={dialog.project.alias} action="Rename" onClose={() => setDialog(undefined)} onSubmit={async alias => {
-        await send('PATCH', `projects/${dialog.project.id}`, { alias });
-        setDialog(undefined);
-        notify('Project renamed');
-        await refresh();
       }} />}
    {dialog?.kind === 'repair' && <TextDialog title="Repair project path" label="New absolute path" initial={dialog.project.rootPath} action="Save path" mono description="Point this entry at the folder's new location. The folder is checked the same way as a new project." onClose={() => setDialog(undefined)} onSubmit={async rootPath => {
         await send('PATCH', `projects/${dialog.project.id}`, { rootPath });
@@ -108,58 +147,113 @@ export function HubView({ notify }: { notify: (text: string) => void }) {
       }} />}
    {dialog?.kind === 'remove' && <RemoveDialog project={dialog.project} onClose={() => setDialog(undefined)} onRemoved={warning => {
         setDialog(undefined);
-        notify(warning ? `Project removed from the Hub. ${warning}` : 'Project removed from the Hub');
+        setDetails(undefined);
+        notify(warning ? `Project removed from Hclaro. ${warning}` : 'Project removed from Hclaro');
         client.removeQueries({ queryKey: ['context-open', dialog.project.id] });
         void refresh();
       }} />}
   </div>;
 }
 
-function ProjectCard({ project: p, writable, first, last, onPin, onMove, onDialog }: {
+// The project details drawer. Workspaces are listed with the CLI only when asked (or already
+// listed in this session); set-default and delete open the reviewed, confirmed dialog.
+function ProjectDrawer({ project: p, writable, notify, onClose, onRepair, onRemove }: {
   project: Project;
   writable: boolean;
-  first: boolean;
-  last: boolean;
-  onPin: () => void;
-  onMove: (step: -1 | 1) => void;
-  onDialog: (kind: 'rename' | 'repair' | 'remove') => void;
+  notify: (text: string) => void;
+  onClose: () => void;
+  onRepair: () => void;
+  onRemove: () => void;
 }) {
+  const client = useQueryClient();
+  const nameId = useId();
+  const [name, setName] = useState(p.alias);
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState('');
+  const [workspaceDialog, setWorkspaceDialog] = useState<{ action: WorkspaceAction; name: string }>();
+  const profile = useProfileSelection(p.id);
   const ready = p.status === 'ready';
-  const engine = p.inspection?.engine ? `${engineLabel(p.inspection.engine, 'Automatic')} ${p.inspection.version || ''}`.trim() : p.enginePreference ? `${engineLabel(p.enginePreference, 'Automatic')} · version not checked` : 'Engine not checked';
-  return <li className={`hub-card ${ready ? '' : 'hub-card-problem'}`}>
-   <div className="hub-card-main">
-    <button className="hub-card-title" data-hub-item onClick={() => navigate(projectPath(p.id))} aria-label={`Open ${p.alias}`}><span className="directory-icon"><FolderOpen size={19} /></span><span><strong>{p.alias}</strong>{p.pinned && <Pin size={12} aria-label="Pinned" className="muted" />}</span></button>
-    <p className="mono hub-path" title={p.rootPath}>{p.rootPath}</p>
-    <div className="hub-tags">
-     <span className={`hub-status hub-status-${p.status}`}>{statusLabel[p.status]}</span>
-     {p.launch && <span className="hub-tag">Opened from terminal</span>}
-     {p.busy === 'init' && <span className="hub-tag hub-tag-busy"><LoaderCircle className="spin" size={11} />Initializing</span>}
-     {p.busy === 'workspace' && <span className="hub-tag hub-tag-busy"><LoaderCircle className="spin" size={11} />Changing workspaces</span>}
-     {ready && !p.initialized && !p.busy && <span className="hub-tag hub-tag-warn">Not initialized</span>}
-     {productionLike(p.alias, p.rootPath.split(/[\\/]/).at(-1)) && <ProductionBadge />}
-    </div>
-    <dl className="hub-facts">
-     <div><dt>Engine</dt><dd>{engine}</dd></div>
-     <div><dt>Initialized</dt><dd>{ready ? p.initialized ? 'Yes' : 'Not detected' : '—'}</dd></div>
-     <div><dt>Backend</dt><dd>{ready ? p.backend : '—'}</dd></div>
-     <div><dt>Workspaces</dt><dd>{p.inspection && !p.inspection.diagnostic ? p.inspection.workspaces.length : 'Not listed yet'}</dd></div>
-     <div><dt>CLI default</dt><dd title="Selected in this project's CLI data directory, as last listed in this session.">{p.inspection && !p.inspection.diagnostic ? p.inspection.cliDefault || 'Not marked' : 'Not listed yet'}</dd></div>
-     <div><dt>Last opened in Hclaro</dt><dd title="Each browser tab reads its own workspace; this never changes the CLI default.">{p.lastWorkspace || '—'}</dd></div>
-     <div><dt>Workspace changes</dt><dd title={p.workspaceActions?.reason || p.workspaceActions?.deleteReason}>{!ready ? '—' : p.workspaceActions?.change ? p.workspaceActions.delete ? 'Create, set default, delete' : 'Create, set default' : 'Unavailable'}</dd></div>
-     <div><dt>Last opened</dt><dd>{when(p.lastOpenedAt)}</dd></div>
-    </dl>
+  const inspect = useQuery({ queryKey: ['inspect', p.id], queryFn: () => send<Project>('POST', `projects/${p.id}/inspect`, {}), enabled: false, retry: false });
+  useEffect(() => {
+    if (inspect.data) void client.invalidateQueries({ queryKey: ['projects'] });
+  }, [inspect.data, client]);
+  // Git is never run from here: the branch shows only when the Git page read it in this session.
+  const git = client.getQueryData<GitContext>(['git-status', gitPrefix(p.id)]);
+  const inspection = inspect.data?.inspection ?? p.inspection;
+  const canList = ready && !p.busy && !workspaceDialog;
+  async function rename() {
+    setRenaming(true);
+    setRenameError('');
+    try {
+      await send('PATCH', `projects/${p.id}`, { alias: name.trim() });
+      notify('Project renamed');
+      await client.invalidateQueries({ queryKey: ['projects'] });
+    } catch (error) {
+      setRenameError(errorMessage(error));
+    } finally {
+      setRenaming(false);
+    }
+  }
+  return <Drawer label="Project details" onClose={onClose}>
+   <div className="inspector-header"><span><FolderOpen size={15} aria-hidden="true" />Project details</span><Button variant="ghost" size="icon" aria-label="Close project details" onClick={onClose}><X size={16} /></Button></div>
+   <div className="inspector-body project-drawer">
+    <form className="project-rename" onSubmit={e => {
+        e.preventDefault();
+        void rename();
+      }}>
+     <label htmlFor={nameId}>Name</label>
+     <div><input id={nameId} value={name} onChange={e => setName(e.target.value)} maxLength={80} autoComplete="off" disabled={!writable} /><Button type="submit" variant="outline" disabled={!writable || renaming || !name.trim() || name.trim() === p.alias} title={writable ? undefined : 'The project registry is read-only.'}>Rename</Button></div>
+     {renameError && <p className="dialog-error" role="alert">{renameError}</p>}
+    </form>
+    <div className="project-root"><span className="project-label">Root folder</span><span className="mono">{p.rootPath}</span>{!ready && <Button variant="outline" size="small" disabled={!writable} title={writable ? undefined : 'The project registry is read-only.'} onClick={onRepair}><Wrench size={13} />Repair path…</Button>}</div>
     {p.problem && <p className="hub-problem" role="note"><AlertTriangle size={13} />{p.problem}</p>}
-    {p.inspection?.diagnostic && ready && <p className="hub-problem" role="note"><AlertTriangle size={13} />{p.inspection.diagnostic.message}</p>}
+    <dl className="project-facts">
+     <dt>Status</dt><dd>{projectStatus(p).label}</dd>
+     <dt>Engine</dt><dd>{engineText(p)}</dd>
+     <dt>Initialized</dt><dd>{ready ? p.initialized ? 'Yes' : 'Not detected' : '—'}</dd>
+     <dt>Backend</dt><dd>{ready ? `${p.backend} · ${p.executionMode}` : '—'}</dd>
+     <dt>Git</dt><dd className={git?.head?.branch ? 'mono' : 'muted'} title={git ? undefined : 'Open the Git page to read the branch. Hclaro does not run git from this list.'}>{git?.head ? `${git.head.branch || 'detached'}${git.head.commit ? ` @ ${shortCommit(git.head.commit)}` : ''}` : 'Not read yet'}</dd>
+     <dt>Last opened</dt><dd>{when(p.lastOpenedAt)}</dd>
+    </dl>
+    <section className="project-workspaces" aria-labelledby={`${nameId}-ws`}>
+     <div className="project-workspaces-head"><span className="project-label" id={`${nameId}-ws`}>Workspaces</span>{ready && <Button variant="ghost" size="small" disabled={!canList || inspect.isFetching} title={p.busy ? 'A command is running for this project.' : 'Runs workspace list with the CLI. This may contact the backend.'} onClick={() => void inspect.refetch()}><RefreshCcw size={13} className={inspect.isFetching ? 'spin' : undefined} />{inspection ? 'List again' : 'List workspaces'}</Button>}</div>
+     {!ready ? <p className="muted">Workspaces are listed once the folder is available.</p>
+      : inspect.isFetching && !inspection ? <p className="muted" role="status"><LoaderCircle className="spin" size={13} /> Running <code>workspace list</code>…</p>
+      : inspect.error ? <p className="hub-problem" role="alert"><AlertTriangle size={13} />{errorMessage(inspect.error)}</p>
+      : inspection?.diagnostic ? <p className="hub-problem" role="note"><AlertTriangle size={13} />{inspection.diagnostic.code === 'uninitialized' ? 'Backend initialization was not detected. Review and run init from the project page.' : inspection.diagnostic.message}</p>
+      : !inspection ? <p className="muted">Not listed yet in this session.</p>
+      : inspection.workspaces.length === 0 ? <p className="muted">The CLI returned no workspace names Hclaro can display.</p>
+      : <ul className="project-workspace-list">{inspection.workspaces.map(ws => {
+          const isDefault = ws === inspection.cliDefault;
+          const changeBlocked = !p.workspaceActions?.change ? p.workspaceActions?.reason || 'Workspace changes are unavailable.' : p.busy ? 'A command is running for this project.' : undefined;
+          const deleteBlocked = changeBlocked || (!p.workspaceActions?.delete ? p.workspaceActions?.deleteReason : ws === 'default' ? 'The default workspace cannot be deleted.' : isDefault ? 'This is the CLI default. Set another workspace as CLI default first.' : !inspection.cliDefault ? 'The CLI default is unknown.' : undefined);
+          return <li key={ws}>
+           <button type="button" className="link mono" title="Open this workspace in this tab. It reads its recorded state and never changes the CLI default." onClick={() => navigate(contextPath(p.id, ws))}>{ws}</button>
+           {isDefault && <Chip title="Selected in this project's CLI data directory. Opening another workspace here does not change it.">CLI default</Chip>}
+           {ws === p.lastWorkspace && <span className="muted">last opened in Hclaro</span>}
+           {productionLike(ws) && <ProductionBadge />}
+           <span className="context-spacer" />
+           {!isDefault && <Button variant="ghost" size="small" disabled={!!changeBlocked} title={changeBlocked || 'Runs workspace select after you review and confirm it. Affects terminals in this folder.'} aria-label={`Set ${ws} as CLI default`} onClick={() => setWorkspaceDialog({ action: 'select', name: ws })}><Terminal size={13} />Set as CLI default</Button>}
+           <Button variant="ghost" size="small" className="project-delete" disabled={!!deleteBlocked} title={deleteBlocked || 'Delete this workspace if its state is empty, after you review and confirm it.'} aria-label={`Delete workspace ${ws}`} onClick={() => setWorkspaceDialog({ action: 'delete', name: ws })}><Trash2 size={13} />Delete</Button>
+          </li>;
+        })}</ul>}
+     {inspection && inspection.hiddenWorkspaces > 0 && <p className="muted">{inspection.hiddenWorkspaces} workspace name{inspection.hiddenWorkspaces === 1 ? '' : 's'} with unusual characters {inspection.hiddenWorkspaces === 1 ? 'is' : 'are'} not shown.</p>}
+     {ready && <p className="muted">Create workspaces from the workspace switcher in the top bar. Init, execution profiles and a separate session are on the <button type="button" className="link" onClick={() => navigate(projectPath(p.id))}>project page</button>.</p>}
+    </section>
    </div>
-   <div className="hub-card-actions">
-    {ready ? <Button size="small" onClick={() => navigate(projectPath(p.id))}>Workspaces<ArrowRight size={13} /></Button> : <Button size="small" variant="outline" disabled={!writable} onClick={() => onDialog('repair')}><Wrench size={13} />Repair path</Button>}
-    <Button variant="ghost" size="icon" aria-label={p.pinned ? `Unpin ${p.alias}` : `Pin ${p.alias}`} disabled={!writable} onClick={onPin}>{p.pinned ? <PinOff size={14} /> : <Pin size={14} />}</Button>
-    <Button variant="ghost" size="icon" aria-label={`Rename ${p.alias}`} disabled={!writable} onClick={() => onDialog('rename')}><Pencil size={14} /></Button>
-    <Button variant="ghost" size="icon" aria-label={`Move ${p.alias} up`} disabled={!writable || first} onClick={() => onMove(-1)}><ArrowUp size={14} /></Button>
-    <Button variant="ghost" size="icon" aria-label={`Move ${p.alias} down`} disabled={!writable || last} onClick={() => onMove(1)}><ArrowDown size={14} /></Button>
-    <Button variant="ghost" size="icon" aria-label={`Remove ${p.alias} from the Hub`} disabled={!writable} onClick={() => onDialog('remove')}><Trash2 size={14} /></Button>
+   <div className="drift-drawer-footer">
+    <Button variant="ghost" className="project-delete" disabled={!writable} title={writable ? 'Removes it from Hclaro only; files on disk are not touched.' : 'The project registry is read-only.'} onClick={onRemove}><Trash2 size={14} />Remove from Hclaro</Button>
+    <Button className="drift-run-plan" disabled={!ready} title={ready ? undefined : statusLabel[p.status]} onClick={() => navigate(openPath(p))}>Open project<ArrowRight size={14} /></Button>
    </div>
-  </li>;
+   {workspaceDialog && <WorkspaceDialog projectId={p.id} profileId={profile.selected} action={workspaceDialog.action} initialName={workspaceDialog.name} onClose={() => {
+        setWorkspaceDialog(undefined);
+        void client.invalidateQueries({ queryKey: ['projects'] });
+        void inspect.refetch();
+      }} onFinished={() => void client.invalidateQueries({ queryKey: ['projects'] })} onOpen={ws => {
+        setWorkspaceDialog(undefined);
+        navigate(contextPath(p.id, ws));
+      }} />}
+  </Drawer>;
 }
 
 export function AddProjectDialog({ initialPath = '', onClose, onAdded }: {
@@ -173,40 +267,38 @@ export function AddProjectDialog({ initialPath = '', onClose, onAdded }: {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [browsing, setBrowsing] = useState(false);
-  const dialog = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLInputElement>(null);
-  useModal(dialog, first, onClose);
+  const form = useId();
   async function submit() {
     setBusy(true);
     setError('');
     try {
       onAdded(await send<Project>('POST', 'projects', { path: path.trim(), alias: alias.trim(), engine }));
     } catch (e) {
-      setError(e instanceof ApiError && e.code === 'duplicate_project' ? 'This folder is already in the Hub.' : errorMessage(e));
+      setError(e instanceof ApiError && e.code === 'duplicate_project' ? 'This folder is already in Hclaro.' : errorMessage(e));
     } finally {
       setBusy(false);
     }
   }
-  return <div className="dialog-backdrop">
-   <div ref={dialog} className="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="add-title">
-    <div className="dialog-header"><h2 id="add-title">Add a project</h2><Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
-    <p>Choose the root folder of one Terraform or OpenTofu configuration. Hclaro saves its path, name and engine choice in your user configuration directory. Nothing in the folder is run or changed.</p>
-    <form className="hub-form" onSubmit={e => {
-        e.preventDefault();
-        void submit();
-      }}>
-     <label>Root folder<div className="hub-path-row"><input ref={first} className="mono" value={path} onChange={e => setPath(e.target.value)} placeholder="/Users/me/infra/prod" spellCheck={false} autoComplete="off" required /><Button type="button" variant="outline" onClick={() => setBrowsing(!browsing)} aria-expanded={browsing}><Folder size={14} />Browse…</Button></div></label>
-     {browsing && <FolderChooser start={path} choose={p => {
-          setPath(p);
-          setBrowsing(false);
-        }} />}
-     <label>Name <span className="muted">(optional; defaults to the folder name)</span><input value={alias} onChange={e => setAlias(e.target.value)} maxLength={80} autoComplete="off" /></label>
-     <label>Engine<select value={engine} onChange={e => setEngine(e.target.value)}><option value="">Automatic (Terraform, then OpenTofu)</option><option value="terraform">Terraform</option><option value="tofu">OpenTofu</option></select></label>
-     {error && <p className="dialog-error" role="alert">{error}</p>}
-     <div className="dialog-actions"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || !path.trim()}><Plus size={14} />{busy ? 'Adding…' : 'Add project'}</Button></div>
-    </form>
-   </div>
-  </div>;
+  return <Dialog title="Add a project" wide onClose={onClose} initial={first} footer={<>
+    <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+    <Button type="submit" form={form} disabled={busy || !path.trim()} title={path.trim() ? undefined : 'Choose a root folder first.'}><Plus size={14} />{busy ? 'Adding…' : 'Add project'}</Button>
+   </>}>
+   <p>Choose the root folder of one Terraform or OpenTofu configuration. Hclaro saves its path, name and engine choice in your user configuration directory. Nothing in the folder is run or changed.</p>
+   <form id={form} className="hub-form" onSubmit={e => {
+       e.preventDefault();
+       void submit();
+     }}>
+    <label>Root folder<div className="hub-path-row"><input ref={first} className="mono" value={path} onChange={e => setPath(e.target.value)} placeholder="/Users/me/infra/prod" spellCheck={false} autoComplete="off" required /><Button type="button" variant="outline" onClick={() => setBrowsing(!browsing)} aria-expanded={browsing}><Folder size={14} />Browse…</Button></div></label>
+    {browsing && <FolderChooser start={path} choose={p => {
+         setPath(p);
+         setBrowsing(false);
+       }} />}
+    <label>Name <span className="muted">(optional; defaults to the folder name)</span><input value={alias} onChange={e => setAlias(e.target.value)} maxLength={80} autoComplete="off" /></label>
+    <label>Engine<select value={engine} onChange={e => setEngine(e.target.value)}><option value="">Automatic (Terraform, then OpenTofu)</option><option value="terraform">Terraform</option><option value="tofu">OpenTofu</option></select></label>
+    {error && <p className="dialog-error" role="alert">{error}</p>}
+   </form>
+  </Dialog>;
 }
 
 // Lists one folder at a time; nothing is scanned recursively.
@@ -286,7 +378,7 @@ function RemoveDialog({ project, onClose, onRemoved }: { project: Project; onClo
   useModal(dialog, cancel, onClose);
   return <div className="dialog-backdrop">
    <div ref={dialog} className="dialog" role="dialog" aria-modal="true" aria-labelledby="remove-title">
-    <div className="dialog-header"><h2 id="remove-title">Remove {project.alias} from the Hub?</h2></div>
+    <div className="dialog-header"><h2 id="remove-title">Remove {project.alias} from Hclaro?</h2></div>
     <p>Hclaro forgets this entry. <strong>Nothing on disk or in your backend is deleted</strong>: configuration, <code>.terraform</code>, state and workspaces stay as they are. Open workspace views of this project close.</p>
     <p className="mono hub-path">{project.rootPath}</p>
     {error && <p className="dialog-error" role="alert">{error}</p>}
@@ -297,7 +389,7 @@ function RemoveDialog({ project, onClose, onRemoved }: { project: Project; onClo
           } catch (e) {
             setError(errorMessage(e));
           }
-        }}><Trash2 size={14} />Remove from Hub</Button></div>
+        }}><Trash2 size={14} />Remove from Hclaro</Button></div>
    </div>
   </div>;
 }
