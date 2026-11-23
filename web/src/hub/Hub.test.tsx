@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
-import { consumeDeepLink, parseRoute, productionLike } from '../router';
+import { consumeDeepLink, contextPath, parseRoute, productionLike } from '../router';
 import type { Project, ProjectList, Resource, Workspace } from '../types';
 
 // Opens the top bar workspace switcher and chooses a workspace (this tab only).
@@ -75,6 +75,7 @@ function stub(list: ProjectList) {
     if (path === 'projects' && method === 'POST') return Response.json(project('c'.repeat(32), 'added'), { status: 201 });
     if (path === 'projects/browse') return Response.json({ path: '/infra', parent: '/', project: false, entries: ['network'], truncated: false });
     if (path.endsWith('/inspect')) return Response.json(inspectReply ?? inspected);
+    if (path.endsWith('/workspaces/review')) return Response.json({ error: { code: 'busy', message: 'Review refused in this test.' } }, { status: 409 });
     if (path === 'contexts') return Response.json({ ...snapshot(body.workspace).context });
     const match = path.match(/^contexts\/([0-9a-f]{32})(\/resources)?/);
     const ws = match && Object.keys(ctx).find(k => ctx[k] === match[1]);
@@ -106,32 +107,75 @@ afterEach(() => {
 });
 
 describe('Workspace Hub', () => {
-  it('lists projects with honest status, recents and production hints', async () => {
+  it('lists projects in a table with honest status and production hints', async () => {
     stub(listing(projects));
     app('/projects');
-    const list = await screen.findByRole('region', { name: 'Projects' });
-    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
-    expect(list).toHaveTextContent('Folder missing');
-    expect(list).toHaveTextContent('The folder no longer exists');
-    expect(within(list).getByRole('button', { name: 'Repair path' })).toBeEnabled();
-    expect(list).toHaveTextContent('Production-like name');
-    expect(screen.getByRole('region', { name: 'Recently opened' })).toHaveTextContent('Workspace dev');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Projects' })).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Projects' });
+    const rows = () => within(table).getAllByRole('row').slice(1);
+    expect(rows()).toHaveLength(2);
+    expect(table).toHaveTextContent('Folder missing');
+    expect(table).toHaveTextContent('Terraform 1.9.8');
+    expect(within(table).getByRole('button', { name: 'Repair path' })).toBeEnabled();
+    expect(within(table).getByRole('button', { name: 'Open network' })).toBeEnabled();
+    expect(table).toHaveTextContent('Production-like name');
     // GET only: listing projects never runs engine commands.
     expect(calls.filter(c => c.method !== 'GET')).toHaveLength(0);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Search projects'), 'prod');
     // Workspace names are searchable once listed: "network" has a prod workspace.
-    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(rows()).toHaveLength(2);
     await user.clear(screen.getByLabelText('Search projects'));
     await user.type(screen.getByLabelText('Search projects'), 'platform');
-    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(rows()).toHaveLength(1);
+  });
+  it('pins and reorders projects through the registry endpoints', async () => {
+    stub(listing(projects));
+    app('/projects');
+    const user = userEvent.setup();
+    expect(await screen.findByRole('button', { name: 'Move network up' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Move network down' }));
+    await waitFor(() => expect(calls.find(c => c.url.endsWith('projects/order'))?.body).toEqual({ ids: [platform, network] }));
+    await user.click(screen.getByRole('button', { name: 'Pin network' }));
+    await waitFor(() => expect(calls.find(c => c.method === 'PATCH')?.body).toEqual({ pinned: true }));
+  });
+  it('shows project details and renames, lists workspaces and opens only on request', async () => {
+    stub(listing(projects));
+    app('/projects');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Details for network' }));
+    const drawer = screen.getByRole('complementary', { name: 'Project details' });
+    expect(drawer).toHaveTextContent('/infra/network');
+    expect(drawer).toHaveTextContent('Not read yet');
+    // Workspaces listed earlier in this session show without running the CLI again.
+    expect(within(drawer).getByText('CLI default')).toBeInTheDocument();
+    expect(within(drawer).queryByRole('button', { name: 'Set dev as CLI default' })).not.toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Delete workspace dev' })).toBeDisabled();
+    expect(within(drawer).getByRole('button', { name: 'Delete workspace default' })).toBeDisabled();
+    expect(calls.filter(c => c.method !== 'GET')).toHaveLength(0);
+    await user.click(within(drawer).getByRole('button', { name: /List again/ }));
+    await waitFor(() => expect(calls.some(c => c.url.endsWith(`projects/${network}/inspect`))).toBe(true));
+    await user.clear(within(drawer).getByLabelText('Name'));
+    await user.type(within(drawer).getByLabelText('Name'), 'core-network');
+    await user.click(within(drawer).getByRole('button', { name: 'Rename' }));
+    await waitFor(() => expect(calls.find(c => c.method === 'PATCH')?.body).toEqual({ alias: 'core-network' }));
+    // Set as CLI default opens the reviewed, confirmed workspace dialog; nothing runs yet.
+    await user.click(within(drawer).getByRole('button', { name: 'Set prod as CLI default' }));
+    expect(await screen.findByRole('dialog', { name: 'Set prod as CLI default' })).toBeInTheDocument();
+    await waitFor(() => expect(calls.find(c => c.url.endsWith('/workspaces/review'))?.body).toEqual({ action: 'select', name: 'prod' }));
+    expect(calls.some(c => c.url.includes('operations/workspace'))).toBe(false);
+    await user.keyboard('{Escape}');
+    await user.click(within(drawer).getByRole('button', { name: /Open project/ }));
+    expect(window.location.pathname).toBe(contextPath(network, 'dev'));
   });
   it('adds a project with CSRF protection and a folder chooser', async () => {
     stub(listing([]));
     app('/projects');
     const user = userEvent.setup();
-    // The toolbar and the empty state both offer the action.
-    await user.click((await screen.findAllByRole('button', { name: 'Add project' }))[0]);
+    expect(await screen.findByText('No projects yet')).toBeInTheDocument();
+    // With no projects only the empty state offers the action.
+    expect(screen.getAllByRole('button', { name: 'Add project' })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Add project' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add a project' });
     await user.click(within(dialog).getByRole('button', { name: /Browse/ }));
     await user.click(await within(dialog).findByRole('button', { name: 'network' }));
@@ -149,10 +193,11 @@ describe('Workspace Hub', () => {
     stub(listing(projects));
     app('/projects');
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Remove network from the Hub' }));
+    await user.click(await screen.findByRole('button', { name: 'Details for network' }));
+    await user.click(screen.getByRole('button', { name: 'Remove from Hclaro' }));
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent('Nothing on disk or in your backend is deleted');
-    await user.click(within(dialog).getByRole('button', { name: 'Remove from Hub' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Remove from Hclaro' }));
     await waitFor(() => expect(calls.some(c => c.method === 'DELETE' && c.url.endsWith(`projects/${network}`))).toBe(true));
   });
   it('lists workspaces explicitly and opens one in this tab only', async () => {
@@ -289,7 +334,7 @@ describe('Workspace Hub', () => {
   it('opens the Hub when Hclaro was started without a project', async () => {
     stub(listing([]));
     app('/');
-    expect(await screen.findByText('Add your first project')).toBeInTheDocument();
+    expect(await screen.findByText('No projects yet')).toBeInTheDocument();
     expect(window.location.pathname).toBe('/projects');
     expect(screen.getByRole('button', { name: 'Resources' })).toBeDisabled();
   });
@@ -301,6 +346,12 @@ describe('Workspace Hub', () => {
     app('/projects');
     expect(await screen.findByText('The project registry was written by a newer Hclaro.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add project' })).toBeDisabled();
+    // A read-only registry blocks every change: pin, order, rename and remove.
+    expect(screen.getByRole('button', { name: 'Pin network' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move network down' })).toBeDisabled();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Details for network' }));
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove from Hclaro' })).toBeDisabled();
     expect(screen.getByText(/TF_DATA_DIR is an absolute path/)).toBeInTheDocument();
     expect(document.body).toHaveTextContent('set to staging');
   });
