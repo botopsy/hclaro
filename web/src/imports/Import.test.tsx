@@ -49,12 +49,52 @@ describe('Import wizard', () => {
     expect(file).toHaveTextContent('to = aws_s3_bucket.legacy_logs');
     expect(screen.getByText(/Resource block found in/)).toBeInTheDocument();
     expect(posts.map(p => p.url)).toEqual(['/api/v1/imports/preview']);
-    const write = screen.getByRole('button', { name: 'Write file and plan import' });
+    const write = screen.getByRole('button', { name: 'Write file and plan' });
     expect(write).toBeDisabled();
     await userEvent.click(screen.getByLabelText(/Write imports.tf to this project/));
     await userEvent.click(write);
     expect(posts.at(-1)).toEqual({ url: '/api/v1/imports', body: { address: 'aws_s3_bucket.legacy_logs', id: 'hclaro-legacy-logs', provider: '', file: 'imports.tf', generateConfig: false, varFiles: [], previewSha256: 'a'.repeat(64), acknowledgeWrite: true, acknowledgeBackendAccess: true } });
+    // Step 3: written, the plan runs; nothing opens until asked.
+    expect(await screen.findByRole('heading', { name: 'imports.tf written' })).toBeInTheDocument();
+    expect(screen.getByText(/Nothing is imported until you review and apply that plan/)).toBeInTheDocument();
+    expect(started).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Open plan…' }));
     expect(started).toHaveBeenCalledOnce();
+  });
+
+  it('starts over with Import another', async () => {
+    serve(options, ready);
+    const started = view();
+    await describeObject();
+    await userEvent.click(screen.getByRole('button', { name: 'Check and preview' }));
+    await userEvent.click(await screen.findByLabelText(/Write imports.tf to this project/));
+    await userEvent.click(screen.getByRole('button', { name: 'Write file and plan' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Import another' }));
+    expect(screen.getByLabelText('Resource instance address')).toHaveValue('');
+    expect(screen.getByRole('listitem', { current: 'step' })).toHaveTextContent('Existing object');
+    expect(started).not.toHaveBeenCalled();
+  });
+
+  it('refuses a credential-looking import ID inline, under the field', async () => {
+    serve(options, { ...ready, content: '', sha256: '', blocked: true, issues: [{ code: 'id_credential', severity: 'error', message: 'The import ID looks like a credential.' }] });
+    view();
+    await describeObject();
+    await userEvent.click(screen.getByRole('button', { name: 'Check and preview' }));
+    expect(await screen.findByText('The import ID looks like a credential.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Import ID')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('Import ID')).toHaveAccessibleDescription(/looks like a credential/);
+    expect(screen.queryByLabelText('Contents of imports.tf')).not.toBeInTheDocument();
+  });
+
+  it('goes back from the review to the form', async () => {
+    serve(options, ready);
+    view();
+    await describeObject();
+    await userEvent.click(screen.getByRole('button', { name: 'Check and preview' }));
+    await screen.findByLabelText('Contents of imports.tf');
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByLabelText('Import ID')).toHaveValue('hclaro-legacy-logs');
+    expect(screen.queryByLabelText('Contents of imports.tf')).not.toBeInTheDocument();
   });
 
   it('discards the preview when the request changes', async () => {
@@ -63,9 +103,12 @@ describe('Import wizard', () => {
     await describeObject();
     await userEvent.click(screen.getByRole('button', { name: 'Check and preview' }));
     await screen.findByLabelText('Contents of imports.tf');
+    // The reviewed request cannot be edited in place; Back discards the preview.
+    expect(screen.queryByLabelText('Import ID')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     await userEvent.type(screen.getByLabelText('Import ID'), 'x');
     expect(screen.queryByLabelText('Contents of imports.tf')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Write file and plan import' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Write file and plan' })).not.toBeInTheDocument();
   });
 
   it('blocks a collision and offers nothing to write', async () => {
@@ -75,7 +118,7 @@ describe('Import wizard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Check and preview' }));
     const problems = await screen.findByRole('alert', { name: 'Problems to fix' });
     expect(within(problems).getByText(/already in state/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Write file and plan import' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Write file and plan' })).not.toBeInTheDocument();
   });
 
   it('explains why importing is unavailable and shows the manual recipe', async () => {
@@ -86,7 +129,7 @@ describe('Import wizard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Check and preview' }));
     expect(await screen.findByText('terraform plan -out=import.tfplan', { exact: false })).toBeVisible();
     expect(screen.getByText(/Hclaro never runs it/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Write file and plan import' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Write file and plan' })).not.toBeInTheDocument();
   });
 });
 
