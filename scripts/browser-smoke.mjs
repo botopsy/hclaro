@@ -102,7 +102,16 @@ try{
  await page.getByRole('button',{name:'Clear',exact:true}).click()
  await page.getByRole('button',{name:'Overview',exact:true}).click()
  await page.getByRole('heading',{name:'Overview',level:1}).waitFor()
+ await page.getByRole('region',{name:'Needs attention'}).waitFor()
+ assert.equal(await page.getByText(/not live cloud inventory/).count(),0,'snapshot note should be a tooltip')
+ await page.getByRole('button',{name:'About these counts'}).click()
+ await page.getByRole('dialog',{name:'About these counts'}).getByText(/not live cloud inventory/).waitFor()
+ await page.keyboard.press('Escape')
  await page.screenshot({path:'.cache/screenshots/overview-dark.png',fullPage:true})
+ // §4.1: the stats strip opens Resources already filtered.
+ await page.getByRole('navigation',{name:'Counts'}).getByRole('button',{name:/ managed$/}).click()
+ assert.equal(await page.getByLabel('Filter resource mode').inputValue(),'managed')
+ await page.getByRole('button',{name:'Reset',exact:true}).click()
  await page.getByRole('button',{name:'Settings',exact:true}).click()
  await page.getByRole('button',{name:'light',exact:true}).click()
  assert.equal(await page.locator('html').getAttribute('data-theme'),'light')
@@ -388,6 +397,6 @@ try{
  assert(!consoleOutput.join('\n').includes(canary),'secret in browser logs')
  assert.equal(external.length,0,'external runtime request')
  assert.deepEqual(errors,[],'browser errors')
- console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/uncommitted warning chip/changes/redacted diff/editor link/source reference/plan source/branch selector and blocked switch, cloud discovery verification/scan preview/labels/redaction/prepared import, grouped navigation/project switcher/compact sidebar/short window/narrow drawer, cost estimate opt-in gate/disclosure/coverage/redaction, 1,000-resource search, no external requests.')
+ console.log('PASS: resource rendering, actual Go API redaction, inspector, details drawer width/resize, copy, quoted keys, filters, overview attention/stats strip filter link, themes, tablet layout, replace selection and preflight, plan review, apply preflight and confirmation gating, plan preflight, operation log replay, import collision and preview gating, import review with redacted generated configuration, Git badge/uncommitted warning chip/changes/redacted diff/editor link/source reference/plan source/branch selector and blocked switch, cloud discovery verification/scan preview/labels/redaction/prepared import, grouped navigation/project switcher/compact sidebar/short window/narrow drawer, cost estimate opt-in gate/disclosure/coverage/redaction, 1,000-resource search, no external requests.')
 }catch(error){await page.screenshot({path:'.cache/browser-failure.png',fullPage:true}).catch(()=>{});throw error}
 finally{await browser.close()}

@@ -253,11 +253,11 @@ function Workbench({
     queryFn: () => api<Resource>(scopedPath(readScope!, `resources/${selected}`)),
     enabled: !!selected && !!readScope
   });
-  // The DRIFT column: the latest scan of this workspace, shared with Drift detection's cache.
+  // The DRIFT column and Overview: the latest scan of this workspace, shared with Drift detection's cache.
   const driftScans = useQuery({
     queryKey: ['drift-scans', planScope ? scopeKey(planScope) : 'none', w?.status],
     queryFn: () => api<{ scans: DriftScan[] }>(scopedPath(planScope!, 'drift-scans')),
-    enabled: ready && !!planScope && view === 'Resources'
+    enabled: ready && !!planScope && (view === 'Resources' || view === 'Overview')
   });
   const drift = (id: string) => driftOf(driftScans.data?.scans, id);
   useEffect(() => {
@@ -416,9 +416,13 @@ function Workbench({
       </section>
       {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && readScope && detail.data ? { path: scopedPath(readScope, `resources/${detail.data.id}/source`), prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} drift={drift(selected)} ai={readScope} />}
      </>}
-     {view === 'Overview' && <Overview workspace={w} browse={() => setView('Resources')} chooseType={t => {
+     {view === 'Overview' && <Overview workspace={w} scope={planScope} gitPrefix={gitBase} root={w.context?.rootPath ?? (scoped ? undefined : launchRoot)} drift={driftScans.data?.scans} open={setView} chooseType={t => {
             resetFilters();
             setType(t);
+            setView('Resources');
+          }} chooseMode={m => {
+            resetFilters();
+            setMode(m);
             setView('Resources');
           }} />}
      {view === 'Modules' && <div className="directory-grid">{w.modules.map(m => <button className="directory-card" key={m.address} onClick={() => chooseModule(m.address)}><span className="directory-icon"><FolderTree size={21} /></span><h2>{moduleName(m.address)}</h2><p className="mono">{m.address || 'root'}</p><div><span>{m.count} direct resource{m.count === 1 ? '' : 's'}</span><ArrowRight size={15} /></div></button>)}</div>}

@@ -49,26 +49,6 @@
     font-size: 11px;
   }
 
-  .stats-grid {
-    gap: 8px;
-  }
-
-  .stat {
-    padding: 15px;
-  }
-
-  .stat > span {
-    font-size: 12px;
-  }
-
-  .stat > strong {
-    font-size: 28px;
-  }
-
-  .overview-columns {
-    grid-template-columns: 1fr;
-  }
-
   .inspector-title .resource-icon {
     display: flex;
   }
@@ -142,10 +122,6 @@
 
   .explorer {
     max-height: calc(100vh - 320px);
-  }
-
-  .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .setting-row {
