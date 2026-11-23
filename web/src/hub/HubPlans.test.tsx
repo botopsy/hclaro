@@ -354,7 +354,7 @@ describe('Hub drift scans and graphs (M24.09)', { timeout: 20000 }, () => {
     expect(await screen.findByLabelText('Graph history')).toBeInTheDocument();
     await waitFor(() => expect(calls.some(c => c.url === `/api/v1/contexts/${ctx.dev}/graphs/${graph.id}`)).toBe(true));
     expect(calls.some(c => c.url === `/api/v1/contexts/${ctx.dev}/plans`)).toBe(true);
-    await user.click(screen.getAllByRole('button', { name: 'Generate graph' })[0]);
+    await user.click(screen.getByRole('button', { name: 'Generate again' }));
     const dialog = await screen.findByRole('dialog', { name: 'Generate dependency graph' });
     expect(within(dialog).getByLabelText('The graph will use')).toHaveTextContent('/infra/network');
     await user.click(within(dialog).getByRole('button', { name: 'Generate graph' }));

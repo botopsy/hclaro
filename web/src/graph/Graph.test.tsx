@@ -76,8 +76,11 @@ describe('Graph', () => {
     const legend = screen.getByLabelText('Legend');
     expect(legend).toHaveTextContent('Depends on (declared by the engine)');
     expect(legend).toHaveTextContent('Derived through internal nodes');
-    // Fidelity and retention are stated, not implied.
-    const limits = document.querySelector('.graph-limits')!;
+    // One notes card: the engine's remarks, with fidelity and retention folded into "How this works".
+    const notes = screen.getByRole('note', { name: 'About this graph' });
+    expect(within(notes).getByText('How this works')).toBeInTheDocument();
+    for (const w of withPlan.warnings) expect(notes).toHaveTextContent(w);
+    const limits = notes.querySelector('.graph-limits')!;
     expect(limits).toHaveTextContent('Terraform 1.7 and later print a resource-only graph');
     expect(limits).toHaveTextContent('16 MiB, 20,000 nodes or 200,000 edges is refused');
     expect(limits).toHaveTextContent('The last 5 graphs are kept in memory for up to 12 hours');
@@ -88,7 +91,7 @@ describe('Graph', () => {
     const user = userEvent.setup();
     await screen.findByRole('group', { name: 'Graph summary' });
     await user.click(node('aws_security_group.web'));
-    const inspector = await screen.findByRole('complementary', { name: 'Node details' });
+    const inspector = await screen.findByRole('complementary', { name: 'Selected node' });
     const impact = await within(inspector).findByRole('region', { name: 'Potential impact' });
     expect(impact).toHaveTextContent('Potential impact 6 resources');
     expect(impact).toHaveTextContent('it does not mean they will change');
@@ -115,7 +118,7 @@ describe('Graph', () => {
     const user = userEvent.setup();
     await screen.findByRole('group', { name: 'Graph summary' });
     await user.click(node('module.network.aws_subnet.main'));
-    const inspector = await screen.findByRole('complementary', { name: 'Node details' });
+    const inspector = await screen.findByRole('complementary', { name: 'Selected node' });
     expect(inspector).toHaveTextContent('and 27 more');
     await user.click(within(inspector).getByRole('button', { name: 'module.network.aws_subnet.main[0]' }));
     const subnet = withPlan.nodes.find(n => n.displayName === 'module.network.aws_subnet.main')!;
@@ -135,22 +138,28 @@ describe('Graph', () => {
     await user.selectOptions(screen.getByLabelText(/Type/), 'aws_instance');
     expect(screen.getAllByRole('button', { name: /^Resource / })).toHaveLength(3);
     await user.selectOptions(screen.getByLabelText(/Type/), '');
+    await user.selectOptions(screen.getByLabelText('Module'), 'module.compute');
+    expect(screen.queryByRole('button', { name: /^Resource aws_security_group\.web/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Resource module\.compute\.aws_instance\.main/ })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Module'), '');
+    await user.click(screen.getByRole('button', { name: 'Collapse modules' }));
     await user.click(screen.getByRole('checkbox', { name: 'compute' }));
     expect(screen.getByRole('button', { name: /Collapsed module module\.compute \(2\)/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Resource module\.compute\.aws_instance\.main/ })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Find a node'), 'iam{Enter}');
     expect(screen.getByText(/2 matches/)).toBeInTheDocument();
-    expect(await screen.findByRole('complementary', { name: 'Node details' })).toHaveTextContent('aws_iam_role');
-    await user.click(screen.getByRole('tab', { name: 'List' }));
-    const list = screen.getByRole('list', { name: /graph nodes/ });
-    expect(within(list).getAllByRole('listitem').length).toBe(2);
+    expect(await screen.findByRole('complementary', { name: 'Selected node' })).toHaveTextContent('aws_iam_role');
+    await user.click(screen.getByRole('button', { name: 'List' }));
+    const list = screen.getByRole('table', { name: /graph nodes/ });
+    expect(within(list).getAllByRole('columnheader').map(h => h.textContent)).toEqual(['Node', 'Kind', 'Depends on', 'Depended on by']);
+    expect(within(list).getAllByRole('row').length).toBe(3);
   });
 
   it('generates only after the preflight and posts nothing else', async () => {
     serve((url, init) => init?.method === 'POST' && url.endsWith('/graphs') ? Response.json({ operation: { ...finished, status: 'running' }, graph: { ...plain, status: 'running' } }, { status: 202 }) : undefined);
     view();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Generate graph' }));
+    await user.click(await screen.findByRole('button', { name: 'Generate again' }));
     const dialog = await screen.findByRole('dialog', { name: 'Generate dependency graph' });
     expect(dialog).toHaveTextContent('terraform graph');
     expect(dialog).toHaveTextContent('Does not plan, refresh, apply or write state');
@@ -164,7 +173,7 @@ describe('Graph', () => {
     serve(url => url.endsWith('/graphs/options') ? Response.json({ ...options, canGenerate: false, reason: 'This workspace runs operations remotely.' }) : url.endsWith(`/graphs/${withPlan.id}`) ? Response.json({ ...plain, current: false, withheld: true, staleReason: 'This graph was generated for workspace demo; the project now reads workspace other.', nodes: [], edges: [], resourceEdges: [] }) : undefined);
     view();
     expect(await screen.findByText(/runs operations remotely/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate graph' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Generate again' })).toBeDisabled();
     expect(await screen.findByText('This graph no longer matches.')).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Graph summary' })).not.toBeInTheDocument();
     cleanup();
@@ -176,10 +185,26 @@ describe('Graph', () => {
 
   it('opens from Inspect impact with the plan overlaid and the replaced resource selected', async () => {
     view({ planId, address: 'aws_security_group.web' });
-    const inspector = await screen.findByRole('complementary', { name: 'Node details' });
-    expect(inspector.querySelector('.address-box code')).toHaveTextContent('aws_security_group.web');
+    const inspector = await screen.findByRole('complementary', { name: 'Selected node' });
+    expect(inspector.querySelector('.graph-selection-name code')).toHaveTextContent('aws_security_group.web');
     expect(await screen.findByRole('region', { name: 'Confirmed planned changes' })).toBeInTheDocument();
     expect(gets.some(u => u.endsWith(`/graphs/${withPlan.id}?planId=${planId}`))).toBe(true);
+    // The SELECTED panel states both counts; Clear selection does not bring the focus back.
+    expect(inspector).toHaveTextContent(`◆ ${impactWithPlan.downstreamTotal} depend on it`);
+    expect(inspector).toHaveTextContent(`▲ it depends on ${impactWithPlan.upstreamTotal}`);
+    // Node borders show the planned action once a plan is compared.
+    expect(document.querySelector('.graph-node[class*="planned-"]')).toBeInTheDocument();
+    await userEvent.setup().click(within(inspector).getByRole('button', { name: 'Clear selection' }));
+    expect(screen.queryByRole('complementary', { name: 'Selected node' })).not.toBeInTheDocument();
+    expect(posts).toHaveLength(0);
+  });
+
+  it('shows one empty state with a single Generate graph button before any graph', async () => {
+    serve(url => url.endsWith('/graphs') ? Response.json({ graphs: [] }) : undefined);
+    view();
+    expect(await screen.findByRole('heading', { name: 'No dependency graph yet' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Generate/ })).toHaveLength(1);
+    expect(document.querySelector('.empty-box .graph-limits')).toHaveTextContent('The last 5 graphs are kept in memory');
     expect(posts).toHaveLength(0);
   });
 
@@ -191,13 +216,15 @@ describe('Graph', () => {
     const start = performance.now();
     view();
     // Modules start collapsed: 20 groups instead of 1,000 nodes.
-    expect(await screen.findByRole('list', { name: '20 graph nodes' })).toBeInTheDocument();
+    expect(await screen.findByRole('table', { name: '20 graph nodes' })).toBeInTheDocument();
     const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Collapse modules' }));
     await user.click(screen.getByRole('button', { name: 'Expand all' }));
-    const list = screen.getByRole('list', { name: '1000 graph nodes' });
-    expect(within(list).getAllByRole('listitem').length).toBeLessThan(40);
-    await user.click(screen.getByRole('tab', { name: 'Canvas' }));
+    const list = screen.getByRole('table', { name: '1000 graph nodes' });
+    expect(within(list).getAllByRole('row').length).toBeLessThan(40);
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
     expect(document.querySelectorAll('.graph-node')).toHaveLength(1000);
+    await user.click(screen.getByRole('button', { name: 'Collapse modules' }));
     await user.click(screen.getByRole('button', { name: 'Collapse all' }));
     expect(screen.getAllByRole('button', { name: /^Collapsed module/ })).toHaveLength(20);
     expect(performance.now() - start).toBeLessThan(15000);

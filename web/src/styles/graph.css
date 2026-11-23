@@ -1,10 +1,36 @@
-/* Dependency graph (M11). Relationships are marked by line style, glyphs and text as well as
-   color: solid = declared, dashed = derived, ◆ potential impact, ▲ dependency, ● planned. */
+/* Dependency graph (M11, redesign §4.4b). Relationships are marked by line style, glyphs and
+   text as well as color: solid = declared, dashed = derived, ◆ potential impact, ▲ dependency,
+   ● planned. */
+.graph-result { display: flex; flex-direction: column; gap: 14px; }
+.graph-again { margin-left: auto; }
+
+/* One notes card for the engine's remarks, with "How this works" folded inside. */
+.graph-notes {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.graph-notes.has-warnings {
+  border-color: color-mix(in srgb, var(--warn), transparent 70%);
+  background: color-mix(in srgb, var(--warn), transparent 94%);
+}
+.graph-notes > svg { flex: none; margin-top: 2px; color: var(--warn); }
+.graph-notes > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.graph-notes p { margin: 0; }
+.graph-notes strong { color: var(--warn); font-weight: 600; }
+.graph-notes .disclosure-body p + p { margin-top: 6px; }
+.graph-notes .disclosure-body strong { color: var(--text); }
+
 .graph-counts {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
-  margin: 12px 0;
   color: var(--muted);
   font-size: 13px;
 }
@@ -14,64 +40,77 @@
 }
 .graph-counts .tone-warn strong { color: inherit; }
 .graph-counts span { display: inline-flex; align-items: center; gap: 3px; }
-.graph-plan-note {
+
+.graph-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: 13px;
+}
+.graph-toolbar .search-field.compact { flex: 0 1 240px; height: 32px; }
+.graph-toolbar .history-select select { max-width: 200px; }
+.graph-toolbar > .segmented { margin-left: auto; }
+.graph-show {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-.graph-plan-note span { flex: 1; }
-.graph-layout {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 14px;
-  margin-top: 10px;
-  align-items: start;
-}
-.graph-layout.with-inspector {
-  grid-template-columns: 200px minmax(0, 1fr) 360px;
-}
-.graph-filters {
-  display: flex;
-  flex-direction: column;
   gap: 12px;
-  font-size: 13px;
-  max-height: 640px;
-  overflow: auto;
-  padding-right: 4px;
-}
-.graph-filters fieldset {
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  padding: 8px 10px;
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 0;
+  border: 0;
 }
-.graph-filters legend, .graph-legend h3 {
-  color: var(--muted);
+.graph-show legend {
+  float: left;
+  margin-right: 2px;
+  padding: 0;
+  color: var(--subtle);
   font-size: 11px;
-  letter-spacing: .06em;
+  font-weight: 600;
+  letter-spacing: .08em;
   text-transform: uppercase;
-  padding: 0 4px;
-  margin: 0;
 }
-.graph-filters .check { font-size: 13px; }
-.graph-modules .check { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.graph-module-actions { display: flex; gap: 4px; }
-.graph-select {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.graph-select select {
-  background: var(--surface);
-  color: var(--text);
+.graph-show .check, .graph-collapse .check { font-size: 13px; }
+.graph-collapse .popover-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
   border: 1px solid var(--input);
   border-radius: 6px;
-  padding: 5px 6px;
+  background: var(--surface);
+  color: var(--muted);
 }
-.graph-match-count { margin: -6px 0 0; font-size: 12px; }
+.graph-collapse .popover { max-height: 360px; overflow: auto; gap: 2px; }
+.graph-collapse .check { padding: 3px 6px; white-space: nowrap; }
+.graph-module-actions { display: flex; gap: 4px; }
+
+.graph-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.graph-status p { margin: 0; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.graph-status strong { color: var(--text); font-weight: 600; }
+.graph-status > span { margin-left: auto; }
+
+.graph-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.graph-layout.with-selection { grid-template-columns: minmax(0, 1fr) 340px; }
+.graph-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .graph-legend ul {
   list-style: none;
   padding: 0;
@@ -87,19 +126,7 @@
 .legend-swatch.impact, .flag.impact { color: var(--warn); }
 .legend-swatch.upstream, .flag.upstream { color: var(--read); }
 .legend-swatch.planned, .flag.planned { color: var(--update); }
-.graph-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.graph-main-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-}
-.graph-main-toolbar .segmented button { display: inline-flex; align-items: center; gap: 5px; }
+
 .graph-canvas-wrap { position: relative; }
 .graph-zoom {
   position: absolute;
@@ -144,6 +171,13 @@
 .graph-node.kind-group rect { stroke-width: 3; stroke: var(--border); fill: var(--surface-hover); }
 .graph-node:is(.kind-module, .kind-provider, .kind-variable, .kind-local, .kind-output, .kind-check, .kind-ephemeral) rect { fill: var(--inset); stroke-dasharray: 1 3; }
 .graph-node.kind-unknown rect { stroke: var(--warn); stroke-dasharray: 2 2; }
+/* Compare with plan: the border shows the planned action (the node text names it too). */
+.graph-node:is(.planned-create, .planned-update, .planned-replace, .planned-delete, .planned-read) rect { stroke-width: 2.4; }
+.graph-node.planned-create rect { stroke: var(--create); }
+.graph-node.planned-update rect { stroke: var(--update); }
+.graph-node.planned-replace rect { stroke: var(--replace); }
+.graph-node.planned-delete rect { stroke: var(--destroy); }
+.graph-node.planned-read rect { stroke: var(--read); }
 .graph-node.match rect { stroke: var(--read); stroke-width: 2.4; }
 .graph-node.upstream rect { stroke: var(--read); stroke-width: 2; }
 .graph-node.impact rect { stroke: var(--warn); stroke-width: 2.4; }
@@ -155,48 +189,53 @@
 .graph-node-mark { fill: var(--muted); font-weight: 600; }
 .graph-node.impact .graph-node-mark { fill: var(--warn); }
 .graph-node.upstream .graph-node-mark { fill: var(--read); }
+
 .graph-list {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
 }
-.graph-list-row { position: absolute; left: 0; right: 0; }
-.graph-list-row > button {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px 170px auto auto;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  background: none;
-  border: 0;
-  border-bottom: 1px solid var(--border-soft);
-  color: var(--text);
-  text-align: left;
-  font-size: 13px;
-  cursor: pointer;
-}
-.graph-list-row > button:hover { background: var(--surface-hover); }
-.graph-list-row > button.selected { background: var(--surface-selected); box-shadow: inset 3px 0 var(--accent); }
-.graph-list-row > button.dim { opacity: .45; }
-.graph-list-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.graph-inspector {
+.graph-list thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.graph-list td { height: 38px; color: var(--muted); }
+.graph-list td:first-child { color: var(--text); }
+.graph-list th:nth-child(2) { width: 150px; }
+.graph-list th:nth-child(n+3) { width: 130px; }
+.graph-list tr.dim > td { opacity: .45; }
+.graph-list tr.active > td:first-child { box-shadow: inset 3px 0 var(--accent); }
+.graph-row-name { color: var(--text); font-size: 12.5px; text-align: left; }
+.graph-row-name:hover { text-decoration: underline; }
+
+/* The SELECTED panel beside the canvas or list. */
+.graph-selection {
+  position: sticky;
+  top: 12px;
+  max-height: 640px;
+  overflow: auto;
+  padding: 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  max-height: 640px;
-  overflow: auto;
-  position: sticky;
-  top: 12px;
+  font-size: 12.5px;
 }
-.graph-inspector section { margin-top: 16px; }
-.graph-inspector h3 { font-size: 13px; margin: 0 0 6px; display: flex; align-items: center; gap: 6px; }
-.graph-inspector h3 .muted, .graph-inspector h4 .muted { font-weight: 400; }
-.graph-inspector h4 { font-size: 12.5px; margin: 10px 0 4px; }
-.graph-inspector p { font-size: 12.5px; }
-.graph-confidence { margin: 8px 0; }
+.graph-selection > header { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.graph-selection-label {
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.graph-selection-name { display: flex; align-items: flex-start; gap: 4px; width: 100%; }
+.graph-selection-name code { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text); font-size: 13px; line-height: 1.6; }
+.graph-selection-counts { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.graph-selection-counts .flag { margin: 0; padding: 0; border: 0; font-size: 12.5px; }
+.graph-clear { color: var(--accent-text); padding-left: 0; }
+.graph-selection p { font-size: 12.5px; margin: 10px 0; }
+.graph-selection section { margin-top: 16px; }
+.graph-selection h3 { font-size: 13px; margin: 0 0 6px; display: flex; align-items: center; gap: 6px; }
+.graph-selection h3 .muted, .graph-selection h4 .muted { font-weight: 400; }
+.graph-selection h4 { font-size: 12.5px; margin: 10px 0 4px; }
 .graph-impact { border-left: 3px solid var(--warn); padding-left: 10px; }
 .graph-confirmed { border-left: 3px solid var(--update); padding-left: 10px; }
 .graph-refs {
@@ -229,8 +268,6 @@
   font-size: 13px;
 }
 @media (max-width: 1100px) {
-  .graph-layout, .graph-layout.with-inspector { grid-template-columns: minmax(0, 1fr); }
-  .graph-filters { max-height: none; }
-  .graph-inspector { position: static; max-height: none; }
+  .graph-layout.with-selection { grid-template-columns: minmax(0, 1fr); }
+  .graph-selection { position: static; max-height: none; }
 }
-.graph-filters .search-field { flex: none; width: 100%; }
