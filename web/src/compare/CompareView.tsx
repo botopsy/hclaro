@@ -1,32 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowLeftRight, ArrowRight, Braces, ChevronLeft, ChevronRight, CircleDashed, CircleHelp, Copy, Database, Download, Equal, ExternalLink, GitCompareArrows, History, Info, ListFilter, LoaderCircle, LockKeyhole, Network, Pencil, Plus, RefreshCcw, Search, ShieldCheck, Trash2, TriangleAlert, X, type LucideIcon } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, ArrowLeftRight, ArrowRight, CircleDashed, CircleHelp, Copy, Database, Download, Equal, ExternalLink, GitCompareArrows, History, Info, ListFilter, LoaderCircle, LockKeyhole, Network, Pencil, Plus, RefreshCcw, ShieldCheck, Trash2, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import { api, download, openInNewTab, send } from '../api';
-import type { Comparison, ComparisonAttribute, ComparisonDetail, ComparisonMatch, ComparisonRule, ComparisonSide, ComparisonTarget, MatchStatus, Project, StatusCounts, TargetStatus } from '../types';
+import type { Comparison, ComparisonAttribute, ComparisonDetail, ComparisonMatch, ComparisonRule, ComparisonSide, ComparisonTarget, MatchStatus, Project } from '../types';
 import { Button } from '../components/ui/button';
+import { DataTable, type Column } from '../components/DataTable';
+import { Disclosure } from '../components/Disclosure';
 import { Drawer } from '../components/Drawer';
+import { EmptyState } from '../components/EmptyState';
 import { JsonTree } from '../components/JsonTree';
 import { useModal } from '../components/useModal';
 import { contextPath, productionLike } from '../router';
 import { profilesQuery } from '../profiles/selection';
-import { RecordedContext } from '../profiles/ContextSummary';
-import { clock, engineLabel } from '../lib/format';
+import { clock } from '../lib/format';
 import { ProductionBadge } from '../components/ProductionBadge';
 import { projectsQuery } from '../lib/queries';
 import { errorMessage } from '../lib/errorMessage';
-import { useDebounced } from '../lib/useDebounced';
 import { readJSON, readStorage, storageKeys, writeStorage } from '../lib/storage';
 import { ErrorState } from '../components/ErrorState';
 
-const statuses: Record<MatchStatus, { label: string; short: string; icon: LucideIcon; tone: string; key: keyof StatusCounts }> = {
-  'attribute-different': { label: 'Attribute differences', short: 'Different', icon: Pencil, tone: 'update', key: 'different' },
-  'only-left': { label: 'Only in left', short: 'Only left', icon: ArrowLeft, tone: 'neutral', key: 'onlyLeft' },
-  'only-right': { label: 'Only in right', short: 'Only right', icon: ArrowRight, tone: 'neutral', key: 'onlyRight' },
-  unknown: { label: 'Unknown', short: 'Unknown', icon: CircleDashed, tone: 'muted', key: 'unknown' },
-  uncomparable: { label: 'Uncomparable', short: 'Uncomparable', icon: CircleHelp, tone: 'warn', key: 'uncomparable' },
-  same: { label: 'Same', short: 'Same', icon: Equal, tone: 'create', key: 'same' }
+const statuses: Record<MatchStatus, { short: string; icon: LucideIcon; tone: string }> = {
+  'attribute-different': { short: 'Different', icon: Pencil, tone: 'update' },
+  'only-left': { short: 'Only left', icon: ArrowLeft, tone: 'neutral' },
+  'only-right': { short: 'Only right', icon: ArrowRight, tone: 'neutral' },
+  unknown: { short: 'Unknown', icon: CircleDashed, tone: 'muted' },
+  uncomparable: { short: 'Uncomparable', icon: CircleHelp, tone: 'warn' },
+  same: { short: 'Same', icon: Equal, tone: 'create' }
 };
-const order: MatchStatus[] = ['attribute-different', 'only-left', 'only-right', 'unknown', 'uncomparable', 'same'];
 const statusHelp: Record<MatchStatus, string> = {
   'attribute-different': 'Matched on both sides; at least one visible attribute value differs.',
   'only-left': 'Recorded only in the left workspace. Addresses match exactly: a renamed address shows here and as only-right unless a mapping rule pairs them.',
@@ -35,6 +35,21 @@ const statusHelp: Record<MatchStatus, string> = {
   uncomparable: 'Matched by address, but the type, mode or provider differs, or a mapping rule conflicts.',
   same: 'Every compared attribute value is equal, after your rules.'
 };
+// §4.9: the result table's groups, in order. Same rows are only counted.
+const groups: { key: string; label: string; statuses: MatchStatus[] }[] = [
+  { key: 'only-left', label: 'Only on left', statuses: ['only-left'] },
+  { key: 'only-right', label: 'Only on right', statuses: ['only-right'] },
+  { key: 'different', label: 'Different', statuses: ['attribute-different'] },
+  { key: 'not-compared', label: 'Could not compare', statuses: ['uncomparable', 'unknown'] }
+];
+const tiles: { label: string; tone: string; statuses: MatchStatus[] }[] = [
+  { label: 'Only on left', tone: 'neutral', statuses: ['only-left'] },
+  { label: 'Only on right', tone: 'neutral', statuses: ['only-right'] },
+  { label: 'Different', tone: 'update', statuses: ['attribute-different'] },
+  { label: 'Same', tone: 'create', statuses: ['same'] },
+  { label: 'Could not compare', tone: 'muted', statuses: ['uncomparable', 'unknown'] }
+];
+const countKey = { 'attribute-different': 'different', 'only-left': 'onlyLeft', 'only-right': 'onlyRight', unknown: 'unknown', uncomparable: 'uncomparable', same: 'same' } as const;
 
 type Draft = { left: TargetDraft; right: TargetDraft; rules: ComparisonRule[] };
 // profileId undefined means "the project's default profile", "" means no profile.
@@ -111,7 +126,13 @@ export function CompareView({ copy }: { copy: (value: string, label: string) => 
   const left = effective(draft.left, leftProfiles.data?.defaultId);
   const right = effective(draft.right, rightProfiles.data?.defaultId);
   const sameTarget = left.projectId === right.projectId && left.workspace === right.workspace && (left.profileId ?? '') === (right.profileId ?? '');
-  const ready = [left, right].every(t => hex.test(t.projectId) && workspacePattern.test(t.workspace)) && !sameTarget;
+  const projectList = projects.data?.projects ?? [];
+  const name = (t: ComparisonTarget) => `${projectList.find(p => p.id === t.projectId)?.alias ?? 'Project'} / ${t.workspace}`;
+  // Compare stays disabled, with the reason beside it, until both sides are set (§4.9).
+  const reason = ![left, right].every(t => hex.test(t.projectId)) ? 'Choose a project for both sides.'
+    : ![left, right].every(t => workspacePattern.test(t.workspace)) ? 'Choose a workspace for both sides.'
+    : sameTarget ? 'Choose a different workspace, project or profile for one side.' : undefined;
+  const ready = !reason;
   async function start(reload: boolean) {
     setStarting(true);
     setStartError('');
@@ -121,7 +142,6 @@ export function CompareView({ copy }: { copy: (value: string, label: string) => 
       setComparisonId(started.id);
       client.setQueryData(['comparison', started.id], started);
       void client.invalidateQueries({ queryKey: ['comparisons'] });
-      void client.invalidateQueries({ queryKey: ['compare-target'] });
     } catch (e) {
       const message = errorMessage(e, 'The comparison could not be started.');
       const match = /^Rule (\d+):/.exec(message);
@@ -131,22 +151,21 @@ export function CompareView({ copy }: { copy: (value: string, label: string) => 
       setStarting(false);
     }
   }
-  const projectList = projects.data?.projects ?? [];
   return <div className="plans compare-page">
    <section className="compare-targets" aria-label="Comparison targets">
     <TargetCard side="left" draft={draft.left} projects={projectList} onChange={t => setDraft({ ...draft, left: t })} />
-    <Button variant="ghost" size="icon" className="compare-swap" aria-label="Swap left and right" title="Swap left and right" onClick={() => setDraft({ ...draft, left: draft.right, right: draft.left })}><ArrowLeftRight size={16} /></Button>
+    <Button variant="outline" size="icon" className="compare-swap" aria-label="Swap left and right" title="Swap left and right" onClick={() => setDraft({ ...draft, left: draft.right, right: draft.left })}><ArrowLeftRight size={16} /></Button>
     <TargetCard side="right" draft={draft.right} projects={projectList} onChange={t => setDraft({ ...draft, right: t })} />
    </section>
-   {projects.data && projectList.length === 0 && <div className="plan-warning" role="note"><Info size={15} /><span>Register projects in the Workspace Hub first. Comparisons read Hub projects only.</span></div>}
+   {projects.data && projectList.length === 0 && <div className="plan-warning" role="note"><Info size={15} /><span>Add projects first. Comparisons read Hclaro projects only.</span></div>}
    <RulesEditor rules={draft.rules} onChange={rules => setDraft({ ...draft, rules })} error={ruleError} />
    <div className="plans-toolbar">
-    <Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!ready}><GitCompareArrows size={14} />Compare…</Button>
+    <Button variant={ready ? 'default' : 'outline'} onClick={() => { setStartError(''); setPreflight(true); }} disabled={!ready} title={reason} aria-describedby="compare-reason"><GitCompareArrows size={14} />Compare…</Button>
+    <span id="compare-reason" className="toolbar-note" role="status">{reason ?? <>Ready: <strong>{name(left)}</strong> ↔ <strong>{name(right)}</strong>. Nothing is read until you compare.</>}</span>
     {history.data && history.data.comparisons.length > 0 && <label className="history-select"><History size={14} /><span className="sr-only">Comparison history</span><select aria-label="Comparison history" value={comparisonId ?? ''} onChange={e => setComparisonId(e.target.value)}>{!history.data.comparisons.some(c => c.id === comparisonId) && <option value="">Choose a comparison</option>}{history.data.comparisons.map(c => <option key={c.id} value={c.id}>{clock(c.createdAt)} · {c.left.alias}/{c.left.target.workspace} ↔ {c.right.alias}/{c.right.target.workspace}{c.status === 'stale' ? ' · stale' : ''}</option>)}</select></label>}
-    <span className="toolbar-note" role="status">{sameTarget && left.projectId ? 'Choose a different workspace, project or profile for one side.' : !ready ? 'Choose a project and workspace for both sides.' : 'Nothing is read until you compare.'}</span>
    </div>
    {startError && !preflight && <p className="dialog-error" role="alert">{startError}</p>}
-   {comparisonId ? <ComparisonResult key={comparisonId} id={comparisonId} copy={copy} compareAgain={() => setPreflight(true)} canCompare={ready} /> : <div className="empty-state"><GitCompareArrows size={30} /><h2>Compare two workspaces</h2><p>Choose a left and a right workspace (for example <strong>dev</strong> and <strong>prod</strong>, or the same stack in two project roots). Hclaro reads each side's recorded state and lists what is only on one side, what differs and what could not be compared.</p></div>}
+   {comparisonId ? <ComparisonResult key={comparisonId} id={comparisonId} copy={copy} compareAgain={() => setPreflight(true)} canCompare={ready} /> : <EmptyState icon={<GitCompareArrows size={26} />} title="Compare two workspaces">Pick two workspaces, for example <strong>dev</strong> and <strong>prod</strong>, or one stack in two project roots. Hclaro lists what exists on only one side, what differs, and what couldn't be compared.</EmptyState>}
    {preflight && <ComparePreflight left={left} right={right} projects={projectList} rules={draft.rules.length} busy={starting} error={startError} onConfirm={reload => void start(reload)} onClose={() => { setPreflight(false); setStartError(''); }} />}
   </div>;
 }
@@ -159,12 +178,6 @@ function TargetCard({ side, draft, projects, onChange }: { side: 'left' | 'right
   const [listing, setListing] = useState(false);
   const [listError, setListError] = useState('');
   const validWorkspace = workspacePattern.test(draft.workspace.trim());
-  const target = useQuery({
-    queryKey: ['compare-target', draft.projectId, draft.workspace.trim(), profileId],
-    queryFn: () => api<TargetStatus>(`comparisons/target?projectId=${draft.projectId}&workspace=${encodeURIComponent(draft.workspace.trim())}${profileId ? `&profileId=${profileId}` : ''}`),
-    enabled: !!project && validWorkspace,
-    refetchInterval: q => q.state.data?.status === 'loading' ? 1000 : false
-  });
   const names = project?.inspection?.workspaces ?? [];
   const label = side === 'left' ? 'Left' : 'Right';
   const listId = `compare-workspaces-${side}`;
@@ -183,23 +196,16 @@ function TargetCard({ side, draft, projects, onChange }: { side: 'left' | 'right
   }
   const profileList = profiles.data?.profiles ?? [];
   const chosenProfile = profileList.find(p => p.id === profileId);
-  return <section className={`compare-target compare-${side}`} aria-label={`${label} target`}>
-   <div className="compare-target-head"><span className="eyebrow">{label.toUpperCase()}</span>{productionLike(project?.alias, draft.workspace) && <ProductionBadge />}</div>
+  return <section className="compare-target" aria-label={`${label} target`}>
+   <div className="compare-target-head"><span className="compare-side-label">{label.toUpperCase()}</span>{productionLike(project?.alias, draft.workspace) && <ProductionBadge />}</div>
    <label className="field"><span>Project</span><select aria-label={`${label} project`} value={draft.projectId} onChange={e => onChange({ projectId: e.target.value, workspace: '', profileId: undefined })}><option value="">Choose a project…</option>{projects.map(p => <option key={p.id} value={p.id} disabled={p.status !== 'ready'}>{p.alias}{p.status !== 'ready' ? ` (${p.problem || p.status})` : ''}</option>)}</select></label>
    <div className="field"><label htmlFor={`${listId}-input`}>Workspace</label><div className="field-row"><input id={`${listId}-input`} aria-label={`${label} workspace`} list={listId} value={draft.workspace} disabled={!project} maxLength={90} spellCheck={false} placeholder={project?.inspection?.cliDefault || 'default'} onChange={e => onChange({ ...draft, workspace: e.target.value })} /><datalist id={listId}>{names.map(n => <option key={n} value={n} />)}</datalist><Button variant="outline" size="small" disabled={!project || listing} onClick={() => void listWorkspaces()} title="Runs version and workspace list for this project. Read-only."><RefreshCcw size={12} className={listing ? 'spin' : undefined} />List</Button></div>
     {draft.workspace && !validWorkspace && <span className="field-error" role="alert">Use 1–90 letters, digits, - or _.</span>}
     {listError && <span className="field-error" role="alert">{listError}</span>}
-    {project && !project.inspection && <span className="muted field-hint">Type a workspace name, or list the project's workspaces.</span>}
     {project?.inspection?.diagnostic && <span className="field-error">{project.inspection.diagnostic.message}</span>}
    </div>
    <label className="field"><span>Execution profile</span><select aria-label={`${label} execution profile`} value={profileId} disabled={!project} onChange={e => onChange({ ...draft, profileId: e.target.value })}><option value="">No profile (inherited environment)</option>{profileList.map(p => <option key={p.id} value={p.id}>{p.name}{p.workspace ? ` · ${p.workspace} only` : ''}{p.id === profiles.data?.defaultId ? ' · default' : ''}</option>)}</select></label>
    {chosenProfile?.workspace && validWorkspace && chosenProfile.workspace !== draft.workspace.trim() && <span className="field-error" role="alert">Profile {chosenProfile.name} selects workspace {chosenProfile.workspace}.</span>}
-   {project && <dl className="compare-identity">
-    <div><dt>Root</dt><dd className="mono" title={project.rootPath}>{project.rootPath}</dd></div>
-    <div><dt>Engine</dt><dd>{target.data?.engine ? `${engineLabel(target.data.engine)} ${target.data.version || ''}` : project.inspection?.engine ? `${engineLabel(project.inspection.engine)} ${project.inspection.version || ''}` : project.enginePreference ? engineLabel(project.enginePreference) : 'Detected when read'}</dd></div>
-    <div><dt>Backend</dt><dd><Database size={12} />{project.backend} · {project.executionMode}{!project.initialized && ' · not initialized'}</dd></div>
-    <div><dt>State read</dt><dd>{!validWorkspace ? <span className="muted">Choose a workspace</span> : target.data?.open ? target.data.capturedAt ? <>Last read {clock(target.data.capturedAt)} in this session</> : target.data.status === 'loading' ? 'Reading…' : <span className="muted">Last read did not succeed</span> : <span className="muted">Not read in this session</span>}</dd></div>
-   </dl>}
   </section>;
 }
 
@@ -254,19 +260,6 @@ function StatusBadge({ value }: { value: MatchStatus }) {
   return <span className={`action-badge tone-${tone}`} title={statusHelp[value]}><Icon size={12} aria-hidden="true" />{short}</span>;
 }
 
-function SideHeader({ label, side }: { label: string; side: ComparisonSide }) {
-  return <div className={`compare-side-head status-${side.status}`}>
-   <span className="eyebrow">{label}</span>
-   <strong>{side.alias || 'Project'} / {side.target.workspace}</strong>
-   <span className="muted">{side.engine ? `${engineLabel(side.engine)} ${side.version || ''}` : ''}{side.backend ? ` · ${side.backend}` : ''}{side.capturedAt ? ` · read ${clock(side.capturedAt)}` : ''}</span>
-   <span className="compare-side-context"><RecordedContext context={side.executionContext} /></span>
-   {side.status === 'reading' && <span className="info-line"><LoaderCircle className="spin" size={12} />Reading recorded state…</span>}
-   {side.status === 'empty' && <span className="info-line"><Info size={12} />No state recorded in this workspace.</span>}
-  </div>;
-}
-
-type Tab = 'Resources' | 'Modules' | 'Providers';
-
 function ComparisonResult({ id, copy, compareAgain, canCompare }: { id: string; copy: (value: string, label: string) => Promise<void>; compareAgain: () => void; canCompare: boolean }) {
   const comparison = useQuery({
     queryKey: ['comparison', id],
@@ -274,25 +267,13 @@ function ComparisonResult({ id, copy, compareAgain, canCompare }: { id: string; 
     refetchInterval: q => q.state.data?.status === 'reading' ? 700 : false,
     retry: false
   });
-  const [tab, setTab] = useState<Tab>('Resources');
-  const [filter, setFilter] = useState<MatchStatus[]>([]);
-  const [module, setModule] = useState<string>();
   const [exportError, setExportError] = useState('');
-  const client = useQueryClient();
   const c = comparison.data;
-  const settled = c?.status && c.status !== 'reading';
-  // Once both reads finish, the target cards show the new read times.
-  useEffect(() => {
-    if (settled) void client.invalidateQueries({ queryKey: ['compare-target'] });
-  }, [settled, client]);
   if (comparison.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading comparison…</p></div>;
   if (comparison.error || !c) return <ErrorState inline message={comparison.error?.message ?? 'This comparison is not available.'} />;
   const s = c.summary;
-  const counts = (status: MatchStatus) => s ? s.managed[statuses[status].key] + s.data[statuses[status].key] : 0;
-  function toggle(status: MatchStatus) {
-    setFilter(current => current.includes(status) ? current.filter(v => v !== status) : [...current, status]);
-    setTab('Resources');
-  }
+  const counts = (list: MatchStatus[]) => s ? list.reduce((n, st) => n + s.managed[countKey[st]] + s.data[countKey[st]], 0) : 0;
+  const side = (x: ComparisonSide) => `${x.alias || 'Project'} / ${x.target.workspace}`;
   async function exportReport(format: 'json' | 'markdown') {
     setExportError('');
     try {
@@ -302,42 +283,30 @@ function ComparisonResult({ id, copy, compareAgain, canCompare }: { id: string; 
     }
   }
   return <div className="plan-review compare-result">
-   <div className="compare-sides">
-    <SideHeader label="LEFT" side={c.left} />
-    <ArrowLeftRight size={16} className="compare-sides-arrow" aria-hidden="true" />
-    <SideHeader label="RIGHT" side={c.right} />
-   </div>
-   <div className="drift-badge-row"><span className="not-drift-badge" tabIndex={0} aria-describedby={`not-drift-${id}`}><Info size={13} />Different is not necessarily drift</span><span id={`not-drift-${id}`} className="muted">{c.notice.replace(/^Different is not necessarily drift\.\s*/, '')}</span></div>
-   <p className="info-line"><ShieldCheck size={13} />Source: recorded state of each workspace, read with <code>show -json</code> through the local CLI{c.left.capturedAt && c.right.capturedAt ? <> at {clock(c.left.capturedAt)} (left) and {clock(c.right.capturedAt)} (right)</> : ''}. Not live cloud inventory. Values are redacted before they are compared.</p>
    {c.status === 'stale' && <div className="plan-warning" role="alert"><TriangleAlert size={15} /><span><strong>This comparison no longer matches.</strong> {c.staleReason} Results are withheld so they cannot be mistaken for the current workspaces.</span>{canCompare && <Button variant="outline" size="small" onClick={compareAgain}><RefreshCcw size={13} />Compare again</Button>}</div>}
    {c.status === 'partial' && <section className="operation-failed" role="alert">
     <h2><TriangleAlert size={17} />Only one side could be read</h2>
-    {([['Left', c.left], ['Right', c.right]] as [string, ComparisonSide][]).map(([label, side]) => side.error && <p key={label}><strong>{label}: </strong>{side.error.message}</p>)}
+    {([['Left', c.left], ['Right', c.right]] as [string, ComparisonSide][]).map(([label, x]) => x.error && <p key={label}><strong>{label}: </strong>{x.error.message}</p>)}
     <p className="muted">Nothing was compared. An unavailable workspace is never treated as an empty one.</p>
     {canCompare && <Button variant="outline" size="small" onClick={compareAgain}><RefreshCcw size={13} />Compare again</Button>}
    </section>}
    {c.status === 'reading' && <div className="info-line" role="status"><LoaderCircle className="spin" size={13} />Reading both workspaces. The comparison appears when both are read.</div>}
    {c.status === 'ready' && s && <>
-    <div className="summary-grid" role="group" aria-label="Filter by comparison status">{order.map(status => {
-     const { label, icon: Icon, tone } = statuses[status];
-     return <button key={status} className={`summary-card tone-${tone} ${filter.includes(status) ? 'chosen' : ''}`} aria-pressed={filter.includes(status)} aria-label={`${label}: ${counts(status)}`} disabled={!counts(status)} title={statusHelp[status]} onClick={() => toggle(status)}><span><Icon size={14} aria-hidden="true" />{label}</span><strong>{counts(status)}</strong></button>;
-    })}</div>
-    <p className="info-line compare-facts"><span>{s.left.managed} managed / {s.left.data} data on the left</span><span>{s.right.managed} managed / {s.right.data} data on the right</span>{s.mapped > 0 && <span>{s.mapped} paired by mapping rules</span>}{s.ignoredAttributes > 0 && <span>{count(s.ignoredAttributes, 'value')} ignored by rules</span>}{s.normalized > 0 && <span>{count(s.normalized, 'value')} equal after substitution</span>}{s.notCompared > 0 && <span><LockKeyhole size={11} />{count(s.notCompared, 'redacted value')} not compared</span>}</p>
-    {c.rules.length > 0 && <ul className="rule-hits" aria-label="Rule matches">{c.rules.map((r, i) => <li key={i}><span className="rule-number">{i + 1}</span>{ruleText(r)}<span className="muted">{count(s.ruleHits[i] ?? 0, r.kind === 'map' ? 'address' : 'value', r.kind === 'map' ? 'addresses' : 'values')}{r.kind === 'map' ? ' mapped' : ''}</span></li>)}</ul>}
-    {counts('only-left') > 0 && counts('only-right') > 0 && <p className="info-line" role="note"><ListFilter size={13} />Addresses match exactly. If some of the {counts('only-left')} only-left and {counts('only-right')} only-right rows are the same object under a renamed address, add a <strong>Map renamed address</strong> rule and compare again; rule matches are counted above before you rely on them. <em>Unknown</em> rows are different: they matched, but redacted values were deliberately not compared.</p>}
+    <div className="summary-grid" role="group" aria-label="Comparison counts">{tiles.map(t => <div key={t.label} className={`summary-card tone-${t.tone}${counts(t.statuses) ? '' : ' zero'}`} role="note" aria-label={`${t.label}: ${counts(t.statuses)}`}><span>{t.label}</span><strong>{counts(t.statuses)}</strong></div>)}</div>
+    <p className="compare-summary">Compared <strong>{side(c.left)}</strong>{c.left.capturedAt && ` (read ${clock(c.left.capturedAt)})`} with <strong>{side(c.right)}</strong>{c.right.capturedAt && ` (read ${clock(c.right.capturedAt)})`}: {counts(['attribute-different'])} different, {counts(['only-left'])} only on left, {counts(['only-right'])} only on right, {counts(['uncomparable', 'unknown'])} could not be compared and {counts(['same'])} the same. Different is not necessarily drift.</p>
     {c.warnings.map(w => <div className="plan-warning" key={w} role="note"><TriangleAlert size={15} />{w}</div>)}
-    <div className="compare-tabs-row">
-     <div className="segmented" role="tablist" aria-label="Comparison views">{(['Resources', 'Modules', 'Providers'] as Tab[]).map(t => <button key={t} role="tab" aria-selected={tab === t} aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</button>)}</div>
-     <span className="context-spacer" />
+    <Disclosure summary="How this was compared">
+     <p className="info-line"><ShieldCheck size={13} />Source: recorded state of each workspace, read with <code>show -json</code> through the local CLI. Not live cloud inventory. Values are redacted before they are compared. {c.notice}</p>
+     <p className="info-line compare-facts"><span>{s.left.managed} managed / {s.left.data} data on the left</span><span>{s.right.managed} managed / {s.right.data} data on the right</span>{s.mapped > 0 && <span>{s.mapped} paired by mapping rules</span>}{s.ignoredAttributes > 0 && <span>{count(s.ignoredAttributes, 'value')} ignored by rules</span>}{s.normalized > 0 && <span>{count(s.normalized, 'value')} equal after substitution</span>}{s.notCompared > 0 && <span><LockKeyhole size={11} />{count(s.notCompared, 'redacted value')} not compared</span>}</p>
+     {c.rules.length > 0 && <ul className="rule-hits" aria-label="Rule matches">{c.rules.map((r, i) => <li key={i}><span className="rule-number">{i + 1}</span>{ruleText(r)}<span className="muted">{count(s.ruleHits[i] ?? 0, r.kind === 'map' ? 'address' : 'value', r.kind === 'map' ? 'addresses' : 'values')}{r.kind === 'map' ? ' mapped' : ''}</span></li>)}</ul>}
+     {counts(['only-left']) > 0 && counts(['only-right']) > 0 && <p className="info-line" role="note"><ListFilter size={13} />Addresses match exactly. If some of the {counts(['only-left'])} only-left and {counts(['only-right'])} only-right rows are the same object under a renamed address, add a <strong>Map renamed address</strong> rule and compare again; rule matches are counted above before you rely on them. <em>Unknown</em> rows are different: they matched, but redacted values were deliberately not compared.</p>}
+    </Disclosure>
+    <div className="compare-actions">
      <Button variant="outline" size="small" onClick={() => void exportReport('markdown')}><Download size={13} />Export Markdown</Button>
      <Button variant="outline" size="small" onClick={() => void exportReport('json')}><Download size={13} />Export JSON</Button>
     </div>
     {exportError && <p className="dialog-error" role="alert">{exportError}</p>}
-    <div role="tabpanel" aria-label={tab}>
-     {tab === 'Resources' && <MatchList comparison={c} filter={filter} setFilter={setFilter} module={module} setModule={setModule} copy={copy} />}
-     {tab === 'Modules' && <ModulesTable comparison={c} open={m => { setModule(m); setFilter([]); setTab('Resources'); }} />}
-     {tab === 'Providers' && <ProvidersTable comparison={c} />}
-    </div>
+    <GroupedMatches comparison={c} counts={counts} copy={copy} />
    </>}
   </div>;
 }
@@ -352,55 +321,36 @@ function ruleText(r: ComparisonRule) {
   return <>Treat <code>{r.left}</code> as <code>{r.right}</code>{r.path && <> in <code>{r.path}</code></>}</>;
 }
 
-const PAGE = 100;
+// shortcut: each group loads its first LIMIT rows (the server's page maximum) and the exports hold every row; add paging per group if that proves too few.
+const LIMIT = 200;
 
-function MatchList({ comparison, filter, setFilter, module, setModule, copy }: { comparison: Comparison; filter: MatchStatus[]; setFilter: (f: MatchStatus[]) => void; module?: string; setModule: (m?: string) => void; copy: (value: string, label: string) => Promise<void> }) {
-  const [search, setSearch] = useState('');
-  const query = useDebounced(search.trim(), 180);
-  const [mode, setMode] = useState('');
-  const [type, setType] = useState('');
-  // The page resets whenever a filter changes.
-  const filterKey = JSON.stringify([query, mode, type, module ?? null, filter]);
-  const [paging, setPaging] = useState({ key: filterKey, page: 0 });
-  const page = paging.key === filterKey ? paging.page : 0;
-  const setPage = (next: number) => setPaging({ key: filterKey, page: next });
+function detail(m: ComparisonMatch) {
+  if (m.status === 'only-left') return <span className="muted">Not in the right workspace</span>;
+  if (m.status === 'only-right') return <span className="muted">Not in the left workspace</span>;
+  if (m.status === 'attribute-different') return <>{m.differences} attribute{m.differences === 1 ? ' differs' : 's differ'}{m.paths.length > 0 && <span className="mono muted compare-paths">{m.paths.join(', ')}{m.differences > m.paths.length ? ', …' : ''}</span>}</>;
+  if (m.status === 'unknown') return <span className="muted">{count(m.notCompared, 'redacted value')} not compared</span>;
+  return <span className="muted">{m.reason || 'The type, mode or provider differs.'}</span>;
+}
+
+function GroupedMatches({ comparison, counts, copy }: { comparison: Comparison; counts: (list: MatchStatus[]) => number; copy: (value: string, label: string) => Promise<void> }) {
   const [selected, setSelected] = useState<string>();
-  const params = useMemo(() => {
-    const p = new URLSearchParams();
-    if (filter.length) p.set('status', filter.join(','));
-    if (query) p.set('query', query);
-    if (mode) p.set('mode', mode);
-    if (type) p.set('type', type);
-    if (module !== undefined) p.set('module', module);
-    p.set('offset', String(page * PAGE));
-    p.set('limit', String(PAGE));
-    return p.toString();
-  }, [filter, query, mode, type, module, page]);
-  const matches = useQuery({ queryKey: ['comparison-matches', comparison.id, params], queryFn: () => api<{ matches: ComparisonMatch[]; total: number }>(`comparisons/${comparison.id}/resources?${params}`), placeholderData: prev => prev });
-  const filtered = filter.length > 0 || !!query || !!mode || !!type || module !== undefined;
-  const total = matches.data?.total ?? 0;
+  const shown = groups.filter(g => counts(g.statuses) > 0);
+  const pages = useQueries({ queries: shown.map(g => ({
+    queryKey: ['comparison-matches', comparison.id, g.key],
+    queryFn: () => api<{ matches: ComparisonMatch[]; total: number }>(`comparisons/${comparison.id}/resources?status=${g.statuses.join(',')}&limit=${LIMIT}`)
+  })) });
+  if (!shown.length) return <p className="info-line" role="status"><Equal size={13} />{counts(['same']) ? 'Every compared resource is the same on both sides.' : 'Neither side records resources.'}</p>;
+  if (pages.some(p => p.isPending)) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading…</p></div>;
+  const failed = pages.find(p => p.error);
+  if (failed?.error) return <ErrorState inline message={failed.error.message} />;
+  const columns: Column<ComparisonMatch>[] = [
+    { key: 'resource', header: 'Resource', cell: m => <button className="resource-button" aria-pressed={selected === m.id} onClick={() => setSelected(m.id)}><span className="resource-text"><strong className="mono change-address">{m.rightAddress || m.leftAddress}</strong><span className="resource-type">{m.type}{m.mode === 'data' && ' · data source'}{m.leftAddress && m.rightAddress && m.leftAddress !== m.rightAddress && <> · left <span className="mono">{m.leftAddress}</span></>}</span></span></button> },
+    { key: 'detail', header: 'Detail', className: 'change-why', cell: m => <>{detail(m)}{m.rule ? <span className="flag">rule {m.rule}</span> : null}{m.ignored > 0 && <span className="flag">{m.ignored} ignored</span>}</> }
+  ];
   return <>
-   <div className="filter-row plan-filters">
-    <div className="search-field compact"><Search size={14} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search addresses, types, providers…" aria-label="Search compared resources" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={12} /></button>}</div>
-    <select aria-label="Filter resource mode" value={mode} onChange={e => setMode(e.target.value)}><option value="">Managed & data</option><option value="managed">Managed resources</option><option value="data">Data sources</option></select>
-    <select aria-label="Filter resource type" value={type} onChange={e => setType(e.target.value)}><option value="">All resource types</option>{comparison.types.map(t => <option key={t}>{t}</option>)}</select>
-    {module !== undefined && <span className="filter-chip">Module <code>{module || 'root'}</code><button aria-label="Clear module filter" onClick={() => setModule(undefined)}><X size={11} /></button></span>}
-    {filtered && <Button variant="ghost" size="small" onClick={() => { setFilter([]); setSearch(''); setMode(''); setType(''); setModule(undefined); }}><X size={12} />Reset</Button>}
-    <span className="filter-count">{matches.data ? `${total} shown` : '…'}</span>
-   </div>
-   <div className={`explorer plan-explorer ${selected ? 'with-inspector' : ''}`}>
-    <section className="resource-list" aria-label="Compared resources">
-     {matches.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading…</p></div> : matches.error ? <ErrorState inline message={matches.error.message} /> : total === 0 ? <div className="empty-state"><Braces size={26} /><h2>{filtered ? 'No matching resources' : 'Neither side records resources'}</h2></div> : <>
-      <table className="resources-table changes-table compare-table"><thead><tr><th scope="col">Status</th><th scope="col">Resource</th><th scope="col">Detail</th></tr></thead><tbody>{matches.data!.matches.map(m => <tr key={m.id} className={selected === m.id ? 'selected' : ''}>
-       <td><StatusBadge value={m.status} /></td>
-       <td><button className="resource-button" aria-pressed={selected === m.id} onClick={() => setSelected(m.id)}><span className="resource-text"><strong className="mono change-address">{m.rightAddress || m.leftAddress}</strong><span className="resource-type">{m.type}{m.mode === 'data' && ' · data source'}{m.leftAddress && m.rightAddress && m.leftAddress !== m.rightAddress && <> · left <span className="mono">{m.leftAddress}</span></>}</span></span></button></td>
-       <td className="change-why">{m.status === 'attribute-different' ? <>{m.differences} attribute{m.differences === 1 ? '' : 's'}{m.paths.length > 0 && <span className="mono muted compare-paths">{m.paths.join(', ')}{m.differences > m.paths.length ? ', …' : ''}</span>}</> : m.reason ? <span className="muted">{m.status === 'unknown' ? `${m.notCompared} redacted not compared` : 'See details'}</span> : null}{m.rule ? <span className="flag">rule {m.rule}</span> : null}{m.ignored > 0 && <span className="flag">{m.ignored} ignored</span>}</td>
-      </tr>)}</tbody></table>
-      {total > PAGE && <div className="pager"><Button variant="ghost" size="small" disabled={page === 0} onClick={() => setPage(page - 1)}><ChevronLeft size={13} />Previous</Button><span className="muted">{page * PAGE + 1}–{Math.min(total, (page + 1) * PAGE)} of {total}</span><Button variant="ghost" size="small" disabled={(page + 1) * PAGE >= total} onClick={() => setPage(page + 1)}>Next<ChevronRight size={13} /></Button></div>}
-     </>}
-    </section>
-    {selected && <MatchInspector comparison={comparison} matchId={selected} close={() => setSelected(undefined)} copy={copy} />}
-   </div>
+   <DataTable label="Compared resources" columns={columns} rowKey={m => m.id} active={selected} groups={shown.map((g, i) => ({ key: g.key, label: g.label, count: counts(g.statuses), rows: pages[i].data?.matches ?? [] }))} />
+   {shown.some(g => counts(g.statuses) > LIMIT) && <p className="muted">Each group shows its first {LIMIT} resources. Export the report for every row.</p>}
+   {selected && <MatchInspector comparison={comparison} matchId={selected} close={() => setSelected(undefined)} copy={copy} />}
   </>;
 }
 
@@ -459,22 +409,4 @@ function MatchInspector({ comparison, matchId, close, copy }: { comparison: Comp
     <details className="full-values"><summary>Full values</summary><div className="json-viewer">{d.left !== undefined && d.left !== null && <JsonTree name="left" value={d.left} />}{d.right !== undefined && d.right !== null && <JsonTree name="right" value={d.right} />}</div></details>
    </div>}
   </Drawer>;
-}
-
-function ModulesTable({ comparison, open }: { comparison: Comparison; open: (module: string) => void }) {
-  return <div className="table-scroll"><table className="resources-table compare-table"><thead><tr><th scope="col">Module</th><th scope="col">Left</th><th scope="col">Right</th><th scope="col">Presence</th><th scope="col">Differences</th></tr></thead><tbody>{comparison.modules.map(m => <tr key={m.address}>
-   <td><button className="resource-button" onClick={() => open(m.address)}><span className="resource-text"><strong className="mono">{m.address || 'Root module'}</strong>{m.leftAddress && <span className="resource-type">left <span className="mono">{m.leftAddress}</span></span>}</span></button></td>
-   <td>{m.left}</td><td>{m.right}</td>
-   <td>{m.status === 'both' ? <span className="muted">Both</span> : <StatusBadge value={m.status} />}</td>
-   <td className="change-why">{m.counts.different > 0 && <span className="flag">{m.counts.different} different</span>}{m.counts.onlyLeft > 0 && <span className="flag">{m.counts.onlyLeft} only left</span>}{m.counts.onlyRight > 0 && <span className="flag">{m.counts.onlyRight} only right</span>}{m.counts.unknown > 0 && <span className="flag">{m.counts.unknown} unknown</span>}{m.counts.uncomparable > 0 && <span className="flag">{m.counts.uncomparable} uncomparable</span>}{m.counts.total === m.counts.same && m.counts.total > 0 && <span className="muted">All same</span>}</td>
-  </tr>)}</tbody></table>{comparison.truncated && <p className="muted">Only the first 2,000 rows are shown.</p>}</div>;
-}
-
-function ProvidersTable({ comparison }: { comparison: Comparison }) {
-  return <div className="table-scroll"><table className="resources-table compare-table"><thead><tr><th scope="col">Provider</th><th scope="col">Left</th><th scope="col">Right</th><th scope="col">Presence</th><th scope="col">Version</th></tr></thead><tbody>{comparison.providers.map(p => <tr key={p.source}>
-   <td><span className="resource-text"><strong className="mono">{p.source || 'Not recorded'}</strong>{p.notes.map(n => <span key={n} className="resource-type">{n}</span>)}</span></td>
-   <td>{p.left}</td><td>{p.right}</td>
-   <td>{p.status === 'both' ? <span className="muted">Both</span> : <StatusBadge value={p.status} />}</td>
-   <td className="muted">Not recorded in state</td>
-  </tr>)}</tbody></table><div className="info-note"><CircleHelp size={15} /><span>State records provider sources per resource, not provider versions or aliases. Use Project tools → Providers for requirements.</span></div></div>;
 }
