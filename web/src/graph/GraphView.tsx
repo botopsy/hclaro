@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Boxes, CircleAlert, CircleX, Copy, FileDiff, History, List, LoaderCircle, Maximize, Play, Repeat, Search, ShieldCheck, Target, TriangleAlert, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowRight, Boxes, ChevronDown, CircleAlert, CircleX, Copy, FileDiff, History, List, LoaderCircle, Maximize, Play, Repeat, Search, ShieldCheck, Target, TriangleAlert, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { api, ApiError, send } from '../api';
 import type { DependencyGraph, GraphImpact, GraphNode, GraphOptions, Operation, PlannedChange, PlanSummary } from '../types';
 import { Button } from '../components/ui/button';
@@ -15,6 +15,10 @@ import { internalKinds, layout, moduleAncestors, NODE_H, NODE_W, nodeForAddress,
 import { clock, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
 import { ErrorState } from '../components/ErrorState';
+import { EmptyState } from '../components/EmptyState';
+import { Disclosure } from '../components/Disclosure';
+import { Segmented } from '../components/Segmented';
+import { Popover } from '../components/Menu';
 
 const kindLabels: Record<string, string> = {
   resource: 'Resource',
@@ -108,26 +112,31 @@ export function GraphView({
     }
   }
   const canGenerate = !!options.data?.canGenerate && !running;
-  const latest = graphs.data?.graphs[0];
   const shown = graphs.data?.graphs.find(g => g.id === shownId);
   const planChoices = (plans.data?.plans ?? []).filter(p => !shown || p.workspace === shown.workspace);
   if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <ErrorState icon={TriangleAlert} iconSize={26} title="Open this workspace again" message={options.error.message} retry={reopen} retryLabel="Open again" note="Nothing ran." />;
+  const hasGraphs = !!graphs.data && graphs.data.graphs.length > 0;
+  const planPicker = <label className="history-select"><FileDiff size={14} aria-hidden="true" /><span>Compare with plan</span><select aria-label="Compare with plan" value={planId} onChange={e => setPlanId(e.target.value)}><option value="">None (dependencies only)</option>{planId && !planChoices.some(p => p.id === planId) && <option value={planId}>Selected plan</option>}{planChoices.map(p => <option key={p.id} value={p.id} disabled={p.errored}>{clock(p.createdAt)} · {p.kind === 'replace' ? `replace ${p.replace.length}` : p.kind} · {p.changes} change{p.changes === 1 ? '' : 's'}{p.errored ? ' · errored' : ''}</option>)}</select></label>;
   return <div className="plans graph-page">
-   <div className="plans-toolbar">
-    <Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canGenerate} title={running && running.kind !== 'graph' ? 'Another operation is running.' : undefined}><Waypoints size={14} />Generate graph</Button>
-    {graphs.data && graphs.data.graphs.length > 0 && <label className="history-select"><History size={14} /><span className="sr-only">Graph history</span><select aria-label="Graph history" value={shownId} onChange={e => setGraphId(e.target.value)}>{graphs.data.graphs.map((g, i) => <option key={g.id} value={g.id}>{i === 0 ? 'Latest · ' : ''}{clock(g.startedAt)} · {g.workspace} · {g.status === 'completed' ? `${g.summary.resources + g.summary.dataSources} resources` : g.status}{!g.current && g.status !== 'running' ? ' · stale' : ''}</option>)}</select></label>}
-    <label className="history-select"><FileDiff size={14} /><span className="muted">Compare with plan</span><select aria-label="Compare with plan" value={planId} onChange={e => setPlanId(e.target.value)}><option value="">None (dependencies only)</option>{planId && !planChoices.some(p => p.id === planId) && <option value={planId}>Selected plan</option>}{planChoices.map(p => <option key={p.id} value={p.id} disabled={p.errored}>{clock(p.createdAt)} · {p.kind === 'replace' ? `replace ${p.replace.length}` : p.kind} · {p.changes} change{p.changes === 1 ? '' : 's'}{p.errored ? ' · errored' : ''}</option>)}</select></label>
-    <span className="toolbar-note" role="status">{latest ? <>Last graph {clock(latest.completedAt ?? latest.startedAt)}{latest.current ? '' : ' · no longer current'}</> : <>No graph yet. Nothing runs until you ask.</>}</span>
-   </div>
-   <p className="info-line drift-explainer"><ShieldCheck size={13} />Generated with <strong>{options.data?.command.join(' ') || 'graph'}</strong>. Links show what configuration depends on. <strong>Potential impact</strong> is what can be reached through those links; only a plan shows <strong>confirmed planned changes</strong>.</p>
-   {/* shortcut: numbers copied from internal/graph/dot.go and maxGraphs/GraphMaxAge in internal/operations/graph.go; serve them from the API if they become configurable. */}
-   <p className="info-line muted graph-limits">Terraform 1.7 and later print a resource-only graph; earlier Terraform and OpenTofu print the full walk graph with internal nodes, so links and layout differ between engines and versions. Engine output over 16 MiB, 20,000 nodes or 200,000 edges is refused, not truncated. The last 5 graphs are kept in memory for up to 12 hours and are gone when Hclaro stops.</p>
+   {hasGraphs && <div className="plans-toolbar">
+    <label className="history-select"><History size={14} aria-hidden="true" /><span className="sr-only">Graph history</span><select aria-label="Graph history" value={shownId} onChange={e => setGraphId(e.target.value)}>{graphs.data!.graphs.map((g, i) => <option key={g.id} value={g.id}>{i === 0 ? 'Latest · ' : ''}{clock(g.startedAt)} · {g.workspace} · {g.status === 'completed' ? `${g.summary.resources + g.summary.dataSources} resources` : g.status}{!g.current && g.status !== 'running' ? ' · stale' : ''}</option>)}</select></label>
+    <Button variant="outline" className="graph-again" onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canGenerate} title={running && running.kind !== 'graph' ? 'Another operation is running.' : undefined}><Waypoints size={14} />Generate again</Button>
+   </div>}
    {workspaceStatus === 'loading' && !running ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace…</div> : options.data && !options.data.canGenerate && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Graphs are unavailable here.</strong> {options.data.reason}</span></div>}
    {running && running.kind === 'graph' && <OperationLog key={running.id} scope={scope} operation={running} onFinished={finished} />}
    {running && running.kind !== 'graph' && <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Another operation is running in this project. Generating a graph is available when it finishes.</div>}
-   {graph.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading graph…</p></div> : graph.error ? <ErrorState inline message={graph.error.message}>{planId && <Button variant="outline" size="small" onClick={() => setPlanId('')}>Show dependencies without the plan</Button>}</ErrorState> : graph.data && graph.data.status !== 'running' ? <GraphResult key={`${graph.data.id}:${planId}`} scope={scope} graph={graph.data} planId={planId} focus={focus} regenerate={() => setPreflight(true)} canGenerate={canGenerate} openResource={openResource} openPlan={openPlan} copy={copy} /> : !running && !shownId && <div className="empty-state"><Waypoints size={30} /><h2>No dependency graph yet</h2><p>Generate a graph to explore how resources, modules and data sources depend on each other. It runs <code>graph</code> only when you ask.</p>{options.data?.canGenerate && <Button variant="outline" onClick={() => setPreflight(true)}><Waypoints size={14} />Generate graph</Button>}</div>}
+   {graph.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading graph…</p></div> : graph.error ? <ErrorState inline message={graph.error.message}>{planId && <Button variant="outline" size="small" onClick={() => setPlanId('')}>Show dependencies without the plan</Button>}</ErrorState> : graph.data && graph.data.status !== 'running' ? <GraphResult key={`${graph.data.id}:${planId}`} scope={scope} graph={graph.data} command={options.data?.command} planPicker={planPicker} focus={focus} regenerate={() => setPreflight(true)} canGenerate={canGenerate} openResource={openResource} openPlan={openPlan} copy={copy} /> : !running && !shownId && graphs.data && <EmptyState icon={<Waypoints size={28} />} title="No dependency graph yet" action={<Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canGenerate}><Waypoints size={14} />Generate graph</Button>} how={<HowItWorks command={options.data?.command} />}>See how resources, modules and data sources depend on each other, and what a change could reach. It only runs when you ask.</EmptyState>}
    {preflight && options.data && <GraphPreflight options={options.data} project={projectName} busy={starting} error={startError} onConfirm={fp => void start(fp)} onClose={() => { setPreflight(false); setStartError(''); }} />}
   </div>;
+}
+
+// The long explanation lives in a collapsed "How this works" (§3), not in banners.
+function HowItWorks({ command }: { command?: string[] }) {
+  return <>
+   <p>Generated with <strong>{command?.join(' ') || 'graph'}</strong>. Links show what configuration depends on. <strong>Potential impact</strong> is what can be reached through those links; only a plan shows <strong>confirmed planned changes</strong>.</p>
+   {/* shortcut: numbers copied from internal/graph/dot.go and maxGraphs/GraphMaxAge in internal/operations/graph.go; serve them from the API if they become configurable. */}
+   <p className="graph-limits">Terraform 1.7 and later print a resource-only graph; earlier Terraform and OpenTofu print the full walk graph with internal nodes, so links and layout differ between engines and versions. Engine output over 16 MiB, 20,000 nodes or 200,000 edges is refused, not truncated. The last 5 graphs are kept in memory for up to 12 hours and are gone when Hclaro stops.</p>
+  </>;
 }
 
 function GraphPreflight({ options, project, busy, error, onConfirm, onClose }: { options: GraphOptions; project: string; busy: boolean; error?: string; onConfirm: (contextFingerprint?: string) => void; onClose: () => void }) {
@@ -159,10 +168,13 @@ function Failure({ graph }: { graph: DependencyGraph }) {
   </section>;
 }
 
-function GraphResult({ scope, graph, planId, focus, regenerate, canGenerate, openResource, openPlan, copy }: {
+const ROOT = '(root)';
+
+function GraphResult({ scope, graph, command, planPicker, focus, regenerate, canGenerate, openResource, openPlan, copy }: {
   scope: PlanScope;
   graph: DependencyGraph;
-  planId: string;
+  command?: string[];
+  planPicker: ReactNode;
   focus?: Focus;
   regenerate: () => void;
   canGenerate: boolean;
@@ -170,18 +182,23 @@ function GraphResult({ scope, graph, planId, focus, regenerate, canGenerate, ope
   openPlan: (planId: string) => void;
   copy: (value: string, label: string) => Promise<void>;
 }) {
+  const planId = graph.plan?.id ?? '';
   const hasInternal = graph.nodes.some(n => internalKinds.includes(n.nodeKind) && n.nodeKind !== 'unknown');
   const large = graph.nodes.length > 300;
   const modules = useMemo(() => [...new Set(graph.nodes.flatMap(n => moduleAncestors(n.modulePath)))].sort(), [graph.nodes]);
   const [projection, setProjection] = useState<Projection>(() => ({ showData: true, showInternal: false, provider: '', type: '', collapsed: new Set(large ? modules.filter(m => moduleAncestors(m).length === 1) : []) }));
+  const [module, setModule] = useState('');
   const [mode, setMode] = useState<Mode>(large ? 'list' : 'canvas');
   const [search, setSearch] = useState('');
-  const [picked, setPicked] = useState<string>();
+  // null: the selection was cleared, so an "Inspect impact" focus does not come back.
+  const [picked, setPicked] = useState<string | null>();
   const byId = useMemo(() => new Map(graph.nodes.map(n => [n.id, n])), [graph.nodes]);
   // "Inspect impact" selects the requested address once; a click replaces it.
   const focused = useMemo(() => focus && graph.current ? nodeForAddress(graph.nodes, focus.address)?.id : undefined, [focus, graph]);
-  const selected = picked ?? focused;
-  const view = useMemo(() => project(graph.nodes, graph.edges, graph.resourceEdges, projection), [graph, projection]);
+  const selected = picked === null ? undefined : picked ?? focused;
+  // The Module filter narrows the nodes before the projection; links to hidden nodes drop out there.
+  const inModule = useMemo(() => module ? graph.nodes.filter(n => module === ROOT ? !n.modulePath : moduleAncestors(n.modulePath).includes(module)) : graph.nodes, [graph.nodes, module]);
+  const view = useMemo(() => project(inModule, graph.edges, graph.resourceEdges, projection), [inModule, graph, projection]);
   const providers = useMemo(() => [...new Set(graph.nodes.map(n => typePrefix(n.type)).filter(Boolean))].sort(), [graph.nodes]);
   const types = useMemo(() => [...new Set(graph.nodes.map(n => n.type).filter((t): t is string => !!t))].sort(), [graph.nodes]);
   const query = search.trim().toLowerCase();
@@ -224,34 +241,48 @@ function GraphResult({ scope, graph, planId, focus, regenerate, canGenerate, ope
    </div>
    {!graph.current && graph.status !== 'running' && <div className="plan-warning" role="alert"><TriangleAlert size={15} /><span><strong>This graph no longer matches.</strong> {graph.staleReason} {graph.withheld && 'Its nodes are withheld so it cannot be mistaken for the current configuration.'}</span>{canGenerate && <Button variant="outline" size="small" onClick={regenerate}><Waypoints size={13} />Generate again</Button>}</div>}
    {(graph.status === 'failed' || graph.status === 'cancelled') && <Failure graph={graph} />}
-   {graph.warnings.map(w => <div className="plan-warning" key={w} role="note"><TriangleAlert size={15} />{w}</div>)}
    {graph.current && graph.status === 'completed' && <>
+    <section className={`graph-notes ${graph.warnings.length ? 'has-warnings' : ''}`} role="note" aria-label="About this graph">
+     {graph.warnings.length > 0 && <TriangleAlert size={16} aria-hidden="true" />}
+     <div>
+      {graph.warnings.map((w, i) => <p key={w}>{i === 0 && graph.format === 'full' && <strong>Some links are derived. </strong>}{w}</p>)}
+      <Disclosure summary="How this works"><HowItWorks command={command} /></Disclosure>
+     </div>
+    </section>
     <div className="graph-counts" role="group" aria-label="Graph summary">
      <span><strong>{s.resources}</strong> resources</span><span><strong>{s.dataSources}</strong> data sources</span>{s.internal > 0 && <span><strong>{s.internal}</strong> internal nodes</span>}<span><strong>{s.edges}</strong> declared links</span>{s.derivedEdges > 0 && <span><strong>{s.derivedEdges}</strong> derived links</span>}{s.cycles > 0 && <span className="tone-warn"><Repeat size={12} aria-hidden="true" /><strong>{s.cycles}</strong> cycle{s.cycles === 1 ? '' : 's'}</span>}{s.unknown > 0 && <span><strong>{s.unknown}</strong> unrecognized</span>}
     </div>
-    {graph.plan ? <div className="info-line graph-plan-note" role="note"><FileDiff size={13} /><span>Showing <strong>{planned} confirmed planned change{planned === 1 ? '' : 's'}</strong> from the {graph.plan.kind === 'replace' ? 'replace plan' : 'plan'} of {clock(graph.plan.createdAt)}.{graph.plan.unmapped.length > 0 && ` ${graph.plan.unmapped.length} change${graph.plan.unmapped.length === 1 ? ' does' : 's do'} not match a graph node.`}</span><Button variant="ghost" size="small" onClick={() => openPlan(graph.plan!.id)}>View in Plans<ArrowRight size={12} /></Button></div> : <p className="info-line muted">No plan selected: the graph shows dependencies only. Choose a plan above to see confirmed planned changes.</p>}
-    {graph.nodes.length === 0 ? <div className="empty-state"><Boxes size={28} /><h2>No resources in this graph</h2></div> : <div className={`graph-layout ${selected ? 'with-inspector' : ''}`}>
-     <aside className="graph-filters" aria-label="Graph filters">
-      <div className="search-field compact"><Search size={14} /><input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && matches[0]) choose(matches[0].id); }} placeholder="Find a node…" aria-label="Find a node" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={12} /></button>}</div>
-      {query && <p className="muted graph-match-count" role="status">{matches.length} match{matches.length === 1 ? '' : 'es'}{matches[0] && ' · Enter selects the first'}</p>}
-      <fieldset><legend>Show</legend>
+    {graph.nodes.length === 0 ? <div className="empty-state"><Boxes size={28} /><h2>No resources in this graph</h2></div> : <>
+     <div className="graph-toolbar" role="group" aria-label="Graph options">
+      {planPicker}
+      <div className="search-field compact"><Search size={14} aria-hidden="true" /><input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && matches[0]) choose(matches[0].id); }} placeholder="Find a node…" aria-label="Find a node" />{search && <button className="clear-search" aria-label="Clear search" onClick={() => setSearch('')}><X size={12} /></button>}</div>
+      <fieldset className="graph-show"><legend>Show</legend>
        <label className="check"><input type="checkbox" checked={projection.showData} onChange={e => setProjection(p => ({ ...p, showData: e.target.checked }))} />Data sources</label>
        <label className="check" title={hasInternal ? undefined : 'This graph format has no internal nodes.'}><input type="checkbox" checked={projection.showInternal} disabled={!hasInternal} onChange={e => setProjection(p => ({ ...p, showInternal: e.target.checked }))} />Internal nodes</label>
       </fieldset>
-      <label className="graph-select"><span>Provider <span className="muted">(from type name)</span></span><select value={projection.provider} onChange={e => setProjection(p => ({ ...p, provider: e.target.value }))}><option value="">All</option>{providers.map(p => <option key={p} value={p}>{p}</option>)}</select></label>
-      <label className="graph-select"><span>Type</span><select value={projection.type} onChange={e => setProjection(p => ({ ...p, type: e.target.value }))}><option value="">All</option>{types.map(t => <option key={t} value={t}>{t}</option>)}</select></label>
-      {modules.length > 0 && <fieldset className="graph-modules"><legend>Collapse modules</legend>
-       <div className="graph-module-actions"><Button variant="ghost" size="small" onClick={() => setProjection(p => ({ ...p, collapsed: new Set(modules.filter(m => moduleAncestors(m).length === 1)) }))}>Collapse all</Button><Button variant="ghost" size="small" onClick={() => setProjection(p => ({ ...p, collapsed: new Set() }))}>Expand all</Button></div>
-       {modules.map(m => <label key={m} className="check mono" style={{ paddingLeft: `${(moduleAncestors(m).length - 1) * 12}px` }}><input type="checkbox" checked={projection.collapsed.has(m)} onChange={() => toggleCollapsed(m)} />{m.split('.').slice(-1)[0]}</label>)}
-      </fieldset>}
-     </aside>
-     <section className="graph-main" aria-label="Dependency graph">
-      <div className="graph-main-toolbar"><div className="segmented" role="tablist" aria-label="Graph display"><button role="tab" aria-selected={mode === 'canvas'} onClick={() => setMode('canvas')}><Waypoints size={13} />Canvas</button><button role="tab" aria-selected={mode === 'list'} onClick={() => setMode('list')}><List size={13} />List</button></div><span className="muted">{view.nodes.length} node{view.nodes.length === 1 ? '' : 's'} · {view.edges.length} link{view.edges.length === 1 ? '' : 's'} shown</span></div>
-      {view.nodes.length === 0 ? <div className="empty-state"><Boxes size={26} /><h2>No nodes match these filters</h2></div> : mode === 'canvas' ? <GraphCanvas nodes={view.nodes} edges={view.edges} selected={selected} highlight={highlight} matches={matches} onSelect={choose} /> : <NodeList nodes={view.nodes} edges={view.edges} selected={selected} highlight={highlight} query={query} onSelect={choose} />}
-      <Legend plan={!!graph.plan} />
-     </section>
-     {selected && byId.has(selected) && <NodeInspector node={byId.get(selected)!} byId={byId} impact={impact.data} loading={impact.isPending} error={impact.error?.message} plan={graph.plan?.id} close={() => setPicked(undefined)} select={choose} openResource={openResource} openPlan={openPlan} copy={copy} />}
-    </div>}
+      <label className="history-select" title="Read from the type name"><span>Provider</span><select value={projection.provider} onChange={e => setProjection(p => ({ ...p, provider: e.target.value }))}><option value="">All</option>{providers.map(p => <option key={p} value={p}>{p}</option>)}</select></label>
+      <label className="history-select"><span>Type</span><select value={projection.type} onChange={e => setProjection(p => ({ ...p, type: e.target.value }))}><option value="">All</option>{types.map(t => <option key={t} value={t}>{t}</option>)}</select></label>
+      {modules.length > 0 && <>
+       <label className="history-select"><span>Module</span><select value={module} onChange={e => setModule(e.target.value)}><option value="">All</option><option value={ROOT}>Root module</option>{modules.map(m => <option key={m} value={m}>{m}</option>)}</select></label>
+       <Popover button={<>Collapse modules{projection.collapsed.size > 0 && <span className="muted">{projection.collapsed.size}</span>}<ChevronDown size={13} aria-hidden="true" /></>} label="Collapse modules" className="graph-collapse">
+        <div className="graph-module-actions"><Button variant="ghost" size="small" onClick={() => setProjection(p => ({ ...p, collapsed: new Set(modules.filter(m => moduleAncestors(m).length === 1)) }))}>Collapse all</Button><Button variant="ghost" size="small" onClick={() => setProjection(p => ({ ...p, collapsed: new Set() }))}>Expand all</Button></div>
+        {modules.map(m => <label key={m} className="check mono" style={{ paddingLeft: `${(moduleAncestors(m).length - 1) * 12 + 6}px` }}><input type="checkbox" checked={projection.collapsed.has(m)} onChange={() => toggleCollapsed(m)} />{m.split('.').slice(-1)[0]}</label>)}
+       </Popover>
+      </>}
+      <Segmented label="View" value={mode} onChange={setMode} options={[{ value: 'canvas', label: 'Canvas', icon: <Waypoints size={13} aria-hidden="true" /> }, { value: 'list', label: 'List', icon: <List size={13} aria-hidden="true" /> }]} />
+     </div>
+     <div className="graph-status">
+      {graph.plan ? <p role="note">Showing <strong>{planned} confirmed planned change{planned === 1 ? '' : 's'}</strong> from the {graph.plan.kind === 'replace' ? 'replace plan' : 'plan'} of {clock(graph.plan.createdAt)}; node borders show the planned action.{graph.plan.unmapped.length > 0 && ` ${graph.plan.unmapped.length} change${graph.plan.unmapped.length === 1 ? ' does' : 's do'} not match a graph node.`}<Button variant="ghost" size="small" onClick={() => openPlan(graph.plan!.id)}>View in Plans<ArrowRight size={12} /></Button></p> : <p>No plan selected: the graph shows dependencies only.</p>}
+      <span role="status">{view.nodes.length} node{view.nodes.length === 1 ? '' : 's'} · {view.edges.length} link{view.edges.length === 1 ? '' : 's'} shown{query && ` · ${matches.length} match${matches.length === 1 ? '' : 'es'}${matches[0] ? ' · Enter selects the first' : ''}`}</span>
+     </div>
+     <div className={`graph-layout ${selected ? 'with-selection' : ''}`}>
+      <section className="graph-main" aria-label="Dependency graph">
+       {view.nodes.length === 0 ? <div className="empty-state"><Boxes size={26} /><h2>No nodes match these filters</h2></div> : mode === 'canvas' ? <GraphCanvas nodes={view.nodes} edges={view.edges} selected={selected} highlight={highlight} matches={matches} onSelect={choose} /> : <NodeList nodes={view.nodes} edges={view.edges} selected={selected} highlight={highlight} query={query} onSelect={choose} />}
+       <Legend plan={!!graph.plan} />
+      </section>
+      {selected && byId.has(selected) && <SelectionPanel node={byId.get(selected)!} byId={byId} impact={impact.data} loading={impact.isPending} error={impact.error?.message} plan={graph.plan?.id} clear={() => setPicked(null)} select={choose} openResource={openResource} openPlan={openPlan} copy={copy} />}
+     </div>
+    </>}
    </>}
   </div>;
 }
@@ -263,7 +294,7 @@ function Legend({ plan }: { plan: boolean }) {
     <li><svg width="34" height="10" aria-hidden="true"><line x1="0" y1="5" x2="30" y2="5" className="graph-edge derived" /></svg>Derived through internal nodes</li>
     <li><span className="legend-swatch impact" aria-hidden="true">◆</span>Potential impact: depends on the selection</li>
     <li><span className="legend-swatch upstream" aria-hidden="true">▲</span>Selection depends on it</li>
-    {plan && <li><span className="legend-swatch planned" aria-hidden="true">●</span>Confirmed planned change (from the plan)</li>}
+    {plan && <li><span className="legend-swatch planned" aria-hidden="true">●</span>Confirmed planned change (from the plan); the border color shows its action</li>}
    </ul>
   </div>;
 }
@@ -274,8 +305,12 @@ function nodeClass(n: VisNode, selected: string | undefined, h: Highlight, match
   const member = n.group?.members ?? [n.id];
   const any = (set: Set<string>) => member.some(id => set.has(id));
   const related = selected ? n.id === selected || any(h.down) || any(h.up) : true;
-  return ['graph-node', `kind-${n.kind}`, n.id === selected ? 'selected' : '', selected && any(h.down) ? 'impact' : '', selected && any(h.up) ? 'upstream' : '', selected && !related ? 'dim' : '', matched ? 'match' : '', n.node?.planned?.length || n.group?.planned ? 'planned' : ''].filter(Boolean).join(' ');
+  const action = actionOrder.find(a => n.node?.planned?.some(c => c.action === a));
+  return ['graph-node', `kind-${n.kind}`, n.id === selected ? 'selected' : '', selected && any(h.down) ? 'impact' : '', selected && any(h.up) ? 'upstream' : '', selected && !related ? 'dim' : '', matched ? 'match' : '', n.node?.planned?.length || n.group?.planned ? 'planned' : '', action ? `planned-${action}` : ''].filter(Boolean).join(' ');
 }
+
+// The border shows the most severe planned action; the "● action" text says it in words.
+const actionOrder = ['delete', 'replace', 'update', 'create', 'read'];
 
 function plannedLabel(n: VisNode) {
   if (n.group) return n.group.planned ? `${n.group.planned} planned` : '';
@@ -427,9 +462,9 @@ function GraphCanvas({ nodes, edges, selected, highlight, matches, onSelect }: {
   </div>;
 }
 
-const rowHeight = 40;
+const rowHeight = 38;
 
-// Accessible list alternative to the canvas, virtualized for large graphs.
+// The List view: Node · Kind · Depends on · Depended on by, virtualized for large graphs.
 function NodeList({ nodes, edges, selected, highlight, query, onSelect }: { nodes: VisNode[]; edges: VisEdge[]; selected?: string; highlight: Highlight; query: string; onSelect: (id: string) => void }) {
   const [top, setTop] = useState(0);
   const counts = useMemo(() => {
@@ -448,22 +483,27 @@ function NodeList({ nodes, edges, selected, highlight, query, onSelect }: { node
   const height = 560;
   const first = Math.max(0, Math.floor(top / rowHeight) - 5);
   const last = Math.min(rows.length, Math.ceil((top + height) / rowHeight) + 5);
-  return <div className="graph-list" style={{ height }} onScroll={e => setTop(e.currentTarget.scrollTop)} role="list" aria-label={`${rows.length} graph nodes`}>
-   <div style={{ height: rows.length * rowHeight, position: 'relative' }}>
-    {rows.slice(first, last).map((n, i) => {
-     const planned = plannedLabel(n);
-     return <div key={n.id} role="listitem" aria-setsize={rows.length} aria-posinset={first + i + 1} className="graph-list-row" style={{ top: (first + i) * rowHeight, height: rowHeight }}>
-      <button className={nodeClass(n, selected, highlight, false)} aria-pressed={n.id === selected} onClick={() => onSelect(n.id)}>
-       <span className="graph-list-name mono">{n.group ? `${n.label} (${n.group.members.length})` : n.label}</span>
-       <span className="muted">{kindLabels[n.kind] ?? n.kind}</span>
-       <span className="muted">{counts.deps.get(n.id) ?? 0} deps · {counts.dependents.get(n.id) ?? 0} dependents</span>
-       {selected && highlight.down.has(n.id) && <span className="flag impact">◆ Potential impact</span>}
-       {selected && highlight.up.has(n.id) && <span className="flag upstream">▲ Dependency</span>}
-       {planned && <span className="flag planned">● {planned}</span>}
-      </button>
-     </div>;
-    })}
-   </div>
+  return <div className="graph-list" style={{ maxHeight: height }} onScroll={e => setTop(e.currentTarget.scrollTop)}>
+   <table className="data-table" aria-label={`${rows.length} graph nodes`} aria-rowcount={rows.length + 1}>
+    <thead><tr aria-rowindex={1}><th scope="col">Node</th><th scope="col">Kind</th><th scope="col">Depends on</th><th scope="col">Depended on by</th></tr></thead>
+    <tbody>
+     {first > 0 && <tr aria-hidden="true" style={{ height: first * rowHeight }} />}
+     {rows.slice(first, last).map((n, i) => {
+      const planned = plannedLabel(n);
+      return <tr key={n.id} aria-rowindex={first + i + 2} className={nodeClass(n, selected, highlight, false).replace('graph-node', 'graph-row') + (n.id === selected ? ' active' : '')}>
+       <td><button type="button" className="graph-row-name mono" aria-pressed={n.id === selected} onClick={() => onSelect(n.id)}>{n.group ? `${n.label} (${n.group.members.length})` : n.label}</button>
+        {selected && highlight.down.has(n.id) && <span className="flag impact">◆ Potential impact</span>}
+        {selected && highlight.up.has(n.id) && <span className="flag upstream">▲ Dependency</span>}
+        {planned && <span className="flag planned">● {planned}</span>}
+       </td>
+       <td>{kindLabels[n.kind] ?? n.kind}</td>
+       <td>{counts.deps.get(n.id) ?? 0}</td>
+       <td>{counts.dependents.get(n.id) ?? 0}</td>
+      </tr>;
+     })}
+     {last < rows.length && <tr aria-hidden="true" style={{ height: (rows.length - last) * rowHeight }} />}
+    </tbody>
+   </table>
   </div>;
 }
 
@@ -477,14 +517,15 @@ function ChangeList({ changes, byId, select }: { changes: PlannedChange[]; byId:
   return <ul className="graph-refs">{changes.map(c => <li key={c.changeId}><ActionBadge action={c.action} />{c.node && byId.has(c.node) ? <button className="link-button mono" onClick={() => select(c.node!)}>{c.address}</button> : <code>{c.address}</code>}</li>)}</ul>;
 }
 
-function NodeInspector({ node, byId, impact, loading, error, plan, close, select, openResource, openPlan, copy }: {
+// The SELECTED panel (§4.4b): the counts and Clear selection first, then what the node reaches.
+function SelectionPanel({ node, byId, impact, loading, error, plan, clear, select, openResource, openPlan, copy }: {
   node: GraphNode;
   byId: Map<string, GraphNode>;
   impact?: GraphImpact;
   loading: boolean;
   error?: string;
   plan?: string;
-  close: () => void;
+  clear: () => void;
   select: (id: string) => void;
   openResource: (id: string) => void;
   openPlan: (planId: string) => void;
@@ -496,39 +537,44 @@ function NodeInspector({ node, byId, impact, loading, error, plan, close, select
   });
   const downstream = impact ? resources(impact.downstream) : [];
   const upstream = impact ? resources(impact.upstream) : [];
-  return <aside className="inspector graph-inspector" aria-label="Node details">
-   <div className="inspector-header"><span><Waypoints size={15} />Node details</span><Button variant="ghost" size="icon" aria-label="Close node details" onClick={close}><X size={16} /></Button></div>
-   <div className="inspector-body">
-    <div className="address-box"><div className="label-row"><span>{kindLabels[node.nodeKind]?.toUpperCase()}</span>{!node.redacted && <Button variant="ghost" size="icon" aria-label="Copy node name" onClick={() => void copy(node.resourceAddress ?? node.displayName, 'Name')}><Copy size={13} /></Button>}</div><code>{node.displayName}</code></div>
-    <p className="muted graph-confidence">{confidenceText[node.confidence]}</p>
-    {node.inCycle && <p className="plan-warning"><Repeat size={14} />This node is part of a dependency cycle. The engine reports cycles as errors when it plans.</p>}
-    <dl className="metadata">
-     <div><dt>Module</dt><dd className="mono">{node.modulePath || 'Root module'}</dd></div>
-     {node.type && <div><dt>Type</dt><dd className="mono">{node.type}</dd></div>}
-     {node.provider && <div><dt>Provider</dt><dd className="mono">{node.provider}</dd></div>}
-     {(node.nodeKind === 'resource' || node.nodeKind === 'data') && <div><dt>Recorded instances</dt><dd>{node.instanceCount}</dd></div>}
-    </dl>
-    {node.instances && node.instances.length > 0 && <section><h3>Open in Resources</h3><ul className="graph-refs">{node.instances.map(i => <li key={i.resourceId}><button className="link-button mono" onClick={() => openResource(i.resourceId)}>{i.address}</button><ArrowRight size={12} /></li>)}</ul>{node.instanceCount > node.instances.length && <p className="muted">and {node.instanceCount - node.instances.length} more</p>}</section>}
-    {node.planned && node.planned.length > 0 && plan && <section><h3>Planned for this node</h3><ChangeList changes={node.planned} byId={byId} select={select} /><Button variant="outline" size="small" onClick={() => openPlan(plan)}>View in Plans<ArrowRight size={12} /></Button></section>}
-    {loading ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Analyzing…</div> : error ? <p className="dialog-error" role="alert">{error}</p> : impact && <>
-     <section className="graph-impact" aria-label="Potential impact">
-      <h3>Potential impact <span className="muted">{impact.downstreamResources} resource{impact.downstreamResources === 1 ? '' : 's'}</span></h3>
-      <p className="muted">Resources that depend on this node, directly or through others. A change here <em>could</em> affect them; it does not mean they will change.</p>
-      {downstream.length ? <ul className="graph-refs">{downstream.slice(0, 200).map(r => <NodeRef key={r.node} id={r.node} byId={byId} select={select} distance={r.distance} />)}</ul> : <p className="muted">Nothing depends on this node.</p>}
-      {impact.truncated && <p className="muted">The list is capped; {impact.downstreamTotal} nodes in total depend on it.</p>}
-     </section>
-     {plan && impact.plan ? <section className="graph-confirmed" aria-label="Confirmed planned changes">
-      <h3><CircleAlert size={14} />Confirmed planned changes</h3>
-      <p className="muted">From the selected plan only. These are listed because the plan contains them; a dependency link does not show that one change causes another.</p>
-      <h4>Here and in its potential impact <span className="muted">{impact.plan.inImpact.length}</span></h4>
-      {impact.plan.inImpact.length ? <ChangeList changes={impact.plan.inImpact} byId={byId} select={select} /> : <p className="muted">None.</p>}
-      <h4>Elsewhere in the plan <span className="muted">{impact.plan.elsewhere.length}</span></h4>
-      {impact.plan.elsewhere.length ? <ChangeList changes={impact.plan.elsewhere} byId={byId} select={select} /> : <p className="muted">None.</p>}
-      {impact.plan.unmapped.length > 0 && <><h4>Not in this graph <span className="muted">{impact.plan.unmapped.length}</span></h4><ChangeList changes={impact.plan.unmapped} byId={byId} select={select} /></>}
-     </section> : <p className="info-line muted">Choose a plan to compare potential impact with confirmed planned changes.</p>}
-     <section><h3>Depends on <span className="muted">{impact.directDependencies.length} direct · {upstream.length} resource{upstream.length === 1 ? '' : 's'} in total</span></h3>{impact.directDependencies.length ? <ul className="graph-refs">{impact.directDependencies.map(id => <NodeRef key={id} id={id} byId={byId} select={select} />)}</ul> : <p className="muted">No dependencies.</p>}</section>
-     <section><h3>Direct dependents <span className="muted">{impact.directDependents.length}</span></h3>{impact.directDependents.length ? <ul className="graph-refs">{impact.directDependents.map(id => <NodeRef key={id} id={id} byId={byId} select={select} />)}</ul> : <p className="muted">No dependents.</p>}</section>
-    </>}
-   </div>
+  return <aside className="graph-selection" aria-label="Selected node">
+   <header>
+    <span className="graph-selection-label">Selected · {kindLabels[node.nodeKind]}</span>
+    <div className="graph-selection-name"><code>{node.displayName}</code>{!node.redacted && <Button variant="ghost" size="icon" aria-label="Copy node name" onClick={() => void copy(node.resourceAddress ?? node.displayName, 'Name')}><Copy size={13} /></Button>}</div>
+    {impact && <div className="graph-selection-counts">
+     <span className="flag impact">◆ {impact.downstreamTotal} depend on it</span>
+     <span className="flag upstream">▲ it depends on {impact.upstreamTotal}</span>
+    </div>}
+    <Button variant="ghost" size="small" className="graph-clear" onClick={clear}>Clear selection</Button>
+   </header>
+   <p className="muted">{confidenceText[node.confidence]}</p>
+   {node.inCycle && <p className="plan-warning"><Repeat size={14} />This node is part of a dependency cycle. The engine reports cycles as errors when it plans.</p>}
+   <dl className="metadata">
+    <div><dt>Module</dt><dd className="mono">{node.modulePath || 'Root module'}</dd></div>
+    {node.type && <div><dt>Type</dt><dd className="mono">{node.type}</dd></div>}
+    {node.provider && <div><dt>Provider</dt><dd className="mono">{node.provider}</dd></div>}
+    {(node.nodeKind === 'resource' || node.nodeKind === 'data') && <div><dt>Recorded instances</dt><dd>{node.instanceCount}</dd></div>}
+   </dl>
+   {node.instances && node.instances.length > 0 && <section><h3>Open in Resources</h3><ul className="graph-refs">{node.instances.map(i => <li key={i.resourceId}><button className="link-button mono" onClick={() => openResource(i.resourceId)}>{i.address}</button><ArrowRight size={12} /></li>)}</ul>{node.instanceCount > node.instances.length && <p className="muted">and {node.instanceCount - node.instances.length} more</p>}</section>}
+   {node.planned && node.planned.length > 0 && plan && <section><h3>Planned for this node</h3><ChangeList changes={node.planned} byId={byId} select={select} /><Button variant="outline" size="small" onClick={() => openPlan(plan)}>View in Plans<ArrowRight size={12} /></Button></section>}
+   {loading ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Analyzing…</div> : error ? <p className="dialog-error" role="alert">{error}</p> : impact && <>
+    <section className="graph-impact" aria-label="Potential impact">
+     <h3>Potential impact <span className="muted">{impact.downstreamResources} resource{impact.downstreamResources === 1 ? '' : 's'}</span></h3>
+     <p className="muted">Resources that depend on this node, directly or through others. A change here <em>could</em> affect them; it does not mean they will change.</p>
+     {downstream.length ? <ul className="graph-refs">{downstream.slice(0, 200).map(r => <NodeRef key={r.node} id={r.node} byId={byId} select={select} distance={r.distance} />)}</ul> : <p className="muted">Nothing depends on this node.</p>}
+     {impact.truncated && <p className="muted">The list is capped; {impact.downstreamTotal} nodes in total depend on it.</p>}
+    </section>
+    {plan && impact.plan ? <section className="graph-confirmed" aria-label="Confirmed planned changes">
+     <h3><CircleAlert size={14} />Confirmed planned changes</h3>
+     <p className="muted">From the selected plan only. These are listed because the plan contains them; a dependency link does not show that one change causes another.</p>
+     <h4>Here and in its potential impact <span className="muted">{impact.plan.inImpact.length}</span></h4>
+     {impact.plan.inImpact.length ? <ChangeList changes={impact.plan.inImpact} byId={byId} select={select} /> : <p className="muted">None.</p>}
+     <h4>Elsewhere in the plan <span className="muted">{impact.plan.elsewhere.length}</span></h4>
+     {impact.plan.elsewhere.length ? <ChangeList changes={impact.plan.elsewhere} byId={byId} select={select} /> : <p className="muted">None.</p>}
+     {impact.plan.unmapped.length > 0 && <><h4>Not in this graph <span className="muted">{impact.plan.unmapped.length}</span></h4><ChangeList changes={impact.plan.unmapped} byId={byId} select={select} /></>}
+    </section> : <p className="muted">Choose a plan to compare potential impact with confirmed planned changes.</p>}
+    <section><h3>Depends on <span className="muted">{impact.directDependencies.length} direct · {upstream.length} resource{upstream.length === 1 ? '' : 's'} in total</span></h3>{impact.directDependencies.length ? <ul className="graph-refs">{impact.directDependencies.map(id => <NodeRef key={id} id={id} byId={byId} select={select} />)}</ul> : <p className="muted">No dependencies.</p>}</section>
+    <section><h3>Direct dependents <span className="muted">{impact.directDependents.length}</span></h3>{impact.directDependents.length ? <ul className="graph-refs">{impact.directDependents.map(id => <NodeRef key={id} id={id} byId={byId} select={select} />)}</ul> : <p className="muted">No dependents.</p>}</section>
+   </>}
   </aside>;
 }
