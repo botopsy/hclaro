@@ -355,7 +355,7 @@ function Workbench({
         }} runPlan={() => setView('Plans')} /> : view === 'Graph' ? <GraphView key={opened.data.id} scope={planScope} reopen={reread} project={opened.data.alias} workspaceStatus={w?.status} copy={copy} openResource={id => {
           setSelected(id);
           setView('Resources');
-        }} openPlan={id => navigate(contextPath(scoped.projectId, scoped.workspace, 'Plans', id))} /> : <OperationsView key={opened.data.id} scope={planScope} openPlan={id => navigate(contextPath(scoped.projectId, scoped.workspace, 'Plans', id))} /> : view === 'Plans' ? <PlansView project={w?.info.project || 'this project'} profileId={profile.selected} workspaceStatus={w?.status} planId={planId} choosePlan={setPlanId} replace={pendingReplace} clearReplace={() => setPendingReplace(undefined)} openPreflight={planRequested} preflightOpened={() => setPlanRequested(false)} copy={copy} openDrift={() => setView('Drift')} openHistory={() => navigate(globalPages.history.path)} openGit={gitBase !== undefined ? () => setView('Git') : undefined} inspectImpact={(id, address) => {
+        }} openPlan={id => navigate(contextPath(scoped.projectId, scoped.workspace, 'Plans', id))} /> : <OperationsView key={opened.data.id} scope={planScope} openPlans={() => setView('Plans')} openPlan={id => navigate(contextPath(scoped.projectId, scoped.workspace, 'Plans', id))} /> : view === 'Plans' ? <PlansView project={w?.info.project || 'this project'} profileId={profile.selected} workspaceStatus={w?.status} planId={planId} choosePlan={setPlanId} replace={pendingReplace} clearReplace={() => setPendingReplace(undefined)} openPreflight={planRequested} preflightOpened={() => setPlanRequested(false)} copy={copy} openDrift={() => setView('Drift')} openHistory={() => navigate(globalPages.history.path)} openGit={gitBase !== undefined ? () => setView('Git') : undefined} inspectImpact={(id, address) => {
           setGraphFocus({ planId: id, address });
           setView('Graph');
         }} /> : view === 'Graph' ? <GraphView key={graphFocus ? `${graphFocus.planId}:${graphFocus.address}` : 'graph'} project={w?.info.project || 'this project'} profileId={profile.selected} workspaceStatus={w?.status} focus={graphFocus} copy={copy} openResource={id => {
@@ -380,7 +380,7 @@ function Workbench({
           setPlanId(undefined);
           setView('Plans');
           void operations.refetch();
-        }} /> : view === 'Operations' ? <OperationsView openPlan={id => {
+        }} /> : view === 'Operations' ? <OperationsView openPlans={() => setView('Plans')} openPlan={id => {
           setPlanId(id);
           setView('Plans');
         }} /> : view === 'Git' && gitBase !== undefined ? <GitView projectId={scoped?.projectId} workspace={w?.info.workspace} editor={preferences.editor} notify={setNotice} /> : view === 'Tools' && !scoped ? projects.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Looking up this folder in the Hub…</p></div> : <LaunchTools workspace={launchToolsWorkspace} registered={!!launchProject} onOpen={openLaunchTools} onOpenNewTab={() => launchProject && openInNewTab(contextPath(launchProject.id, launchToolsWorkspace, 'Tools'))} onSave={openLaunchTools} /> : view === 'Tools' && scoped ? opened.data ? <ToolsView context={opened.data} /> : opened.error ? <ErrorState title="Unable to open this workspace" message={opened.error.message} retry={() => {

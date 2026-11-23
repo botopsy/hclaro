@@ -167,7 +167,7 @@ describe('Hub plan flow (M24.07)', { timeout: 20000 }, () => {
   it('lists a workspace\'s operations and streams their logs from its context', async () => {
     app(contextPath(network, 'dev', 'Operations'));
     const user = userEvent.setup();
-    await user.click(within(await screen.findByRole('table')).getByRole('button', { name: /^Plan/ }));
+    await user.click(within(await screen.findByRole('table')).getByRole('button', { name: /^Expand Plan/ }));
     expect(await screen.findByText('Planning in dev')).toBeInTheDocument();
     expect(calls.some(c => c.url.startsWith(`/api/v1/contexts/${ctx.dev}/operations/${opId}/events`))).toBe(true);
     await user.click(screen.getByRole('button', { name: /Review plan/ }));

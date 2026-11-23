@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, History, LoaderCircle, Terminal } from 'lucide-react';
+import { ArrowRight, LoaderCircle, Terminal } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { OperationLog } from './OperationLog';
 import { navigate } from '../router';
@@ -9,26 +8,36 @@ import { launchScope, type PlanScope } from '../lib/scope';
 import { operationsQuery } from '../lib/queries';
 import { clock, duration } from '../lib/format';
 import { ErrorState } from '../components/ErrorState';
+import { EmptyState } from '../components/EmptyState';
+import { Disclosure } from '../components/Disclosure';
+import { DataTable, type Column } from '../components/DataTable';
+import type { Operation } from '../types';
+
+const opLabel = (o: Operation) => o.kind === 'apply' ? 'Apply' : o.kind === 'drift' ? 'Drift scan' : o.kind === 'graph' ? 'Dependency graph' : o.replace?.length ? `Replace plan · ${o.replace.length}` : 'Plan';
 
 // scope names the project or Hub workspace whose operations are listed.
-export function OperationsView({ openPlan, scope = launchScope }: { openPlan: (id: string) => void; scope?: PlanScope }) {
-  const [selected, setSelected] = useState<string>();
+export function OperationsView({ openPlan, openPlans, scope = launchScope }: { openPlan: (id: string) => void; openPlans: () => void; scope?: PlanScope }) {
   const operations = useQuery(operationsQuery(scope));
+  const history = <button className="link-button" onClick={() => navigate(globalPages.history.path)}>Operation history<ArrowRight size={13} aria-hidden="true" /></button>;
   if (operations.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading operations…</p></div>;
   if (operations.error) return <ErrorState inline message={operations.error.message} />;
   const list = operations.data.operations;
-  const current = list.find(o => o.id === selected);
-  if (!list.length) return <div className="empty-state"><Terminal size={28} /><h2>No operations yet</h2><p>Plans and applies you run appear here with their status, duration and sanitized output while Hclaro runs. Redacted metadata is also kept in <button className="link-button" onClick={() => navigate(globalPages.history.path)}>History</button> after Hclaro stops.</p></div>;
+  const columns: Column<Operation>[] = [
+    { key: 'op', header: 'Operation', cell: o => <strong>{opLabel(o)}</strong> },
+    { key: 'status', header: 'Status', className: 'operations-status', cell: o => <span className={`status-pill status-${o.status}`}>{o.status === 'running' ? o.stage : o.status}</span> },
+    { key: 'started', header: 'Started', className: 'operations-time', cell: o => clock(o.startedAt) },
+    { key: 'duration', header: 'Duration', className: 'operations-time', cell: o => duration(o.durationMs) },
+    { key: 'result', header: 'Result', className: 'operations-result', cell: o => o.kind === 'apply' ? <span className={o.outcome === 'uncertain' ? 'tone-warn' : 'muted'}>{o.outcome === 'applied' ? 'Applied' : o.outcome === 'uncertain' ? 'Outcome uncertain' : 'Not applied'}{o.diagnostic && ` · ${o.diagnostic.code.replaceAll('_', ' ')}`}</span> : o.planId ? <button className="link-button" onClick={() => openPlan(o.planId!)}>Review plan<ArrowRight size={13} aria-hidden="true" /></button> : <span className="muted">{o.diagnostic?.code.replaceAll('_', ' ') || '—'}{o.exitCode !== undefined && ` · exit ${o.exitCode}`}</span> }
+  ];
   return <div className="operations">
-   <table className="resources-table operations-table"><thead><tr><th scope="col">Operation</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Duration</th><th scope="col">Result</th></tr></thead><tbody>{list.map(o => <tr key={o.id} className={selected === o.id ? 'selected' : ''}>
-    <td><button className="resource-button" aria-pressed={selected === o.id} onClick={() => setSelected(o.id)}><span className="resource-text"><strong>{o.kind === 'apply' ? 'Apply' : o.kind === 'drift' ? 'Drift scan' : o.kind === 'graph' ? 'Dependency graph' : o.replace?.length ? `Replace plan · ${o.replace.length}` : 'Plan'}</strong><span className="resource-address mono">{o.command.join(' ')}</span></span></button></td>
-    <td><span className={`status-pill status-${o.status}`}>{o.status === 'running' ? o.stage : o.status}</span></td>
-    <td>{clock(o.startedAt)}</td>
-    <td>{duration(o.durationMs)}</td>
-    <td>{o.kind === 'apply' ? <span className={o.outcome === 'uncertain' ? 'tone-warn' : 'muted'}>{o.outcome === 'applied' ? 'Applied' : o.outcome === 'uncertain' ? 'Outcome uncertain' : 'Not applied'}{o.diagnostic && ` · ${o.diagnostic.code.replaceAll('_', ' ')}`}</span> : o.planId ? <Button variant="ghost" size="small" onClick={() => openPlan(o.planId!)}>Review plan<ArrowRight size={13} /></Button> : <span className="muted">{o.diagnostic?.code.replaceAll('_', ' ') || '—'}{o.exitCode !== undefined && ` · exit ${o.exitCode}`}</span>}</td>
-   </tr>)}</tbody></table>
-   {current && (current.logRetained ? <OperationLog key={current.id} operation={current} scope={scope} /> : <p className="muted">The log for this operation is no longer kept. Only the 10 most recent logs are retained.</p>)}
+   <div className="page-toolbar">{history}</div>
+   {!list.length ? <EmptyState icon={<Terminal size={28} />} title="No operations in this session" action={<Button onClick={openPlans}>Go to Plans</Button>}>Plans, applies, drift scans and graphs you run appear here with their status and sanitized output while Hclaro runs.</EmptyState> : <div className="operations-table">
+    <DataTable label="Operations" columns={columns} rows={list} rowKey={o => o.id} rowLabel={opLabel} expand={o => <div className="operation-details">
+     <code className="history-command">{o.command.join(' ')}</code>
+     {o.logRetained ? <OperationLog operation={o} scope={scope} /> : <p className="muted">The log for this operation is no longer kept. Only the 10 most recent logs are retained.</p>}
+    </div>} />
+   </div>}
    {/* shortcut: numbers copied from maxOperations/maxLogs in internal/operations/manager.go; serve them from the API if they become configurable. */}
-   <p className="info-line">This list keeps the last 100 operations and the logs of the last 10, in memory; both disappear when Hclaro stops. Logs contain sanitized summaries, not raw engine output. Operation history keeps metadata on disk, within its retention limits, but never plan files: nothing there can be applied. <Button variant="ghost" size="small" onClick={() => navigate(globalPages.history.path)}><History size={13} />Operation history</Button></p>
+   <Disclosure summary="How this list is kept"><p>This list keeps the last 100 operations and the logs of the last 10, in memory; both disappear when Hclaro stops. Logs contain sanitized summaries, not raw engine output. Operation history keeps metadata on disk, within its retention limits, but never plan files: nothing there can be applied.</p></Disclosure>
   </div>;
 }
