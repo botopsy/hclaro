@@ -1,5 +1,5 @@
 import { AlertTriangle, CircleHelp, Fingerprint, KeyRound, ShieldAlert } from 'lucide-react';
-import type { ExecutionContext, ExecutionSummary } from '../types';
+import type { ExecutionContext, ExecutionSummary, ScopeView } from '../types';
 import { AuthIndicator } from './AuthPanel';
 import { engineLabel } from '../lib/format';
 
@@ -47,4 +47,16 @@ export function ContextSummary({ summary, title = 'Execution context' }: { summa
 export function RecordedContext({ context }: { context?: ExecutionContext }) {
   if (!context?.profileId) return <span className="muted">No profile (inherited environment)</span>;
   return <span>Profile <strong>{context.profileName}</strong> (rev {context.profileRevision}) · workspace <strong>{context.workspace}</strong>{context.awsProfile && <> · AWS profile <code>{context.awsProfile}</code>{context.awsAuth === 'aws-vault' && ' via aws-vault'}</>}{context.awsExpectedAccount && <> · expects <code>{context.awsExpectedAccount}</code></>}{context.awsRegion && <> · <code>{context.awsRegion}</code></>} <IdentityBadge /></span>;
+}
+
+// ScopeSummary shows the identity of a Hub workspace's execution scope, as the server pinned it.
+export function ScopeSummary({ scope, executionContext, title }: { scope: ScopeView; executionContext?: ExecutionContext | null; title: string }) {
+  return <section className="context-summary" aria-label={title}><div className="context-summary-heading"><h3>{title}</h3></div><dl className="metadata compact-metadata">
+   <div><dt>Project</dt><dd><strong>{scope.alias}</strong></dd></div>
+   <div><dt>Root folder</dt><dd className="mono">{scope.rootPath}</dd></div>
+   <div><dt>Workspace</dt><dd><strong>{scope.workspace}</strong> <span className="muted">(this tab; the CLI default is not changed)</span></dd></div>
+   <div><dt>Engine</dt><dd>{engineLabel(scope.engine)} {scope.version}</dd></div>
+   <div><dt>Backend · mode</dt><dd>{scope.backend} · {scope.executionMode}</dd></div>
+   <div><dt>Profile</dt><dd><RecordedContext context={executionContext ?? undefined} /></dd></div>
+  </dl></section>;
 }

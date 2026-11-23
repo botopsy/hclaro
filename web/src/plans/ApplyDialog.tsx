@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { CircleCheck, CircleHelp, CircleX, Fingerprint, Info, LoaderCircle, RefreshCw, Rocket, ShieldCheck, Terminal, TriangleAlert, UserCheck, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { CircleCheck, CircleHelp, CircleX, Info, LoaderCircle, RefreshCw, Rocket, TriangleAlert, UserCheck } from 'lucide-react';
 import { send } from '../api';
 import type { Approval, Operation, Plan, PreflightCheck, PreflightReport, PreflightResource } from '../types';
 import { Button } from '../components/ui/button';
-import { useModal } from '../components/useModal';
+import { Dialog } from '../components/Dialog';
+import { Disclosure } from '../components/Disclosure';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { AuthPanel } from '../profiles/AuthPanel';
 import { actionOrder, meta } from './labels';
@@ -53,7 +54,7 @@ function CheckRow({ check, children }: { check: PreflightCheck; children?: React
 function ResourceList({ label, items }: { label: string; items: PreflightResource[] }) {
   return <ul className="preflight-resources" aria-label={label}>{items.map((r, i) => {
     const { label: action, icon: Icon, tone } = meta(r.action);
-    return <li key={`${r.address}-${i}`}><span className={`action-chip tone-${tone}`}><Icon size={12} aria-hidden="true" />{action}</span><code>{r.address}</code>{r.deposed && <span className="muted">deposed</span>}{r.requested && <span className="requested-tag">requested</span>}</li>;
+    return <li key={`${r.address}-${i}`}><span className={`action-chip tone-${tone}`}><Icon size={12} aria-hidden="true" />{action}</span><code>{r.address}</code>{r.deposed && <span className="muted">deposed</span>}{r.action === 'forget' && <span className="muted">removed from state only</span>}{r.requested && <span className="requested-tag">requested</span>}</li>;
   })}</ul>;
 }
 
@@ -70,10 +71,9 @@ export function ApplyDialog({ plan, scope, project, onStarted, onClose }: { plan
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(true);
-  const cancel = useRef<HTMLButtonElement>(null);
-  const dialog = useRef<HTMLDivElement>(null);
   // Cancel has initial focus so Enter never applies by accident.
-  useModal(dialog, cancel, onClose);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const phraseLabel = useId();
   // A newer preflight replaces the binding on the server, so only the latest response counts.
   const latest = useRef(0);
   // Keyed by value, so a caller that builds a new scope object each render does not rerun
@@ -149,73 +149,81 @@ export function ApplyDialog({ plan, scope, project, onStarted, onClose }: { plan
   // The heading names exactly where the plan is applied: the server's answer once it is in.
   const where = { project: ctx?.project || project || 'this project', workspace: ctx?.workspace || plan.workspace };
   const production = productionLike(where.workspace, where.project, ctx?.executionContext?.profileName);
-  return <div className="dialog-backdrop">
-   <div ref={dialog} className="dialog apply-dialog preflight-dialog" role="dialog" aria-modal="true" aria-labelledby="apply-title" aria-describedby="apply-summary">
-    <div className="dialog-header"><h2 id="apply-title">Apply to {where.project} / {where.workspace}</h2>{production && <ProductionBadge />}<Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
-    <p id="apply-summary">{engine} will apply the saved plan you reviewed to workspace <strong>{plan.workspace}</strong>. This changes real infrastructure. A saved plan does not prompt again, so this is the final confirmation. Hclaro checks everything below on the server now and again when the apply starts.</p>
+  const destructive = !!impact && impact.destructive > 0;
+  const phrase = report?.phrase && !report.blocked ? report.phrase : '';
+  return <Dialog title={`Apply to ${where.project} / ${where.workspace}`} wide initial={cancel} onClose={onClose} footer={<div className="apply-footer">
+    {phrase && <span id={phraseLabel}>Type <code>{phrase}</code> to confirm</span>}
+    <div className="apply-footer-row">
+     {phrase && <input value={typed} onChange={e => setTyped(e.target.value)} autoComplete="off" spellCheck={false} aria-label="Confirmation phrase" aria-describedby={phraseLabel} />}
+     <Button ref={cancel} variant="ghost" onClick={onClose}>Cancel</Button>
+     {/* Neutral until every condition holds; then destructive when the plan deletes, replaces or forgets. */}
+     <Button variant={!ready ? 'outline' : destructive ? 'destructive' : 'default'} onClick={() => void apply()} disabled={!ready || busy}><Rocket size={14} />{busy ? 'Starting…' : impact ? `Apply ${impact.total} change${impact.total === 1 ? '' : 's'}` : 'Apply plan'}</Button>
+    </div>
+   </div>}>
+   {production && <ProductionBadge />}
+   <p className="run-sentence">{engine} applies the saved plan you reviewed to workspace <strong>{plan.workspace}</strong>. This changes real infrastructure, and a saved plan doesn’t prompt again, so this is the final confirmation.</p>
 
-    {ctx && <section className="preflight-identity" aria-label="Context identity">
-     <dl>
-      <div><dt>Project</dt><dd>{ctx.project || '—'}</dd></div>
-      <div><dt>Workspace</dt><dd><strong>{ctx.workspace}</strong></dd></div>
-      <div><dt>Engine</dt><dd>{engineLabel(ctx.engine)} {ctx.engineVersion}</dd></div>
-      <div><dt>Backend</dt><dd>{ctx.backend} <span className="muted">({ctx.executionMode})</span></dd></div>
-      <div><dt>Saved plan</dt><dd><code title={ctx.artifactSha256}>{ctx.artifactSha256.slice(0, 16)}…</code></dd></div>
-      <div><dt>Context fingerprint</dt><dd><code>{ctx.fingerprint}</code></dd></div>
-     </dl>
-     <p className="context-line"><strong>Execution context:</strong> <RecordedContext context={ctx.executionContext} /></p>
-     {(exec?.awsProfile || report?.identity.state === 'verified') && <p className="context-line"><strong>AWS identity:</strong> {exec?.awsProfile ? <>{exec.awsAuth === 'aws-vault' ? 'aws-vault' : 'AWS CLI'} profile <code>{exec.awsProfile}</code>{exec.awsRegion && <> · <code>{exec.awsRegion}</code></>}</> : 'inherited credentials'}{exec?.awsExpectedAccount && <> · expects <code>{exec.awsExpectedAccount}</code></>} · {report?.identity.state === 'verified' ? <>STS reports <code>{report.identity.account}</code> <code className="auth-arn">{report.identity.arn}</code>{report.identity.verifiedAt && <span className="muted"> at {new Date(report.identity.verifiedAt).toLocaleTimeString()}</span>}</> : <span className="muted">not verified</span>}</p>}
-    </section>}
+   {ctx && <section className="apply-facts" aria-label="Context identity">
+    <dl>
+     <div><dt>Project</dt><dd>{ctx.project || '—'}</dd></div>
+     <div><dt>Workspace</dt><dd><strong>{ctx.workspace}</strong></dd></div>
+     <div><dt>Engine</dt><dd>{engineLabel(ctx.engine)} {ctx.engineVersion}</dd></div>
+     <div><dt>Backend</dt><dd>{ctx.backend} <span className="muted">({ctx.executionMode})</span></dd></div>
+     <div className="span-2"><dt>Profile</dt><dd><RecordedContext context={ctx.executionContext} /></dd></div>
+     <div><dt>Saved plan SHA-256</dt><dd><code title={ctx.artifactSha256}>{ctx.artifactSha256.slice(0, 16)}…</code></dd></div>
+     <div><dt>Context fingerprint</dt><dd><code>{ctx.fingerprint}</code></dd></div>
+    </dl>
+    {(exec?.awsProfile || report?.identity.state === 'verified') && <p className="context-line"><strong>AWS identity:</strong> {exec?.awsProfile ? <>{exec.awsAuth === 'aws-vault' ? 'aws-vault' : 'AWS CLI'} profile <code>{exec.awsProfile}</code>{exec.awsRegion && <> · <code>{exec.awsRegion}</code></>}</> : 'inherited credentials'}{exec?.awsExpectedAccount && <> · expects <code>{exec.awsExpectedAccount}</code></>} · {report?.identity.state === 'verified' ? <>STS reports <code>{report.identity.account}</code> <code className="auth-arn">{report.identity.arn}</code>{report.identity.verifiedAt && <span className="muted"> at {new Date(report.identity.verifiedAt).toLocaleTimeString()}</span>}. To use another account, change the profile in the top bar and plan again.</> : <span className="muted">not verified</span>}</p>}
+   </section>}
 
-    {checking && <p role="status"><LoaderCircle className="spin" size={13} /> {verifying ? 'Verifying the AWS caller identity…' : 'Running preflight checks…'}</p>}
+   {checking && <p role="status"><LoaderCircle className="spin" size={13} /> {verifying ? 'Verifying the AWS caller identity…' : 'Running preflight checks…'}</p>}
 
-    {report && <>
+   {report && <>
+    <div className="apply-checks">
      <p role="status" className={report.blocked ? 'preflight-verdict verdict-block' : 'preflight-verdict verdict-ok'}>
-      {report.blocked ? <><CircleX size={15} aria-hidden="true" /> {report.blockers} blocking check{report.blockers === 1 ? '' : 's'} failed. Apply is unavailable until {report.blockers === 1 ? 'it is' : 'they are'} resolved.</> : <><ShieldCheck size={15} aria-hidden="true" /> No blocking checks.{warnings.length > 0 && ` Acknowledge ${warnings.length === 1 ? 'the warning' : `each of the ${warnings.length} warnings`} below.`}</>}
+      {report.blocked ? <><CircleX size={15} aria-hidden="true" /> {report.blockers} blocking check{report.blockers === 1 ? '' : 's'} failed. Apply is unavailable until {report.blockers === 1 ? 'it is' : 'they are'} resolved.</> : <><CircleCheck size={15} aria-hidden="true" /> No blocking checks.{warnings.length > 0 && ` Acknowledge ${warnings.length === 1 ? 'the warning' : `each of the ${warnings.length} warnings`} below.`}</>}
      </p>
+     <span className="muted">Checked now and again when the apply starts{report.expiresAt && ` · valid until ${new Date(report.expiresAt).toLocaleTimeString()}`}</span>
+     {[identity, expected, reviewed].some(c => c && c.status !== 'pass') && <>
+      <Button variant="outline" size="small" onClick={() => rerun(true)} disabled={checking} title="Calls STS GetCallerIdentity with this plan’s credentials. Read-only, but it contacts AWS."><UserCheck size={14} />{report.identity.state === 'verified' ? 'Verify again' : 'Verify AWS identity'}</Button>
+      {exec?.profileId && exec.projectId && exec.awsProfile && <Button variant="ghost" size="small" aria-expanded={signIn} onClick={() => setSignIn(v => !v)}>Sign in</Button>}
+     </>}
+     <Button variant="ghost" size="small" onClick={() => rerun()} disabled={checking || busy}><RefreshCw size={14} />Run checks again</Button>
+    </div>
 
-     {blockers.length > 0 && <section aria-labelledby="pf-blockers"><h3 id="pf-blockers">Blocking</h3><ul className="preflight-checks">{blockers.map(c => <CheckRow key={c.id} check={c} />)}</ul></section>}
+    {blockers.length > 0 && <section aria-labelledby="pf-blockers"><h3 id="pf-blockers">Blocking</h3><ul className="preflight-checks">{blockers.map(c => <CheckRow key={c.id} check={c} />)}</ul></section>}
 
-     {warnings.length > 0 && <section aria-labelledby="pf-warnings"><h3 id="pf-warnings">Warnings to acknowledge</h3><ul className="preflight-checks">{warnings.map(c => <CheckRow key={c.id} check={c}>
-      <label className="ack-field"><input type="checkbox" checked={acked.has(c.id)} disabled={report.blocked} onChange={e => setAcked(prev => {
-        const next = new Set(prev);
-        if (e.target.checked) next.add(c.id); else next.delete(c.id);
-        return next;
-      })} /> I reviewed this: {c.title.toLowerCase()}</label>
-     </CheckRow>)}</ul></section>}
+    {warnings.length > 0 && <section aria-labelledby="pf-warnings"><h3 id="pf-warnings">Warnings to acknowledge</h3><ul className="preflight-checks">{warnings.map(c => <CheckRow key={c.id} check={c}>
+     <label className="ack-field"><input type="checkbox" checked={acked.has(c.id)} disabled={report.blocked} onChange={e => setAcked(prev => {
+       const next = new Set(prev);
+       if (e.target.checked) next.add(c.id); else next.delete(c.id);
+       return next;
+     })} /> I reviewed this: {c.title.toLowerCase()}</label>
+    </CheckRow>)}</ul></section>}
 
-     {mismatch && <p className="plan-warning" role="alert"><CircleX size={15} /><span><strong>AWS account mismatch.</strong> The verified identity is not the account this profile expects. Signing in again with the same profile will not fix this: change the AWS profile or sign in to the expected account. Nothing will be applied.</span></p>}
-     {[identity, expected, reviewed].some(c => c && c.status !== 'pass') && <div className="identity-probe">
-      <Button variant="outline" onClick={() => rerun(true)} disabled={checking}><UserCheck size={14} />{report.identity.state === 'verified' ? 'Verify again' : 'Verify AWS identity'}</Button>
-      {exec?.profileId && exec.projectId && exec.awsProfile && <Button variant="ghost" aria-expanded={signIn} onClick={() => setSignIn(v => !v)}>Sign in</Button>}
-      <span className="muted">Calls STS GetCallerIdentity with this plan’s credentials. Read-only, but it contacts AWS. To change profile, cancel and choose another profile, then plan again.</span>
-     </div>}
-     {signIn && exec?.profileId && exec.projectId && <div className="profile-auth"><AuthPanel projectId={exec.projectId} profileId={exec.profileId} /><p className="muted">A sign-in does not resume this apply. When it completes, run the checks again; the earlier checks no longer count.</p></div>}
+    {mismatch && <p className="plan-warning" role="alert"><CircleX size={15} /><span><strong>AWS account mismatch.</strong> The verified identity is not the account this profile expects. Signing in again with the same profile will not fix this: change the AWS profile or sign in to the expected account. Nothing will be applied.</span></p>}
+    {signIn && exec?.profileId && exec.projectId && <div className="profile-auth"><AuthPanel projectId={exec.projectId} profileId={exec.profileId} /><p className="muted">A sign-in does not resume this apply. When it completes, run the checks again; the earlier checks no longer count.</p></div>}
 
-     <details className="preflight-passed"><summary>Passed and informational checks ({others.length})</summary><ul className="preflight-checks">{others.map(c => <CheckRow key={c.id} check={c} />)}</ul></details>
+    <Disclosure summary={`${others.length} passed and informational checks`}><ul className="preflight-checks">{others.map(c => <CheckRow key={c.id} check={c} />)}</ul></Disclosure>
 
-     {impact && <section aria-labelledby="pf-impact" className="preflight-impact">
-      <h3 id="pf-impact">Impact of the whole saved plan</h3>
+    {impact && <section aria-labelledby="pf-impact" className="preflight-impact">
+     <h3 id="pf-impact">Impact of the whole saved plan</h3>
+     <div className="apply-impact">
       <div className="apply-counts" role="list" aria-label="Changes to apply">{counts.map(a => {
        const { label, icon: Icon, tone } = meta(a);
        return <span role="listitem" key={a} className={`apply-count tone-${tone}`}><Icon size={13} aria-hidden="true" />{impact.summary[a]} {label.toLowerCase()}</span>;
       })}</div>
-      {impact.requested.length > 0 && <p>Replacement was requested for <strong>{impact.requested.length}</strong> instance{impact.requested.length === 1 ? '' : 's'}. {impact.extra > 0 ? <>The plan also changes <strong>{impact.extra}</strong> other resource instance{impact.extra === 1 ? '' : 's'}; they are applied too.</> : 'No other resource changes.'} Hclaro never uses -target: the whole saved plan is applied, including changes unrelated to the replacement.</p>}
-      {impact.imports > 0 && <p>Imports <strong>{impact.imports}</strong> existing object{impact.imports === 1 ? '' : 's'} into state. Import writes state.</p>}
-      {impact.destructive > 0 && <p className="plan-warning" role="alert"><TriangleAlert size={15} /><span>This plan destroys, replaces or forgets <strong>{impact.destructive}</strong> object{impact.destructive === 1 ? '' : 's'}. Data stored in them can be lost, and dependent services can be unavailable while they are recreated. Hclaro cannot guarantee zero downtime.</span></p>}
-      {impact.highRisk.length > 0 && <><h4>High-risk resources ({impact.destructive})</h4><ResourceList label="High-risk resources" items={impact.highRisk} /></>}
-      <details><summary>All planned changes ({impact.total})</summary><ResourceList label="Planned changes" items={impact.changes} />{impact.truncated && <p className="muted">The list is limited to the first {impact.changes.length} changes; the counts above cover all of them.</p>}</details>
-     </section>}
-
-     <div className="command-preview"><span className="muted"><Terminal size={12} /> Command</span><code>{report.command.join(' ')}</code><span className="muted"><Fingerprint size={12} /> Saved plan SHA-256 <code>{report.context.artifactSha256.slice(0, 16)}…</code>{report.expiresAt && <> · checks valid until {new Date(report.expiresAt).toLocaleTimeString()}</>}</span></div>
-     {report.phrase && !report.blocked && <label className="phrase-field"><span>Type <code>{report.phrase}</code> to confirm</span><input value={typed} onChange={e => setTyped(e.target.value)} autoComplete="off" spellCheck={false} aria-label="Confirmation phrase" /></label>}
-    </>}
-    {error && <p className="dialog-error" role="alert">{error}</p>}
-    <div className="dialog-actions">
-     <Button variant="ghost" onClick={() => rerun()} disabled={checking || busy}><RefreshCw size={14} />Run checks again</Button>
-     <Button ref={cancel} variant="ghost" onClick={onClose}>Cancel</Button>
-     <Button variant={impact && impact.destructive > 0 ? 'destructive' : 'default'} onClick={() => void apply()} disabled={!ready || busy}><Rocket size={14} />{busy ? 'Starting…' : 'Apply plan'}</Button>
-    </div>
-   </div>
-  </div>;
+      {impact.imports > 0 && <span>and imports {impact.imports} existing object{impact.imports === 1 ? '' : 's'} into state</span>}
+     </div>
+     {impact.requested.length > 0 && <p>Replacement was requested for <strong>{impact.requested.length}</strong> instance{impact.requested.length === 1 ? '' : 's'}. {impact.extra > 0 ? <>The plan also changes <strong>{impact.extra}</strong> other resource instance{impact.extra === 1 ? '' : 's'}; they are applied too.</> : 'No other resource changes.'} Hclaro never uses -target: the whole saved plan is applied, including changes unrelated to the replacement.</p>}
+     {destructive && <div className="data-loss" role="alert">
+      <p className="data-loss-head"><TriangleAlert size={15} aria-hidden="true" /><span><strong>{impact.destructive} object{impact.destructive === 1 ? ' is' : 's are'} deleted, replaced or forgotten.</strong> Data stored in them can be lost, and dependent services can be unavailable while they’re recreated.</span></p>
+      {impact.highRisk.length > 0 && <ResourceList label="High-risk resources" items={impact.highRisk} />}
+     </div>}
+     <Disclosure summary={`All planned changes (${impact.total})`}><ResourceList label="Planned changes" items={impact.changes} />{impact.truncated && <p className="muted">The list is limited to the first {impact.changes.length} changes; the counts above cover all of them.</p>}</Disclosure>
+     <Disclosure summary="Command"><code className="command-line">{report.command.join(' ')}</code></Disclosure>
+    </section>}
+   </>}
+   {error && <p className="dialog-error" role="alert">{error}</p>}
+  </Dialog>;
 }

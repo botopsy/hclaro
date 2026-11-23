@@ -39,7 +39,7 @@ function snapshot(cid: string): Workspace {
 }
 const review: Record<string, unknown> = { ...golden };
 delete review.details;
-const plan = (ws: string) => ({ ...review, id: planId, operationId: opId, createdAt: '2026-11-05T12:05:00Z', engine: 'terraform', currentEngineVersion: '1.9.8', workspace: ws, varFiles: [], kind: 'plan', replace: [], destructive: true, artifactSha256: 'c'.repeat(64), fingerprint: 'd'.repeat(64), contextChanged: false, apply: { available: true, artifactRetained: true, expiresAt: '2026-11-05T13:00:00Z' } }) as unknown as Plan;
+const plan = (ws: string) => ({ ...review, id: planId, operationId: opId, createdAt: '2026-11-05T12:05:00Z', engine: 'terraform', currentEngineVersion: '1.9.8', workspace: ws, varFiles: [], kind: 'plan', replace: [], destructive: true, artifactSha256: 'c'.repeat(64), fingerprint: 'd'.repeat(64), contextChanged: false, apply: { available: true, artifactRetained: true, expiresAt: '2099-01-01T13:00:00Z' } }) as unknown as Plan;
 const options = (cid: string): ScopedPlanOptions => ({ canPlan: true, scope: { contextId: cid, projectId: network, alias: 'network', rootPath: '/infra/network', engine: 'terraform', version: '1.9.8', workspace: wsOf(cid), profile: null, backend: 'local', executionMode: 'local-cli' }, backendAccessRequired: true, varFiles: ['dev.tfvars'], executionContext: null, contextFingerprint: '' });
 const finished: Operation = { id: opId, kind: 'plan', status: 'succeeded', stage: 'Finished', startedAt: '2026-11-05T12:04:00Z', durationMs: 900, exitCode: 0, command: ['terraform', 'plan'], varFiles: [], replace: [], planId, stateReloaded: false, engineDiagnostics: [], cancelRequested: false, logDropped: 0, logRetained: true };
 const report = (ws: string): PreflightReport => ({
@@ -132,7 +132,7 @@ describe('Hub plan flow (M24.07)', { timeout: 20000 }, () => {
     await within(dialog).findByText(/Production-like label/);
     await user.click(within(dialog).getByRole('checkbox'));
     await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply dev');
-    await user.click(within(dialog).getByRole('button', { name: 'Apply plan' }));
+    await user.click(within(dialog).getByRole('button', { name: /^Apply \d+ changes?$/ }));
     await waitFor(() => expect(calls.some(c => c.url.endsWith('/apply'))).toBe(true));
     expect(calls.filter(c => c.method === 'POST' && c.url !== '/api/v1/contexts').map(c => c.url)).toEqual([
       `/api/v1/contexts/${ctx.dev}/plans`,

@@ -1,18 +1,21 @@
 import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CircleCheck, CircleX, FileDiff, History, LoaderCircle, Play, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { CircleCheck, CircleX, CloudCog, FileDiff, GitBranch, History, LoaderCircle, LockKeyhole, Play, RefreshCcw, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { api, ApiError, send } from '../api';
-import { operationActive, type ImportTarget, type Operation, type Plan, type PlanOptions, type PlanSummary, type ReplaceTarget, type ScopedPlanOptions } from '../types';
+import { operationActive, type ImportTarget, type Operation, type Plan, type PlanOptions, type PlanSourceFingerprint, type PlanSummary, type ReplaceTarget, type ScopedPlanOptions } from '../types';
 import { Button } from '../components/ui/button';
 import { ApplyDialog } from './ApplyDialog';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { activeOperation, operationsQuery } from '../lib/queries';
-import { OperationLog } from './OperationLog';
-import { PlanReview } from './PlanReview';
-import { PreflightDialog } from './PreflightDialog';
-import { clock } from '../lib/format';
+import { PlanReview, sourceLabel } from './PlanReview';
+import { RunDialog, RunState } from './RunDialog';
+import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
+import { clock, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
 import { ErrorState } from '../components/ErrorState';
+import { EmptyState } from '../components/EmptyState';
+import { Disclosure } from '../components/Disclosure';
+import { planTotal } from './labels';
 
 export function PlansView({
   project,
@@ -26,6 +29,9 @@ export function PlansView({
   preflightOpened,
   copy,
   inspectImpact,
+  openDrift,
+  openHistory,
+  openGit,
   scope = launchScope,
   reopen
 }: {
@@ -48,6 +54,10 @@ export function PlansView({
   copy: (value: string, label: string) => Promise<void>;
   // Opens the dependency graph with this plan's changes and the replaced address selected.
   inspectImpact?: (planId: string, address: string) => void;
+  // Navigation to Drift detection, History and Git; omitted where the page is unavailable.
+  openDrift?: () => void;
+  openHistory?: () => void;
+  openGit?: () => void;
 }) {
   const client = useQueryClient();
   const [preflight, setPreflight] = useState(false);
@@ -71,6 +81,8 @@ export function PlansView({
   // The newest plan failed or was cancelled after the newest plan: say so plainly.
   const failed = finishedOperation?.kind === 'plan' && finishedOperation.status !== 'succeeded' && !planId ? finishedOperation : undefined;
   const applied = finishedOperation?.kind === 'apply' && (!planId || planId === finishedOperation.planId) ? finishedOperation : undefined;
+  // A running operation and the failed plan it may become share one card (same key).
+  const live = running ?? failed;
   // A replacement chosen in the explorer opens the preflight directly.
   const preflightOpen = preflight || !!replace?.length || !!openPreflight && !!options.data?.canPlan && !running;
   const finished = useCallback((op: Operation) => {
@@ -118,24 +130,62 @@ export function PlansView({
     await client.invalidateQueries({ queryKey: ['plan'] });
   }
   const canPlan = !!options.data?.canPlan && !running;
+  const runPlan = () => {
+    setStartError('');
+    setPreflight(true);
+  };
   // A Hub workspace whose context changed or closed is never retargeted: open it again.
   const closedError = [options.error, plans.error, plan.error].find(e => e instanceof ApiError && (e.code === 'context_closed' || e.code === 'scope_changed'));
   if (scoped && closedError) return <ErrorState icon={TriangleAlert} iconSize={26} title="Open this workspace again" message={closedError.message} retry={reopen} retryLabel="Open again" note="Nothing ran. Plans and approvals of the closed view were discarded." />;
+  // §4.3: the empty state has the only Run plan button; every other state keeps it in the toolbar.
+  const content = !!shownId || !!live || !!applied;
+  const empty = !content && !!plans.data && !options.isPending;
+  const appliedPlan = applied && plan.data?.id === applied.planId ? plan.data : undefined;
   return <div className="plans">
-   <div className="plans-toolbar">
-    <Button onClick={() => { setStartError(''); setPreflight(true); }} disabled={!canPlan}><Play size={14} />Run plan</Button>
+   {content && <div className="plans-toolbar">
+    <Button variant="outline" onClick={runPlan} disabled={!canPlan}><Play size={14} />Run plan</Button>
     {plans.data && plans.data.plans.length > 0 && <label className="history-select"><History size={14} /><span className="sr-only">Plan history</span><select aria-label="Plan history" value={shownId} onChange={e => choosePlan(e.target.value)}>{plans.data.plans.map((p, i) => <option key={p.id} value={p.id}>{i === 0 ? 'Latest · ' : ''}{clock(p.createdAt)} · {p.kind === 'replace' ? `replace ${p.replace.length} · ` : p.kind === 'import' ? 'import · ' : ''}{p.changes} change{p.changes === 1 ? '' : 's'}{p.errored ? ' · errored' : ''}</option>)}</select></label>}
-    <span className="toolbar-note"><ShieldCheck size={13} />{options.data?.canApply ? 'Nothing is applied until you confirm a reviewed plan.' : 'Plans are reviewed here; applying is unavailable for this workspace.'}</span>
-   </div>
+   </div>}
    {workspaceStatus === 'loading' && !running ? <div className="info-line" role="status"><LoaderCircle className="spin" size={13} /> Reading the workspace before planning is available…</div> : options.data && !options.data.canPlan && <div className="plan-warning" role="note"><TriangleAlert size={15} />{options.data.reason || 'Planning is not available for this workspace.'}{scoped && options.data.code === 'execution_unsupported' && ' Plans and applies from the Hub run only for initialized workspaces with a local or supported backend; remote and cloud execution stay read-only.'}</div>}
-   {running && <OperationLog key={running.id} operation={running} scope={scope} onFinished={finished} />}
-   {failed && <FailedOperation operation={failed} />}
-   {applied && <ApplyResult operation={applied} />}
+   {live && <RunState key={live.id} operation={live} scope={scope} running={live.kind === 'apply' ? 'Applying…' : 'Planning…'} succeeded={live.kind === 'apply' ? 'Apply finished' : 'Plan ready'} onFinished={running ? finished : undefined} onRetry={runPlan}>
+    {live.kind === 'plan' && <>
+     <p className="muted">No plan was kept from this run, so there is nothing to review or apply.</p>
+     {live.import && <ImportRecovery target={live.import} />}
+     {live.engineDiagnostics.length > 0 && <Disclosure summary={`Engine diagnostics (${live.engineDiagnostics.length})`}><Diagnostics operation={live} /></Disclosure>}
+    </>}
+   </RunState>}
+   {applied && <ApplyResult operation={applied} changes={appliedPlan && planTotal(appliedPlan.summary)} source={appliedPlan?.source} canPlan={canPlan} onRunPlan={runPlan} openHistory={openHistory} openGit={openGit} />}
    {failed && plan.data && <p className="info-line">Below is the previous successful plan, created at {clock(plan.data.createdAt)}. It does not reflect the run above.</p>}
-   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} copy={copy} busy={!!running} onApply={() => setApplying(true)} onInspectImpact={inspectImpact} /> : !running && !failed && <div className="empty-state"><FileDiff size={30} /><h2>No plans yet</h2><p>Run a plan to see every proposed change: creates, updates, replacements, deletions, data reads and output changes. Nothing runs until you confirm.</p>{options.data?.canPlan && <Button variant="outline" onClick={() => setPreflight(true)}><Play size={14} />Run plan</Button>}</div>}
-   {preflightOpen && options.data && <PreflightDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
+   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} copy={copy} busy={!!running} canPlan={canPlan} onApply={() => setApplying(true)} onRunPlan={runPlan} onOpenDrift={openDrift} onInspectImpact={inspectImpact} /> : empty && <EmptyState icon={<FileDiff size={28} />} title="No plans yet" action={<Button onClick={runPlan} disabled={!canPlan}><Play size={14} />Run plan</Button>} how={<p>A plan lists every proposed change: creates, updates, replacements, deletions, data reads and output changes. Hclaro keeps the saved plan for a limited time, and nothing is applied until you review it and confirm.</p>}>Run a plan to see every change {options.data ? engineLabel(options.data.engine) : 'the engine'} proposes for {project}.</EmptyState>}
+   {preflightOpen && options.data && <PlanDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
    {applying && plan.data && <ApplyDialog plan={plan.data} scope={scope} project={project} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
   </div>;
+}
+
+// The "Run a plan" dialog (§4.3 step 2), shown before every plan: planning is not a local-only read.
+function PlanDialog({ options, project, replace = [], busy, error, onConfirm, onClose }: {
+  options: PlanOptions;
+  project: string;
+  replace?: ReplaceTarget[];
+  busy: boolean;
+  error?: string;
+  onConfirm: (varFiles: string[], contextFingerprint?: string) => void;
+  onClose: () => void;
+}) {
+  const choice = useVarFileChoice(options);
+  const summary = options.context;
+  const engine = engineLabel(options.engine);
+  const replacing = replace.length > 0;
+  return <RunDialog title={replacing ? 'Plan a replacement' : 'Run a plan'} noun="plan" action={replacing ? 'Plan replacement' : 'Run plan'} busy={busy} error={error} blockedReason={options.profileError} uses={{ ...options, project }} onClose={onClose} onRun={() => onConfirm(choice.chosen, summary?.context.profileId ? summary.context.fingerprint : undefined)}
+   sentence={<>{engine} will run <code>plan</code> in <strong>{project}</strong> for workspace <strong>{options.workspace}</strong>{replacing && <> with one <code>-replace</code> per selected instance</>}. Review what this does before continuing.</>}
+   facts={[
+     { icon: CloudCog, title: `Contacts providers and the ${options.backend} backend`, detail: 'using your existing credentials. Data sources are read and resources are refreshed to compare with configuration.' },
+     { icon: LockKeyhole, title: 'May lock the state', detail: 'while planning, if the backend supports locking. Other operations wait until the plan finishes or is cancelled.' },
+     { icon: ShieldCheck, title: 'Does not change infrastructure.', detail: options.canApply ? 'You review the saved plan first; it is applied only if you confirm it explicitly.' : 'The saved plan is deleted after Hclaro extracts redacted review data. Applying is unavailable here.' }
+   ]}>
+   {replacing && <div className="replace-targets"><span className="muted">Instances to replace ({replace.length})</span><ul>{replace.map(r => <li key={r.id}><RefreshCcw size={12} aria-hidden="true" /><code>{r.address}</code></li>)}</ul><p>This is a full plan, not a targeted one: Hclaro never uses -target, so every other change the engine proposes is included, shown for review and applied together. Up to 50 instances per plan.</p></div>}
+   <VarFileChoice choice={choice} />
+  </RunDialog>;
 }
 
 // The options of a Hub workspace describe its execution scope; the review dialog shows them
@@ -149,25 +199,35 @@ function Diagnostics({ operation }: { operation: Operation }) {
   return <ul className="diagnostics">{operation.engineDiagnostics.map((d, i) => <li key={i} className={`diag-${d.severity}`}><strong>{d.severity === 'error' ? 'Error' : 'Warning'}: {d.summary}</strong>{d.address && <code>{d.address}</code>}{d.detail && <pre>{d.detail}</pre>}</li>)}</ul>;
 }
 
-function FailedOperation({ operation }: { operation: Operation }) {
-  return <section className="operation-failed" role="alert">
-   <h2><CircleX size={17} />{operation.import ? 'Import plan' : 'Plan'} {operation.status === 'cancelled' ? 'cancelled' : 'failed'}</h2>
-   <p>{operation.diagnostic?.message}</p>
-   <p className="muted">No plan was kept from this run, so there is nothing to review or apply.</p>
-   {operation.import && <ImportRecovery target={operation.import} />}
-   <Diagnostics operation={operation} />
-  </section>;
-}
-
 // Process exit is not the same as infrastructure state: the outcome is reported separately
 // from whether state was re-read.
-function ApplyResult({ operation }: { operation: Operation }) {
+function ApplyResult({ operation, changes, source, canPlan, onRunPlan, openHistory, openGit }: { operation: Operation; changes?: number; source?: PlanSourceFingerprint; canPlan: boolean; onRunPlan: () => void; openHistory?: () => void; openGit?: () => void }) {
   const ok = operation.status === 'succeeded';
   // Engine success with a failed state read is not a clean success: warn, never show it as healthy.
   const clean = ok && !operation.stateReloadFailed;
   const uncertain = operation.outcome === 'uncertain';
   const engineLine = ok ? 'reported the apply as finished' : uncertain ? 'stopped part-way; some changes may have been made' : 'did not apply anything';
   const planFile = operation.planFileLeft ? 'Hclaro could not delete the saved plan file, which holds values in plaintext; the terminal running Hclaro names its folder. Delete it yourself. It cannot be applied again.' : 'The saved plan was deleted and cannot be applied again.';
+  // §4.3 step 5: the short card only when every part is confirmed; anything uncertain keeps the full report.
+  if (clean && operation.stateReloaded && !operation.planFileLeft && !uncertain) {
+    const dirty = source?.dirtyKnown && source.dirty ? source.dirtyFiles : 0;
+    return <section className="operation-applied applied-card" role="status">
+     <div className="applied-head">
+      <span className="applied-icon" aria-hidden="true"><CircleCheck size={18} /></span>
+      <div><h2>{changes === undefined ? 'Applied' : `Applied: ${changes} change${changes === 1 ? '' : 's'}`}</h2><p>The saved plan was used and deleted. Run a new plan to make more changes.</p></div>
+      <div className="applied-actions">{openHistory && <Button variant="outline" onClick={openHistory}>View in History</Button>}<Button onClick={onRunPlan} disabled={!canPlan}><Play size={14} />Run new plan</Button></div>
+     </div>
+     <ol className="apply-steps" aria-label="Apply status">
+      <li><CircleCheck size={13} aria-hidden="true" />Planned</li>
+      <li><CircleCheck size={13} aria-hidden="true" />Applied</li>
+      <li><CircleCheck size={13} aria-hidden="true" />State read again at {clock(operation.completedAt ?? operation.startedAt)}</li>
+      <li className="muted" title="Hclaro has no health probe; the engine recording a change does not mean the service works.">Service health: not checked</li>
+     </ol>
+     {operation.import && <p>Imported <code>{operation.import.address}</code>. It appears in the resource explorer once the reloaded state records it.</p>}
+     {dirty > 0 && <p className="plan-warning" role="note"><GitBranch size={14} /><span>Applied from {sourceLabel({ ...source!, dirty: false })} with {dirty} uncommitted IaC file{dirty === 1 ? '' : 's'}. Commit {dirty === 1 ? 'it' : 'them'} so the repo matches what is deployed.</span>{openGit && <Button variant="outline" size="small" onClick={openGit}>Open Git</Button>}</p>}
+     <Diagnostics operation={operation} />
+    </section>;
+  }
   const stateLine = operation.stateReloaded ? `read again at ${clock(operation.completedAt ?? operation.startedAt)}` : operation.stateReloadFailed ? 'could not be read again; the explorer still shows the state read before the apply' : 'not read again';
   return <section className={clean ? 'operation-applied' : 'operation-failed'} role={clean ? 'status' : 'alert'}>
    <h2>{clean ? <CircleCheck size={17} /> : ok ? <TriangleAlert size={17} /> : <CircleX size={17} />}{ok ? clean ? 'Apply finished' : 'Apply finished, state not confirmed' : operation.status === 'cancelled' ? 'Apply interrupted' : 'Apply failed'}{uncertain && ' · outcome uncertain'}</h2>

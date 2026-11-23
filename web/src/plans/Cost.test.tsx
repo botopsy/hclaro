@@ -19,7 +19,7 @@ const review = Object.fromEntries(Object.entries(planGolden).filter(([key]) => k
 const plan = {
   ...review, id: planId, operationId: 'b'.repeat(32), createdAt: '2026-11-09T09:00:00Z', engine: 'terraform', currentEngineVersion: '1.9.8',
   workspace: 'demo', varFiles: [], kind: 'plan', replace: [], destructive: true, artifactSha256: 'c'.repeat(64), fingerprint: 'd'.repeat(64),
-  contextChanged: false, apply: { available: true, artifactRetained: true, expiresAt: '2026-11-09T10:00:00Z' }
+  contextChanged: false, apply: { available: true, artifactRetained: true, expiresAt: '2099-01-01T10:00:00Z' }
 } as unknown as Plan;
 
 type Route = (url: string, init?: RequestInit) => Response | undefined;

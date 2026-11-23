@@ -14,7 +14,7 @@ const review = Object.fromEntries(Object.entries(planGolden).filter(([key]) => k
 const plan = {
   ...review, id: planId, operationId: 'b'.repeat(32), createdAt: '2026-11-09T09:00:00Z', engine: 'terraform', currentEngineVersion: '1.9.8',
   workspace: 'demo', varFiles: [], kind: 'plan', replace: [], destructive: true, artifactSha256: 'c'.repeat(64), fingerprint: 'd'.repeat(64),
-  contextChanged: false, apply: { available: true, artifactRetained: true, expiresAt: '2026-11-09T10:00:00Z' }
+  contextChanged: false, apply: { available: true, artifactRetained: true, expiresAt: '2099-01-01T10:00:00Z' }
 } as unknown as Plan;
 const hash = 'f'.repeat(64);
 const markdown = '# Hclaro context: plan\n\n## Changes\n\n```text\ndelete aws_instance.old\n```\n';
@@ -72,9 +72,9 @@ describe('AI handoff', () => {
     const user = userEvent.setup();
     const write = vi.spyOn(navigator.clipboard, 'writeText');
     show();
-    // A destructive plan has one entry point, on its warning line.
-    expect(await screen.findByText(/destroys or replaces objects/)).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /Review with AI/ })).toHaveLength(1);
+    // A destructive plan has one entry point, in the Ready card next to apply (§4.3).
+    expect(await screen.findByText('Ready to apply.')).toBeInTheDocument();
+    expect(await screen.findAllByRole('button', { name: /Review with AI/ })).toHaveLength(1);
     await user.click(await screen.findByRole('button', { name: /Review with AI/ }));
     expect(await screen.findByText(/Building the context package/)).toBeInTheDocument();
     release();

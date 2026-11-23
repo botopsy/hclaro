@@ -3,7 +3,7 @@ import { AlertTriangle, CircleCheck, CircleStop, CircleX, LoaderCircle, Play, Ro
 import { operationActive, type ExecutionContext, type ExecutionSummary, type Operation, type ScopeView } from '../types';
 import { Button } from '../components/ui/button';
 import { Dialog } from '../components/Dialog';
-import { workspaceSources } from '../profiles/ContextSummary';
+import { ContextSummary, workspaceSources } from '../profiles/ContextSummary';
 import { useOperationStream } from './OperationLog';
 import { launchScope, type PlanScope } from '../lib/scope';
 import { clock, duration, engineLabel, timeLabel } from '../lib/format';
@@ -50,7 +50,8 @@ export function RunDialog({ title, sentence, facts, noun, uses, action, busy = f
    <p className="run-sentence">{sentence}</p>
    <ul className="preflight-list">{facts.map(f => <li key={f.title}><f.icon size={16} aria-hidden="true" /><span><strong>{f.title}</strong> {f.detail}</span></li>)}</ul>
    <RunUsesBox noun={noun} uses={uses} />
-   {issues.length > 0 && <ul className="context-issues" role="alert">{issues.map(i => <li key={i.code + i.message}><AlertTriangle size={13} aria-hidden="true" />{i.message}</li>)}</ul>}
+   {/* A launch profile's full summary lists its own issues. */}
+   {uses.scope && issues.length > 0 && <ul className="context-issues" role="alert">{issues.map(i => <li key={i.code + i.message}><AlertTriangle size={13} aria-hidden="true" />{i.message}</li>)}</ul>}
    {blockedReason && <p className="dialog-error" role="alert">{blockedReason}</p>}
    {children}
    {error && <p className="dialog-error" role="alert">{error}</p>}
@@ -60,6 +61,8 @@ export function RunDialog({ title, sentence, facts, noun, uses, action, busy = f
 function RunUsesBox({ noun, uses }: { noun: string; uses: RunUses }) {
   const { scope, context } = uses;
   const title = `This ${noun} will use`;
+  // A launch project's saved profile gets the full review: AWS sign-in, expected variables, var files.
+  if (context && !scope) return <ContextSummary summary={context} title={title} />;
   const workspace = scope?.workspace ?? context?.workspace ?? uses.workspace;
   const where = scope ? 'this tab; the CLI default is not changed' : context ? workspaceSources[context.workspaceSource] : undefined;
   const rootPath = scope?.rootPath ?? context?.rootPath;
@@ -97,13 +100,15 @@ export function runFailure(op: Operation): { title: string; text: string } {
 
 // The running, failed and succeeded states of a plan, drift scan or graph run (§2.5). The
 // log lines are the server's sanitized operation events.
-export function RunState({ operation: initial, scope = launchScope, running, succeeded, onFinished, onRetry }: {
+export function RunState({ operation: initial, scope = launchScope, running, succeeded, onFinished, onRetry, children }: {
   operation: Operation;
   scope?: PlanScope;
   running: string;
   succeeded: string;
   onFinished?: (operation: Operation) => void;
   onRetry: () => void;
+  // Extra content of the failed card (what was kept, how to recover).
+  children?: ReactNode;
 }) {
   const { events, operation, error, cancelling, cancel } = useOperationStream(initial, scope);
   const [showLog, setShowLog] = useState(false);
@@ -135,6 +140,7 @@ export function RunState({ operation: initial, scope = launchScope, running, suc
   return <section className="operation-failed" role="alert">
    <h2><CircleX size={17} />{failure.title}</h2>
    <p>{failure.text}</p>
+   {children}
    <div className="run-actions">
     <Button variant="outline" size="small" aria-expanded={showLog} onClick={() => setShowLog(v => !v)}>{showLog ? 'Hide log' : 'View log'}</Button>
     <Button size="small" onClick={onRetry}><RotateCcw size={13} />Try again</Button>

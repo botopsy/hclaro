@@ -1,48 +1,8 @@
 /* M14: apply preflight */
-.preflight-dialog {
-  width: min(780px, 100%);
-  max-height: calc(100vh - 40px);
-  overflow-y: auto;
-}
-
-.preflight-dialog h3 {
+#pf-blockers, #pf-warnings, #pf-impact {
   margin-bottom: 8px;
   font-size: 14px;
   font-weight: 600;
-}
-
-.preflight-dialog h4 {
-  margin: 4px 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.preflight-identity {
-  border: 1px solid var(--border);
-  background: var(--inset);
-  border-radius: 8px;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  display: flex;
-}
-
-.preflight-identity dl {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 8px 16px;
-  margin: 0;
-  display: grid;
-}
-
-.preflight-identity dt {
-  color: var(--subtle);
-  font-size: 12px;
-}
-
-.preflight-identity dd {
-  overflow-wrap: anywhere;
-  margin: 0;
-  font-size: 14px;
 }
 
 .preflight-verdict {
@@ -123,22 +83,6 @@
   width: 15px;
   height: 15px;
 }
-
-.identity-probe {
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  display: flex;
-}
-
-.preflight-passed summary, .preflight-impact summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.preflight-passed[open] summary, .preflight-impact details[open] summary { margin-bottom: 8px; }
 
 .preflight-impact {
   flex-direction: column;
