@@ -128,32 +128,33 @@ try{
  await page.getByText(/10 resource changes and 4 output changes/).waitFor()
  // The fixture workspace executes locally, so the reviewed plan can be applied after confirmation.
  await page.getByRole('button',{name:'Review and apply…'}).click()
+ const applyName=/^Apply (plan|\d+ changes?)$/
  const applyDialog=page.getByRole('dialog',{name:/^Apply to .+ \/ demo$/})
  await applyDialog.getByText('apply demo',{exact:true}).waitFor()
- assert(await applyDialog.getByRole('button',{name:'Apply plan'}).isDisabled(),'apply enabled before typed confirmation')
+ assert(await applyDialog.getByRole('button',{name:applyName}).isDisabled(),'apply enabled before typed confirmation')
  // M14: the server preflight shows the context identity, per-warning acknowledgements and the whole plan's impact.
  await applyDialog.getByRole('region',{name:'Context identity'}).waitFor()
  await applyDialog.getByRole('list',{name:'High-risk resources'}).waitFor()
  const acks=applyDialog.getByRole('checkbox')
  assert((await acks.count())>0,'preflight warnings are not acknowledged individually')
  await applyDialog.getByLabel('Confirmation phrase').fill('apply demo')
- assert(await applyDialog.getByRole('button',{name:'Apply plan'}).isDisabled(),'apply enabled before every warning was acknowledged')
+ assert(await applyDialog.getByRole('button',{name:applyName}).isDisabled(),'apply enabled before every warning was acknowledged')
  for(let i=0;i<await acks.count();i++) await acks.nth(i).check()
- assert(await applyDialog.getByRole('button',{name:'Apply plan'}).isEnabled(),'apply disabled after acknowledgements and phrase')
+ assert(await applyDialog.getByRole('button',{name:applyName}).isEnabled(),'apply disabled after acknowledgements and phrase')
  await page.screenshot({path:'.cache/screenshots/apply-dialog-dark.png'})
  await page.keyboard.press('Escape')
  await applyDialog.waitFor({state:'detached'})
  await page.getByRole('button',{name:/Replace\s*2/}).click()
- await page.getByRole('button',{name:/module\.compute\.aws_instance\.main\[0\]/}).click()
+ const replaced=page.getByRole('button',{name:'Expand module.compute.aws_instance.main[0]'})
+ await replaced.click()
  await page.getByText('Destroy the existing object, then create a replacement.').waitFor()
  assert(!(await page.locator('body').innerText()).includes(canary),'secret rendered in plan review')
  await page.screenshot({path:'.cache/screenshots/plans-dark.png',fullPage:true})
- // M24.17: keyboard-only review. Navigate, reach a change, open and close it, open and leave the
- // apply dialog; focus is never lost and Tab never escapes the dialog.
- const focused=()=>page.evaluate(()=>{const e=document.activeElement;return e&&e!==document.body?(e.getAttribute('data-change-id')||e.getAttribute('aria-label')||e.textContent.trim()):null})
- await page.keyboard.press('Escape')
- await page.getByLabel('Change details').waitFor({state:'detached'})
- assert.match(await focused(),/./,'focus lost after closing change details')
+ await page.getByRole('button',{name:'Collapse module.compute.aws_instance.main[0]'}).click()
+ await page.getByLabel('Change details for module.compute.aws_instance.main[0]').waitFor({state:'detached'})
+ // M24.17: keyboard-only review. Navigate, reach a change row, expand and collapse it, open and
+ // leave the apply dialog; focus is never lost and Tab never escapes the dialog.
+ const focused=()=>page.evaluate(()=>{const e=document.activeElement;return e&&e!==document.body?(e.getAttribute('aria-label')||e.textContent.trim()):null})
  await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Overview',exact:true}).focus()
  await page.keyboard.press('Enter')
  await page.getByRole('heading',{name:'Overview',level:1}).waitFor()
@@ -161,27 +162,18 @@ try{
  await page.keyboard.press('Enter')
  await page.getByText(/10 resource changes and 4 output changes/).waitFor()
  let change=null
- for(let i=0;i<80&&!change;i++){await page.keyboard.press('Tab');change=await page.evaluate(()=>document.activeElement?.getAttribute('data-change-id'))}
+ for(let i=0;i<80&&!change;i++){await page.keyboard.press('Tab');change=await page.evaluate(()=>{const l=document.activeElement?.getAttribute('aria-label')||'';return l.startsWith('Expand ')?l.slice(7):null})}
  assert(change,'no plan change reachable with Tab')
- await page.keyboard.press('ArrowDown')
- change=await page.evaluate(()=>document.activeElement?.getAttribute('data-change-id'))
  await page.keyboard.press('Enter')
- await page.getByLabel('Change details').getByRole('button',{name:'Close change details'}).waitFor()
- await page.keyboard.press('Escape')
- await page.getByLabel('Change details').waitFor({state:'detached'})
- assert.equal(await focused(),change,'focus not returned to the change row')
- // Closing with the drawer's own button also hands focus back to the row.
- await page.keyboard.press('Enter')
- await page.getByLabel('Change details').getByRole('button',{name:'Close change details'}).press('Enter')
- await page.getByLabel('Change details').waitFor({state:'detached'})
- assert.equal(await focused(),change,'focus not returned after the close button')
- // Typical laptop width: review and details fit without horizontal scrolling.
+ await page.getByLabel(`Change details for ${change}`).waitFor()
+ assert.equal(await focused(),`Collapse ${change}`,'focus left the expanded row toggle')
+ // Typical laptop width: an expanded change fits without horizontal scrolling.
  await page.setViewportSize({width:1280,height:800})
- await page.keyboard.press('Enter')
- await page.getByLabel('Change details').getByRole('button',{name:'Close change details'}).waitFor()
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'1280px plan review overflows')
  await page.screenshot({path:'.cache/screenshots/plans-1280-dark.png'})
- await page.keyboard.press('Escape')
+ await page.keyboard.press('Enter')
+ await page.getByLabel(`Change details for ${change}`).waitFor({state:'detached'})
+ assert.equal(await focused(),`Expand ${change}`,'focus not kept on the row toggle')
  await page.setViewportSize({width:1512,height:1050})
  const applyButton=page.getByRole('button',{name:'Review and apply…'})
  await applyButton.focus()
@@ -195,7 +187,6 @@ try{
  await page.keyboard.press('Escape')
  await keyboardApply.waitFor({state:'detached'})
  assert.equal(await applyButton.evaluate(e=>e===document.activeElement),true,'focus not returned to Review and apply')
- await page.getByRole('button',{name:/module\.compute\.aws_instance\.main\[0\]/}).click()
  // M17: the Cost tab is off until the disclosure is accepted; a completed estimate shows
  // coverage and caveats, and unpriced resources carry labels, not amounts.
  await page.getByRole('tab',{name:'Cost estimate'}).click()

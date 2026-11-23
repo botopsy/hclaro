@@ -30,7 +30,7 @@ const plan = {
   contextChanged: false,
   apply: { available: false, artifactRetained: false, reason: 'Remote execution backends are read-only in Hclaro.' }
 } as unknown as Plan;
-const applicable: Plan = { ...plan, apply: { available: true, artifactRetained: true, expiresAt: '2026-11-05T10:00:00Z' } };
+const applicable: Plan = { ...plan, apply: { available: true, artifactRetained: true, expiresAt: '2099-01-01T10:00:00Z' } };
 const options: PlanOptions = { canPlan: true, canApply: true, engine: 'terraform', version: '1.9.8', workspace: 'demo', backend: 's3', varFiles: ['prod.tfvars'] };
 const operation: Operation = { id: 'b'.repeat(32), kind: 'plan', status: 'succeeded', stage: 'Finished', startedAt: '2026-11-05T09:00:00Z', durationMs: 4200, exitCode: 0, command: ['terraform', 'plan', '-input=false', '-json', '-out=<private temporary file>'], varFiles: [], replace: [], planId, stateReloaded: false, engineDiagnostics: [], cancelRequested: false, logDropped: 0, logRetained: true };
 const approval: Approval = { confirmationToken: 'f'.repeat(64), expiresAt: '2026-11-05T09:05:00Z', planId, artifactSha256: 'c'.repeat(64), engine: 'terraform', workspace: 'demo', summary: { create: 1, replace: 2, delete: 2 }, replace: [], imports: 0, destructive: true, phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>'], acknowledged: ['git.worktree'] };
@@ -56,6 +56,7 @@ const report: PreflightReport = {
   binding: 'b'.repeat(64), phrase: 'apply demo', command: ['terraform', 'apply', '-input=false', '-json', '<reviewed saved plan cccccccccccc>']
 };
 
+const applyButton = /^Apply (plan|\d+ changes?)$/;
 type Route = (url: string, init?: RequestInit) => Response | undefined;
 let posts: { url: string; init: RequestInit }[] = [];
 function serve(...routes: Route[]) {
@@ -135,7 +136,7 @@ describe('Plans', () => {
     const counts = screen.getByRole('group', { name: 'Filter by action' });
     expect(within(counts).getByRole('button', { name: /Unsupported\s*1/ })).toBeInTheDocument();
     expect(screen.getAllByText(/does not support/).length).toBeGreaterThan(0);
-    await userEvent.click(screen.getByText('aws_lb.edge'));
+    await userEvent.click(screen.getByRole('button', { name: 'Expand aws_lb.edge' }));
     expect(await screen.findByText(/Unsupported action combination\. Hclaro does not apply a plan containing it/)).toBeInTheDocument();
     expect(document.body.textContent).not.toContain(canary);
     expect(posts).toHaveLength(0);
@@ -147,8 +148,11 @@ describe('Plans', () => {
     await user.click(await screen.findByRole('button', { name: /Replace\s*2/ }));
     const table = screen.getByRole('region', { name: 'Planned resource changes' });
     expect(within(table).getAllByRole('row')).toHaveLength(3);
-    await user.click(within(table).getByRole('button', { name: /module\.compute\.aws_instance\.main\[0\]/ }));
-    const inspector = await screen.findByRole('complementary', { name: 'Change details' });
+    // Rows expand in place (aria-expanded) instead of opening a side panel.
+    const expand = within(table).getByRole('button', { name: 'Expand module.compute.aws_instance.main[0]' });
+    await user.click(expand);
+    expect(expand).toHaveAttribute('aria-expanded', 'true');
+    const inspector = await screen.findByLabelText('Change details for module.compute.aws_instance.main[0]');
     expect(await within(inspector).findByText('Destroy the existing object, then create a replacement.')).toBeInTheDocument();
     const ami = within(inspector).getByRole('rowheader', { name: /ami/ });
     expect(ami).toHaveTextContent('forces replacement');
@@ -156,9 +160,13 @@ describe('Plans', () => {
     expect(id).toHaveTextContent('i-0aa');
     expect(id).toHaveTextContent('known after apply');
     expect(inspector).not.toHaveTextContent(canary);
-    await user.click(within(inspector).getByRole('button', { name: 'Close change details' }));
+    await user.click(within(table).getByRole('button', { name: 'Collapse module.compute.aws_instance.main[0]' }));
+    expect(screen.queryByLabelText('Change details for module.compute.aws_instance.main[0]')).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: /Outputs/ }));
     expect(screen.getByText('db_password').closest('tr')).toHaveTextContent('sensitive');
+    // Output values are never shown, sensitive or not.
+    expect(screen.getByText('db_password').closest('tr')).toHaveTextContent('value hidden');
+    expect(screen.getByText(/Output values are never shown in Hclaro/)).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: /Changed outside/ }));
     expect(screen.getByText('aws_s3_bucket.artifacts')).toBeInTheDocument();
   });
@@ -192,7 +200,7 @@ describe('Plans', () => {
     const tree = (status: string) => <QueryClientProvider client={client}><PlansView project="p" workspaceStatus={status} choosePlan={() => {}} copy={async () => {}} /></QueryClientProvider>;
     const { rerender } = render(tree('loading'));
     expect(await screen.findByText(/Reading the workspace/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Run plan' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Run plan' })).toBeDisabled();
     rerender(tree('ready'));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Run plan' })).toBeEnabled());
   });
@@ -210,8 +218,10 @@ describe('Plans', () => {
     serve(url => url.endsWith('/plans') ? Response.json({ plans: [] }) : url.endsWith('/operations') ? Response.json({ operations: [failed] }) : undefined);
     view();
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Plan failed');
+    // §2.5: the cause as a title; the lock holder is never named.
+    expect(alert).toHaveTextContent('State is locked by another process');
     expect(alert).toHaveTextContent('never force-unlocks');
+    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(alert).toHaveTextContent('No plan was kept');
     expect(alert).toHaveTextContent('Error acquiring the state lock');
     expect(screen.queryByText('No plans yet')).not.toBeInTheDocument();
@@ -222,7 +232,7 @@ describe('Plans', () => {
     serve(url => url.endsWith('/operations') ? Response.json({ operations: [failed, operation] }) : undefined);
     view();
     expect(await screen.findByText(/Below is the previous successful plan/)).toBeInTheDocument();
-    expect(screen.getAllByRole('alert')[0]).toHaveTextContent('Plan cancelled');
+    expect(screen.getAllByRole('alert')[0]).toHaveTextContent('Cancelled');
   });
 
   it('streams a running plan and cancels it', async () => {
@@ -243,12 +253,11 @@ describe('Plans', () => {
       return undefined;
     });
     view();
-    const log = await screen.findByRole('log', { name: 'Plan output' });
-    expect(await within(log).findByText('aws_s3_bucket.logs: plan to create')).toBeInTheDocument();
+    const card = await screen.findByRole('region', { name: 'Planning…' });
+    expect(await within(card).findByText('aws_s3_bucket.logs: plan to create')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run plan' })).toBeDisabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel plan' }));
+    await userEvent.click(within(card).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(posts.some(p => p.url.endsWith(`/operations/${running.id}/cancel`))).toBe(true));
-    expect(await screen.findByText('Cancelling')).toBeInTheDocument();
   });
 
   it('plans a replacement with opaque IDs and lists every requested instance', async () => {
@@ -301,13 +310,16 @@ describe('Plans', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Review and apply…' }));
     let dialog = await screen.findByRole('dialog', { name: /^Apply to / });
+    // Cancel has initial focus so Enter never applies by accident.
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
     const identity = await within(dialog).findByRole('region', { name: 'Context identity' });
     expect(identity).toHaveTextContent('platform-infra');
     expect(identity).toHaveTextContent('Terraform 1.9.8');
     expect(identity).toHaveTextContent('s3 (local-cli)');
     expect(within(dialog).getByRole('list', { name: 'Changes to apply' })).toHaveTextContent('2 replace');
     expect(dialog).toHaveTextContent('terraform apply -input=false -json <reviewed saved plan cccccccccccc>');
-    expect(dialog).toHaveTextContent('cannot guarantee zero downtime');
+    // The data-loss warning and the high-risk list are one box.
+    expect(within(dialog).getByText(/Data stored in them can be lost/).closest('.data-loss')).toContainElement(within(dialog).getByRole('list', { name: 'High-risk resources' }));
     // The full plan, not only the selection: collateral changes are listed.
     expect(dialog).toHaveTextContent('The plan also changes 2 other resource instances');
     expect(dialog).toHaveTextContent('Hclaro never uses -target');
@@ -321,18 +333,21 @@ describe('Plans', () => {
     expect(posts.filter(p => p.url.endsWith('/approval') || p.url.endsWith('/apply'))).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: 'Review and apply…' }));
     dialog = await screen.findByRole('dialog', { name: /^Apply to / });
-    const apply = await within(dialog).findByRole('button', { name: 'Apply plan' });
+    const apply = await within(dialog).findByRole('button', { name: applyButton });
     await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply demo');
     // There is no blanket acknowledgement: each warning has its own checkbox.
     const boxes = within(dialog).getAllByRole('checkbox');
     expect(boxes).toHaveLength(2);
     expect(apply).toBeDisabled();
+    // Neutral until every condition holds, so the destructive style never invites a click early.
+    expect(apply).not.toHaveClass('button-destructive');
     await user.click(boxes[0]);
     expect(apply).toBeDisabled();
     await user.keyboard('{Enter}');
     expect(posts.filter(p => p.url.endsWith('/approval'))).toHaveLength(0);
     await user.click(boxes[1]);
     expect(apply).toBeEnabled();
+    expect(apply).toHaveClass('button-destructive');
     // A double click approves and applies once; nothing is retried.
     await user.dblClick(apply);
     await waitFor(() => expect(posts.filter(p => p.url.endsWith('/apply'))).toHaveLength(1));
@@ -359,7 +374,7 @@ describe('Plans', () => {
     expect(section).toHaveTextContent('Run a new plan and review it again.');
     expect(dialog).toHaveTextContent('1 blocking check failed');
     expect(within(dialog).queryByLabelText('Confirmation phrase')).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: applyButton })).toBeDisabled();
   });
 
   it('verifies the AWS identity only when asked', async () => {
@@ -395,7 +410,7 @@ describe('Plans', () => {
     const confirm = async () => {
       await user.type(await within(dialog).findByLabelText('Confirmation phrase'), 'apply demo');
       for (const box of within(dialog).getAllByRole('checkbox')) await user.click(box);
-      await user.click(within(dialog).getByRole('button', { name: 'Apply plan' }));
+      await user.click(within(dialog).getByRole('button', { name: applyButton }));
     };
     await confirm();
     expect(await within(dialog).findByText(/preflight warnings changed/)).toHaveAttribute('role', 'alert');
@@ -419,7 +434,7 @@ describe('Plans', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Review and apply…' }));
     const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: applyButton })).toBeDisabled();
   });
 
   it('sends a Hub workspace apply only to its own context routes, never the launch routes', async () => {
@@ -434,7 +449,7 @@ describe('Plans', () => {
     render(<ApplyDialog plan={applicable} scope={{ kind: 'context', contextId }} onStarted={started} onClose={() => {}} />);
     const user = userEvent.setup();
     const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
-    const apply = await within(dialog).findByRole('button', { name: 'Apply plan' });
+    const apply = await within(dialog).findByRole('button', { name: applyButton });
     await user.type(within(dialog).getByLabelText('Confirmation phrase'), 'apply demo');
     for (const box of within(dialog).getAllByRole('checkbox')) await user.click(box);
     await user.click(apply);
@@ -450,7 +465,7 @@ describe('Plans', () => {
     render(<ApplyDialog plan={applicable} scope={{ kind: 'context', contextId: '' }} onStarted={() => {}} onClose={() => {}} />);
     const dialog = await screen.findByRole('dialog', { name: /^Apply to / });
     expect(await within(dialog).findByText(/no longer open/)).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Apply plan' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: applyButton })).toBeDisabled();
     expect(posts).toHaveLength(0);
     expect(() => planRoute({ kind: 'context', contextId: '../plans' }, planId, 'apply')).toThrow();
     expect(() => planRoute({ kind: 'launch' }, '../x', 'apply')).toThrow();
@@ -484,10 +499,11 @@ describe('Plans', () => {
     const applied: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z' };
     serve(url => url.endsWith('/operations') ? Response.json({ operations: [applied, operation] }) : undefined);
     view();
-    expect(await screen.findByRole('heading', { name: 'Apply finished' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Applied: 10 changes' })).toBeInTheDocument();
+    expect(screen.getByText(/The saved plan was used and deleted/)).toBeInTheDocument();
     const status = screen.getByLabelText('Apply status');
-    expect(status).toHaveTextContent('read again at');
-    expect(status).toHaveTextContent('Hclaro has no health probe');
+    expect(status).toHaveTextContent('State read again at');
+    expect(within(status).getByText('Service health: not checked')).toHaveAttribute('title', expect.stringContaining('Hclaro has no health probe'));
     expect(screen.queryByText(/healthy|verified/i)).not.toBeInTheDocument();
   });
 
@@ -504,5 +520,62 @@ describe('Plans', () => {
     expect(alert).toHaveTextContent('Do not apply again from Hclaro');
     expect(alert).toHaveTextContent('never force-unlocks');
     expect(screen.queryByRole('button', { name: /apply/i })).not.toBeInTheDocument();
+  });
+  it('shows one Run plan button in the empty state and opens the run dialog from it', async () => {
+    serve(url => url.endsWith('/plans') ? Response.json({ plans: [] }) : url.endsWith('/operations') ? Response.json({ operations: [] }) : undefined);
+    view();
+    expect(await screen.findByRole('heading', { name: 'No plans yet' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Run plan' })).toHaveLength(1);
+    expect(screen.getByText('How this works')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Run plan' }));
+    expect(screen.getByRole('dialog', { name: 'Run a plan' })).toBeInTheDocument();
+    expect(posts).toHaveLength(0);
+  });
+
+  it('folds the destructive warning into the Ready card next to the apply button', async () => {
+    serve(url => url.endsWith(`/plans/${planId}`) ? Response.json(applicable) : undefined);
+    view();
+    const card = (await screen.findByText('Ready to apply.')).closest('.apply-banner')!;
+    expect(card).toHaveTextContent('Applies exactly this saved plan, once, until');
+    expect(card).toHaveTextContent('Deletes 2, replaces 2 and forgets 1 objects.');
+    expect(within(card as HTMLElement).getByRole('button', { name: 'Review and apply…' })).toHaveClass('button-destructive');
+  });
+
+  it('never offers apply on a plan whose deadline passed, by this clock or the server', async () => {
+    const past = { ...applicable, apply: { ...applicable.apply, expiresAt: '2020-01-01T10:00:00Z' } };
+    serve(url => url.endsWith(`/plans/${planId}`) ? Response.json(past) : undefined);
+    view();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/This saved plan expired at .*It can no longer be applied/);
+    expect(screen.queryByRole('button', { name: 'Review and apply…' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Run new plan' }));
+    expect(screen.getByRole('dialog', { name: 'Run a plan' })).toBeInTheDocument();
+    expect(posts).toHaveLength(0);
+    cleanup();
+    serve(url => url.endsWith(`/plans/${planId}`) ? Response.json({ ...plan, apply: { available: false, artifactRetained: false, code: 'plan_expired', reason: 'This plan is older than 1 hour.' } }) : undefined);
+    view();
+    expect(await screen.findByText(/This saved plan expired\./)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Review and apply…' })).not.toBeInTheDocument();
+  });
+
+  it('replaces the Ready card when the deadline passes while the plan is open', async () => {
+    const soon = { ...applicable, apply: { ...applicable.apply, expiresAt: new Date(Date.now() + 1200).toISOString() } };
+    serve(url => url.endsWith(`/plans/${planId}`) ? Response.json(soon) : undefined);
+    view();
+    expect(await screen.findByRole('button', { name: 'Review and apply…' })).toBeInTheDocument();
+    expect(await screen.findByText(/This saved plan expired at/, undefined, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Review and apply…' })).not.toBeInTheDocument();
+  });
+
+  it('notes uncommitted IaC files after a clean apply and links to Git and History', async () => {
+    const dirty = { ...plan, source: { repository: true, branch: 'main', commit: 'abc1234def', detached: false, dirty: true, dirtyKnown: true, dirtyFiles: 2, contentSha256: '', files: 3, localModules: 0 } } as Plan;
+    const applied: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [applied, operation] }) : url.endsWith(`/plans/${planId}`) ? Response.json(dirty) : undefined);
+    const git = vi.fn(), history = vi.fn();
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" choosePlan={vi.fn()} copy={async () => {}} openGit={git} openHistory={history} /></QueryClientProvider>);
+    expect(await screen.findByText(/Applied from main @ abc1234 with 2 uncommitted IaC files/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Open Git' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View in History' }));
+    expect(git).toHaveBeenCalledOnce();
+    expect(history).toHaveBeenCalledOnce();
   });
 });

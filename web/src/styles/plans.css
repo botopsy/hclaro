@@ -108,8 +108,9 @@
   background: var(--surface-selected);
 }
 
+/* Zero-value cards are dimmed (§4.3). */
 .summary-card:disabled {
-  opacity: .45;
+  opacity: .55;
 }
 
 .plan-headline, .info-line {
@@ -260,10 +261,6 @@
   border-color: color-mix(in srgb, var(--destroy), transparent 60%);
 }
 
-.plan-explorer {
-  min-height: 420px;
-}
-
 
 .order-note {
   color: var(--destroy);
@@ -308,15 +305,6 @@
 
 .json-inline {
   color: var(--muted);
-}
-
-.full-values {
-  margin-top: 14px;
-}
-
-.full-values summary {
-  color: var(--muted);
-  font-size: 14px;
 }
 
 .outputs {
@@ -604,8 +592,40 @@
   align-items: center;
 }
 
-.apply-banner.apply-ready > div {
+.apply-banner > div:first-of-type {
   flex: 1;
+}
+
+.apply-banner > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.apply-banner-actions {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+
+.apply-banner-actions .assist-entry {
+  margin: 0;
+}
+
+.apply-banner-warning {
+  color: var(--warn);
+  align-items: center;
+  gap: 6px;
+  display: flex;
+}
+
+.apply-banner.apply-expired {
+  border-color: color-mix(in srgb, var(--warn), transparent 60%);
+  align-items: center;
+}
+
+.apply-banner.apply-expired > svg {
+  color: var(--warn);
 }
 
 .replace-summary, .operation-applied {
@@ -684,45 +704,6 @@
   display: inline-flex;
 }
 
-.command-preview {
-  background: var(--inset);
-  border-radius: 7px;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  font-size: 13px;
-  display: flex;
-  overflow-wrap: anywhere;
-}
-
-.command-preview > span {
-  align-items: center;
-  gap: 6px;
-  display: flex;
-}
-
-.phrase-field {
-  flex-direction: column;
-  gap: 6px;
-  font-size: 14px;
-  display: flex;
-}
-
-.phrase-field input {
-  border: 1px solid var(--input);
-  background: var(--inset);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-family: var(--font-mono);
-  font-size: 14px;
-}
-
-.phrase-field input:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
-
 .dialog p code {
   white-space: nowrap;
 }
@@ -733,3 +714,43 @@
 .run-state header { display: flex; align-items: center; gap: 10px; }
 .run-state header .button { margin-left: auto; }
 .run-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* §4.3: expanded plan rows, applied card and the apply confirmation. */
+.change-details { display: flex; flex-direction: column; gap: 10px; padding: 6px 4px 10px; }
+.change-details .order-note { margin: 0; }
+.change-details .metadata { display: flex; flex-wrap: wrap; gap: 0 28px; }
+.change-details .metadata > div { justify-content: flex-start; padding: 2px 0; }
+.change-details .metadata dd { text-align: left; }
+/* The attribute table sits inside a DataTable row: undo its one-line cell rules. */
+.change-details .diff-table th, .change-details .diff-table td { height: auto; max-width: none; padding: 7px 6px; overflow: visible; white-space: normal; text-overflow: clip; text-transform: none; letter-spacing: normal; font-size: 13px; font-weight: 400; color: inherit; }
+.change-details .diff-table thead th { color: var(--subtle); font-weight: 500; }
+.change-details-actions { display: flex; gap: 8px; }
+.applied-card { gap: 12px; }
+.applied-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.applied-head > div:nth-child(2) { flex: 1; min-width: 220px; }
+.applied-icon { display: inline-flex; padding: 7px; border-radius: 999px; color: var(--create); background: color-mix(in srgb, var(--create), transparent 88%); }
+.applied-actions { display: flex; gap: 8px; }
+.apply-steps { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.apply-steps li { display: inline-flex; align-items: center; gap: 5px; }
+.apply-steps li > svg { color: var(--create); }
+.apply-facts { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--inset); }
+.apply-facts dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 16px; margin: 0; }
+.apply-facts dl > .span-2 { grid-column: span 2; }
+.apply-facts dt { color: var(--subtle); font-size: 12px; }
+.apply-facts dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.apply-checks { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; font-size: 13px; }
+.apply-checks .preflight-verdict { margin: 0; }
+.apply-impact { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+.data-loss { border: 1px solid color-mix(in srgb, var(--destroy), transparent 60%); border-radius: 8px; overflow: hidden; }
+.dialog .data-loss-head { display: flex; gap: 8px; margin: 0; padding: 9px 12px; font-size: 14px; color: var(--text); background: color-mix(in srgb, var(--destroy), transparent 88%); }
+.data-loss-head > svg { flex-shrink: 0; margin-top: 3px; color: var(--destroy); }
+.data-loss .preflight-resources { border: 0; border-radius: 0; }
+.command-line { display: block; overflow-wrap: anywhere; font-size: 13px; }
+.apply-footer { display: flex; flex: 1; flex-direction: column; gap: 6px; font-size: 13px; }
+.apply-footer-row { display: flex; align-items: center; gap: 8px; }
+.apply-footer-row input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--input); border-radius: 6px; background: var(--inset); color: var(--text); font-family: var(--font-mono); font-size: 14px; }
+.apply-footer-row input:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+@media (max-width: 640px) {
+  .apply-facts dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .apply-footer-row { flex-wrap: wrap; }
+}

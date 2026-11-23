@@ -15,6 +15,11 @@ const actionMeta: Record<PlanAction, { label: string; icon: LucideIcon; tone: st
 
 export const actionOrder: PlanAction[] = ['create', 'update', 'replace', 'delete', 'read', 'forget', 'unknown', 'no-op'];
 
+// planTotal counts every planned resource change, reads included, as the plan headline does.
+export function planTotal(summary: Partial<Record<PlanAction, number>>) {
+  return actionOrder.reduce((n, a) => n + (a === 'no-op' ? 0 : summary[a] || 0), 0);
+}
+
 export function meta(action: string) {
   return actionMeta[action as PlanAction] ?? { label: 'Unsupported', icon: Ban, tone: 'warn' };
 }

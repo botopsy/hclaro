@@ -1,12 +1,13 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRightLeft, Ban, Braces, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
+import { ArrowRightLeft, Ban, Braces, Clock, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, Pencil, Play, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
 import { api } from '../api';
 import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint } from '../types';
 import { Button } from '../components/ui/button';
-import { Drawer } from '../components/Drawer';
+import { DataTable, type Column } from '../components/DataTable';
+import { Disclosure } from '../components/Disclosure';
 import { JsonTree } from '../components/JsonTree';
-import { actionOrder, meta, reasonLabel, replaceOrder } from './labels';
+import { actionOrder, meta, planTotal, reasonLabel, replaceOrder } from './labels';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { CostTab } from './CostTab';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
@@ -31,7 +32,7 @@ function Value({ value, unknown, empty = '—' }: { value: unknown; unknown?: bo
 }
 
 // sourceLabel describes the Git source a plan was made from.
-function sourceLabel(source?: PlanSourceFingerprint) {
+export function sourceLabel(source?: PlanSourceFingerprint) {
   if (!source) return 'Not recorded';
   if (!source.repository) return 'Not in Git';
   const at = source.commit ? source.commit.slice(0, 7) : 'no commits';
@@ -39,67 +40,102 @@ function sourceLabel(source?: PlanSourceFingerprint) {
   return source.dirtyKnown && source.dirty ? `${where} · ${source.dirtyFiles} uncommitted IaC file${source.dirtyFiles === 1 ? '' : 's'}` : where;
 }
 
-export function PlanReview({ plan, copy, onApply, busy, onInspectImpact, scope = launchScope }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; busy?: boolean; onInspectImpact?: (planId: string, address: string) => void; scope?: PlanScope }) {
+export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, canPlan = true, onInspectImpact, scope = launchScope }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; onRunPlan?: () => void; onOpenDrift?: () => void; busy?: boolean; canPlan?: boolean; onInspectImpact?: (planId: string, address: string) => void; scope?: PlanScope }) {
   const [tab, setTab] = useState<Tab>('changes');
   const [actions, setActions] = useState<PlanAction[]>([]);
   const [showNoOp, setShowNoOp] = useState(false);
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(pageSize);
-  const [selected, setSelected] = useState<string>();
+  const expired = useExpired(plan);
+  const engine = engineLabel(plan.engine);
   const source = tab === 'drift' ? plan.drift : plan.changes;
   // Action filters and the no-op toggle apply to planned changes only, never to drift records.
   const visible = useMemo(() => source.filter(c => (tab === 'drift' || (actions.length ? actions.includes(c.action) : showNoOp || c.action !== 'no-op')) && (!search || c.address.toLowerCase().includes(search.toLowerCase()) || c.type.includes(search.toLowerCase()))), [source, actions, showNoOp, search, tab]);
-  const total = actionOrder.reduce((n, a) => n + (a === 'no-op' ? 0 : plan.summary[a] || 0), 0);
+  const total = planTotal(plan.summary);
   const outputChanges = plan.outputs.filter(o => o.action !== 'no-op').length;
   function toggle(action: PlanAction) {
     setActions(current => current.includes(action) ? current.filter(a => a !== action) : [...current, action]);
     setTab('changes');
     setLimit(pageSize);
   }
+  const ai = <AskAI scope={scope} request={{ kind: 'plan', planId: plan.id }} label="Review with AI" />;
   return <div className="plan-review">
    <div className="plan-meta">
-    <div><span className="muted">Plan</span><strong>{clock(plan.createdAt)}</strong></div>
-    <div><span className="muted">Engine</span><strong>{engineLabel(plan.engine)} {plan.engineVersion || plan.currentEngineVersion}</strong></div>
+    <div><span className="muted">Plan time</span><strong>{clock(plan.createdAt)}</strong></div>
+    <div><span className="muted">Engine</span><strong>{engine} {plan.engineVersion || plan.currentEngineVersion}</strong></div>
     <div><span className="muted">Workspace</span><strong>{plan.workspace}</strong></div>
     <div><span className="muted">Variable files</span><strong>{plan.varFiles.length ? plan.varFiles.join(', ') : 'Automatic only'}</strong></div>
     <div><span className="muted">Execution context</span><strong><RecordedContext context={plan.executionContext} /></strong></div>
     <div><span className="muted">Source</span><strong className="mono" title={plan.source?.commit}><GitBranch size={12} /> {sourceLabel(plan.source)}</strong></div>
     <div><span className="muted">Saved plan SHA-256</span><button className="hash" onClick={() => void copy(plan.artifactSha256, 'Plan digest')} title={plan.artifactSha256} aria-label="Copy saved plan SHA-256"><Fingerprint size={12} />{plan.artifactSha256.slice(0, 12)}<Copy size={11} /></button></div>
    </div>
-   {!plan.destructive && <AskAI scope={scope} request={{ kind: 'plan', planId: plan.id }} label="Review with AI" />}
-   {plan.destructive && <AskAI scope={scope} request={{ kind: 'plan', planId: plan.id }} label="Review with AI" note="This plan destroys or replaces objects. A second opinion can help before you apply." />}
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
-   {plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={15} /><div><strong>Ready to apply.</strong> Applying uses exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}. You confirm on the next screen.</div>{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}><Rocket size={14} />Review and apply…</Button>}</div> : plan.apply.code === 'unknown_actions' ? <div className="apply-banner apply-unsupported" role="alert"><Ban size={15} /><div><strong>Apply unavailable: unsupported actions.</strong> {plan.apply.reason} Changes marked <em>Unsupported</em> below use an action combination Hclaro does not recognize, so this plan can be reviewed but never applied here.</div></div> : <div className="apply-banner" role="note"><LockKeyhole size={15} /><div><strong>Review only.</strong> {plan.apply.reason}</div></div>}
+   {expired ? <div className="apply-banner apply-expired" role="alert"><Clock size={16} aria-hidden="true" /><div><strong>This saved plan expired{plan.apply.expiresAt ? ` at ${clock(plan.apply.expiresAt)}` : ''}.</strong> It can no longer be applied, because state or configuration may have changed since. Run a new plan to review the changes again.</div>{onRunPlan && <Button onClick={onRunPlan} disabled={!canPlan}><Play size={14} />Run new plan</Button>}</div>
+    : plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={16} aria-hidden="true" /><div><strong>Ready to apply.</strong> Applies exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}.{destructiveLine(plan) && <span className="apply-banner-warning"><TriangleAlert size={13} aria-hidden="true" />{destructiveLine(plan)}</span>}</div><div className="apply-banner-actions">{ai}{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}>Review and apply…</Button>}</div></div>
+    : plan.apply.code === 'unknown_actions' ? <div className="apply-banner apply-unsupported" role="alert"><Ban size={16} aria-hidden="true" /><div><strong>Apply unavailable: unsupported actions.</strong> {plan.apply.reason} Changes marked <em>Unsupported</em> below use an action combination Hclaro does not recognize, so this plan can be reviewed but never applied here.</div><div className="apply-banner-actions">{ai}</div></div>
+    : <div className="apply-banner" role="note"><LockKeyhole size={16} aria-hidden="true" /><div><strong>Review only.</strong> {plan.apply.reason}</div><div className="apply-banner-actions">{ai}</div></div>}
    {plan.contextChanged && plan.apply.code !== 'configuration_unreadable' && <div className="plan-warning" role="alert"><TriangleAlert size={15} />{plan.apply.configurationReason ?? 'Configuration, variable files, the engine or the execution profile changed since this plan was created. Run a new plan to review current changes.'}</div>}
    {plan.sourceStatus?.state === 'changed' && <div className="plan-warning" role="alert"><GitBranch size={15} />{plan.sourceStatus.message}{plan.sourceStatus.filesChanged ? ' Run a new plan before applying.' : ' Applying needs your acknowledgement.'}</div>}
    {plan.sourceStatus?.state === 'unknown' && <div className="plan-warning" role="alert"><GitBranch size={15} />{plan.sourceStatus.message}</div>}
    {plan.warnings.map(w => <div className="plan-warning" key={w} role="alert"><TriangleAlert size={15} />{w}</div>)}
-   <div className="summary-grid" role="group" aria-label="Filter by action">{actionOrder.filter(a => a !== 'no-op' || plan.summary['no-op']).map(a => {
+   <div className="summary-grid" role="group" aria-label="Filter by action">{actionOrder.map(a => {
     const { label, icon: Icon, tone } = meta(a);
     const count = plan.summary[a] || 0;
     return <button key={a} className={`summary-card tone-${tone} ${actions.includes(a) ? 'chosen' : ''}`} aria-pressed={actions.includes(a)} disabled={!count} onClick={() => toggle(a)}><span><Icon size={14} aria-hidden="true" />{label}</span><strong>{count}</strong></button>;
    })}</div>
    <p className="plan-headline">{total === 0 && outputChanges === 0 && !plan.imports ? 'No changes. Infrastructure matches the configuration.' : `${plan.imports ? `${plan.imports} import${plan.imports === 1 ? '' : 's'}, ` : ''}${total} resource change${total === 1 ? '' : 's'} and ${outputChanges} output change${outputChanges === 1 ? '' : 's'}, including every dependent and collateral change reported by the engine.`}</p>
    <div className="segmented plan-tabs" role="tablist" aria-label="Plan sections">
-    <button role="tab" aria-selected={tab === 'changes'} onClick={() => { setTab('changes'); setSelected(undefined); }}>Resource changes <span>{plan.changes.length}</span></button>
-    <button role="tab" aria-selected={tab === 'outputs'} onClick={() => { setTab('outputs'); setSelected(undefined); }}>Outputs <span>{plan.outputs.length}</span></button>
-    <button role="tab" aria-selected={tab === 'drift'} onClick={() => { setTab('drift'); setSelected(undefined); }}>Changed outside {engineLabel(plan.engine)} <span>{plan.drift.length}</span></button>
-    <button role="tab" aria-selected={tab === 'cost'} onClick={() => { setTab('cost'); setSelected(undefined); }}>Cost estimate</button>
+    <button role="tab" aria-selected={tab === 'changes'} onClick={() => setTab('changes')}>Resource changes <span>{plan.changes.length}</span></button>
+    <button role="tab" aria-selected={tab === 'outputs'} onClick={() => setTab('outputs')}>Outputs <span>{plan.outputs.length}</span></button>
+    <button role="tab" aria-selected={tab === 'drift'} onClick={() => setTab('drift')}>Changed outside {engine} <span>{plan.drift.length}</span></button>
+    <button role="tab" aria-selected={tab === 'cost'} onClick={() => setTab('cost')}>Cost estimate</button>
    </div>
    {tab === 'cost' ? <CostTab plan={plan} scope={scope} /> : tab === 'outputs' ? <Outputs outputs={plan.outputs} /> : <>
-    {tab === 'drift' && <p className="info-line">These objects changed outside {engineLabel(plan.engine)} since the last state was recorded. They are not planned changes, but they explain differences in the plan.</p>}
+    {tab === 'drift' && <p className="info-line">The engine noticed these objects changed outside {engine} while planning. The plan already accounts for them; they are not planned changes.{onOpenDrift && <Button variant="ghost" size="small" onClick={onOpenDrift}>See drift detection →</Button>}</p>}
     <div className="filter-row plan-filters"><div className="search-field compact"><Search size={14} /><input value={search} onChange={e => { setSearch(e.target.value); setLimit(pageSize); }} placeholder="Filter by address or type…" aria-label="Filter changes" />{search && <button className="clear-search" aria-label="Clear filter" onClick={() => setSearch('')}><X size={12} /></button>}</div>{tab === 'changes' && <label className="check"><input type="checkbox" checked={showNoOp} onChange={e => setShowNoOp(e.target.checked)} />Show unchanged</label>}{(actions.length > 0 || search) && <Button variant="ghost" size="small" onClick={() => { setActions([]); setSearch(''); }}><X size={12} />Reset</Button>}<span className="filter-count">{visible.length} shown</span></div>
-    <div className={`explorer plan-explorer ${selected ? 'with-inspector' : ''}`}>
-     <section className="resource-list" aria-label={tab === 'drift' ? 'Changes outside the engine' : 'Planned resource changes'}>
-      {visible.length === 0 ? <div className="empty-state"><Braces size={26} /><h2>{source.length ? 'No matching changes' : tab === 'drift' ? 'No drift detected' : 'No resource changes'}</h2></div> : <table className="resources-table changes-table"><thead><tr><th scope="col">Action</th><th scope="col">Resource</th><th scope="col">Why</th></tr></thead><tbody>{visible.slice(0, limit).map(c => <ChangeRow key={c.id} change={c} selected={selected === c.id} onSelect={() => setSelected(c.id)} />)}</tbody></table>}
-      {visible.length > limit && <div className="pagination"><span>Showing {limit} of {visible.length}</span><Button variant="outline" size="small" onClick={() => setLimit(limit + pageSize)}>Show more</Button></div>}
-     </section>
-     {selected && <ChangeInspector scope={scope} planId={plan.id} changeId={selected} close={() => setSelected(undefined)} copy={copy} />}
-    </div>
+    <section className="plan-changes" aria-label={tab === 'drift' ? 'Changes outside the engine' : 'Planned resource changes'}>
+     {visible.length === 0 ? <div className="empty-state"><Braces size={26} /><h2>{source.length ? 'No matching changes' : tab === 'drift' ? 'No drift detected' : 'No resource changes'}</h2></div> : <DataTable key={tab} label={tab === 'drift' ? 'Changes outside the engine' : 'Planned resource changes'} rows={visible.slice(0, limit)} rowKey={c => c.id} rowLabel={c => c.address} columns={tab === 'drift' ? driftColumns : changeColumns} expand={c => <ChangeDetails scope={scope} planId={plan.id} changeId={c.id} copy={copy} />} />}
+     {visible.length > limit && <div className="pagination"><span>Showing {limit} of {visible.length}</span><Button variant="outline" size="small" onClick={() => setLimit(limit + pageSize)}>Show more</Button></div>}
+    </section>
    </>}
   </div>;
 }
+
+// useExpired is true once the saved plan's deadline passes, on the server's word or this clock's.
+// The server checks the deadline again on every apply request; this only stops offering apply.
+function useExpired(plan: Plan) {
+  const deadline = plan.apply.expiresAt ? Date.parse(plan.apply.expiresAt) : NaN;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!plan.apply.available || Number.isNaN(deadline) || now >= deadline) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.min(deadline - now, 2 ** 31 - 1));
+    return () => clearTimeout(timer);
+  }, [plan.apply.available, deadline, now]);
+  return plan.apply.code === 'plan_expired' || plan.apply.available && now >= deadline;
+}
+
+// destructiveLine is the one amber line of the Ready card: "Deletes 2 and replaces 1 objects."
+export function destructiveLine(plan: Pick<Plan, 'summary'>) {
+  const parts = ([['delete', 'deletes'], ['replace', 'replaces'], ['forget', 'forgets']] as const).filter(([a]) => plan.summary[a]).map(([a, verb]) => ({ verb, n: plan.summary[a]! }));
+  if (!parts.length) return '';
+  const words = parts.map(p => `${p.verb} ${p.n}`);
+  const text = words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : words[0];
+  const objects = parts.reduce((n, p) => n + p.n, 0) === 1 ? 'object' : 'objects';
+  return `${text[0].toUpperCase()}${text.slice(1)} ${objects}.`;
+}
+
+const resourceCell = (c: PlanChange) => <span className="resource-text"><strong className="mono change-address">{c.address}</strong><span className="resource-type">{c.type}{c.deposed && ` · deposed object ${c.deposed}`}{c.mode === 'data' && ' · data source'}</span></span>;
+const changeColumns: Column<PlanChange>[] = [
+  { key: 'action', header: 'Action', cell: c => <ActionBadge action={c.action} /> },
+  { key: 'resource', header: 'Resource', cell: resourceCell },
+  { key: 'why', header: 'Why', className: 'change-why', cell: c => <>{reasonLabel(c.reason) || (c.attributeChanges ? `${c.attributeChanges} attribute${c.attributeChanges === 1 ? '' : 's'}` : '')}{c.importing && <span className="flag"><Import size={11} />import</span>}{c.previousAddress && <span className="flag"><ArrowRightLeft size={11} />moved</span>}</> }
+];
+const driftColumns: Column<PlanChange>[] = [
+  { key: 'action', header: 'Drift', cell: () => <span className="action-badge tone-update"><Pencil size={12} aria-hidden="true" />Changed</span> },
+  { key: 'resource', header: 'Resource', cell: resourceCell },
+  changeColumns[2]
+];
 
 // Replacement is never only what was selected: show requested instances next to every
 // other change, and the risks the plan itself cannot rule out.
@@ -143,47 +179,38 @@ function ImportSummary({ plan, copy }: { plan: Plan; copy: (value: string, label
   </section>;
 }
 
-function ChangeRow({ change: c, selected, onSelect }: { change: PlanChange; selected: boolean; onSelect: () => void }) {
-  function key(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    event.preventDefault();
-    const buttons = Array.from(event.currentTarget.closest('tbody')!.querySelectorAll<HTMLButtonElement>('[data-change-id]'));
-    const index = buttons.indexOf(event.currentTarget);
-    buttons[Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus();
-  }
-  return <tr className={selected ? 'selected' : ''}>
-   <td><ActionBadge action={c.action} /></td>
-   <td><button className="resource-button" data-change-id={c.id} aria-pressed={selected} onClick={onSelect} onKeyDown={key}><span className="resource-text"><strong className="mono change-address">{c.address}</strong><span className="resource-type">{c.type}{c.deposed && ` · deposed object ${c.deposed}`}{c.mode === 'data' && ' · data source'}</span></span></button></td>
-   <td className="change-why">{reasonLabel(c.reason) || (c.attributeChanges ? `${c.attributeChanges} attribute${c.attributeChanges === 1 ? '' : 's'}` : '')}{c.importing && <span className="flag"><Import size={11} />import</span>}{c.previousAddress && <span className="flag"><ArrowRightLeft size={11} />moved</span>}</td>
-  </tr>;
-}
+const shownAttributes = 10;
 
-function ChangeInspector({ scope, planId, changeId, close, copy }: { scope: PlanScope; planId: string; changeId: string; close: () => void; copy: (value: string, label: string) => Promise<void> }) {
+// The expanded row (§4.3): the attribute diff, with redacted values staying redacted.
+function ChangeDetails({ scope, planId, changeId, copy }: { scope: PlanScope; planId: string; changeId: string; copy: (value: string, label: string) => Promise<void> }) {
   const detail = useQuery({ queryKey: ['plan-change', scopeKey(scope), planId, changeId], queryFn: () => api<ChangeDetail>(scopedPath(scope, `plans/${planId}/changes/${changeId}`)) });
+  const [all, setAll] = useState(false);
   const d = detail.data;
-  const order = d && replaceOrder(d.actions);
-  return <Drawer label="Change details" backdrop={false} onClose={close}>
-   <div className="inspector-header"><span><Braces size={15} />Change details</span><Button variant="ghost" size="icon" aria-label="Close change details" onClick={close}><X size={16} /></Button></div>
-   {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading change…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : d && <div className="inspector-body">
-    <div className="inspector-title"><ActionBadge action={d.action} /><span className="mono muted">{d.actions.join(', ')}</span></div>
-    <div className="address-box"><div className="label-row"><span>RESOURCE ADDRESS</span><Button variant="ghost" size="icon" aria-label="Copy change address" onClick={() => void copy(d.address, 'Address')}><Copy size={13} /></Button></div><code>{d.address}</code></div>
-    {order && <p className="order-note"><TriangleAlert size={13} aria-hidden="true" />{order}.</p>}
-    {d.action === 'unknown' && <p className="plan-warning"><TriangleAlert size={14} />Unsupported action combination. Hclaro does not apply a plan containing it; treat it as potentially destructive and inspect it with the CLI.</p>}
-    <dl className="metadata">
-     {d.reason && <div><dt>Reason</dt><dd>{reasonLabel(d.reason)}</dd></div>}
-     {d.previousAddress && <div><dt>Moved from</dt><dd className="mono">{d.previousAddress}</dd></div>}
-     {d.deposed && <div><dt>Deposed object</dt><dd className="mono">{d.deposed}</dd></div>}
-     {d.importing && <div><dt>Import</dt><dd>This object will be imported</dd></div>}
-     <div><dt>Provider</dt><dd className="mono">{d.provider || 'Not recorded'}</dd></div>
-     <div><dt>Module</dt><dd className="mono">{d.module || 'Root module'}</dd></div>
-    </dl>
-    <div className="attributes-header"><h3>Attribute changes</h3><span className="muted">{d.attributes.length}{d.truncated && '+'}</span></div>
-    <div className="redaction-note"><LockKeyhole size={12} />Values Terraform marks sensitive, secret-named attributes and credential-like values are hidden; a change to a hidden value is still listed.</div>
-    {d.attributes.length ? <AttributeTable rows={d.attributes} /> : <p className="muted">No attribute changes.</p>}
-    {d.truncated && <p className="muted">Only the first 1,000 attribute changes are shown.</p>}
-    <details className="full-values"><summary>Full values before and after</summary><div className="json-viewer"><JsonTree name="before" value={d.before ?? {}} /><JsonTree name="after" value={d.after ?? {}} /></div></details>
-   </div>}
-  </Drawer>;
+  if (detail.isPending) return <p className="muted" role="status"><LoaderCircle className="spin" size={13} /> Loading change…</p>;
+  if (detail.error) return <ErrorState inline message={detail.error.message} />;
+  if (!d) return null;
+  const order = replaceOrder(d.actions);
+  const rows = all ? d.attributes : d.attributes.slice(0, shownAttributes);
+  return <div className="change-details" aria-label={`Change details for ${d.address}`}>
+   {order && <p className="order-note"><TriangleAlert size={13} aria-hidden="true" />{order}.</p>}
+   {d.action === 'unknown' && <p className="plan-warning"><TriangleAlert size={14} />Unsupported action combination. Hclaro does not apply a plan containing it; treat it as potentially destructive and inspect it with the CLI.</p>}
+   <dl className="metadata compact-metadata">
+    <div><dt>Engine actions</dt><dd className="mono">{d.actions.join(', ')}</dd></div>
+    {d.previousAddress && <div><dt>Moved from</dt><dd className="mono">{d.previousAddress}</dd></div>}
+    {d.deposed && <div><dt>Deposed object</dt><dd className="mono">{d.deposed}</dd></div>}
+    {d.importing && <div><dt>Import</dt><dd>This object will be imported</dd></div>}
+    <div><dt>Provider</dt><dd className="mono">{d.provider || 'Not recorded'}</dd></div>
+    <div><dt>Module</dt><dd className="mono">{d.module || 'Root module'}</dd></div>
+   </dl>
+   <div className="redaction-note"><LockKeyhole size={12} />Values Terraform marks sensitive, secret-named attributes and credential-like values are hidden; a change to a hidden value is still listed.</div>
+   {d.attributes.length ? <AttributeTable rows={rows} /> : <p className="muted">No attribute changes.</p>}
+   {d.attributes.length > rows.length && <Button variant="ghost" size="small" onClick={() => setAll(true)}>+ {d.attributes.length - rows.length} more attribute{d.attributes.length - rows.length === 1 ? '' : 's'}</Button>}
+   {d.truncated && <p className="muted">Only the first 1,000 attribute changes are shown.</p>}
+   <div className="change-details-actions">
+    <Button variant="ghost" size="small" onClick={() => void copy(d.address, 'Address')}><Copy size={12} />Copy address</Button>
+   </div>
+   <Disclosure summary="Full values before and after"><div className="json-viewer"><JsonTree name="before" value={d.before ?? {}} /><JsonTree name="after" value={d.after ?? {}} /></div></Disclosure>
+  </div>;
 }
 
 function AttributeTable({ rows }: { rows: AttributeChange[] }) {
@@ -194,7 +221,8 @@ function AttributeTable({ rows }: { rows: AttributeChange[] }) {
   </tr>)}</tbody></table>;
 }
 
+// Output values are never shown (§4.3), sensitive or not: only the name and the change.
 function Outputs({ outputs }: { outputs: OutputChange[] }) {
   if (!outputs.length) return <div className="empty-state"><Braces size={26} /><h2>No output changes</h2></div>;
-  return <div className="surface outputs"><p className="redaction-note"><LockKeyhole size={12} />Sensitive outputs, secret-named outputs and credential-like values are hidden.</p><table className="diff-table"><thead><tr><th scope="col">Output</th><th scope="col">Action</th><th scope="col">Before</th><th scope="col">After</th></tr></thead><tbody>{outputs.map(o => <tr key={o.name}><th scope="row"><code>{o.name}</code>{o.sensitive && <span className="flag"><LockKeyhole size={10} />sensitive</span>}</th><td><ActionBadge action={o.action} /></td><td><Value value={o.before} empty="not set" /></td><td><Value value={o.after} unknown={o.unknown} empty="removed" /></td></tr>)}</tbody></table></div>;
+  return <div className="surface outputs"><table className="diff-table"><thead><tr><th scope="col">Output</th><th scope="col">Action</th><th scope="col">Value</th></tr></thead><tbody>{outputs.map(o => <tr key={o.name}><th scope="row"><code>{o.name}</code>{o.sensitive && <span className="flag"><LockKeyhole size={10} />sensitive</span>}</th><td><ActionBadge action={o.action} /></td><td className="muted">value hidden</td></tr>)}</tbody></table><p className="redaction-note"><LockKeyhole size={12} />Output values are never shown in Hclaro, including values that aren’t marked sensitive.</p></div>;
 }
