@@ -1,14 +1,19 @@
 import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, CircleX, FileCheck2, FileCode2, Info, KeyRound, LoaderCircle, Play, ShieldCheck, Terminal } from 'lucide-react';
-import { api, ApiError, send } from '../api';
+import { api, send } from '../api';
 import { operationActive, type ContextInfo, type Operation, type ToolName, type ToolResult } from '../types';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { Button } from '../components/ui/button';
+import { Disclosure } from '../components/Disclosure';
+import { Segmented } from '../components/Segmented';
+import { EmptyState } from '../components/EmptyState';
+import { DataTable, type Column } from '../components/DataTable';
 import { OperationLog } from '../plans/OperationLog';
 import { navigate, projectPath } from '../router';
 import { clock, duration } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
+import { projectsQuery } from '../lib/queries';
 
 type ToolInfo = {
   name: ToolName;
@@ -60,9 +65,8 @@ function operationLabel(op: Operation) {
 export function ToolsView({ context }: { context: ContextInfo }) {
   const client = useQueryClient();
   const [recursive, setRecursive] = useState(false);
-  const [selected, setSelected] = useState<string>();
   const [starting, setStarting] = useState<ToolName>();
-  const [error, setError] = useState<{ tool: ToolName; text: string; code: string }>();
+  const [error, setError] = useState<{ tool: ToolName; text: string }>();
   const [scope, setScope] = useState<'workspace' | 'project'>('workspace');
   const key = ['project-operations', context.projectId];
   const list = useQuery({
@@ -70,12 +74,17 @@ export function ToolsView({ context }: { context: ContextInfo }) {
     queryFn: () => api<{ operations: Operation[] }>(`projects/${context.projectId}/operations`),
     refetchInterval: q => q.state.data?.operations.some(operationActive) ? 1500 : false
   });
+  const projects = useQuery({ ...projectsQuery, refetchInterval: q => q.state.data?.projects.some(p => p.id === context.projectId && p.busy) ? 2000 : false });
+  const project = projects.data?.projects.find(p => p.id === context.projectId);
+  // Refusals the server would give every tool, known before anything runs: the button says why.
+  // The server still checks each run.
+  const blocked = projects.data?.environment?.dataDirShared ? 'TF_DATA_DIR is an absolute path, so every project would share one data directory. Restart Hclaro without it, or with a relative path.'
+    : project && project.status !== 'ready' ? project.problem || 'The project folder is not available.'
+    : project?.busy ? `${project.busy === 'init' ? 'Init' : project.busy === 'workspace' ? 'A workspace command' : 'Another command'} is running for this project. Wait for it to finish.`
+    : undefined;
   const operations = list.data?.operations || [];
-  const mine = operations.filter(o => o.tool?.contextId === context.id);
-  const running = (tool: ToolName) => mine.find(o => o.tool?.tool === tool && operationActive(o));
-  const latest = (tool: ToolName) => mine.find(o => o.tool?.tool === tool);
+  const latest = (tool: ToolName) => operations.find(o => o.tool?.contextId === context.id && o.tool.tool === tool);
   const shown = scope === 'workspace' ? operations.filter(o => o.tool?.workspace === context.workspace || o.kind !== 'tool') : operations;
-  const current = operations.find(o => o.id === selected);
   const refresh = useCallback(() => {
     void client.invalidateQueries({ queryKey: key });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,58 +94,62 @@ export function ToolsView({ context }: { context: ContextInfo }) {
     setError(undefined);
     try {
       const body = tool === 'fmt-check' ? { contextId: context.id, recursive } : { contextId: context.id };
-      const op = await send<Operation>('POST', `projects/${context.projectId}/operations/${tool}`, body);
-      setSelected(op.id);
+      await send<Operation>('POST', `projects/${context.projectId}/operations/${tool}`, body);
       refresh();
     } catch (e) {
-      setError({ tool, text: errorMessage(e), code: e instanceof ApiError ? e.code : '' });
+      setError({ tool, text: errorMessage(e) });
     } finally {
       setStarting(undefined);
     }
   }
   const engine = context.engine || 'terraform';
+  const columns: Column<Operation>[] = [
+    { key: 'op', header: 'Operation', cell: o => <strong>{operationLabel(o)}</strong> },
+    { key: 'ws', header: 'Workspace', className: 'operations-status', cell: o => o.tool ? o.tool.usesWorkspace ? <span className="mono">{o.tool.workspace}</span> : <span className="muted" title={`Opened from ${o.tool.workspace}; this command does not read a workspace.`}>Configuration</span> : <span className="muted">CLI default</span> },
+    { key: 'status', header: 'Status', className: 'operations-status', cell: o => <span className={`status-pill status-${o.status}`}>{operationActive(o) ? o.cancelRequested ? 'Cancelling' : o.stage : o.status}</span> },
+    { key: 'started', header: 'Started', className: 'operations-time', cell: o => clock(o.startedAt) },
+    { key: 'duration', header: 'Duration', className: 'operations-time', cell: o => duration(o.durationMs) },
+    { key: 'result', header: 'Result', className: 'operations-result', cell: o => o.tool ? <OutcomeLabel op={o} /> : <span className="muted">{o.diagnostic?.code.replaceAll('_', ' ') || '—'}{o.exitCode !== undefined && ` · exit ${o.exitCode}`}</span> }
+  ];
   return <div className="tools-view">
-   <p className="context-line"><strong>Execution context:</strong> <RecordedContext context={context.executionContext} /></p>
-   <p className="info-note"><ShieldCheck size={15} /><span>These commands are read-only and run only when you click. They never write configuration, change state or contact your infrastructure through a plan. <strong>Validate</strong> and <strong>Format check</strong> read configuration files only. <strong>Providers</strong> and <strong>Outputs</strong> read this tab's workspace, <strong className="mono">{context.workspace}</strong>, through a per-command <code>TF_WORKSPACE</code>; your terminal's CLI default is not changed.</span></p>
+   <Disclosure summary="How these run">
+    <p>They never write configuration, change state or contact your infrastructure through a plan. <strong>Validate</strong> and <strong>Format check</strong> read configuration files only. <strong>Providers</strong> and <strong>Outputs</strong> read this tab's workspace, <strong className="mono">{context.workspace}</strong>, through a per-command <code>TF_WORKSPACE</code>; your terminal's CLI default isn't changed.</p>
+    <p><strong>Execution context:</strong> <RecordedContext context={context.executionContext} /></p>
+    <p>Recent runs and their logs are kept in memory for this Hclaro session; redacted metadata also goes to Operation history. Logs contain sanitized summaries; output values and raw engine output are never kept.</p>
+   </Disclosure>
    <div className="tool-grid">{tools.map(t => {
-       const active = running(t.name);
        const last = latest(t.name);
+       const active = !!last && operationActive(last);
+       const busy = active || starting === t.name;
+       const reason = busy ? undefined : blocked;
        const Icon = t.icon;
-       return <section key={t.name} className="surface tool-card" aria-labelledby={`tool-${t.name}`}>
-        <div className="tool-card-head"><Icon size={17} /><h2 id={`tool-${t.name}`}>{t.title}</h2><span className="hub-tag hub-tag-quiet">{readsState(t.name) ? `Reads ${context.workspace} state` : 'Configuration only'}</span></div>
+       return <section key={t.name} className="tool-card" aria-labelledby={`tool-${t.name}`}>
+        <div className="tool-card-head"><Icon size={17} aria-hidden="true" /><h2 id={`tool-${t.name}`}>{t.title}</h2><span className="hub-tag hub-tag-quiet">{readsState(t.name) ? `Reads ${context.workspace} state` : 'Configuration only'}</span></div>
         <p className="muted">{t.description}</p>
         <code className="tool-command">{[engine, ...t.argv(recursive && t.name === 'fmt-check')].join(' ')}</code>
-        {t.name === 'fmt-check' && <label className="tool-option"><input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} disabled={!!active} /><span>Include subfolders (<code>-recursive</code>). Hidden folders are skipped and linked folders are never followed.</span></label>}
+        {t.name === 'fmt-check' && <label className="tool-option"><input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} disabled={busy} /><span>Include subfolders (<code>-recursive</code>). Hidden folders are skipped and linked folders are never followed.</span></label>}
         {error?.tool === t.name && <p className="dialog-error" role="alert">{error.text}</p>}
+        {last && (active ? last.logRetained && <OperationLog key={last.id} operation={last} onFinished={refresh} /> : <ToolResultPanel op={last} projectId={context.projectId} />)}
         <div className="tool-actions">
-         {last && <button className="tool-last" onClick={() => setSelected(last.id)} aria-label={`Show the last ${t.title} result`}><OutcomeLabel op={last} /><span className="muted">{clock(last.startedAt)}</span></button>}
-         <span className="context-spacer" />
-         <Button size="small" variant={last ? 'outline' : 'default'} onClick={() => void run(t.name)} disabled={!!active || starting === t.name}>{active || starting === t.name ? <><LoaderCircle className="spin" size={13} />Running…</> : <><Play size={13} />{last ? 'Run again' : 'Run'}</>}</Button>
+         {reason && <span className="tool-blocked" id={`tool-${t.name}-blocked`}>{reason}</span>}
+         <Button size="small" variant="outline" onClick={() => void run(t.name)} disabled={busy || !!reason} aria-describedby={reason ? `tool-${t.name}-blocked` : undefined}>{busy ? <><LoaderCircle className="spin" size={13} />Running…</> : <><Play size={13} />{last ? 'Run again' : 'Run'}</>}</Button>
         </div>
        </section>;
      })}</div>
-   {current && <section className="tool-detail" aria-label="Selected operation">
-     {current.tool && <ToolResultPanel op={current} projectId={context.projectId} />}
-     {current.kind !== 'tool' && current.diagnostic && !operationActive(current) && <p className="muted">{current.diagnostic.message}</p>}
-     {current.logRetained ? <OperationLog key={current.id} operation={current} onFinished={refresh} /> : <p className="muted">The log for this operation is no longer kept. Only the most recent logs are retained.</p>}
-    </section>}
-   <section className="operation-center" aria-labelledby="operation-center-title">
-    <div className="workspace-heading"><h2 className="hub-section" id="operation-center-title">Operations in this project</h2>
-     <div className="segmented" role="group" aria-label="Show operations"><button aria-pressed={scope === 'workspace'} onClick={() => setScope('workspace')}>This workspace</button><button aria-pressed={scope === 'project'} onClick={() => setScope('project')}>All workspaces</button></div>
-     <Button variant="ghost" size="small" onClick={() => void list.refetch()} disabled={list.isFetching}>Refresh</Button>
-     <Button variant="ghost" size="small" onClick={() => navigate(projectPath(context.projectId))}>Project page<ArrowRight size={13} /></Button></div>
-    {list.isPending ? <p className="muted" role="status"><LoaderCircle className="spin" size={13} /> Loading operations…</p>
+   <section className="tools-runs" aria-labelledby="tools-runs-title">
+    <div className="tools-runs-head"><h2 id="tools-runs-title">Recent runs in this project</h2>
+     <Segmented label="Show runs" value={scope} onChange={setScope} options={[{ value: 'workspace', label: 'This workspace' }, { value: 'project', label: 'All workspaces' }]} />
+     <button className="link-button" onClick={() => navigate(projectPath(context.projectId))}>Project details<ArrowRight size={13} aria-hidden="true" /></button></div>
+    {list.isPending ? <p className="muted" role="status"><LoaderCircle className="spin" size={13} /> Loading runs…</p>
      : list.error ? <p className="dialog-error" role="alert">{errorMessage(list.error)}</p>
-     : !shown.length ? <div className="empty-state"><Terminal size={24} /><h2>No operations yet</h2><p>Init, workspace commands and project tools you run for this project appear here with their status and sanitized output.</p></div>
-     : <table className="resources-table tool-ops"><thead><tr><th scope="col">Operation</th><th scope="col">Workspace</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Duration</th><th scope="col">Result</th></tr></thead><tbody>{shown.map(o => <tr key={o.id} className={selected === o.id ? 'selected' : ''}>
-       <td><button className="resource-button" aria-pressed={selected === o.id} onClick={() => setSelected(o.id)}><span className="resource-text"><strong>{operationLabel(o)}</strong><span className="resource-address mono">{o.command.join(' ')}</span></span></button></td>
-       <td>{o.tool ? o.tool.usesWorkspace ? <span className="mono">{o.tool.workspace}</span> : <span className="muted" title={`Opened from ${o.tool.workspace}; this command does not read a workspace.`}>Configuration</span> : <span className="muted">CLI default</span>}</td>
-       <td><span className={`status-pill status-${o.status}`}>{operationActive(o) ? o.cancelRequested ? 'Cancelling' : o.stage : o.status}</span></td>
-       <td>{clock(o.startedAt)}</td>
-       <td>{duration(o.durationMs)}</td>
-       <td>{o.tool ? <OutcomeLabel op={o} /> : <span className="muted">{o.diagnostic?.code.replaceAll('_', ' ') || '—'}{o.exitCode !== undefined && ` · exit ${o.exitCode}`}</span>}</td>
-      </tr>)}</tbody></table>}
-    <p className="info-line">This list and its logs are kept in memory, for this Hclaro session; redacted metadata also goes to Operation history. Logs contain sanitized summaries; output values and raw engine output are never kept.</p>
+     : !shown.length ? <EmptyState icon={<Terminal size={28} />} title="No runs yet">Init, workspace commands and tools you run for this project appear here with their status and sanitized output.</EmptyState>
+     : <div className="operations-table"><DataTable label="Recent runs" columns={columns} rows={shown} rowKey={o => o.id} rowLabel={operationLabel} expand={o => <div className="operation-details">
+       <code className="history-command">{o.command.join(' ')}</code>
+       {/* The newest run of each tool here is already shown under its card. */}
+       {o.tool && latest(o.tool.tool)?.id !== o.id && !operationActive(o) &&<ToolResultPanel op={o} projectId={context.projectId} />}
+       {o.kind !== 'tool' && o.diagnostic && !operationActive(o) && <p className="muted">{o.diagnostic.message}</p>}
+       {o.logRetained ? <OperationLog operation={o} onFinished={refresh} /> : <p className="muted">The log for this operation is no longer kept. Only the most recent logs are retained.</p>}
+      </div>} /></div>}
    </section>
   </div>;
 }
@@ -163,13 +176,13 @@ const successText: Record<ToolName, string> = {
   'outputs-metadata': 'Names, types and sensitivity of the root module outputs in this workspace\'s state. Values were discarded inside Hclaro and are never displayed.'
 };
 
+// The finished run's sanitized result, shown inline under its tool card.
 function ToolResultPanel({ op, projectId }: { op: Operation; projectId: string }) {
   const t = op.tool!;
-  if (operationActive(op)) return null;
   const ok = op.status === 'succeeded';
   const needsInit = op.diagnostic?.code === 'init_required' || op.diagnostic?.code === 'plugins_missing';
   return <section className={`init-result tool-result ${ok ? 'init-result-ok' : 'init-result-problem'}`} role={ok ? 'status' : 'alert'} aria-label={`${toolTitle[t.tool]} result`}>
-   <h3><OutcomeLabel op={op} /><span className="muted">{op.exitCode !== undefined && ` · exit code ${op.exitCode}`} · {duration(op.durationMs)}{t.usesWorkspace && <> · workspace <span className="mono">{t.workspace}</span></>}{t.engineVersion && ` · ${op.command[0] === 'tofu' ? 'OpenTofu' : 'Terraform'} ${t.engineVersion}`}</span></h3>
+   <h3><OutcomeLabel op={op} /><span className="muted"> · {clock(op.startedAt)}{op.exitCode !== undefined && ` · exit code ${op.exitCode}`} · {duration(op.durationMs)}{t.usesWorkspace && <> · workspace <span className="mono">{t.workspace}</span></>}{t.engineVersion && ` · ${op.command[0] === 'tofu' ? 'OpenTofu' : 'Terraform'} ${t.engineVersion}`}</span></h3>
    <p>{ok ? successText[t.tool] : op.diagnostic?.message}</p>
    {t.tool === 'validate' && t.output === 'human' && <p className="muted"><Info size={13} /> The engine printed no machine-readable result, so these diagnostics come from its human-readable output and may be incomplete.</p>}
    {t.partial && <p className="muted"><AlertTriangle size={13} /> The command failed; what it printed before failing is shown below and may be incomplete.</p>}

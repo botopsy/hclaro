@@ -94,7 +94,7 @@ describe('Project tools', () => {
     expect(card('Providers')).toHaveTextContent('Reads dev state');
     expect(card('Providers')).toHaveTextContent('do not show which cloud account or identity');
     expect(card('Outputs')).toHaveTextContent('never shown, including values that are not marked sensitive');
-    expect(await screen.findByText('No operations yet')).toBeInTheDocument();
+    expect(await screen.findByText('No runs yet')).toBeInTheDocument();
     expect(started()).toHaveLength(0);
   });
 
@@ -193,7 +193,7 @@ describe('Project tools', () => {
     stub({}, [dev, prod, init]);
     const user = userEvent.setup();
     app();
-    const center = await screen.findByRole('region', { name: 'Operations in this project' });
+    const center = await screen.findByRole('region', { name: 'Recent runs in this project' });
     await waitFor(() => expect(within(center).getAllByRole('row')).toHaveLength(3));
     expect(center).toHaveTextContent('Providers');
     expect(center).toHaveTextContent('Init');
@@ -201,12 +201,32 @@ describe('Project tools', () => {
     await user.click(within(center).getByRole('button', { name: 'All workspaces' }));
     expect(within(center).getAllByRole('row')).toHaveLength(4);
     expect(within(center).getByText('prod')).toBeInTheDocument();
-    // The last result of a tool in this context is one click away.
-    await user.click(within(card('Providers')).getByRole('button', { name: 'Show the last Providers result' }));
-    expect(await screen.findByRole('status', { name: 'Providers result' })).toBeInTheDocument();
-    await user.click(within(center).getByRole('button', { name: /Project page/ }));
+    // The last result of a tool in this context shows under its card.
+    expect(within(card('Providers')).getByRole('status', { name: 'Providers result' })).toHaveTextContent('Listed ·');
+    expect(within(card('Providers')).getByRole('button', { name: /Run again/ })).toBeEnabled();
+    // A run from another workspace is not under a card; its row expands to the result.
+    expect(within(card('Outputs')).queryByRole('status', { name: 'Outputs result' })).not.toBeInTheDocument();
+    await user.click(within(center).getByRole('button', { name: 'Expand Outputs' }));
+    expect(within(center).getByRole('status', { name: 'Outputs result' })).toHaveTextContent('workspace prod');
+    await user.click(within(center).getByRole('button', { name: /Project details/ }));
     expect(window.location.pathname).toBe(`/projects/${id}`);
     expect(started()).toHaveLength(0);
+  });
+
+  it('disables every tool with the reason while a command holds the project', async () => {
+    stub({});
+    list.projects = [{ ...network, busy: 'init' }];
+    try {
+      app();
+      const validate = await screen.findByRole('region', { name: 'Validate' });
+      const button = await within(validate).findByRole('button', { name: /Run/ });
+      await waitFor(() => expect(button).toBeDisabled());
+      expect(button).toHaveAccessibleDescription('Init is running for this project. Wait for it to finish.');
+      for (const name of ['Format check', 'Providers', 'Outputs']) expect(within(card(name)).getByRole('button', { name: /Run/ })).toBeDisabled();
+      expect(started()).toHaveLength(0);
+    } finally {
+      list.projects = [network];
+    }
   });
 
   it('opens the Hub tools of the project opened from the terminal, or asks to save it first', async () => {

@@ -484,6 +484,11 @@
   display: flex;
 }
 
+.tools-view .disclosure p {
+  margin: 0 0 6px;
+  line-height: 1.6;
+}
+
 .tool-grid {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   gap: 14px;
@@ -491,27 +496,69 @@
 }
 
 .tool-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
   display: flex;
+}
+
+/* A card whose result is a table (Providers, Outputs) takes the full row so every column shows. */
+.tool-card:has(.tool-table) {
+  grid-column: 1 / -1;
 }
 
 .tool-card > p {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
 .tool-card-head {
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   display: flex;
+}
+
+.tool-card-head svg {
+  color: var(--accent-text);
 }
 
 .tool-card-head h2 {
   flex: 1;
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
+}
+
+.tool-blocked {
+  color: var(--muted);
+  flex: 1;
+  font-size: 12.5px;
+}
+
+.tool-card .tool-actions {
+  justify-content: flex-end;
+}
+
+.tools-runs {
+  flex-direction: column;
+  gap: 10px;
+  display: flex;
+}
+
+.tools-runs-head {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  display: flex;
+}
+
+.tools-runs-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
 }
 
 .tool-command {
@@ -543,24 +590,6 @@
   display: flex;
 }
 
-.tool-last {
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  background: none;
-  border: 0;
-  border-radius: 6px;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 4px;
-  font-size: 13px;
-  display: inline-flex;
-}
-
-.tool-last:hover {
-  background: var(--inset);
-}
-
 .tool-outcome {
   align-items: center;
   gap: 5px;
@@ -571,8 +600,13 @@
 .tool-outcome-findings { color: var(--warn); }
 .tool-outcome-not_checked { color: var(--destroy); }
 
+/* Inline flow, so the time and details follow the outcome on one line when they fit. */
 .tool-result h3 {
-  flex-wrap: wrap;
+  display: block;
+}
+
+.tools-runs-head .link-button {
+  white-space: nowrap;
 }
 
 .tool-result h3 .muted {
@@ -582,12 +616,6 @@
 
 .tool-result p > svg {
   vertical-align: -2px;
-}
-
-.tool-detail {
-  flex-direction: column;
-  gap: 12px;
-  display: flex;
 }
 
 .tool-findings, .tool-files {
@@ -649,30 +677,15 @@
   white-space: nowrap;
 }
 
+/* Results sit in narrow cards: keep names whole and scroll the result sideways instead. */
+.tool-result {
+  overflow-x: auto;
+}
+
 .tool-table td {
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
-
-.operation-center {
-  flex-direction: column;
-  gap: 10px;
-  display: flex;
-}
-
-.operation-center .workspace-heading {
-  flex-wrap: wrap;
-}
-
-.tool-ops th:first-child { width: auto; }
-.tool-ops th:nth-child(2) { width: 130px; }
-.tool-ops th:nth-child(3) { width: 120px; }
-.tool-ops th:nth-child(4) { width: 120px; }
-.tool-ops th:nth-child(5) { width: 90px; }
-.tool-ops td:nth-child(4) { white-space: nowrap; }
-.tool-ops th:nth-child(6) { width: 200px; }
 
 @media (max-width: 720px) {
-  .tool-ops th:nth-child(4), .tool-ops td:nth-child(4),
-  .tool-ops th:nth-child(5), .tool-ops td:nth-child(5) { display: none; }
   .tool-findings li { grid-template-columns: 1fr; gap: 2px; }
 }
