@@ -6,7 +6,7 @@ import { readJSON, storageKeys, writeStorage } from '../lib/storage';
 export type Preferences = {
   theme: 'system' | 'light' | 'dark';
   density: 'comfortable' | 'compact';
-  grouping: 'module' | 'flat';
+  grouping: 'module' | 'type' | 'flat';
   // The editor that "Open in editor" links use; only these names exist on the server.
   editor: EditorName;
   // Desktop sidebar: labelled (default) or icon-only. Narrow screens always use a drawer.
@@ -25,7 +25,7 @@ function readPreferences(): Preferences {
   return {
     theme: saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : defaults.theme,
     density: saved.density === 'compact' ? 'compact' : 'comfortable',
-    grouping: saved.grouping === 'flat' ? 'flat' : 'module',
+    grouping: saved.grouping === 'flat' || saved.grouping === 'type' ? saved.grouping : 'module',
     editor: saved.editor === 'cursor' ? 'cursor' : 'vscode',
     sidebar: saved.sidebar === 'compact' ? 'compact' : 'expanded'
   };

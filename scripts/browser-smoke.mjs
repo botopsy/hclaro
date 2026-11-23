@@ -113,7 +113,7 @@ try{
  assert.equal(await page.getByLabel('Filter resource mode').inputValue(),'managed')
  await page.getByRole('button',{name:'Reset',exact:true}).click()
  await page.getByRole('button',{name:'Settings',exact:true}).click()
- await page.getByRole('button',{name:'light',exact:true}).click()
+ await page.getByRole('button',{name:'Light',exact:true}).click()
  assert.equal(await page.locator('html').getAttribute('data-theme'),'light')
  await page.getByRole('button',{name:'Resources',exact:true}).click()
  await page.setViewportSize({width:820,height:1180})
@@ -122,7 +122,7 @@ try{
  // Plans: review a plan produced by the real Go operations manager and plan parser.
  await page.setViewportSize({width:1512,height:1050})
  await page.getByRole('button',{name:'Settings',exact:true}).click()
- await page.getByRole('button',{name:'dark',exact:true}).click()
+ await page.getByRole('button',{name:'Dark',exact:true}).click()
  assert.equal(await page.locator('html').getAttribute('data-theme'),'dark')
  await page.getByRole('button',{name:'Plans',exact:true}).click()
  await page.getByText(/10 resource changes and 4 output changes/).waitFor()

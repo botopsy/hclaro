@@ -10,7 +10,7 @@ import { profilesQuery } from './selection';
 import { AuthPanel } from './AuthPanel';
 import { errorMessage } from '../lib/errorMessage';
 
-const blank: ProfileInput = { name: '', engine: '', workspace: '', varFiles: [], parallelism: 0, lockTimeoutSeconds: 0, awsProfile: '', awsRegion: '', awsAuth: '', awsExpectedAccount: '', awsExpectedRole: '', envNames: [] };
+export const blankProfile: ProfileInput = { name: '', engine: '', workspace: '', varFiles: [], parallelism: 0, lockTimeoutSeconds: 0, awsProfile: '', awsRegion: '', awsAuth: '', awsExpectedAccount: '', awsExpectedRole: '', envNames: [] };
 
 
 function size(bytes: number) {
@@ -96,7 +96,7 @@ function ProfileEditor({ projectId, profile, workspaces, onDone, onCancel }: {
   onDone: (saved?: ExecutionProfile) => void;
   onCancel: () => void;
 }) {
-  const [form, setForm] = useState<ProfileInput>(() => profile ? { name: profile.name, engine: profile.engine, workspace: profile.workspace, varFiles: profile.varFiles, parallelism: profile.parallelism, lockTimeoutSeconds: profile.lockTimeoutSeconds, awsProfile: profile.awsProfile, awsRegion: profile.awsRegion, awsAuth: profile.awsAuth, awsExpectedAccount: profile.awsExpectedAccount, awsExpectedRole: profile.awsExpectedRole, envNames: profile.envNames } : blank);
+  const [form, setForm] = useState<ProfileInput>(() => profile ? { name: profile.name, engine: profile.engine, workspace: profile.workspace, varFiles: profile.varFiles, parallelism: profile.parallelism, lockTimeoutSeconds: profile.lockTimeoutSeconds, awsProfile: profile.awsProfile, awsRegion: profile.awsRegion, awsAuth: profile.awsAuth, awsExpectedAccount: profile.awsExpectedAccount, awsExpectedRole: profile.awsExpectedRole, envNames: profile.envNames } : blankProfile);
   // AWS profile names come from `aws configure list-profiles`, only when asked. No values.
   const [awsNames, setAwsNames] = useState<string[]>();
   const [awsNote, setAwsNote] = useState('');

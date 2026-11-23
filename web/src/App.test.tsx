@@ -306,7 +306,7 @@ describe('Resource explorer', () => {
       name: 'Settings'
     }));
     await user.click(await screen.findByRole('button', {
-      name: 'light'
+      name: 'Light'
     }));
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(JSON.parse(localStorage.getItem('hclaro.preferences')!).theme).toBe('light');
