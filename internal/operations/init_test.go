@@ -287,7 +287,8 @@ func TestInitDetectsLockfileChange(t *testing.T) {
 }
 
 func TestLaunchOperationsRespectRootClaims(t *testing.T) {
-	m, root := setup(t, &enginetest.Fake{}, workspace.Info{})
+	// Block keeps the plan running so its claim can be observed; a fast fake released it first.
+	m, root := setup(t, &enginetest.Fake{Block: true}, workspace.Info{})
 	m.Locks = rootlock.New()
 	release, ok := m.Locks.Acquire(root, "init")
 	if !ok {
@@ -303,6 +304,9 @@ func TestLaunchOperationsRespectRootClaims(t *testing.T) {
 	}
 	if holder, held := m.Locks.Holder(root); !held || holder != "plan" {
 		t.Fatalf("plan does not claim the root: %q %v", holder, held)
+	}
+	if _, err := m.Cancel(op.ID); err != nil {
+		t.Fatal(err)
 	}
 	wait(t, m, op.ID)
 	if _, held := m.Locks.Holder(root); held {
