@@ -51,9 +51,10 @@ const tiles: { label: string; tone: string; statuses: MatchStatus[] }[] = [
 ];
 const countKey = { 'attribute-different': 'different', 'only-left': 'onlyLeft', 'only-right': 'onlyRight', unknown: 'unknown', uncomparable: 'uncomparable', same: 'same' } as const;
 
-type Draft = { left: TargetDraft; right: TargetDraft; rules: ComparisonRule[] };
+// addresses limits the comparison to selected left addresses (set by Add to Compare in Resources).
+type Draft = { left: TargetDraft; right: TargetDraft; rules: ComparisonRule[]; addresses?: string[] };
 // profileId undefined means "the project's default profile", "" means no profile.
-type TargetDraft = { projectId: string; workspace: string; profileId?: string };
+export type TargetDraft = { projectId: string; workspace: string; profileId?: string };
 const emptyDraft: Draft = { left: { projectId: '', workspace: '' }, right: { projectId: '', workspace: '' }, rules: [] };
 const hex = /^[0-9a-f]{32}$/;
 const workspacePattern = /^[A-Za-z0-9_-]{1,90}$/;
@@ -70,10 +71,16 @@ function readDraft(): Draft {
       profileId: t?.profileId === '' || t?.profileId && hex.test(t.profileId) ? t.profileId : undefined
     });
     const rules = saved.rules.slice(0, 50).filter(r => r && ['map', 'ignore', 'substitute'].includes(r.kind)).map(r => ({ kind: r.kind, left: str(r.left), right: str(r.right), path: str(r.path), resourceType: str(r.resourceType) }));
-    return { left: target(saved.left), right: target(saved.right), rules };
+    const addresses = Array.isArray(saved.addresses) ? saved.addresses.filter(a => typeof a === 'string' && a).slice(0, 200) : [];
+    return { left: target(saved.left), right: target(saved.right), rules, ...addresses.length ? { addresses } : {} };
   } catch {
     return emptyDraft;
   }
+}
+// Add to Compare in Resources: the left side becomes that context and the draft is limited to
+// the selected addresses. Nothing runs until the user presses Compare.
+export function prefillCompare(left: TargetDraft, addresses: string[]) {
+  writeDraft({ ...readDraft(), left, addresses });
 }
 function str(v: unknown) {
   return typeof v === 'string' ? v.slice(0, 256) : '';
@@ -137,7 +144,7 @@ export function CompareView({ copy }: { copy: (value: string, label: string) => 
     setStarting(true);
     setStartError('');
     try {
-      const started = await send<Comparison>('POST', 'comparisons', { left, right, rules: cleanRules(draft.rules), reload, acknowledgeStateRead: true });
+      const started = await send<Comparison>('POST', 'comparisons', { left, right, rules: cleanRules(draft.rules), ...draft.addresses?.length ? { addresses: draft.addresses } : {}, reload, acknowledgeStateRead: true });
       setPreflight(false);
       setComparisonId(started.id);
       client.setQueryData(['comparison', started.id], started);
@@ -158,6 +165,7 @@ export function CompareView({ copy }: { copy: (value: string, label: string) => 
     <TargetCard side="right" draft={draft.right} projects={projectList} onChange={t => setDraft({ ...draft, right: t })} />
    </section>
    {projects.data && projectList.length === 0 && <div className="plan-warning" role="note"><Info size={15} /><span>Add projects first. Comparisons read Hclaro projects only.</span></div>}
+   {!!draft.addresses?.length && <div className="info-line" role="note"><ListFilter size={13} />Limited to {draft.addresses.length} selected resource{draft.addresses.length === 1 ? '' : 's'} from the left side.<Button variant="ghost" size="small" onClick={() => setDraft({ ...draft, addresses: undefined })}><X size={12} />Clear</Button></div>}
    <RulesEditor rules={draft.rules} onChange={rules => setDraft({ ...draft, rules })} error={ruleError} />
    <div className="plans-toolbar">
     <Button variant={ready ? 'default' : 'outline'} onClick={() => { setStartError(''); setPreflight(true); }} disabled={!ready} title={reason} aria-describedby="compare-reason"><GitCompareArrows size={14} />Compare…</Button>
@@ -294,6 +302,7 @@ function ComparisonResult({ id, copy, compareAgain, canCompare }: { id: string; 
    {c.status === 'ready' && s && <>
     <div className="summary-grid" role="group" aria-label="Comparison counts">{tiles.map(t => <div key={t.label} className={`summary-card tone-${t.tone}${counts(t.statuses) ? '' : ' zero'}`} role="note" aria-label={`${t.label}: ${counts(t.statuses)}`}><span>{t.label}</span><strong>{counts(t.statuses)}</strong></div>)}</div>
     <p className="compare-summary">Compared <strong>{side(c.left)}</strong>{c.left.capturedAt && ` (read ${clock(c.left.capturedAt)})`} with <strong>{side(c.right)}</strong>{c.right.capturedAt && ` (read ${clock(c.right.capturedAt)})`}: {counts(['attribute-different'])} different, {counts(['only-left'])} only on left, {counts(['only-right'])} only on right, {counts(['uncomparable', 'unknown'])} could not be compared and {counts(['same'])} the same. Different is not necessarily drift.</p>
+    {!!c.addresses?.length && <p className="info-line" role="note"><ListFilter size={13} />Limited to {c.addresses.length} selected resource{c.addresses.length === 1 ? '' : 's'}.</p>}
     {c.warnings.map(w => <div className="plan-warning" key={w} role="note"><TriangleAlert size={15} />{w}</div>)}
     <Disclosure summary="How this was compared">
      <p className="info-line"><ShieldCheck size={13} />Source: recorded state of each workspace, read with <code>show -json</code> through the local CLI. Not live cloud inventory. Values are redacted before they are compared. {c.notice}</p>

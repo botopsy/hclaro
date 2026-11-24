@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, Box, RefreshCcw, Check, Layers3, LoaderCircle, Menu, Search, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Box, GitCompareArrows, RefreshCcw, Check, Layers3, LoaderCircle, Menu, Search, X } from 'lucide-react';
 import { ApiError, api, openInNewTab, send } from './api';
 import type { DriftScan, ReplaceTarget, Resource, ResourcePage } from './types';
 import { contextPath, isExplorerView, navigate, parseRoute, productionLike, projectPath, takeLinkedResource, useRoute, workbenchKey, type Route } from './router';
@@ -14,7 +14,7 @@ import { ImportView } from './imports/ImportView';
 import { DriftView } from './drift/DriftView';
 import { DiscoveryView } from './discovery/DiscoveryView';
 import { GraphView } from './graph/GraphView';
-import { CompareView } from './compare/CompareView';
+import { CompareView, prefillCompare } from './compare/CompareView';
 import { HistoryView } from './history/HistoryView';
 import { ToolsView } from './hub/ToolsView';
 import { LaunchTools } from './hub/LaunchTools';
@@ -412,7 +412,10 @@ function Workbench({
       {selection.size > 0 && <div className="selection-bar" role="region" aria-label="Selection"><span><strong>{selection.size}</strong> selected</span><Button size="small" onClick={() => void copy(checked.map(r => r.address).join('\n'), 'Addresses')}>Copy addresses</Button><Button variant="outline" size="small" onClick={() => void copy(targetFlags(checked.map(r => r.address)), '-target flags')}>Copy -target flags</Button>{(!scoped || hubExecution) && <Button variant="outline" size="small" disabled={!!replaceBlocked} title={replaceBlocked ?? `Plan a replacement of the ${replaceTargets.length} managed instance${replaceTargets.length === 1 ? '' : 's'} selected.`} onClick={() => {
                   setPendingReplace(replaceTargets);
                   setView('Plans');
-                }}><RefreshCcw size={12} />Plan replacement…</Button>}<Button variant="ghost" size="small" onClick={() => setSelection(new Map())}><X size={12} />Clear</Button></div>}
+                }}><RefreshCcw size={12} />Plan replacement…</Button>}{scoped && <Button variant="outline" size="small" disabled={selection.size > 200} title={selection.size > 200 ? 'Compare takes at most 200 selected resources.' : 'Compare these resources with another workspace. Nothing runs until you press Compare.'} onClick={() => {
+                  prefillCompare({ projectId: scoped.projectId, workspace: scoped.workspace, ...profile.selected ? { profileId: profile.selected } : {} }, checked.map(r => r.address));
+                  navigate(globalPages.compare.path);
+                }}><GitCompareArrows size={12} />Add to Compare</Button>}<Button variant="ghost" size="small" onClick={() => setSelection(new Map())}><X size={12} />Clear</Button></div>}
       <section ref={listRef} className="resource-list" aria-label="Resource list">
         {resources.isPending ? <div role="status" className="empty-state"><LoaderCircle className="spin" /><p>Loading resources…</p></div> : resources.error ? <ErrorState message={resources.error.message} retry={() => {
                   void resources.refetch();

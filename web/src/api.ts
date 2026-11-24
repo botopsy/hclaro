@@ -71,6 +71,7 @@ const messages: Record<string, string> = {
   invalid_mode: 'The resource mode filter is not valid. Clear the filters and try again.',
   invalid_offset: 'The page is out of range. Go back to the first page.',
   invalid_profile: 'The execution profile is not valid. Check its fields and try again.',
+  invalid_addresses: 'Select at most 200 distinct resources to compare.',
   invalid_group: 'The grouping is not valid. Reload the page.',
   invalid_sort: 'The sort order is not valid. Reload the page.',
   invalid_status: 'The status filter is not valid. Clear the filters and try again.',

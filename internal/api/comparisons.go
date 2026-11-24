@@ -43,6 +43,8 @@ func comparisonRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			Left  *projects.ComparisonTarget `json:"left"`
 			Right *projects.ComparisonTarget `json:"right"`
 			Rules []compare.Rule             `json:"rules"`
+			// Addresses limits the comparison to selected left addresses (at most 200).
+			Addresses []string `json:"addresses"`
 			// Reload reads both sides again even when a read of them is open.
 			Reload bool `json:"reload"`
 			// The UI states that both sides' recorded state is read through the CLI.
@@ -59,13 +61,15 @@ func comparisonRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			reasonJSON(w, 400, "invalid_target", "Choose a project and workspace for both sides.")
 			return
 		}
-		c, err := hub.StartComparison(*body.Left, *body.Right, body.Rules, body.Reload)
+		c, err := hub.StartComparison(*body.Left, *body.Right, body.Rules, body.Addresses, body.Reload)
 		var rule *compare.RuleError
 		switch {
 		case errors.As(err, &rule):
 			writeJSON(w, 400, map[string]any{"error": "invalid_rule", "index": rule.Index, "reason": "Rule " + strconv.Itoa(rule.Index+1) + ": " + rule.Reason})
 		case errors.Is(err, projects.ErrSameTarget):
 			reasonJSON(w, 400, "same_target", "Both sides name the same project, workspace and profile. Choose a different workspace, project or profile for one side.")
+		case errors.Is(err, projects.ErrInvalidAddresses):
+			reasonJSON(w, 400, "invalid_addresses", "Select at most 200 distinct resource addresses.")
 		case errors.Is(err, projects.ErrInvalidWorkspace):
 			reasonJSON(w, 400, "invalid_workspace", "Use 1–90 letters, digits, - or _, starting with a letter or digit.")
 		case errors.Is(err, projects.ErrNotFound):
