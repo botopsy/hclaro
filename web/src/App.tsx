@@ -9,7 +9,7 @@ import { Button } from './components/ui/button';
 import { PlansView } from './plans/PlansView';
 import { OperationsView } from './plans/OperationsView';
 import { scopeKey, scopedPath } from './lib/scope';
-import { activeOperation } from './lib/queries';
+import { activeOperation, revealValue } from './lib/queries';
 import { ImportView } from './imports/ImportView';
 import { DriftView } from './drift/DriftView';
 import { DiscoveryView } from './discovery/DiscoveryView';
@@ -415,7 +415,7 @@ function Workbench({
                   void resources.refetch();
                 }} /> : resources.data?.total === 0 ? <EmptyState icon={<Box size={28} />} title={filtered ? 'No matching resources' : 'A clean slate'} action={filtered && <Button variant="outline" onClick={resetFilters}>Clear filters</Button>}>{filtered ? 'Try a different search or clear your filters.' : 'The state contains no resource instances. Hclaro reads state without creating resources.'}</EmptyState> : <><ResourceTable resources={resources.data?.resources ?? []} groupBy={groupBy} showProvider={Object.keys(w.providers).length > 1} drift={drift} selected={new Set(selection.keys())} onSelectedChange={choose} active={selected} onOpen={setSelected} density={preferences.density} /><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
       </section>
-      {selected && <Inspector resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && readScope && detail.data ? { path: scopedPath(readScope, `resources/${detail.data.id}/source`), prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} drift={drift(selected)} ai={readScope} />}
+      {selected && <Inspector key={`${readScope ? scopeKey(readScope) : 'none'}:${selected}`} reveal={readScope?.kind === 'context' ? path => revealValue(readScope, selected, path) : undefined} resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && readScope && detail.data ? { path: scopedPath(readScope, `resources/${detail.data.id}/source`), prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} drift={drift(selected)} ai={readScope} />}
      </>}
      {view === 'Overview' && <Overview workspace={w} scope={planScope} gitPrefix={gitBase} root={w.context?.rootPath ?? (scoped ? undefined : launchRoot)} drift={driftScans.data?.scans} open={setView} chooseType={t => {
             resetFilters();
