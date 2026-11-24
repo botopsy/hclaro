@@ -2,31 +2,46 @@
 .import-wizard {
   flex-direction: column;
   gap: 14px;
-  max-width: 1080px;
+  max-width: 860px;
   display: flex;
 }
 
-.import-wizard .surface {
-  padding: 20px 22px;
+/* §4.11: one card, the stepper in its header */
+.import-card {
+  padding: 0;
 }
 
-.import-wizard .surface-heading {
-  align-items: flex-start;
+.import-card-body {
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 20px;
+  display: flex;
+}
+
+.import-card-title h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.import-card-title p {
+  color: var(--muted);
+  max-width: 680px;
+  margin-top: 4px;
+  line-height: 1.55;
+}
+
+.import-card form {
+  flex-direction: column;
   gap: 16px;
-  margin-bottom: 16px;
-}
-
-.import-wizard .surface-heading p {
-  max-width: 760px;
-  font-size: 14px;
-  line-height: 1.6;
+  display: flex;
 }
 
 .import-steps {
+  border-bottom: 1px solid var(--border-soft);
   flex-wrap: wrap;
-  gap: 6px 20px;
+  gap: 6px 22px;
   margin: 0;
-  padding: 0;
+  padding: 12px 20px;
   list-style: none;
   display: flex;
 }
@@ -35,7 +50,7 @@
   color: var(--subtle);
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 13px;
   display: flex;
 }
 
@@ -122,7 +137,6 @@
 
 .generate-check {
   align-items: flex-start;
-  margin-top: 16px;
   line-height: 1.5;
 }
 
@@ -221,7 +235,7 @@
   display: inline-flex;
 }
 
-.file-diff pre, .recipe pre, .generated-config pre {
+.file-diff pre, pre.recipe, .generated-config pre {
   background: var(--inset);
   color: var(--text);
   white-space: pre-wrap;
@@ -243,20 +257,7 @@
   opacity: .7;
 }
 
-.recipe {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px 14px;
-  display: flex;
-}
-
-.recipe[open] {
-  padding-bottom: 14px;
-}
-
-.recipe summary, .generated-config summary {
+.generated-config summary {
   color: var(--muted);
   cursor: pointer;
   align-items: center;
@@ -265,28 +266,21 @@
   display: flex;
 }
 
-.recipe > * + *, .generated-config > * + * {
+.generated-config > * + *, .import-card .disclosure-body > * + * {
   margin-top: 10px;
 }
 
-.recipe pre, .generated-config pre {
+pre.recipe, .generated-config pre {
   border: 1px solid var(--border-soft);
   border-radius: 6px;
 }
 
-.recipe > p {
-  font-size: 14px;
-  line-height: 1.6;
-}
-
 .import-confirm {
+  border-top: 1px solid var(--border-soft);
   flex-direction: column;
   gap: 14px;
+  padding-top: 14px;
   display: flex;
-}
-
-.import-confirm .surface-heading {
-  margin-bottom: 0;
 }
 
 .consent {
@@ -294,8 +288,41 @@
   align-items: flex-start;
 }
 
-.import-confirm .form-actions {
-  margin-top: 0;
+/* The card body spaces its blocks with gap. */
+.import-card-body > *, .import-card form > *, .import-card .form-actions {
+  margin: 0;
+}
+
+.import-card .disclosure > summary svg {
+  vertical-align: -2px;
+  display: inline;
+}
+
+.import-card .field .field-error {
+  color: var(--destroy);
+}
+
+.import-written {
+  align-items: flex-start;
+  gap: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+}
+
+.import-written .form-actions {
+  grid-column: 2;
+}
+
+.import-written-mark, .discovery-account-mark {
+  background: var(--accent-dim);
+  color: var(--accent-text);
+  border-radius: 50%;
+  flex: none;
+  justify-content: center;
+  align-items: center;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
 }
 
 .import-summary .flag {

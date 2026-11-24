@@ -5,40 +5,68 @@
   display: flex;
 }
 
-.discovery-identity .surface-heading h2 {
-  align-items: center;
-  gap: 8px;
+.discovery-covered {
+  color: var(--subtle);
+  text-decoration: underline;
+}
+
+/* §4.11 account card */
+.discovery-account {
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
   display: flex;
 }
 
-.discovery-identity.verified {
-  border-color: color-mix(in srgb, var(--accent), transparent 60%);
+.discovery-account-head {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  display: flex;
 }
 
-.discovery-actions, .discovery-row-actions {
-  flex-wrap: wrap;
+.discovery-account-head > div {
+  flex: 1 1 320px;
+}
+
+.discovery-account-head h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.discovery-account-head p {
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.55;
+}
+
+.discovery-account-mark:not(.verified) {
+  color: var(--muted);
+  background: var(--inset);
+}
+
+.discovery-complete {
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  display: flex;
+}
+
+.discovery-complete .discovery-account-mark {
+  width: 22px;
+  height: 22px;
+}
+
+.discovery-scan {
+  flex-direction: column;
+  gap: 14px;
   display: flex;
 }
 
 .discovery-row-actions {
   justify-content: flex-end;
-  flex-wrap: nowrap;
-}
-
-.discovery-identity-facts {
-  margin-top: 14px;
-}
-
-.discovery-context summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.discovery-context .context-summary {
-  margin-top: 10px;
+  align-items: center;
+  gap: 8px;
+  display: flex;
 }
 
 .wide-dialog {
@@ -186,7 +214,7 @@
   color: var(--muted);
 }
 
-/* The partial-scan card and the explainer line, formerly shared with drift detection. */
+/* The partial-scan card, formerly shared with drift detection. */
 .drift-outcome {
   border: 1px solid color-mix(in srgb, var(--update), transparent 55%);
   background: var(--surface);
@@ -210,6 +238,6 @@
   line-height: 1.6;
 }
 
-.drift-explainer strong {
+.discovery .disclosure-body strong {
   color: var(--text);
 }

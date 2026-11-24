@@ -90,9 +90,12 @@ describe('Cloud discovery', () => {
     expect(within(dialog).getByText(/Calls AWS list APIs 6–11 times/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('checkbox', { name: 'eu-west-1' }));
     expect(within(dialog).getByText(/Calls AWS list APIs 10–19 times/)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('checkbox', { name: /Call the AWS APIs listed above/ }));
+    const reads = within(dialog).getByRole('group', { name: 'Concurrent reads' });
+    expect(within(reads).getAllByRole('button').map(b => b.textContent)).toEqual(['1', '2', '4']);
+    expect(within(reads).getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(dialog).getByRole('checkbox', { name: /Call the AWS APIs listed above for account 111122223333/ }));
     await user.click(start);
-    expect(await screen.findByText('Scan complete')).toBeInTheDocument();
+    expect(await screen.findByText('Scan complete.')).toBeInTheDocument();
     const body = posts.find(p => p.url.endsWith('/discovery/scans'))!.body;
     expect(body).toMatchObject({ identityId: verified.identity!.id, acknowledgeApiCalls: true, scope: { regions: ['us-east-1', 'eu-west-1'], maxPerType: 200, concurrency: 2 } });
   });
@@ -101,7 +104,9 @@ describe('Cloud discovery', () => {
     serve({ options: verified, scans: [scan] });
     const { openResource } = view();
     const user = userEvent.setup();
-    expect(await screen.findByText('Scan complete')).toBeInTheDocument();
+    expect(await screen.findByText('Scan complete.')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Scan history' })).toHaveDisplayValue(/^Latest · .+ · 111122223333$/);
+    expect(screen.getByText(/found with \d+ AWS requests/)).toBeInTheDocument();
     const counts = screen.getByRole('group', { name: 'Filter by state mapping' });
     for (const [label, count] of [['Possibly untracked', '7'], ['Unknown', '1'], ['Already tracked', '3'], ['Unresolved', '1']]) {
       expect(within(counts).getByRole('button', { name: new RegExp(`${label}\\s*${count}`) })).toBeInTheDocument();
@@ -132,10 +137,10 @@ describe('Cloud discovery', () => {
     serve({ options: verified, scans: [scan] });
     const { onPrepared } = view();
     const user = userEvent.setup();
-    await screen.findByText('Scan complete');
+    await screen.findByText('Scan complete.');
     await user.click(within(screen.getByRole('group', { name: 'Filter by state mapping' })).getByRole('button', { name: /Unknown/ }));
     await user.click(screen.getByRole('button', { name: /Prepare import/ }));
-    const dialog = screen.getByRole('alertdialog', { name: 'State mapping unknown' });
+    const dialog = screen.getByRole('dialog', { name: 'State mapping unknown' });
     expect(posts.filter(p => p.url.includes('/prepare'))).toHaveLength(0);
     await user.click(within(dialog).getByRole('button', { name: /I reviewed it/ }));
     expect(onPrepared).toHaveBeenCalledWith(prefill);
@@ -186,7 +191,7 @@ describe('Import wizard from discovery', () => {
     await user.type(address, 'aws_s3_bucket.legacy_logs');
     await user.click(screen.getByRole('button', { name: /Check and preview/ }));
     await user.click(await screen.findByRole('checkbox', { name: /Write/ }));
-    await user.click(screen.getByRole('button', { name: /Write file and plan import/ }));
+    await user.click(screen.getByRole('button', { name: /Write file and plan/ }));
     const body = posts.find(p => p.url.endsWith('/imports'))!.body;
     expect(body).toMatchObject({ address: 'aws_s3_bucket.legacy_logs', id: 'hclaro-legacy-logs', discoveryToken: prefill.token });
   });
@@ -199,7 +204,7 @@ describe('Import wizard from discovery', () => {
     expect(screen.getByText(/No longer linked to the discovered object/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Check and preview/ }));
     await user.click(await screen.findByRole('checkbox', { name: /Write/ }));
-    await user.click(screen.getByRole('button', { name: /Write file and plan import/ }));
+    await user.click(screen.getByRole('button', { name: /Write file and plan/ }));
     expect(posts.find(p => p.url.endsWith('/imports'))!.body).not.toHaveProperty('discoveryToken');
   });
 });

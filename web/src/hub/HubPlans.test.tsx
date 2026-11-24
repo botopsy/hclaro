@@ -257,7 +257,11 @@ describe('Hub import and replace (M24.08)', { timeout: 20000 }, () => {
     expect(uses).toHaveTextContent('dev');
     expect(confirm).toHaveTextContent('Every workspace of this project plans this import block');
     await user.click(within(confirm).getByRole('checkbox', { name: /Write imports.tf/ }));
-    await user.click(within(confirm).getByRole('button', { name: /Write file/ }));
+    await user.click(screen.getByRole('button', { name: 'Write file and plan' }));
+    // Step 3: written; the plan opens only when asked.
+    expect(await screen.findByRole('heading', { name: 'imports.tf written' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/import`);
+    await user.click(screen.getByRole('button', { name: 'Open plan…' }));
     await waitFor(() => expect(window.location.pathname).toBe(`/projects/${network}/workspaces/dev/plans`));
     const posts = calls.filter(c => c.method === 'POST' && c.url !== '/api/v1/contexts');
     expect(posts.map(c => c.url)).toEqual([`/api/v1/contexts/${ctx.dev}/imports/preview`, `/api/v1/contexts/${ctx.dev}/imports`]);
@@ -420,7 +424,7 @@ describe('Hub cloud discovery (M24.09)', { timeout: 20000 }, () => {
     serveDiscovery();
     app(contextPath(network, 'dev', 'Discovery'));
     const user = userEvent.setup();
-    expect(await screen.findByText('Scan complete')).toBeInTheDocument();
+    expect(await screen.findByText('Scan complete.')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Import and discovery' })).toBeInTheDocument();
     // Opening the page contacts nothing.
     expect(calls.filter(c => c.method === 'POST' && c.url !== '/api/v1/contexts')).toEqual([]);
@@ -448,7 +452,7 @@ describe('Hub cloud discovery (M24.09)', { timeout: 20000 }, () => {
     await user.click(within(leave).getByRole('button', { name: 'Switch anyway' }));
     await waitFor(() => expect(window.location.pathname).toBe(`/projects/${network}/workspaces/prod/discovery`));
     expect(await screen.findByRole('heading', { name: 'AWS context not verified' })).toBeInTheDocument();
-    expect(screen.queryByText('Scan complete')).not.toBeInTheDocument();
+    expect(screen.queryByText('Scan complete.')).not.toBeInTheDocument();
     expect(calls.some(c => c.url.includes(`contexts/${ctx.prod}/discovery/scans/${scan.id}`))).toBe(false);
     expect(launchDiscovery()).toEqual([]);
   });
@@ -461,12 +465,12 @@ describe('Hub cloud discovery (M24.09)', { timeout: 20000 }, () => {
       : path === `contexts/${ctx.dev}/imports` && method === 'POST' ? Response.json({ ...finished, status: 'running' }, { status: 202 }) : inner(path, method);
     app(contextPath(network, 'dev', 'Discovery'));
     const user = userEvent.setup();
-    await screen.findByText('Scan complete');
+    await screen.findByText('Scan complete.');
     await user.click(within(screen.getByText('hclaro-legacy-logs').closest('tr')!).getByRole('button', { name: /Prepare import/ }));
     await user.click(await screen.findByRole('button', { name: /Check and preview/ }));
     const confirm = await screen.findByRole('region', { name: 'Write the file and plan' });
     await user.click(within(confirm).getByRole('checkbox', { name: /Write imports.tf/ }));
-    await user.click(within(confirm).getByRole('button', { name: /Write file/ }));
+    await user.click(screen.getByRole('button', { name: 'Write file and plan' }));
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.url === `/api/v1/contexts/${ctx.dev}/imports`)).toBe(true));
     expect(calls.find(c => c.method === 'POST' && c.url.endsWith('/imports'))!.body).toMatchObject({ id: prefill.importId, discoveryToken: prefill.token, contextFingerprint: '' });
     expect(calls.find(c => c.method === 'POST' && c.url.endsWith('/imports'))!.body).not.toHaveProperty('profileId');
