@@ -51,6 +51,9 @@ var (
 	ErrReplace            = errors.New("invalid replace selection")
 	ErrNotFound           = errors.New("operation not found")
 	ErrNotRunning         = errors.New("operation is not running")
+	// ErrChangeNotFound: the plan has no change with that ID. ErrNoGit: no Git service in this session.
+	ErrChangeNotFound = errors.New("plan change not found")
+	ErrNoGit          = errors.New("git context is not available")
 	ErrClosed             = errors.New("hclaro is shutting down")
 )
 

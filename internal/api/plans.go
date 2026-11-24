@@ -404,6 +404,35 @@ func execRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, source sou
 		}
 		writeJSON(w, 200, detail)
 	})
+	// The block a planned change comes from. A create is not in the state snapshot, so it is
+	// found from the stored redacted change (mode, module, type, name), never from the plan file.
+	handle("GET /plans/{id}/changes/{change}/source", func(w http.ResponseWriter, r *http.Request) {
+		src, ok := source(w, r, false)
+		if !ok {
+			return
+		}
+		p, ok := lookupPlan(r, src)
+		if !ok {
+			errorJSON(w, 404, "plan_not_found")
+			return
+		}
+		change := r.PathValue("change")
+		if !ids.Valid(change) {
+			errorJSON(w, 404, "change_not_found")
+			return
+		}
+		ref, err := src.LocateChange(p, change)
+		switch {
+		case err == nil:
+			writeJSON(w, 200, ref)
+		case errors.Is(err, operations.ErrChangeNotFound):
+			errorJSON(w, 404, "change_not_found")
+		case errors.Is(err, operations.ErrNoGit):
+			reasonJSON(w, 409, "git_unavailable", "Git context is not available in this session.")
+		default:
+			applyError(w, r, hub, src, err)
+		}
+	})
 	handle("GET /operations", func(w http.ResponseWriter, r *http.Request) {
 		src, ok := source(w, r, false)
 		if !ok {

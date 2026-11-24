@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button';
 import { ApplyDialog } from './ApplyDialog';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { activeOperation, operationsQuery } from '../lib/queries';
-import { PlanReview, sourceLabel } from './PlanReview';
+import { PlanReview, sourceLabel, type PlanSource } from './PlanReview';
 import { RunDialog, RunState } from './RunDialog';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 import { clock, engineLabel } from '../lib/format';
@@ -33,9 +33,12 @@ export function PlansView({
   openHistory,
   openGit,
   scope = launchScope,
-  reopen
+  reopen,
+  source
 }: {
   project: string;
+  // Opens a planned change's configuration block in the editor; omitted when Git context is unavailable.
+  source?: PlanSource;
   // The project or Hub workspace whose plans this view shows. Every request goes to it only.
   scope?: PlanScope;
   // Opens a closed Hub workspace again (after its context changed).
@@ -156,7 +159,7 @@ export function PlansView({
    </RunState>}
    {applied && <ApplyResult operation={applied} changes={appliedPlan && planTotal(appliedPlan.summary)} source={appliedPlan?.source} canPlan={canPlan} onRunPlan={runPlan} openHistory={openHistory} openGit={openGit} />}
    {failed && plan.data && <p className="info-line">Below is the previous successful plan, created at {clock(plan.data.createdAt)}. It does not reflect the run above.</p>}
-   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} copy={copy} busy={!!running} canPlan={canPlan} onApply={() => setApplying(true)} onRunPlan={runPlan} onOpenDrift={openDrift} onInspectImpact={inspectImpact} /> : empty && <EmptyState icon={<FileDiff size={28} />} title="No plans yet" action={<Button onClick={runPlan} disabled={!canPlan}><Play size={14} />Run plan</Button>} how={<p>A plan lists every proposed change: creates, updates, replacements, deletions, data reads and output changes. Hclaro keeps the saved plan for a limited time, and nothing is applied until you review it and confirm.</p>}>Run a plan to see every change {options.data ? engineLabel(options.data.engine) : 'the engine'} proposes for {project}.</EmptyState>}
+   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} source={source} copy={copy} busy={!!running} canPlan={canPlan} onApply={() => setApplying(true)} onRunPlan={runPlan} onOpenDrift={openDrift} onInspectImpact={inspectImpact} /> : empty && <EmptyState icon={<FileDiff size={28} />} title="No plans yet" action={<Button onClick={runPlan} disabled={!canPlan}><Play size={14} />Run plan</Button>} how={<p>A plan lists every proposed change: creates, updates, replacements, deletions, data reads and output changes. Hclaro keeps the saved plan for a limited time, and nothing is applied until you review it and confirm.</p>}>Run a plan to see every change {options.data ? engineLabel(options.data.engine) : 'the engine'} proposes for {project}.</EmptyState>}
    {preflightOpen && options.data && <PlanDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
    {applying && plan.data && <ApplyDialog plan={plan.data} scope={scope} project={project} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
   </div>;

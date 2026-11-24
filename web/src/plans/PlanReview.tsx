@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRightLeft, Ban, Braces, Clock, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, Pencil, Play, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
 import { api, send } from '../api';
-import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint } from '../types';
+import type { AttributeChange, ChangeDetail, EditorName, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint } from '../types';
 import { Button } from '../components/ui/button';
 import { DataTable, type Column } from '../components/DataTable';
 import { Disclosure } from '../components/Disclosure';
@@ -14,8 +14,11 @@ import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope'
 import { AskAI } from '../assist/AskAI';
 import { clock, engineLabel } from '../lib/format';
 import { ErrorState } from '../components/ErrorState';
+import { SourceLink } from '../git/editor';
 import { errorMessage } from '../lib/errorMessage';
 
+// Where a change's source link goes: the Git API prefix, the editor from Settings and a notifier.
+export type PlanSource = { prefix: string; editor: EditorName; notify: (text: string) => void };
 type Tab = 'changes' | 'outputs' | 'drift' | 'cost';
 const pageSize = 200;
 
@@ -41,7 +44,7 @@ export function sourceLabel(source?: PlanSourceFingerprint) {
   return source.dirtyKnown && source.dirty ? `${where} · ${source.dirtyFiles} uncommitted IaC file${source.dirtyFiles === 1 ? '' : 's'}` : where;
 }
 
-export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, canPlan = true, onInspectImpact, scope = launchScope }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; onRunPlan?: () => void; onOpenDrift?: () => void; busy?: boolean; canPlan?: boolean; onInspectImpact?: (planId: string, address: string) => void; scope?: PlanScope }) {
+export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, canPlan = true, onInspectImpact, scope = launchScope, source: editorSource }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; onRunPlan?: () => void; onOpenDrift?: () => void; busy?: boolean; canPlan?: boolean; onInspectImpact?: (planId: string, address: string) => void; scope?: PlanScope; source?: PlanSource }) {
   const [tab, setTab] = useState<Tab>('changes');
   const [actions, setActions] = useState<PlanAction[]>([]);
   const [showNoOp, setShowNoOp] = useState(false);
@@ -116,7 +119,7 @@ export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, 
     {tab === 'drift' && <p className="info-line">The engine noticed these objects changed outside {engine} while planning. The plan already accounts for them; they are not planned changes.{onOpenDrift && <Button variant="ghost" size="small" onClick={onOpenDrift}>See drift detection →</Button>}</p>}
     <div className="filter-row plan-filters"><div className="search-field compact"><Search size={14} /><input value={search} onChange={e => { setSearch(e.target.value); setLimit(pageSize); }} placeholder="Filter by address or type…" aria-label="Filter changes" />{search && <button className="clear-search" aria-label="Clear filter" onClick={() => setSearch('')}><X size={12} /></button>}</div>{tab === 'changes' && <label className="check"><input type="checkbox" checked={showNoOp} onChange={e => setShowNoOp(e.target.checked)} />Show unchanged</label>}{(actions.length > 0 || search) && <Button variant="ghost" size="small" onClick={() => { setActions([]); setSearch(''); }}><X size={12} />Reset</Button>}<span className="filter-count">{visible.length} shown</span></div>
     <section className="plan-changes" aria-label={tab === 'drift' ? 'Changes outside the engine' : 'Planned resource changes'}>
-     {visible.length === 0 ? <div className="empty-state"><Braces size={26} /><h2>{source.length ? 'No matching changes' : tab === 'drift' ? 'No drift detected' : 'No resource changes'}</h2></div> : <DataTable key={tab} label={tab === 'drift' ? 'Changes outside the engine' : 'Planned resource changes'} rows={visible.slice(0, limit)} rowKey={c => c.id} rowLabel={c => c.address} columns={tab === 'drift' ? driftColumns : changeColumns} expand={c => <ChangeDetails scope={scope} planId={plan.id} changeId={c.id} copy={copy} />} />}
+     {visible.length === 0 ? <div className="empty-state"><Braces size={26} /><h2>{source.length ? 'No matching changes' : tab === 'drift' ? 'No drift detected' : 'No resource changes'}</h2></div> : <DataTable key={tab} label={tab === 'drift' ? 'Changes outside the engine' : 'Planned resource changes'} rows={visible.slice(0, limit)} rowKey={c => c.id} rowLabel={c => c.address} columns={tab === 'drift' ? driftColumns : changeColumns} expand={c => <ChangeDetails scope={scope} planId={plan.id} changeId={c.id} copy={copy} source={editorSource} />} />}
      {visible.length > limit && <div className="pagination"><span>Showing {limit} of {visible.length}</span><Button variant="outline" size="small" onClick={() => setLimit(limit + pageSize)}>Show more</Button></div>}
     </section>
    </>}
@@ -203,7 +206,7 @@ function ImportSummary({ plan, copy }: { plan: Plan; copy: (value: string, label
 const shownAttributes = 10;
 
 // The expanded row (§4.3): the attribute diff, with redacted values staying redacted.
-function ChangeDetails({ scope, planId, changeId, copy }: { scope: PlanScope; planId: string; changeId: string; copy: (value: string, label: string) => Promise<void> }) {
+function ChangeDetails({ scope, planId, changeId, copy, source }: { scope: PlanScope; planId: string; changeId: string; copy: (value: string, label: string) => Promise<void>; source?: PlanSource }) {
   const detail = useQuery({ queryKey: ['plan-change', scopeKey(scope), planId, changeId], queryFn: () => api<ChangeDetail>(scopedPath(scope, `plans/${planId}/changes/${changeId}`)) });
   const [all, setAll] = useState(false);
   const d = detail.data;
@@ -227,6 +230,7 @@ function ChangeDetails({ scope, planId, changeId, copy }: { scope: PlanScope; pl
    {d.attributes.length ? <AttributeTable rows={rows} /> : <p className="muted">No attribute changes.</p>}
    {d.attributes.length > rows.length && <Button variant="ghost" size="small" onClick={() => setAll(true)}>+ {d.attributes.length - rows.length} more attribute{d.attributes.length - rows.length === 1 ? '' : 's'}</Button>}
    {d.truncated && <p className="muted">Only the first 1,000 attribute changes are shown.</p>}
+   {source && <SourceLink prefix={source.prefix} sourcePath={scopedPath(scope, `plans/${planId}/changes/${changeId}/source`)} editor={source.editor} notify={source.notify} />}
    <div className="change-details-actions">
     <Button variant="ghost" size="small" onClick={() => void copy(d.address, 'Address')}><Copy size={12} />Copy address</Button>
    </div>

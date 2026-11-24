@@ -682,3 +682,23 @@ func TestScopedDiscardTouchesOnlyItsContext(t *testing.T) {
 	}
 	wantError(t, s.do("POST", "/api/v1/contexts/"+dev+"/plans/zz/discard", `{}`), 404, "plan_not_found")
 }
+
+// A Hub context locates its own plan's changes only, and reports a session without Git.
+func TestScopedChangeSource(t *testing.T) {
+	s := newScopedServer(t)
+	dev := s.openLoaded("network", "dev", "")
+	prod := s.openLoaded("network", "prod", "")
+	pid := s.planned(dev)
+	plan := decode[struct {
+		Changes []struct{ ID string }
+	}](t, s.do("GET", "/api/v1/contexts/"+dev+"/plans/"+pid, ""))
+	path := func(cid, plan, change string) string {
+		return "/api/v1/contexts/" + cid + "/plans/" + plan + "/changes/" + change + "/source"
+	}
+	if w := s.do("GET", path(dev, pid, plan.Changes[0].ID), ""); w.Code != 409 || !strings.Contains(w.Body.String(), "git_unavailable") {
+		t.Fatalf("no git: %d %s", w.Code, w.Body)
+	}
+	// A plan of dev is unknown in prod.
+	wantError(t, s.do("GET", path(prod, pid, plan.Changes[0].ID), ""), 404, "plan_not_found")
+	wantError(t, s.do("GET", path(dev, pid, strings.Repeat("0", 32)), ""), 404, "change_not_found")
+}

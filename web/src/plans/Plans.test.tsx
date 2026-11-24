@@ -77,9 +77,9 @@ function serve(...routes: Route[]) {
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
 }
-function view(planChoice?: string, replace?: { id: string; address: string }[]) {
+function view(planChoice?: string, replace?: { id: string; address: string }[], source?: { prefix: string; editor: 'vscode' | 'cursor'; notify: (t: string) => void }) {
   const choose = vi.fn();
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" planId={planChoice} choosePlan={choose} replace={replace} copy={async () => {}} /></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" planId={planChoice} choosePlan={choose} replace={replace} copy={async () => {}} source={source} /></QueryClientProvider>);
   return choose;
 }
 beforeEach(() => serve());
@@ -89,6 +89,35 @@ afterEach(() => {
 });
 
 describe('Plans', () => {
+  it('opens a planned change in the editor, or says why it cannot', async () => {
+    const found = { state: 'found', confidence: 'block', fileId: 'f'.repeat(32), path: 'main.tf', line: 7, reason: 'Matched the resource block.' };
+    let ref: object | Response = found;
+    serve(url => url.includes('/source') ? (ref instanceof Response ? ref : Response.json(ref)) : undefined);
+    view(undefined, undefined, { prefix: '/api/v1/git/', editor: 'vscode', notify: () => {} });
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand aws_s3_bucket.logs' }));
+    expect(await screen.findByText('main.tf:7')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open in VS Code/ })).toBeEnabled();
+    cleanup();
+    // A block that is not in the files: the button is disabled and the reason is shown.
+    ref = { state: 'not_found', reason: 'No block for aws_s3_bucket.logs was found.' };
+    view(undefined, undefined, { prefix: '/api/v1/git/', editor: 'vscode', notify: () => {} });
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand aws_s3_bucket.logs' }));
+    expect(await screen.findByText('No block for aws_s3_bucket.logs was found.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open in VS Code/ })).toBeDisabled();
+    cleanup();
+    // Git unavailable.
+    ref = Response.json({ error: 'git_unavailable', reason: 'Git context is not available in this session.' }, { status: 409 });
+    view(undefined, undefined, { prefix: '/api/v1/git/', editor: 'vscode', notify: () => {} });
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand aws_s3_bucket.logs' }));
+    expect(await screen.findByText('Source links are unavailable in this session.')).toBeInTheDocument();
+    // Three renders with many simulated clicks; allow for a loaded test machine.
+  }, 15_000);
+  it('shows no source link when the session offers none', async () => {
+    view();
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand aws_s3_bucket.logs' }));
+    await screen.findByLabelText(/Change details for aws_s3_bucket.logs/);
+    expect(screen.queryByText('CONFIGURATION SOURCE')).not.toBeInTheDocument();
+  });
   it('discards a saved plan only after one inline confirmation, then shows the server note', async () => {
     let discarded = false;
     const note = 'You discarded this plan. The saved plan file was deleted.';
