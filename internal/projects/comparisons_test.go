@@ -34,7 +34,7 @@ func TestComparisonReadsEachSideInItsOwnContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := hub.StartComparison(ComparisonTarget{network, "dev", dev.ID}, ComparisonTarget{network, "prod", ""}, nil, false)
+	c, err := hub.StartComparison(ComparisonTarget{network, "dev", dev.ID}, ComparisonTarget{network, "prod", ""}, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,12 +88,12 @@ func TestComparisonRefusesInvalidDefinitionsBeforeReading(t *testing.T) {
 		{ComparisonTarget{"../x", "dev", ""}, ComparisonTarget{network, "prod", ""}, nil, ErrNotFound},
 		{ComparisonTarget{network, "dev", "nope"}, ComparisonTarget{network, "prod", ""}, nil, ErrNotFound},
 	} {
-		if _, err := hub.StartComparison(tc.left, tc.right, tc.rules, false); !errors.Is(err, tc.want) {
+		if _, err := hub.StartComparison(tc.left, tc.right, tc.rules, nil, false); !errors.Is(err, tc.want) {
 			t.Fatalf("%+v: %v", tc, err)
 		}
 	}
 	var rule *compare.RuleError
-	if _, err := hub.StartComparison(ComparisonTarget{network, "dev", ""}, ComparisonTarget{network, "prod", ""}, []compare.Rule{{Kind: "ignore", Path: "a..b"}}, false); !errors.As(err, &rule) {
+	if _, err := hub.StartComparison(ComparisonTarget{network, "dev", ""}, ComparisonTarget{network, "prod", ""}, []compare.Rule{{Kind: "ignore", Path: "a..b"}}, nil, false); !errors.As(err, &rule) {
 		t.Fatalf("rule: %v", err)
 	}
 	if lines := spyLines(t, spy); len(lines) > 1 || lines[0] != "" || len(hub.Comparisons()) != 0 {
@@ -108,7 +108,7 @@ func TestComparisonsAreBoundedAndExpire(t *testing.T) {
 	hub.Now = func() time.Time { return now }
 	var first *Comparison
 	for i := 0; i < maxComparisons+2; i++ {
-		c, err := hub.StartComparison(ComparisonTarget{network, "dev", ""}, ComparisonTarget{network, "prod", ""}, nil, false)
+		c, err := hub.StartComparison(ComparisonTarget{network, "dev", ""}, ComparisonTarget{network, "prod", ""}, nil, nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}

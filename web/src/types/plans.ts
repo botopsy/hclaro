@@ -82,6 +82,8 @@ export type Operation = {
     code: string;
     message: string;
   };
+  // Set on a state_locked failure when the engine printed the lock holder.
+  lock?: { id?: string; who: string; operation: string; created?: string };
   engineDiagnostics: EngineDiagnostic[];
   cancelRequested: boolean;
   logDropped: number;

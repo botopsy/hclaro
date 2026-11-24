@@ -53,17 +53,18 @@ function moveFocus(event: KeyboardEvent<HTMLButtonElement>) {
   buttons[Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus();
 }
 
-function groupRows(rows: Resource[], by: Exclude<GroupBy, 'none'>): RowGroup<Resource>[] {
+function groupRows(rows: Resource[], by: Exclude<GroupBy, 'none'>, counts: Map<string, number>): RowGroup<Resource>[] {
   const groups = new Map<string, Resource[]>();
   for (const r of rows) {
-    const key = by === 'type' ? r.type : r.module || 'Root module';
+    const key = by === 'type' ? r.type : r.module;
     groups.set(key, [...(groups.get(key) ?? []), r]);
   }
-  return Array.from(groups, ([key, list]) => ({ key, label: <span className="mono">{key}</span>, rows: list }));
+  return Array.from(groups, ([key, list]) => ({ key, label: <span className="mono">{key || 'Root module'}</span>, rows: list, count: counts.get(key) }));
 }
 
 export function ResourceTable({
   resources,
+  groupCounts,
   groupBy,
   showProvider,
   drift,
@@ -74,7 +75,8 @@ export function ResourceTable({
   density
 }: {
   resources: Resource[];
-  // shortcut: groups cover the current page of 50 only; group server-side if pages get in the way.
+  // Server counts over every page; a group header shows its total, its rows only this page's part.
+  groupCounts?: { key: string; count: number }[];
   groupBy: GroupBy;
   showProvider: boolean;
   drift: (id: string) => DriftMark;
@@ -91,12 +93,13 @@ export function ResourceTable({
     } },
     { key: 'type', header: 'Type', className: 'type-column', cell: r => <Chip>{r.type}</Chip> },
     ...showProvider ? [{ key: 'provider', header: 'Provider', className: 'provider-column', cell: (r: Resource) => providerName(r.provider) }] : [],
+    ...resources.some(r => r.keyAttributes) ? [{ key: 'key-attributes', header: 'Key attributes', className: 'key-attributes-column', cell: (r: Resource) => r.keyAttributes ? <span className="mono key-attributes" title={r.keyAttributes}>{r.keyAttributes}</span> : null }] : [],
     { key: 'drift', header: 'Drift', className: 'drift-column', cell: r => {
       const d = drift(r.id);
       return <Chip tone={d.tone}>{d.label}</Chip>;
     } }
   ];
-  return <DataTable label="Resources" columns={columns} rowKey={r => r.id} rowLabel={r => r.address} rows={groupBy === 'none' ? resources : undefined} groups={groupBy === 'none' ? undefined : groupRows(resources, groupBy)} selected={selected} onSelectedChange={onSelectedChange} active={active} density={density} />;
+  return <DataTable label="Resources" columns={columns} rowKey={r => r.id} rowLabel={r => r.address} rows={groupBy === 'none' ? resources : undefined} groups={groupBy === 'none' ? undefined : groupRows(resources, groupBy, new Map(groupCounts?.map(g => [g.key, g.count])))} selected={selected} onSelectedChange={onSelectedChange} active={active} density={density} />;
 }
 
 export function Inspector({

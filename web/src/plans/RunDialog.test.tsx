@@ -80,8 +80,15 @@ describe('RunDialog', () => {
 
 describe('runFailure', () => {
   const failed = (o: Partial<Operation>) => runFailure(op({ status: 'failed', ...o }));
-  it('names the lock without its holder', () => {
-    expect(failed({ diagnostic: { code: 'state_locked', message: 'm' } }).title).toBe('State is locked by another process');
+  it('falls back to the generic lock text without lock info', () => {
+    const r = failed({ diagnostic: { code: 'state_locked', message: 'm' } });
+    expect(r.title).toBe('State is locked by another process');
+    expect(r.text).toMatch(/^Wait for the other operation/);
+  });
+  it('names the holder when the engine printed one, and never offers an unlock', () => {
+    const r = failed({ diagnostic: { code: 'state_locked', message: 'm' }, lock: { who: 'alice@build-7', operation: 'apply', created: '2026-11-05 09:00:00 +0000 UTC' } });
+    expect(r.text).toContain('Locked by alice@build-7 (apply) since 2026-11-05 09:00:00 +0000 UTC.');
+    expect(r.text).toContain('never force-unlocks');
   });
   it('covers an unreachable backend and expired credentials with the profile', () => {
     expect(failed({ diagnostic: { code: 'network', message: 'm' } }).title).toBe('Backend unreachable');

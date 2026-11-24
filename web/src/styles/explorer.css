@@ -419,6 +419,8 @@ kbd {
 .data-table .type-column .chip { font-family: var(--font-mono); }
 .data-table .provider-column { width: 110px; }
 .data-table .drift-column { width: 120px; }
+.data-table .key-attributes-column { width: 24%; }
+.key-attributes { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim, inherit); opacity: 0.75; }
 .inspector-name { flex: 1; min-width: 0; margin: 0 12px; }
 
 .resource-text {

@@ -566,6 +566,9 @@ func (m *Manager) runApply(ctx context.Context, e *entry, a *artifact) {
 	if code != "applied" {
 		message += " " + deletedNote(deleted)
 		o.Diagnostic = &Diagnostic{Code: code, Message: message}
+		if code == "state_locked" {
+			o.Lock = engine.ParseLockInfo(diagnosticsText(e))
+		}
 	}
 	o.LogDropped = e.log.Dropped()
 	m.running = nil

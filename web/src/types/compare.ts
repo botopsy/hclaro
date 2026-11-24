@@ -70,6 +70,7 @@ export type Comparison = {
   createdAt: string;
   status: 'reading' | 'ready' | 'partial' | 'stale';
   rules: ComparisonRule[];
+  addresses?: string[];
   left: ComparisonSide;
   right: ComparisonSide;
   current: boolean;

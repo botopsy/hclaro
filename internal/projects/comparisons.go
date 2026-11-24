@@ -22,6 +22,7 @@ const (
 var (
 	ErrComparisonNotFound = errors.New("comparison not found")
 	ErrSameTarget         = errors.New("both sides name the same target")
+	ErrInvalidAddresses   = errors.New("invalid address filter")
 )
 
 // ComparisonTarget names one side: a registered project, a CLI workspace and an optional
@@ -62,6 +63,8 @@ type ComparisonView struct {
 	CreatedAt string         `json:"createdAt"`
 	Status    string         `json:"status"`
 	Rules     []compare.Rule `json:"rules"`
+	// Addresses limits the comparison to these left addresses and their counterparts.
+	Addresses []string       `json:"addresses,omitempty"`
 	Left      ComparisonSide `json:"left"`
 	Right     ComparisonSide `json:"right"`
 	// Current is false once either context changed; StaleReason says why and every
@@ -85,6 +88,7 @@ type Comparison struct {
 	ID          string
 	CreatedAt   time.Time
 	Rules       []compare.Rule
+	Addresses   []string
 	left, right comparisonSide
 	mu          sync.Mutex
 	// result is computed once both snapshots are read, and only for those snapshots.
@@ -96,9 +100,12 @@ type Comparison struct {
 // contexts. Opening a context starts the read-only state read; reload starts fresh reads.
 // A side that cannot be opened keeps its error, so the comparison shows a partial state
 // instead of an empty environment. Rule and request errors refuse the whole comparison.
-func (h *Hub) StartComparison(left, right ComparisonTarget, rules []compare.Rule, reload bool) (*Comparison, error) {
+func (h *Hub) StartComparison(left, right ComparisonTarget, rules []compare.Rule, addresses []string, reload bool) (*Comparison, error) {
 	if _, err := compare.Validate(rules); err != nil {
 		return nil, err
+	}
+	if !compare.ValidAddresses(addresses) {
+		return nil, ErrInvalidAddresses
 	}
 	for _, t := range []ComparisonTarget{left, right} {
 		if !ids.Valid(t.ProjectID) || t.ProfileID != "" && !ids.Valid(t.ProfileID) {
@@ -111,7 +118,7 @@ func (h *Hub) StartComparison(left, right ComparisonTarget, rules []compare.Rule
 	if left == right {
 		return nil, ErrSameTarget
 	}
-	c := &Comparison{ID: ids.New(), CreatedAt: h.Now().UTC(), Rules: slices.Clone(rules)}
+	c := &Comparison{ID: ids.New(), CreatedAt: h.Now().UTC(), Rules: slices.Clone(rules), Addresses: slices.Clone(addresses)}
 	c.left = h.openSide(left, reload)
 	c.right = h.openSide(right, reload)
 	h.mu.Lock()
@@ -312,7 +319,9 @@ func (c *Comparison) compute(lc, rc *Context, ls, rs workspace.Snapshot) *compar
 	if err != nil {
 		return nil
 	}
-	c.result, c.key = compare.Compare(ls.Index, rs.Index, rules), key
+	l, r, warnings := compare.Limit(ls.Index, rs.Index, rules, c.Addresses)
+	c.result, c.key = compare.Compare(l, r, rules), key
+	c.result.Warnings = append(c.result.Warnings, warnings...)
 	return c.result
 }
 

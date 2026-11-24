@@ -84,8 +84,10 @@ type Operation struct {
 	// StateReloadFailed is set when an apply ran but reading state again afterwards failed.
 	StateReloadFailed bool `json:"stateReloadFailed,omitempty"`
 	// PlanFileLeft is set when an apply could not delete its saved plan file afterwards.
-	PlanFileLeft    bool               `json:"planFileLeft,omitempty"`
-	Diagnostic      *Diagnostic        `json:"diagnostic,omitempty"`
+	PlanFileLeft bool        `json:"planFileLeft,omitempty"`
+	Diagnostic   *Diagnostic `json:"diagnostic,omitempty"`
+	// Lock names the holder of a state lock when a state_locked failure printed one.
+	Lock            *engine.LockInfo   `json:"lock,omitempty"`
 	Diagnostics     []EngineDiagnostic `json:"engineDiagnostics"`
 	CancelRequested bool               `json:"cancelRequested"`
 	LogDropped      int64              `json:"logDropped"`
@@ -632,6 +634,9 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 			message += credentialHint(e)
 		}
 		o.Diagnostic = &Diagnostic{Code: code, Message: message}
+		if code == "state_locked" {
+			o.Lock = engine.ParseLockInfo(diagnosticsText(e))
+		}
 	}
 	o.LogDropped = e.log.Dropped()
 	m.running = nil

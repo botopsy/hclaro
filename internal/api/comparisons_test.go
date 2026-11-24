@@ -261,6 +261,9 @@ func TestComparisonRequestValidation(t *testing.T) {
 		{"flag workspace", fmt.Sprintf(`{"left":%s,"right":%s,"acknowledgeStateRead":true}`, target(p.ID, "dev"), target(p.ID, "-lock=false")), nil, 400, "invalid_workspace"},
 		{"path project", fmt.Sprintf(`{"left":%s,"right":%s,"acknowledgeStateRead":true}`, target(p.ID, "dev"), target("../../etc", "prod")), nil, 400, "invalid_target"},
 		{"secret rule", fmt.Sprintf(`{"left":%s,"right":%s,"rules":[{"kind":"ignore","path":"id"},{"kind":"substitute","left":%q,"right":"x"}],"acknowledgeStateRead":true}`, target(p.ID, "dev"), target(p.ID, "prod"), fixtures.Canary), nil, 400, "invalid_rule"},
+		{"empty address", fmt.Sprintf(`{"left":%s,"right":%s,"addresses":[""],"acknowledgeStateRead":true}`, target(p.ID, "dev"), target(p.ID, "prod")), nil, 400, "invalid_addresses"},
+		{"flag address", fmt.Sprintf(`{"left":%s,"right":%s,"addresses":["-target=x"],"acknowledgeStateRead":true}`, target(p.ID, "dev"), target(p.ID, "prod")), nil, 400, "invalid_addresses"},
+		{"too many addresses", fmt.Sprintf(`{"left":%s,"right":%s,"addresses":[%s],"acknowledgeStateRead":true}`, target(p.ID, "dev"), target(p.ID, "prod"), manyAddresses(201)), nil, 400, "invalid_addresses"},
 		{"bad rule kind", fmt.Sprintf(`{"left":%s,"right":%s,"rules":[{"kind":"exec","left":"a","right":"b"}],"acknowledgeStateRead":true}`, target(p.ID, "dev"), target(p.ID, "prod")), nil, 400, "invalid_rule"},
 	} {
 		w := s.do("POST", "/api/v1/comparisons", tc.body, tc.opts...)
@@ -486,4 +489,13 @@ func TestComparisonGolden(t *testing.T) {
 	if strings.TrimSpace(string(want)) != text {
 		t.Fatalf("comparison response differs from golden; rerun with -update and review the diff\n%s", text)
 	}
+}
+
+// manyAddresses is n distinct quoted addresses for a JSON array.
+func manyAddresses(n int) string {
+	items := make([]string, n)
+	for i := range items {
+		items[i] = fmt.Sprintf(`"aws_vpc.v%d"`, i)
+	}
+	return strings.Join(items, ",")
 }

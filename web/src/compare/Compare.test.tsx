@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The Go API's golden output keeps the frontend honest about the contract.
 import golden from '../../../fixtures/compare/dev-prod.golden.json';
-import { CompareView } from './CompareView';
+import { CompareView, prefillCompare } from './CompareView';
 import type { Comparison, ComparisonDetail, ComparisonMatch, Project } from '../types';
 
 const comparison = golden.comparison as unknown as Comparison;
@@ -90,6 +90,8 @@ describe('Compare workspaces', () => {
     expect(dialog).toHaveTextContent('Infra / dev (left) with Infra / prod (right)');
     expect(dialog).toHaveTextContent('Does not plan, refresh, select a workspace or write state.');
     expect(posts).toHaveLength(0);
+    expect(within(dialog).getByRole('button', { name: 'Compare' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('checkbox', { name: /I understand/ }));
     await user.click(within(dialog).getByRole('button', { name: 'Compare' }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0].body).toEqual({ left: { projectId, workspace: 'dev' }, right: { projectId, workspace: 'prod' }, rules: [], reload: false, acknowledgeStateRead: true });
@@ -97,6 +99,22 @@ describe('Compare workspaces', () => {
     // Many simulated keystrokes; allow for a loaded test machine.
   }, 15_000);
 
+  it('prefills the selected addresses from Resources but runs nothing until Compare', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem('hclaro.compare.draft', JSON.stringify({ left: { projectId, workspace: 'x' }, right: { projectId, workspace: 'prod' }, rules: [] }));
+    prefillCompare({ projectId, workspace: 'dev' }, ['aws_vpc.main', 'aws_s3_bucket.logs']);
+    view();
+    expect(await screen.findByText(/Limited to 2 selected resources/)).toBeInTheDocument();
+    expect(posts).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: /Compare…/ }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Compare workspaces' })).getByRole('checkbox', { name: /I understand/ }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Compare workspaces' })).getByRole('button', { name: 'Compare' }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0].body).toMatchObject({ left: { projectId, workspace: 'dev' }, addresses: ['aws_vpc.main', 'aws_s3_bucket.logs'] });
+    // Clearing the limit sends the whole-workspace request again.
+    await user.click(screen.getByRole('button', { name: /Clear/ }));
+    expect(screen.queryByText(/Limited to 2/)).toBeNull();
+  }, 15_000);
   it('shows count tiles, the summary, the drift caveat and the grouped table', async () => {
     const user = userEvent.setup();
     seed();
@@ -191,6 +209,7 @@ describe('Compare workspaces', () => {
     await user.type(screen.getByRole('textbox', { name: 'Rule 2 attribute path' }), 'tags.Owner');
     expect(screen.getByText(/can hide meaningful divergence/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Compare…/ }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: /I understand/ }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Compare' }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect((posts[0].body as { rules: unknown }).rules).toEqual([{ kind: 'map', left: 'module.app', right: 'module.application' }, { kind: 'ignore', path: 'tags.Owner' }]);
