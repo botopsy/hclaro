@@ -84,11 +84,11 @@ function RunUsesBox({ noun, uses }: { noun: string; uses: RunUses }) {
 }
 
 // runFailure turns a finished, unsuccessful operation into a title and one sentence (§2.5).
-// The lock holder is never named: the engine does not report it (Q3).
+// The lock holder is named only when the engine printed one (op.lock); a force-unlock is never offered.
 export function runFailure(op: Operation): { title: string; text: string } {
   const code = op.diagnostic?.code;
   if (op.status === 'cancelled') return { title: 'Cancelled', text: op.diagnostic?.message ?? 'The run was cancelled before it finished.' };
-  if (code === 'state_locked') return { title: 'State is locked by another process', text: 'Wait for the other operation to finish, or check the lock with your CLI. Hclaro never force-unlocks state.' };
+  if (code === 'state_locked') return { title: 'State is locked by another process', text: `${op.lock ? `Locked by ${op.lock.who} (${op.lock.operation})${op.lock.created ? ` since ${op.lock.created}` : ''}. ` : ''}Wait for the other operation to finish, or check the lock with your CLI. Hclaro never force-unlocks state.` };
   if (code === 'network') return { title: 'Backend unreachable', text: 'A backend or provider endpoint did not answer. Check VPN and network access, then try again.' };
   if (code === 'credentials') {
     const profile = op.executionContext?.awsProfile ?? op.executionContext?.profileName;
