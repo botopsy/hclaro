@@ -69,16 +69,20 @@ describe('Compare workspaces', () => {
     view();
     const compare = screen.getByRole('button', { name: /Compare…/ });
     expect(compare).toBeDisabled();
+    expect(compare).toHaveAccessibleDescription('Choose a project for both sides.');
+    expect(screen.getByText(/Pick two workspaces/)).toBeInTheDocument();
     await screen.findAllByRole('option', { name: 'Infra' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Left project' }), projectId);
     await user.type(screen.getByRole('combobox', { name: 'Left workspace' }), 'dev');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Right project' }), projectId);
+    expect(compare).toHaveAccessibleDescription('Choose a workspace for both sides.');
     await user.type(screen.getByRole('combobox', { name: 'Right workspace' }), 'dev');
     expect(compare).toBeDisabled();
     expect(screen.getByText(/Choose a different workspace, project or profile/)).toBeInTheDocument();
     await user.clear(screen.getByRole('combobox', { name: 'Right workspace' }));
     await user.type(screen.getByRole('combobox', { name: 'Right workspace' }), 'prod');
-    expect(await screen.findAllByText('Not read in this session')).toHaveLength(2);
+    expect(compare).toBeEnabled();
+    expect(compare).toHaveAccessibleDescription('Ready: Infra / dev ↔ Infra / prod. Nothing is read until you compare.');
     expect(screen.getAllByText('Production-like name')).toHaveLength(1);
     expect(posts).toHaveLength(0);
     await user.click(compare);
@@ -89,19 +93,18 @@ describe('Compare workspaces', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Compare' }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0].body).toEqual({ left: { projectId, workspace: 'dev' }, right: { projectId, workspace: 'prod' }, rules: [], reload: false, acknowledgeStateRead: true });
-    expect(await screen.findByRole('group', { name: 'Filter by comparison status' })).toBeInTheDocument();
+    expect(await screen.findByRole('group', { name: 'Comparison counts' })).toBeInTheDocument();
     // Many simulated keystrokes; allow for a loaded test machine.
   }, 15_000);
 
-  it('shows target identity, counts, the drift caveat and redacted differences', async () => {
+  it('shows count tiles, the summary, the drift caveat and the grouped table', async () => {
     const user = userEvent.setup();
     seed();
     view();
-    const cards = await screen.findByRole('group', { name: 'Filter by comparison status' });
-    expect(within(cards).getByRole('button', { name: 'Attribute differences: 4' })).toBeInTheDocument();
-    expect(within(cards).getByRole('button', { name: 'Only in right: 2' })).toBeInTheDocument();
-    expect(within(cards).getByRole('button', { name: 'Unknown: 1' })).toBeInTheDocument();
-    expect(screen.getByText('Different is not necessarily drift')).toBeInTheDocument();
+    const tiles = await screen.findByRole('group', { name: 'Comparison counts' });
+    for (const tile of ['Only on left: 1', 'Only on right: 2', 'Different: 4', 'Same: 4', 'Could not compare: 2']) expect(within(tiles).getByLabelText(tile)).toBeInTheDocument();
+    expect(screen.getByText(/^Compared/)).toHaveTextContent('Compared Infra / dev');
+    expect(screen.getByText(/^Compared/)).toHaveTextContent('4 different, 1 only on left, 2 only on right, 2 could not be compared and 4 the same. Different is not necessarily drift.');
     expect(screen.getByText(/Not live cloud inventory/)).toBeInTheDocument();
     expect(screen.getByText(/matched no left address/)).toBeInTheDocument();
     expect(screen.getByLabelText('Rule matches')).toHaveTextContent('Ignore region1 value');
@@ -109,8 +112,19 @@ describe('Compare workspaces', () => {
     const hint = screen.getByText(/Addresses match exactly. If some of the 1 only-left and 2 only-right rows/);
     expect(hint).toHaveTextContent('Map renamed address');
     expect(hint).toHaveTextContent('redacted values were deliberately not compared');
-    const table = await screen.findByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(page.matches.length + 1);
+    const table = await screen.findByRole('table', { name: 'Compared resources' });
+    // Same rows are only counted: four group rows and nine resources under the header.
+    await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(1 + 4 + 9));
+    expect(within(table).getByRole('button', { name: 'Only on left1' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(table).getByRole('button', { name: 'Only on right2' })).toBeInTheDocument();
+    expect(within(table).getByRole('button', { name: 'Different4' })).toBeInTheDocument();
+    expect(within(table).getByRole('button', { name: 'Could not compare2' })).toBeInTheDocument();
+    expect(table).toHaveTextContent('Not in the right workspace');
+    expect(table).toHaveTextContent('The provider sources differ');
+    expect(table).toHaveTextContent('3 redacted values not compared');
+    expect(table).not.toHaveTextContent('aws_s3_bucket.logs');
+    await user.click(within(table).getByRole('button', { name: 'Different4' }));
+    expect(within(table).getAllByRole('row')).toHaveLength(1 + 4 + 5);
     await user.click(within(table).getByRole('button', { name: /aws_db_instance\.main/ }));
     const drawer = await screen.findByRole('complementary', { name: 'Comparison details' });
     expect(await within(drawer).findAllByText('redacted · not compared')).toHaveLength(3);
@@ -118,17 +132,17 @@ describe('Compare workspaces', () => {
     expect(document.body.textContent).not.toContain(canary);
   });
 
-  it('filters by status, shows ignored and normalized rows and deep-links to each side', async () => {
+  it('shows ignored and normalized rows in the details and deep-links to each side', async () => {
     const user = userEvent.setup();
     const open = vi.fn();
     vi.stubGlobal('open', open);
     seed();
+    // The bucket's detail carries ignored and normalized attributes; list it as different.
+    const bucket = { ...page.matches.find(m => m.rightAddress === 'aws_s3_bucket.logs')!, status: 'attribute-different' };
+    serve(url => url.includes('status=attribute-different') ? Response.json({ matches: [bucket], total: 1 }) : undefined);
     view();
-    const cards = await screen.findByRole('group', { name: 'Filter by comparison status' });
-    await user.click(within(cards).getByRole('button', { name: 'Same: 4' }));
-    await waitFor(() => expect(gets.some(g => g.includes('status=same'))).toBe(true));
-    const table = await screen.findByRole('table');
-    await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(5));
+    const table = await screen.findByRole('table', { name: 'Compared resources' });
+    expect(gets.filter(g => g.includes('/resources?')).map(g => new URL(g, 'http://x').searchParams.get('status')).sort()).toEqual(['attribute-different', 'only-left', 'only-right', 'uncomparable,unknown']);
     await user.click(within(table).getByRole('button', { name: /aws_s3_bucket\.logs/ }));
     const drawer = await screen.findByRole('complementary', { name: 'Comparison details' });
     expect(await within(drawer).findByText('ignored by rule 2')).toBeInTheDocument();
@@ -149,7 +163,7 @@ describe('Compare workspaces', () => {
     expect(alert).toHaveTextContent('Only one side could be read');
     expect(alert).toHaveTextContent('Right: This workspace does not exist in the project.');
     expect(alert).toHaveTextContent('never treated as an empty one');
-    expect(screen.queryByRole('group', { name: 'Filter by comparison status' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Comparison counts' })).not.toBeInTheDocument();
     expect(gets.some(g => g.includes('/resources'))).toBe(false);
   });
 
@@ -196,11 +210,12 @@ describe('Compare workspaces', () => {
       return undefined;
     });
     view();
-    const table = await screen.findByRole('table');
+    const table = await screen.findByRole('table', { name: 'Compared resources' });
     await user.click(within(table).getByRole('button', { name: /aws_db_instance\.main/ }));
     expect(await screen.findByRole('complementary', { name: 'Comparison details' })).toBeInTheDocument();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Comparison history' }), otherId);
-    expect(await screen.findByText('Neither side records resources')).toBeInTheDocument();
+    await waitFor(() => expect(gets.some(g => g.includes(`/comparisons/${otherId}/resources?`))).toBe(true));
+    await waitFor(() => expect(within(screen.getByRole('table', { name: 'Compared resources' })).queryByText('aws_db_instance.main')).not.toBeInTheDocument());
     expect(screen.queryByRole('complementary', { name: 'Comparison details' })).not.toBeInTheDocument();
     expect(gets.some(g => g.includes(`/comparisons/${otherId}/resources/`))).toBe(false);
   });

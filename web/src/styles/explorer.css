@@ -214,13 +214,6 @@
   overflow-y: auto;
 }
 
-.eyebrow {
-  letter-spacing: 1.7px;
-  color: var(--accent-text);
-  margin-bottom: 11px;
-  font-size: 11px;
-  font-weight: 550;
-}
 
 h1 {
   letter-spacing: -.9px;

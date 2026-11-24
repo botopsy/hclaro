@@ -25,6 +25,13 @@
   display: flex;
 }
 
+.compare-side-label {
+  letter-spacing: .08em;
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .compare-target-head {
   justify-content: space-between;
   align-items: center;
@@ -54,44 +61,6 @@
 .field-error {
   color: var(--destroy);
   font-size: 13px;
-}
-
-.field-hint {
-  font-size: 13px;
-}
-
-.compare-identity {
-  border-top: 1px solid var(--border-soft);
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 6px 12px;
-  margin: 0;
-  padding-top: 10px;
-  font-size: 13px;
-  display: grid;
-}
-
-.compare-identity > div {
-  display: contents;
-}
-
-.compare-identity dt {
-  color: var(--muted);
-}
-
-.compare-identity dd {
-  overflow-wrap: anywhere;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  margin: 0;
-  display: flex;
-}
-
-.compare-identity dd.mono {
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  display: block;
-  overflow: hidden;
 }
 
 .compare-rules {
@@ -216,108 +185,16 @@
   font-size: 13px;
 }
 
-.compare-sides {
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: stretch;
-  gap: 12px;
-  display: grid;
-}
-
-.compare-sides-arrow {
-  color: var(--subtle);
-  align-self: center;
-}
-
-.compare-side-head {
-  border: 1px solid var(--border);
-  background: var(--inset);
-  border-radius: 8px;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 10px 14px;
-  font-size: 13px;
-  display: flex;
-}
-
-.compare-side-head strong {
-  overflow-wrap: anywhere;
-  font-size: 15px;
-}
-
-.compare-side-head.status-error, .compare-side-head.status-stale {
-  border-color: color-mix(in srgb, var(--destroy), transparent 50%);
-}
-
-.compare-side-context {
-  color: var(--muted);
-}
-
-.drift-badge-row {
-  align-items: baseline;
-  gap: 10px;
-  font-size: 13px;
-  line-height: 1.5;
-  display: flex;
-}
-
-.not-drift-badge {
-  border: 1px solid color-mix(in srgb, var(--read), transparent 50%);
-  color: var(--read);
-  white-space: nowrap;
-  border-radius: 999px;
-  flex: none;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  font-weight: 600;
-  display: inline-flex;
-}
-
 .compare-facts {
   flex-wrap: wrap;
   gap: 6px 16px;
   display: flex;
 }
 
-.compare-table th:first-child, .compare-table td:first-child {
-  white-space: nowrap;
-  width: 150px;
-}
-
 .compare-facts span {
   align-items: center;
   gap: 4px;
   display: inline-flex;
-}
-
-.compare-tabs-row {
-  align-items: center;
-  gap: 8px;
-  display: flex;
-}
-
-.compare-tabs-row .context-spacer {
-  flex: 1;
-}
-
-.filter-chip {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 4px 2px 9px;
-  font-size: 12px;
-  display: inline-flex;
-}
-
-.filter-chip button {
-  color: var(--muted);
-  cursor: pointer;
-  background: none;
-  border: 0;
-  padding: 2px;
-  display: flex;
 }
 
 .compare-paths {
@@ -351,7 +228,7 @@
 }
 
 @media (width <= 900px) {
-  .compare-targets, .compare-sides {
+  .compare-targets {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -359,13 +236,21 @@
     justify-self: center;
     transform: rotate(90deg);
   }
+}
 
-  .compare-sides-arrow {
-    justify-self: center;
-    transform: rotate(90deg);
-  }
+/* §4.9 result: count tiles (zero ones dimmed), the summary sentence and the exports. */
+.summary-card.zero {
+  opacity: .55;
+}
 
-  .drift-badge-row {
-    flex-direction: column;
-  }
+.compare-summary {
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.compare-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  display: flex;
 }
