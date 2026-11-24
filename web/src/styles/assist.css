@@ -109,3 +109,5 @@
 .assist-diff .diff-add { color: var(--create); }
 .assist-diff .diff-del { color: var(--destroy); }
 .assist-diff .diff-hunk, .assist-diff .diff-head { opacity: .7; }
+
+.assist-shared { text-align: left; }

@@ -54,7 +54,8 @@ describe('AI conversation', () => {
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
     expect(started()).toHaveLength(0);
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    expect(screen.getByText('Nothing is shared until you click Send or Copy.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     const text = await screen.findByLabelText('Assistant reply text');
     expect(started()).toEqual([{ url: '/api/v1/ai/conversations', body: { packageSha256: hash, provider: 'claude', disclosureVersion: '4', prompt: 'review-plan@1' } }]);
     expect(screen.getByText(/Asked for a review of the context package/)).toBeInTheDocument();
@@ -68,7 +69,7 @@ describe('AI conversation', () => {
     expect(screen.queryByRole('button', { name: /apply|approve/i })).toBeNull();
     // Only conversation controls: no command buttons derived from the reply.
     expect(within(panel).getAllByRole('button').map(b => b.textContent)).toEqual(['Close conversation', 'Send message']);
-    expect(screen.getByRole('button', { name: 'Review with Claude Code' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   });
 
   it.each([['single project', { kind: 'launch' }, '/api/v1'], ['Hub', { kind: 'context', contextId: '2'.repeat(32) }, `/api/v1/contexts/${'2'.repeat(32)}`]] as [string, PlanScope, string][])(
@@ -78,7 +79,7 @@ describe('AI conversation', () => {
       const user = userEvent.setup();
       show(scope);
       await screen.findByLabelText('Text to share: review prompt and context package');
-      await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+      await user.click(screen.getByRole('button', { name: 'Send' }));
       await screen.findByLabelText('Assistant reply text');
       turns = [...first, { role: 'user', text: 'Which change is riskiest?', at }, { role: 'assistant', text: 'The replacement.', at }];
       await user.type(screen.getByLabelText('Follow-up message'), 'Which change is riskiest?');
@@ -95,7 +96,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     const panel = await screen.findByRole('region', { name: 'Conversation' });
     // The drawer's own Cancel closes the preview; the turn's Cancel is in the panel.
     state = chat('cancelled', first, { draft: 'slow one', error: { code: 'cancelled', message: 'The request was cancelled.' } });
@@ -111,7 +112,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     await screen.findByLabelText('Assistant reply text');
     await user.type(screen.getByLabelText('Follow-up message'), 'password=hunter2');
     await user.click(screen.getByRole('button', { name: 'Send message' }));
@@ -124,7 +125,7 @@ describe('AI conversation', () => {
     serve({}, () => state);
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     expect(await screen.findByText(/The assistant is not signed in\./)).toBeInTheDocument();
     expect(screen.getByLabelText('Assistant reply text')).toBeInTheDocument();
   });
@@ -134,7 +135,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     const box = await screen.findByLabelText('Follow-up message');
     await user.click(box);
     await user.paste('x'.repeat(8001));
@@ -152,12 +153,12 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     await screen.findByLabelText('Assistant reply text');
     await user.click(screen.getByRole('button', { name: 'Close conversation' }));
     expect(posts.some(p => p.url.endsWith(`/ai/conversations/${id}/close`))).toBe(true);
     expect(screen.queryByRole('region', { name: 'Conversation' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Review with Claude Code' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
   });
 
   it('opening the preview asks for detection, never with AI off or strict local-only (AI-01.14)', async () => {
@@ -177,7 +178,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    expect(screen.queryByRole('button', { name: 'Review with Claude Code' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
     expect(within(screen.getByLabelText('Before you share')).getByText(disclosure.lines[0])).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Accept and send' }));
     const sent = posts.filter(p => !p.url.endsWith('/ai/packages'));
@@ -190,7 +191,7 @@ describe('AI conversation', () => {
     serve({ strictLocal: true, headless: false }, () => chat('ready', first));
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    expect(screen.queryByRole('button', { name: /Review with/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Send/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
   });
 
@@ -199,7 +200,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     expect(await screen.findByText(/Context is stale/)).toBeInTheDocument();
     expect(screen.getByLabelText('Follow-up message')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
@@ -216,7 +217,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     await screen.findByLabelText('Assistant reply text');
     await user.type(screen.getByLabelText('Follow-up message'), 'Still safe?');
     await user.click(screen.getByRole('button', { name: 'Send message' }));
@@ -234,7 +235,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     const box = await screen.findByRole('checkbox', { name: /Save conversation/ });
     expect(box).not.toBeChecked();
     expect(posts.filter(p => p.url.endsWith('/save'))).toHaveLength(0);
@@ -250,7 +251,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     expect(await screen.findByText(/Read-only: Some saved text now looks like a secret/)).toBeInTheDocument();
     expect(screen.getByText(/Hidden: this saved message now looks like/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Assistant reply text')).toBeNull();
@@ -269,7 +270,7 @@ describe('AI conversation', () => {
     const user = userEvent.setup();
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     const list = await screen.findByRole('list', { name: 'Proposed changes' });
     expect(within(list).getByLabelText('Diff computed by Hclaro').textContent).toContain('+locals {}');
     expect(within(list).getByText(/Cannot be applied: Hclaro writes only/)).toBeInTheDocument();

@@ -84,8 +84,8 @@ describe.each(scopes)('AI handoff without Claude Code (%s)', (_, scope, prefix) 
     const user = userEvent.setup();
     show(scope);
     await screen.findByLabelText('Text to share: review prompt and context package');
-    expect(actions()).toEqual(['Close AI context preview', 'Cancel', 'Copy for OpenAI Codex', 'Download .md', 'Review with Claude Code']);
-    await user.click(screen.getByRole('button', { name: 'Review with Claude Code' }));
+    expect(actions()).toEqual(['Close AI context preview', 'Cancel', 'Copy for OpenAI Codex', 'Download .md', 'Send']);
+    await user.click(screen.getByRole('button', { name: 'Send' }));
     expect(posts).toEqual([`${prefix}/ai/packages`, `${prefix}/ai/conversations`]);
   });
 });
