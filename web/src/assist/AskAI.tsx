@@ -12,6 +12,7 @@ import { hasProposal, ProposedChanges, useChanges } from './ProposedChanges';
 import { errorMessage } from '../lib/errorMessage';
 import { saveFile } from '../lib/download';
 import { ErrorState } from '../components/ErrorState';
+import { Disclosure } from '../components/Disclosure';
 
 // AI handoff (AI-01.03) and conversations (AI-01.04, AI-01.07): the server builds a sanitized
 // context package; the user previews it and only Copy, Download or Review with an assistant hands it over.
@@ -153,7 +154,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
       : pkg.error ? <ErrorState inline message={pkg.error.message}>{onCost && attached && <Button variant="outline" onClick={() => onCost(false)}>Continue without cost data</Button>}</ErrorState>
       : p && p.sections.length === 0 ? <div className="empty-state"><h2>Nothing to share</h2><p>This context package has no content.</p></div>
       : p && <>
-       {disclosure && <ul className="assist-disclosure" aria-label="Before you share">{disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
+       {disclosure && <Disclosure summary="Before you share: what this sends and costs"><ul className="assist-disclosure" aria-label="Before you share">{disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul></Disclosure>}
        <dl className="metadata">
         <div><dt>Included</dt><dd>{p.sections.join(', ')}</dd></div>
         <div><dt>Removed for size</dt><dd>{p.dropped.length ? p.dropped.join(', ') : 'Nothing'}</dd></div>
@@ -182,7 +183,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
      </>}
     </div>
     {p && p.sections.length > 0 && handoffs.length > 0 && !quick && <p className="muted assist-note">{handoffs.map(h => h.name).join(' and ')} {handoffs.length > 1 ? 'are' : 'is'} handoff-only: copy or download the context and give it to the assistant yourself. Hclaro never runs {handoffs.length > 1 ? 'them' : 'it'}.</p>}
-    {p && provider && settings && !settings.disclosureAccepted && <p className="muted assist-note">Accept and send accepts the notes above for this session and sends this to {provider.name}.</p>}
+    {p && provider && settings && !settings.disclosureAccepted && <p className="muted assist-note">Accept and send accepts the notes above (open "Before you share") for this session and sends this to {provider.name}.</p>}
    </div>
   </Drawer>;
 }
@@ -262,7 +263,7 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
      <span>Save conversation: keep its context, messages and replies as plain text in Hclaro's configuration folder on this machine, to reopen after Hclaro restarts. Unticking deletes the saved copy.</span></label>
     {long && <p className="dialog-error" role="alert">This message is longer than {settings?.maxMessage} bytes. Shorten it to send it.</p>}
     {refused && <p className="dialog-error" role="alert">{refused}</p>}
-    {accept && !locked && <ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
+    {accept && !locked && <Disclosure summary="Before you send: what this shares and costs"><ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul></Disclosure>}
     <div className="form-actions">
      <Button variant="ghost" disabled={busy} onClick={() => void act('close')}><MessageSquareX size={14} />Close conversation</Button>
      {!running && !c.readOnly && actions}

@@ -6,6 +6,7 @@ import { api, send } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { ErrorState } from '../components/ErrorState';
+import { Disclosure } from '../components/Disclosure';
 import { Segmented } from '../components/Segmented';
 import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve } from './AskAI';
 import type { AssistListed, AssistSaved, Conversation } from '../types';
@@ -177,7 +178,7 @@ export function AssistantPage({ scope, project, workspace, noProject, onSettings
        </label>
        {long && <p className="dialog-error" role="alert">This message is longer than {settings.maxMessage} bytes. Shorten it to send it.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
-       {!settings.disclosureAccepted && provider && mode === 'chat' && <ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
+       {!settings.disclosureAccepted && provider && mode === 'chat' && <Disclosure summary="Before you send: what this shares and costs"><ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul></Disclosure>}
        {!provider && <p className="muted assist-note">No assistant can run here. Preview the project context to copy or download it for an assistant you run yourself.</p>}
        <div className="form-actions">
         {mode === 'chat' ? <Button disabled={busy || !provider || !text.trim() || long} onClick={() => void startChat()}><Send size={14} />{settings.disclosureAccepted || !provider ? 'Start conversation' : 'Accept and send'}</Button>
