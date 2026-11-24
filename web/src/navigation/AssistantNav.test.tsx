@@ -87,6 +87,6 @@ describe('AI Assistant navigation', () => {
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     await user.click(await within(nav).findByRole('button', { name: 'AI Assistant' }));
     expect(await screen.findByRole('heading', { name: 'AI Assistant' })).toBeInTheDocument();
-    expect(await screen.findByText(/Conversation only: no project data is attached/)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Conversation only' })).toBeInTheDocument();
   });
 });
