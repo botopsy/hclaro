@@ -84,19 +84,7 @@ func discoveryRoutes(mux *http.ServeMux, deps *Services, manager *operations.Man
 		case manager.Root() == "":
 			canScan, reason = false, "Cloud discovery runs for the project Hclaro was opened with from the terminal."
 		}
-		summary, registered, err := launchContext(hub, snap, profileID)
-		var context *executionSummary
-		projectID := ""
-		if registered && err == nil {
-			context, projectID = &summary, summary.ProjectID
-		} else if registered {
-			projectID = hub.LaunchID()
-		}
-		profileError := ""
-		var refusal *projects.ProfileRefusal
-		if errors.As(err, &refusal) {
-			profileError = refusal.Message
-		}
+		context, projectID, profileError := launchOptionsContext(hub, snap, profileID)
 		var identity *discovery.CloudIdentity
 		region, regionSource := "us-east-1", "default"
 		if canScan {
@@ -107,10 +95,7 @@ func discoveryRoutes(mux *http.ServeMux, deps *Services, manager *operations.Man
 				}
 			}
 		}
-		writeJSON(w, 200, discoveryOptions{canScan, reason, "aws", discovery.Types, discovery.Regions, region, regionSource, map[string]int{
-			"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "maxObjects": discovery.MaxObjects, "defaultPerType": discovery.DefaultPerType,
-			"maxConcurrency": discovery.MaxConcurrency, "defaultConcurrency": discovery.DefaultConcurrent, "pageSize": discovery.PageSize,
-		}, snap.Info.Project, snap.Info.Engine, snap.Info.Workspace, snap.Info.Backend, snap.Status, identity, projectID, context, profileError})
+		writeJSON(w, 200, discoveryOptions{canScan, reason, "aws", discovery.Types, discovery.Regions, region, regionSource, discoveryLimits(), snap.Info.Project, snap.Info.Engine, snap.Info.Workspace, snap.Info.Backend, snap.Status, identity, projectID, context, profileError})
 	})
 	discoveryExecRoutes(mux, "/api/v1", nil, available, launchSourceOf(manager, nil))
 }
@@ -359,4 +344,12 @@ type discoveryOptions struct {
 	ProjectID     string                   `json:"projectId,omitempty"`
 	Context       *executionSummary        `json:"context,omitempty"`
 	ProfileError  string                   `json:"profileError,omitempty"`
+}
+
+// discoveryLimits are the scan bounds the discovery options report, the same for launch and Hub.
+func discoveryLimits() map[string]int {
+	return map[string]int{
+		"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "maxObjects": discovery.MaxObjects, "defaultPerType": discovery.DefaultPerType,
+		"maxConcurrency": discovery.MaxConcurrency, "defaultConcurrency": discovery.DefaultConcurrent, "pageSize": discovery.PageSize,
+	}
 }

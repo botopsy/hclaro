@@ -23,19 +23,7 @@ func driftRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations
 		}
 		snap := store.Get()
 		canScan, reason := manager.DriftCapability()
-		summary, registered, err := launchContext(hub, snap, profileID)
-		var context *executionSummary
-		projectID := ""
-		if registered && err == nil {
-			context, projectID = &summary, summary.ProjectID
-		} else if registered {
-			projectID = hub.LaunchID()
-		}
-		profileError := ""
-		var refusal *projects.ProfileRefusal
-		if errors.As(err, &refusal) {
-			profileError = refusal.Message
-		}
+		context, projectID, profileError := launchOptionsContext(hub, snap, profileID)
 		writeJSON(w, 200, driftOptions{canScan, reason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, snap.Info.ExecutionMode, manager.VarFiles(), projectID, context, profileError})
 	})
 	analysisExecRoutes(mux, "/api/v1", nil, launchSourceOf(manager, nil))
