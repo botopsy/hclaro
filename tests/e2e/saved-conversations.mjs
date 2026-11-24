@@ -117,7 +117,7 @@ try {
 
   await page.getByRole('button', {name: 'Close conversation'}).click()
   await page.getByRole('button', {name: /Delete saved conversation/}).click()
-  await page.getByText(/No other saved conversations/).waitFor()
+  await page.getByText(/Saved conversations are kept for/).waitFor()
   assert.deepEqual(await files(), [])
   ok('Delete removes the file')
   for (const s of seen) { assert.deepEqual(s.errors, []); assert.deepEqual(s.external, []) }
