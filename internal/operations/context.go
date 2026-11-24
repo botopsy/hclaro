@@ -6,6 +6,7 @@ import (
 	"hclaro/internal/awsvault"
 	"hclaro/internal/engine"
 	"hclaro/internal/gitctx"
+	"hclaro/internal/plan"
 	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/workspace"
@@ -180,6 +181,24 @@ func (m *Manager) SourceStatus(p *Plan) gitctx.SourceStatus {
 		return gitctx.SourceStatus{State: "not_recorded", Message: "No source fingerprint was recorded for this plan."}
 	}
 	return m.Git.Compare(p.Source, m.root)
+}
+
+// LocateChange finds the configuration block of one change of p (a planned change or one the
+// engine noticed outside its control, deposed objects and data reads included) from the
+// stored redacted review. It reads IaC files only and runs no command.
+func (m *Manager) LocateChange(p *Plan, id string) (gitctx.SourceReference, error) {
+	for _, list := range [][]plan.Change{p.Changes, p.Drift} {
+		for _, c := range list {
+			if c.ID != id {
+				continue
+			}
+			if m.Git == nil || m.root == "" {
+				return gitctx.SourceReference{}, ErrNoGit
+			}
+			return m.Git.Locate(m.root, c.Mode, c.Module, c.Type, c.Name), nil
+		}
+	}
+	return gitctx.SourceReference{}, ErrChangeNotFound
 }
 
 // sourceFacts turns a source comparison into preflight facts; nil when none was recorded.

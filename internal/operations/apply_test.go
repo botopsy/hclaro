@@ -670,3 +670,67 @@ func TestApplyRecomputesTheFingerprintUnderTheClaim(t *testing.T) {
 	}
 	assertTempEmpty(t, m)
 }
+
+// After the age timer releases a plan, a later status read (a page reload) still says expired,
+// with the deadline. Replaced plans stay not_applicable.
+func TestExpiredPlanStaysExpired(t *testing.T) {
+	m, _ := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+	m.PlanMaxAge = 50 * time.Millisecond
+	first := planned(t, m)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		m.mu.Lock()
+		gone := m.artifact == nil
+		m.mu.Unlock()
+		if gone || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	p, _ := m.Plan(first)
+	st := m.ApplyStatus(p, "")
+	if st.Available || st.Code != "plan_expired" || st.ExpiresAt == "" || st.ArtifactRetained {
+		t.Fatalf("%+v", st)
+	}
+	if _, err := time.Parse(time.RFC3339, st.ExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := approve(m, first); rejected(err) != "plan_expired" {
+		t.Fatalf("approve: %v", err)
+	}
+	// A plan replaced by a newer one is not "expired".
+	m.PlanMaxAge = time.Hour
+	older := planned(t, m)
+	newer := planned(t, m)
+	po, _ := m.Plan(older)
+	if st := m.ApplyStatus(po, ""); st.Code != "not_applicable" || st.ExpiresAt != "" {
+		t.Fatalf("replaced: %+v", st)
+	}
+	if _, ok := m.Plan(newer); !ok {
+		t.Fatal("newer plan missing")
+	}
+}
+
+func TestExpiredMarksAreTrimmedWithPlanHistory(t *testing.T) {
+	m, _ := setup(t, &enginetest.Fake{PlanJSON: fixtures.PlanAllActions}, workspace.Info{})
+	m.PlanMaxAge = time.Millisecond
+	first := planned(t, m)
+	time.Sleep(50 * time.Millisecond)
+	m.mu.Lock()
+	if m.expired[first].IsZero() {
+		m.mu.Unlock()
+		t.Fatal("expiry not recorded")
+	}
+	m.mu.Unlock()
+	for range maxPlans {
+		planned(t, m)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.expired[first]; ok {
+		t.Fatal("expired mark outlived its plan")
+	}
+	if len(m.expired) > maxPlans {
+		t.Fatalf("%d marks", len(m.expired))
+	}
+}

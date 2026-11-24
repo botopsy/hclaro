@@ -30,6 +30,7 @@ const kinds: Record<HistoryKind, string> = {
   workspace: 'Workspace',
   tool: 'Project tool',
   branch: 'Branch switch',
+  discard: 'Discard plan',
   assist: 'AI analysis',
   'assist-change': 'AI proposed change',
   unknown: 'Unknown operation'

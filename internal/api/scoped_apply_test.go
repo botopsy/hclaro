@@ -642,3 +642,63 @@ func TestScopedLockedReloadIsReadAgain(t *testing.T) {
 		t.Fatal("no plan after the lock was released")
 	}
 }
+
+// Discarding a plan in one Hub workspace deletes only that workspace's saved plan.
+func TestScopedDiscardTouchesOnlyItsContext(t *testing.T) {
+	s := newScopedServer(t)
+	dev := s.openLoaded("network", "dev", "")
+	prod := s.openLoaded("network", "prod", "")
+	devPlan, prodPlan := s.planned(dev), s.planned(prod)
+	approval := s.approve(dev, devPlan)
+
+	// A plan ID from dev is unknown in prod, and nothing was discarded.
+	wantError(t, s.do("POST", "/api/v1/contexts/"+prod+"/plans/"+devPlan+"/discard", `{}`), 404, "plan_not_found")
+	if st := decode[scopedPlanDetail](t, s.do("GET", "/api/v1/contexts/"+dev+"/plans/"+devPlan, "")); !st.Apply.Available {
+		t.Fatalf("dev plan lost: %+v", st.Apply)
+	}
+	if w := s.do("POST", "/api/v1/contexts/"+dev+"/plans/"+devPlan+"/discard", `{}`, without("X-Hclaro-CSRF")); w.Code != 403 {
+		t.Fatalf("no CSRF: %d", w.Code)
+	}
+
+	w := s.do("POST", "/api/v1/contexts/"+dev+"/plans/"+devPlan+"/discard", `{}`)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	body := decode[struct {
+		Apply operations.ApplyStatus `json:"apply"`
+	}](t, w)
+	if body.Apply.Available || body.Apply.ArtifactRetained || !strings.Contains(body.Apply.Reason, "You discarded this plan.") {
+		t.Fatalf("%+v", body.Apply)
+	}
+	// The approval issued before the discard cannot apply it, and the engine never applied.
+	wantError(t, s.do("POST", "/api/v1/contexts/"+dev+"/plans/"+devPlan+"/apply", applyBody(approval)), 409, "approval_required")
+	if n := len(s.calls("apply")); n != 0 {
+		t.Fatalf("%d apply calls", n)
+	}
+	// Discarding twice is refused; the other workspace's plan is still applicable.
+	wantError(t, s.do("POST", "/api/v1/contexts/"+dev+"/plans/"+devPlan+"/discard", `{}`), 409, "not_applicable")
+	if st := decode[scopedPlanDetail](t, s.do("GET", "/api/v1/contexts/"+prod+"/plans/"+prodPlan, "")); !st.Apply.Available {
+		t.Fatalf("prod plan affected: %+v", st.Apply)
+	}
+	wantError(t, s.do("POST", "/api/v1/contexts/"+dev+"/plans/zz/discard", `{}`), 404, "plan_not_found")
+}
+
+// A Hub context locates its own plan's changes only, and reports a session without Git.
+func TestScopedChangeSource(t *testing.T) {
+	s := newScopedServer(t)
+	dev := s.openLoaded("network", "dev", "")
+	prod := s.openLoaded("network", "prod", "")
+	pid := s.planned(dev)
+	plan := decode[struct {
+		Changes []struct{ ID string }
+	}](t, s.do("GET", "/api/v1/contexts/"+dev+"/plans/"+pid, ""))
+	path := func(cid, plan, change string) string {
+		return "/api/v1/contexts/" + cid + "/plans/" + plan + "/changes/" + change + "/source"
+	}
+	if w := s.do("GET", path(dev, pid, plan.Changes[0].ID), ""); w.Code != 409 || !strings.Contains(w.Body.String(), "git_unavailable") {
+		t.Fatalf("no git: %d %s", w.Code, w.Body)
+	}
+	// A plan of dev is unknown in prod.
+	wantError(t, s.do("GET", path(prod, pid, plan.Changes[0].ID), ""), 404, "plan_not_found")
+	wantError(t, s.do("GET", path(dev, pid, strings.Repeat("0", 32)), ""), 404, "change_not_found")
+}

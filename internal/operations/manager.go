@@ -51,7 +51,10 @@ var (
 	ErrReplace            = errors.New("invalid replace selection")
 	ErrNotFound           = errors.New("operation not found")
 	ErrNotRunning         = errors.New("operation is not running")
-	ErrClosed             = errors.New("hclaro is shutting down")
+	// ErrChangeNotFound: the plan has no change with that ID. ErrNoGit: no Git service in this session.
+	ErrChangeNotFound = errors.New("plan change not found")
+	ErrNoGit          = errors.New("git context is not available")
+	ErrClosed         = errors.New("hclaro is shutting down")
 )
 
 type Diagnostic struct {
@@ -61,7 +64,7 @@ type Diagnostic struct {
 
 // Kinds lists every Operation.Kind the manager starts. History maps each one; a kind
 // missing here is recorded there as unknown and possibly mutating.
-var Kinds = []string{"plan", "apply", "drift", "graph", "init", "workspace", "tool", "branch"}
+var Kinds = []string{"plan", "apply", "drift", "graph", "init", "workspace", "tool", "branch", "discard"}
 
 type Operation struct {
 	ID          string   `json:"id"`
@@ -221,11 +224,13 @@ type Manager struct {
 	starting bool
 	artifact *artifact
 	// notes explains why a plan cannot be applied; bounded by the plan history.
-	notes  map[string]string
-	base   context.Context
-	stop   context.CancelFunc
-	wg     sync.WaitGroup
-	closed bool
+	notes map[string]string
+	// expired holds the deadline of each plan the age timer released, so a reload still reads "expired". Trimmed with notes.
+	expired map[string]time.Time
+	base    context.Context
+	stop    context.CancelFunc
+	wg      sync.WaitGroup
+	closed  bool
 	// lockRetry cancels the bounded re-read of a lock-blocked state read (lockretry.go).
 	lockRetry context.CancelFunc
 	// retryReading is set while a lock re-read runs, so Reread waits for it (ErrLoading)
@@ -278,7 +283,7 @@ func New(store *workspace.Store, planner engine.Planner, root string, deps Deps)
 	if deps.Locks == nil {
 		deps.Locks = rootlock.New()
 	}
-	return &Manager{store: store, planner: planner, applier: applier, root: root, Deps: deps, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, base: base, stop: stop, NewID: ids.New, chmod: os.Chmod, lockRetryDelays: lockRetryDelays}
+	return &Manager{store: store, planner: planner, applier: applier, root: root, Deps: deps, Timeout: time.Hour, ApplyTimeout: 2 * time.Hour, PlanMaxAge: time.Hour, ApprovalTTL: 5 * time.Minute, PreflightTTL: 10 * time.Minute, notes: map[string]string{}, expired: map[string]time.Time{}, base: base, stop: stop, NewID: ids.New, chmod: os.Chmod, lockRetryDelays: lockRetryDelays}
 }
 
 func engineLabel(name string) string {
@@ -613,6 +618,7 @@ func (m *Manager) run(ctx context.Context, e *entry, snap workspace.Snapshot) {
 		if len(m.plans) > maxPlans {
 			for _, old := range m.plans[:len(m.plans)-maxPlans] {
 				delete(m.notes, old.ID)
+				delete(m.expired, old.ID)
 			}
 			m.plans = m.plans[len(m.plans)-maxPlans:]
 		}

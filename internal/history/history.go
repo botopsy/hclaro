@@ -71,6 +71,7 @@ var kindTable = []kindInfo{
 	{"workspace", "Workspace", true},
 	{"tool", "Project tool", false},
 	{"branch", "Branch switch", false},
+	{"discard", "Discard plan", false},
 	{"assist", "AI analysis", false},
 	{"assist-change", "AI proposed change", false},
 	{KindUnknown, "Unknown operation", true},

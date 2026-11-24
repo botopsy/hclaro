@@ -77,9 +77,9 @@ function serve(...routes: Route[]) {
     return Response.json({ error: 'route_not_found' }, { status: 404 });
   }));
 }
-function view(planChoice?: string, replace?: { id: string; address: string }[]) {
+function view(planChoice?: string, replace?: { id: string; address: string }[], source?: { prefix: string; editor: 'vscode' | 'cursor'; notify: (t: string) => void }) {
   const choose = vi.fn();
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" planId={planChoice} choosePlan={choose} replace={replace} copy={async () => {}} /></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" planId={planChoice} choosePlan={choose} replace={replace} copy={async () => {}} source={source} /></QueryClientProvider>);
   return choose;
 }
 beforeEach(() => serve());
@@ -89,6 +89,60 @@ afterEach(() => {
 });
 
 describe('Plans', () => {
+  it('opens a planned change in the editor, or says why it cannot', async () => {
+    const found = { state: 'found', confidence: 'block', fileId: 'f'.repeat(32), path: 'main.tf', line: 7, reason: 'Matched the resource block.' };
+    let ref: object | Response = found;
+    serve(url => url.includes('/source') ? (ref instanceof Response ? ref : Response.json(ref)) : undefined);
+    view(undefined, undefined, { prefix: '/api/v1/git/', editor: 'vscode', notify: () => {} });
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand aws_s3_bucket.logs' }));
+    expect(await screen.findByText('main.tf:7')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open in VS Code/ })).toBeEnabled();
+    cleanup();
+    // A block that is not in the files: the button is disabled and the reason is shown.
+    ref = { state: 'not_found', reason: 'No block for aws_s3_bucket.logs was found.' };
+    view(undefined, undefined, { prefix: '/api/v1/git/', editor: 'vscode', notify: () => {} });
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand aws_s3_bucket.logs' }));
+    expect(await screen.findByText('No block for aws_s3_bucket.logs was found.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open in VS Code/ })).toBeDisabled();
+    cleanup();
+    // Git unavailable.
+    ref = Response.json({ error: 'git_unavailable', reason: 'Git context is not available in this session.' }, { status: 409 });
+    view(undefined, undefined, { prefix: '/api/v1/git/', editor: 'vscode', notify: () => {} });
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand aws_s3_bucket.logs' }));
+    expect(await screen.findByText('Source links are unavailable in this session.')).toBeInTheDocument();
+    // Three renders with many simulated clicks; allow for a loaded test machine.
+  }, 15_000);
+  it('shows no source link when the session offers none', async () => {
+    view();
+    await userEvent.click(await screen.findByRole('button', { name: 'Expand aws_s3_bucket.logs' }));
+    await screen.findByLabelText(/Change details for aws_s3_bucket.logs/);
+    expect(screen.queryByText('CONFIGURATION SOURCE')).not.toBeInTheDocument();
+  });
+  it('discards a saved plan only after one inline confirmation, then shows the server note', async () => {
+    let discarded = false;
+    const note = 'You discarded this plan. The saved plan file was deleted.';
+    serve((url, init) => {
+      if (init?.method === 'POST' && url.endsWith(`/plans/${planId}/discard`)) {
+        discarded = true;
+        return Response.json({ apply: { available: false, artifactRetained: false, code: 'not_applicable', reason: note } });
+      }
+      if (url.endsWith(`/plans/${planId}`)) return Response.json(discarded ? { ...applicable, apply: { available: false, artifactRetained: false, code: 'not_applicable', reason: note } } : applicable);
+    });
+    view();
+    await screen.findByText('Ready to apply.');
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.getByRole('alert')).toHaveTextContent("Delete the saved plan? It can't be applied afterwards.");
+    expect(posts.filter(p => p.url.endsWith('/discard'))).toHaveLength(0);
+    // Keep backs out without calling the server.
+    await userEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(screen.queryByText(/Delete the saved plan/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete plan' }));
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent('Review only'));
+    expect(screen.getByRole('note')).toHaveTextContent(note);
+    expect(posts.filter(p => p.url.endsWith('/discard'))).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Review and apply/ })).not.toBeInTheDocument();
+  });
   it('says the configuration could not be read instead of claiming it changed', async () => {
     const reason = 'Hclaro could not read the configuration, so it cannot tell whether it changed since this plan was created: "locked/main.tf" could not be read (permission denied).';
     serve(url => url.endsWith(`/plans/${planId}`) ? Response.json({ ...plan, contextChanged: true, apply: { available: false, artifactRetained: true, code: 'configuration_unreadable', reason } }) : undefined);
@@ -507,6 +561,32 @@ describe('Plans', () => {
     expect(screen.queryByText(/healthy|verified/i)).not.toBeInTheDocument();
   });
 
+  it('hides the applied plan after a clean apply and shows it again on request', async () => {
+    const applied: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [applied, operation] }) : undefined);
+    view();
+    expect(await screen.findByRole('heading', { name: 'Applied: 10 changes' })).toBeInTheDocument();
+    // Nothing is left to review: no banner, tiles or change table, only the way back to the plan.
+    expect(screen.queryByText('Review only.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Filter by action' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Planned resource changes' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show the plan that was applied' }));
+    expect(await screen.findByRole('region', { name: 'Planned resource changes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show the plan that was applied' })).not.toBeInTheDocument();
+  });
+  it('keeps the plan in view when the apply was not clean', async () => {
+    const left: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, planFileLeft: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [left, operation] }) : undefined);
+    view();
+    expect(await screen.findByRole('region', { name: 'Planned resource changes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show the plan that was applied' })).not.toBeInTheDocument();
+    cleanup();
+    const interrupted: Operation = { ...operation, kind: 'apply', status: 'cancelled', outcome: 'uncertain', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [interrupted, operation] }) : undefined);
+    view();
+    expect(await screen.findByRole('region', { name: 'Planned resource changes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show the plan that was applied' })).not.toBeInTheDocument();
+  });
   it('reports an interrupted apply as an uncertain outcome', async () => {
     const interrupted: Operation = { ...operation, kind: 'apply', status: 'cancelled', outcome: 'uncertain', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z', diagnostic: { code: 'apply_cancelled', message: 'The apply was interrupted. Infrastructure may be partly changed.' } };
     serve(url => url.endsWith('/operations') ? Response.json({ operations: [interrupted, operation] }) : undefined);

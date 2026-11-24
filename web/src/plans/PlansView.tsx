@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button';
 import { ApplyDialog } from './ApplyDialog';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { activeOperation, operationsQuery } from '../lib/queries';
-import { PlanReview, sourceLabel } from './PlanReview';
+import { PlanReview, sourceLabel, type PlanSource } from './PlanReview';
 import { RunDialog, RunState } from './RunDialog';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 import { clock, engineLabel } from '../lib/format';
@@ -33,9 +33,12 @@ export function PlansView({
   openHistory,
   openGit,
   scope = launchScope,
-  reopen
+  reopen,
+  source
 }: {
   project: string;
+  // Opens a planned change's configuration block in the editor; omitted when Git context is unavailable.
+  source?: PlanSource;
   // The project or Hub workspace whose plans this view shows. Every request goes to it only.
   scope?: PlanScope;
   // Opens a closed Hub workspace again (after its context changed).
@@ -64,6 +67,8 @@ export function PlansView({
   const [applying, setApplying] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
+  // The apply whose plan the user chose to show again after a clean apply.
+  const [revealedApply, setRevealedApply] = useState<string>();
   // Availability is decided after the startup read; refetch when the workspace status changes.
   const key = scopeKey(scope);
   const scoped = scope.kind === 'context';
@@ -140,6 +145,8 @@ export function PlansView({
   // §4.3: the empty state has the only Run plan button; every other state keeps it in the toolbar.
   const content = !!shownId || !!live || !!applied;
   const empty = !content && !!plans.data && !options.isPending;
+  // A clean apply leaves nothing to review: the plan is applied and its file deleted. Anything uncertain keeps the plan in view.
+  const hidePlan = !!applied && isCleanApply(applied) && revealedApply !== applied.id;
   const appliedPlan = applied && plan.data?.id === applied.planId ? plan.data : undefined;
   return <div className="plans">
    {content && <div className="plans-toolbar">
@@ -156,7 +163,7 @@ export function PlansView({
    </RunState>}
    {applied && <ApplyResult operation={applied} changes={appliedPlan && planTotal(appliedPlan.summary)} source={appliedPlan?.source} canPlan={canPlan} onRunPlan={runPlan} openHistory={openHistory} openGit={openGit} />}
    {failed && plan.data && <p className="info-line">Below is the previous successful plan, created at {clock(plan.data.createdAt)}. It does not reflect the run above.</p>}
-   {plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} copy={copy} busy={!!running} canPlan={canPlan} onApply={() => setApplying(true)} onRunPlan={runPlan} onOpenDrift={openDrift} onInspectImpact={inspectImpact} /> : empty && <EmptyState icon={<FileDiff size={28} />} title="No plans yet" action={<Button onClick={runPlan} disabled={!canPlan}><Play size={14} />Run plan</Button>} how={<p>A plan lists every proposed change: creates, updates, replacements, deletions, data reads and output changes. Hclaro keeps the saved plan for a limited time, and nothing is applied until you review it and confirm.</p>}>Run a plan to see every change {options.data ? engineLabel(options.data.engine) : 'the engine'} proposes for {project}.</EmptyState>}
+   {hidePlan ? <Button variant="ghost" onClick={() => setRevealedApply(applied.id)}>Show the plan that was applied</Button> : plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} source={source} copy={copy} busy={!!running} canPlan={canPlan} onApply={() => setApplying(true)} onRunPlan={runPlan} onOpenDrift={openDrift} onInspectImpact={inspectImpact} /> : empty && <EmptyState icon={<FileDiff size={28} />} title="No plans yet" action={<Button onClick={runPlan} disabled={!canPlan}><Play size={14} />Run plan</Button>} how={<p>A plan lists every proposed change: creates, updates, replacements, deletions, data reads and output changes. Hclaro keeps the saved plan for a limited time, and nothing is applied until you review it and confirm.</p>}>Run a plan to see every change {options.data ? engineLabel(options.data.engine) : 'the engine'} proposes for {project}.</EmptyState>}
    {preflightOpen && options.data && <PlanDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
    {applying && plan.data && <ApplyDialog plan={plan.data} scope={scope} project={project} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
   </div>;
@@ -199,6 +206,12 @@ function Diagnostics({ operation }: { operation: Operation }) {
   return <ul className="diagnostics">{operation.engineDiagnostics.map((d, i) => <li key={i} className={`diag-${d.severity}`}><strong>{d.severity === 'error' ? 'Error' : 'Warning'}: {d.summary}</strong>{d.address && <code>{d.address}</code>}{d.detail && <pre>{d.detail}</pre>}</li>)}</ul>;
 }
 
+// isCleanApply: every part of the apply is confirmed (the engine finished, state was read again,
+// the saved plan file is gone), so the short card is enough and the old plan needs no review.
+export function isCleanApply(op: Operation) {
+  return op.status === 'succeeded' && !op.stateReloadFailed && op.stateReloaded && !op.planFileLeft && op.outcome !== 'uncertain';
+}
+
 // Process exit is not the same as infrastructure state: the outcome is reported separately
 // from whether state was re-read.
 function ApplyResult({ operation, changes, source, canPlan, onRunPlan, openHistory, openGit }: { operation: Operation; changes?: number; source?: PlanSourceFingerprint; canPlan: boolean; onRunPlan: () => void; openHistory?: () => void; openGit?: () => void }) {
@@ -209,7 +222,7 @@ function ApplyResult({ operation, changes, source, canPlan, onRunPlan, openHisto
   const engineLine = ok ? 'reported the apply as finished' : uncertain ? 'stopped part-way; some changes may have been made' : 'did not apply anything';
   const planFile = operation.planFileLeft ? 'Hclaro could not delete the saved plan file, which holds values in plaintext; the terminal running Hclaro names its folder. Delete it yourself. It cannot be applied again.' : 'The saved plan was deleted and cannot be applied again.';
   // §4.3 step 5: the short card only when every part is confirmed; anything uncertain keeps the full report.
-  if (clean && operation.stateReloaded && !operation.planFileLeft && !uncertain) {
+  if (isCleanApply(operation)) {
     const dirty = source?.dirtyKnown && source.dirty ? source.dirtyFiles : 0;
     return <section className="operation-applied applied-card" role="status">
      <div className="applied-head">

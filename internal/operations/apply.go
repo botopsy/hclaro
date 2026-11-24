@@ -192,6 +192,7 @@ func (m *Manager) retainLocked(p *Plan, kept *artifact, leftover bool) {
 		defer m.mu.Unlock()
 		if m.artifact == kept && !kept.applying {
 			m.releaseLocked(expiredReason(m.PlanMaxAge))
+			m.expired[kept.planID] = kept.created.Add(m.PlanMaxAge)
 		}
 	})
 }
@@ -210,6 +211,38 @@ func (m *Manager) releaseLocked(reason string) (deleted bool) {
 	m.artifact = nil
 	m.notes[a.planID] = reason + " " + deletedNote(deleted)
 	return deleted
+}
+
+// Discard drops the retained saved plan early, at the user's request. It refuses a plan that
+// is not the retained one and any time an operation runs. The plan is never applicable
+// afterwards; an approval or preflight binding issued for it dies with the artifact, so
+// checkLocked refuses it. Whether the file was deleted is in the plan's note (releaseLocked).
+func (m *Manager) Discard(id string) error {
+	if _, ok := m.Plan(id); !ok {
+		return ErrNotFound
+	}
+	m.mu.Lock()
+	a := m.artifact
+	switch {
+	case m.closed:
+		m.mu.Unlock()
+		return reject("shutting_down", "Hclaro is shutting down.")
+	case a == nil || a.planID != id:
+		m.mu.Unlock()
+		return reject("not_applicable", "The saved plan file is no longer kept, so there is nothing to discard.")
+	case a.applying || m.running != nil:
+		m.mu.Unlock()
+		return reject("operation_running", "Another operation is running. Wait for it to finish.")
+	}
+	engine, version, workspace := a.engine, a.version, a.workspace
+	m.releaseLocked("You discarded this plan.")
+	m.mu.Unlock()
+	if m.Recorder != nil {
+		now := time.Now().UTC().Format(time.RFC3339)
+		op := Operation{ID: m.NewID(), Kind: "discard", Status: Succeeded, StartedAt: now, CompletedAt: now, PlanID: id, Command: []string{}}
+		m.Recorder.Record(Record{Operation: op, Root: m.root, Engine: engine, EngineVersion: version, Workspace: workspace, Final: true}.Event())
+	}
+	return nil
 }
 
 // Saved plan files hold plaintext secrets. They live in private directories named with these
@@ -267,6 +300,9 @@ func (m *Manager) applyStatus(p *Plan, currentFingerprint string, rej *RejectErr
 		if errors.As(err, &r) {
 			status.Code = r.Code
 		}
+		if t := m.expired[p.ID]; !t.IsZero() && status.Code == "plan_expired" {
+			status.ExpiresAt = t.UTC().Format(time.RFC3339)
+		}
 		return status
 	}
 	return ApplyStatus{Available: true, ArtifactRetained: true, ExpiresAt: m.artifact.created.Add(m.PlanMaxAge).UTC().Format(time.RFC3339)}
@@ -281,6 +317,8 @@ func (m *Manager) checkLocked(p *Plan, currentFingerprint string, rej *RejectErr
 		return reject("unknown_actions", reason)
 	}
 	switch {
+	case m.notes[p.ID] != "" && !m.expired[p.ID].IsZero():
+		return reject("plan_expired", m.notes[p.ID])
 	case m.notes[p.ID] != "":
 		return reject("not_applicable", m.notes[p.ID])
 	case a == nil || a.planID != p.ID:
