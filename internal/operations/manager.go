@@ -701,7 +701,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		e.log.Append("warn", knownIncomplete)
 	}
 	undecoded := false
-	request := planRequest(e.op, out, false)
+	request := planRequest(Operation{VarFiles: e.op.VarFiles, Replace: e.op.Replace, Import: e.op.Import, Context: e.op.Context}, out, false) // not the whole op: Cancel writes it under mu
 	err = planner.Plan(ctx, request, func(line []byte) {
 		level, text, diag, ok := translate(line, "plan", label, inputs)
 		if !ok {

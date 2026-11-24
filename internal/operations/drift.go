@@ -309,7 +309,7 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 	if inputs.incomplete {
 		e.log.Append("warn", knownIncomplete)
 	}
-	request := planRequest(e.op, out, true)
+	request := planRequest(Operation{VarFiles: e.op.VarFiles, Context: e.op.Context}, out, true) // not the whole op: Cancel writes it under mu
 	undecoded := false
 	label := engineLabel(snap.Info.Engine)
 	err = planner.Plan(ctx, request, func(line []byte) {
