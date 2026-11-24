@@ -252,3 +252,22 @@ func TestGraphGolden(t *testing.T) {
 		t.Fatalf("graph response differs from golden; rerun with -update and review the diff\n%s", got)
 	}
 }
+
+// Launch refusals use the shared {error, reason} shape, and an oversized context fingerprint
+// is refused before anything runs (M26.19).
+func TestGraphStartRefusalsHaveReasonAndBoundedFingerprint(t *testing.T) {
+	fake := &enginetest.Fake{GraphDOT: fixtures.GraphTerraform, PlanJSON: fixtures.PlanAllActions}
+	s, _ := newDriftServer(t, fake)
+	w := s.do("POST", "/api/v1/graphs", `{}`)
+	got := decode[map[string]string](t, w)
+	if w.Code != 400 || got["error"] != "acknowledgement_required" || got["reason"] == "" {
+		t.Fatalf("%d %v", w.Code, got)
+	}
+	long := `{"acknowledgeEngineRun":true,"contextFingerprint":"` + strings.Repeat("a", 129) + `"}`
+	if w := s.do("POST", "/api/v1/graphs", long); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_request") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if slices.Contains(fake.Calls(), "graph") {
+		t.Fatal("a refused graph ran the engine")
+	}
+}
