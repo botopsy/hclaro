@@ -29,6 +29,8 @@ type Resource struct {
 	Module     string `json:"module"`
 	Index      any    `json:"index,omitempty"`
 	Attributes any    `json:"attributes"`
+	// KeyAttributes is set only on list rows, from the redacted Attributes (see Summary).
+	KeyAttributes string `json:"keyAttributes,omitempty"`
 }
 
 type Module struct {

@@ -91,6 +91,7 @@ export function ResourceTable({
     } },
     { key: 'type', header: 'Type', className: 'type-column', cell: r => <Chip>{r.type}</Chip> },
     ...showProvider ? [{ key: 'provider', header: 'Provider', className: 'provider-column', cell: (r: Resource) => providerName(r.provider) }] : [],
+    ...resources.some(r => r.keyAttributes) ? [{ key: 'key-attributes', header: 'Key attributes', className: 'key-attributes-column', cell: (r: Resource) => r.keyAttributes ? <span className="mono key-attributes" title={r.keyAttributes}>{r.keyAttributes}</span> : null }] : [],
     { key: 'drift', header: 'Drift', className: 'drift-column', cell: r => {
       const d = drift(r.id);
       return <Chip tone={d.tone}>{d.label}</Chip>;

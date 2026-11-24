@@ -172,6 +172,7 @@ func listResources(w http.ResponseWriter, r *http.Request, snap workspace.Snapsh
 		if query != "" && !strings.Contains(strings.ToLower(resource.Address+" "+resource.Provider+" "+resource.Type+" "+resource.Module+" "+resource.Name), query) {
 			continue
 		}
+		resource.KeyAttributes = state.Summary(resource.Type, resource.Attributes)
 		resource.Attributes = nil
 		matches = append(matches, resource)
 	}

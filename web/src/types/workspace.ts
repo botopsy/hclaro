@@ -9,6 +9,7 @@ export type Resource = {
   module: string;
   index?: unknown;
   attributes: unknown;
+  keyAttributes?: string;
 };
 export type Module = {
   address: string;
