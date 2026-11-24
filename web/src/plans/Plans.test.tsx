@@ -561,6 +561,32 @@ describe('Plans', () => {
     expect(screen.queryByText(/healthy|verified/i)).not.toBeInTheDocument();
   });
 
+  it('hides the applied plan after a clean apply and shows it again on request', async () => {
+    const applied: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [applied, operation] }) : undefined);
+    view();
+    expect(await screen.findByRole('heading', { name: 'Applied: 10 changes' })).toBeInTheDocument();
+    // Nothing is left to review: no banner, tiles or change table, only the way back to the plan.
+    expect(screen.queryByText('Review only.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Filter by action' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Planned resource changes' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show the plan that was applied' }));
+    expect(await screen.findByRole('region', { name: 'Planned resource changes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show the plan that was applied' })).not.toBeInTheDocument();
+  });
+  it('keeps the plan in view when the apply was not clean', async () => {
+    const left: Operation = { ...operation, kind: 'apply', status: 'succeeded', outcome: 'applied', stateReloaded: true, planFileLeft: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [left, operation] }) : undefined);
+    view();
+    expect(await screen.findByRole('region', { name: 'Planned resource changes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show the plan that was applied' })).not.toBeInTheDocument();
+    cleanup();
+    const interrupted: Operation = { ...operation, kind: 'apply', status: 'cancelled', outcome: 'uncertain', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z' };
+    serve(url => url.endsWith('/operations') ? Response.json({ operations: [interrupted, operation] }) : undefined);
+    view();
+    expect(await screen.findByRole('region', { name: 'Planned resource changes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show the plan that was applied' })).not.toBeInTheDocument();
+  });
   it('reports an interrupted apply as an uncertain outcome', async () => {
     const interrupted: Operation = { ...operation, kind: 'apply', status: 'cancelled', outcome: 'uncertain', stateReloaded: true, completedAt: '2026-11-05T09:10:00Z', diagnostic: { code: 'apply_cancelled', message: 'The apply was interrupted. Infrastructure may be partly changed.' } };
     serve(url => url.endsWith('/operations') ? Response.json({ operations: [interrupted, operation] }) : undefined);
