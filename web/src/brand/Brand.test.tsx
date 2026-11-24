@@ -150,7 +150,7 @@ describe('theme tokens', () => {
   const surfaces = ['bg', 'sidebar', 'surface', 'surface-hover', 'surface-selected', 'inset'];
   it.each(['light', 'dark'] as const)('meets WCAG AA for text and controls in the %s theme', theme => {
     const t = tokens(theme);
-    for (const fg of ['text', 'muted', 'subtle', 'accent-text', 'read', 'create', 'update', 'replace', 'destroy']) {
+    for (const fg of ['text', 'muted', 'subtle', 'accent-text', 'read', 'create', 'update', 'replace', 'destroy', 'warn', 'destructive']) {
       for (const bg of surfaces) expect(contrast(t(fg), t(bg)), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
     }
     expect(contrast(t('primary-foreground'), t('primary'))).toBeGreaterThanOrEqual(4.5);

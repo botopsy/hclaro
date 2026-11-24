@@ -5,6 +5,7 @@ import { onNavigate } from '../router';
 const minWidth = 360;
 const defaultWidth = 520;
 const step = 40;
+const focusable = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])';
 
 function maxWidth() {
   return Math.max(minWidth, window.innerWidth - 80);
@@ -26,7 +27,7 @@ function savedWidth() {
 }
 
 // Drawer is a details panel docked to the right edge of the window over a dimmed backdrop.
-// It closes on Escape, a backdrop click or navigation; focus is not trapped.
+// It closes on Escape, a backdrop click or navigation; with a backdrop, focus moves in and Tab is trapped.
 // shortcut: backdrop={false} keeps the page behind usable for pages not yet redesigned; each
 // page's redesign task removes it.
 export function Drawer({ label, onClose, backdrop = true, children }: { label: string; onClose: () => void; backdrop?: boolean; children: ReactNode }) {
@@ -51,6 +52,28 @@ export function Drawer({ label, onClose, backdrop = true, children }: { label: s
       if ((!active || active === document.body || aside?.contains(active)) && opener?.isConnected) opener.focus();
     };
   }, []);
+
+  // A drawer over a backdrop is modal in practice: focus moves in on open and Tab wraps inside
+  // the topmost one. Without a backdrop the page stays usable, so nothing is trapped.
+  useEffect(() => {
+    if (!backdrop) return;
+    const aside = panel.current;
+    if (aside && !aside.contains(document.activeElement)) aside.focus();
+    function trap(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'Tab' || !aside) return;
+      const open = document.querySelectorAll('aside.inspector');
+      if (open[open.length - 1] !== aside || document.querySelector('[aria-modal="true"]')) return;
+      const items = Array.from(aside.querySelectorAll<HTMLElement>('*')).filter(e => e.matches(focusable) && !e.closest('[inert], details:not([open]) > :not(summary)'));
+      const first = items[0], last = items.at(-1);
+      const from = document.activeElement;
+      if (!aside.contains(from) || from === aside || (event.shiftKey ? from === first : from === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first)?.focus();
+      }
+    }
+    window.addEventListener('keydown', trap);
+    return () => window.removeEventListener('keydown', trap);
+  }, [backdrop]);
 
   useEffect(() => {
     writeStorage('local', storageKeys.drawerWidth, String(preferred));
@@ -103,7 +126,7 @@ export function Drawer({ label, onClose, backdrop = true, children }: { label: s
 
   return <>
    {backdrop && <div className="drawer-backdrop" aria-hidden="true" onClick={onClose} />}
-   <aside ref={panel} className="inspector" aria-label={label} style={{ width }}>
+   <aside ref={panel} className="inspector" aria-label={label} tabIndex={-1} style={{ width }}>
    <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label={`Resize ${label.toLowerCase()}`} aria-valuemin={minWidth} aria-valuemax={maxWidth()} aria-valuenow={width} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onKeyDown={keyDown} />
    {children}
    </aside>
