@@ -55,12 +55,12 @@ func TestReveal(t *testing.T) {
 	}
 }
 
-func TestRevealRefusesContainersAndLongStrings(t *testing.T) {
+func TestRevealReturnsHiddenContainersAsJSONAndRefusesLongStrings(t *testing.T) {
 	doc := func(values string) []byte {
 		return []byte(`{"format_version":"1.0","values":{"root_module":{"resources":[{"address":"a.b","mode":"managed","type":"a","name":"b","provider_name":"p","values":` + values + `,"sensitive_values":{"m":true,"s":true}}]}}}`)
 	}
-	if _, err := Reveal(doc(`{"m":{"k":"v"}}`), "a.b", []any{"m"}); !errors.Is(err, ErrRevealNotScalar) {
-		t.Errorf("map: %v", err)
+	if got, err := Reveal(doc(`{"m":{"k":"v"}}`), "a.b", []any{"m"}); err != nil || got != "{\n  \"k\": \"v\"\n}" {
+		t.Errorf("map: %q, %v", got, err)
 	}
 	if _, err := Reveal(doc(`{"s":"`+strings.Repeat("x", maxShownString+1)+`"}`), "a.b", []any{"s"}); !errors.Is(err, ErrRevealTooLong) {
 		t.Errorf("long: %v", err)

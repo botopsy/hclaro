@@ -79,8 +79,6 @@ func revealRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			reasonJSON(w, 404, "path_not_found", "That value is no longer in the state. Read the workspace again.")
 		case errors.Is(err, state.ErrRevealNotHidden):
 			reasonJSON(w, 400, "not_redacted", "This value is not hidden, so there is nothing to reveal.")
-		case errors.Is(err, state.ErrRevealNotScalar):
-			reasonJSON(w, 400, "not_scalar", "Only a single value can be revealed. Reveal its entries one at a time.")
 		case errors.Is(err, state.ErrRevealTooLong):
 			reasonJSON(w, 400, "too_long", "This value is too long to reveal.")
 		default:

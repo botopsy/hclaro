@@ -12,15 +12,13 @@ import (
 var (
 	ErrRevealNotFound   = errors.New("resource or attribute path not found")
 	ErrRevealNotHidden  = errors.New("value is not redacted")
-	ErrRevealNotScalar  = errors.New("only a single string, number or bool can be revealed")
 	ErrRevealTooLong    = errors.New("value is too long to reveal")
 	errRevealBadState   = errors.New("invalid state JSON")
 	maxRevealPathLength = 64
 )
 
-// Reveal returns the one scalar at path of the resource at address, but only when Redact
-// hides it. Visible values, maps and lists are refused, so this is not a general state
-// reader. It is a separate, narrow path: Redact itself is unchanged.
+// Reveal returns the one value (a scalar, or a hidden map or list as JSON text) at path of the resource at address, but only when Redact
+// hides it. Visible values are refused, so this is not a general state reader. It is a separate, narrow path: Redact itself is unchanged.
 // path holds map keys (string) and list indexes (JSON numbers or ints).
 func Reveal(input []byte, address string, path []any) (any, error) {
 	if len(path) == 0 || len(path) > maxRevealPathLength || len(input) > MaxBytes {
@@ -80,7 +78,12 @@ func Reveal(input []byte, address string, path []any) (any, error) {
 	case bool, json.Number:
 		return v, nil
 	}
-	return nil, ErrRevealNotScalar
+	// A map or list the policy hid as a whole is returned as JSON text, still one value.
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil || len(out) > maxShownString {
+		return nil, ErrRevealTooLong
+	}
+	return string(out), nil
 }
 
 func listIndex(step any) (int, bool) {
