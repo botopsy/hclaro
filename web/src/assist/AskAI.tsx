@@ -12,7 +12,7 @@ import { hasProposal, ProposedChanges, useChanges } from './ProposedChanges';
 import { errorMessage } from '../lib/errorMessage';
 import { saveFile } from '../lib/download';
 import { ErrorState } from '../components/ErrorState';
-import { Disclosure } from '../components/Disclosure';
+import { Markdown } from '../components/Markdown';
 
 // AI handoff (AI-01.03) and conversations (AI-01.04, AI-01.07): the server builds a sanitized
 // context package; the user previews it and only Copy, Download or Review with an assistant hands it over.
@@ -142,7 +142,6 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
   }
   const error = pkg.error instanceof ApiError ? pkg.error : undefined;
   const p = pkg.data;
-  const disclosure = p?.disclosure;
   // A quick action's first turn exists only in the preview; export returns plain packages and reviews.
   const quick = 'action' in request && !!request.action;
   const attached = 'cost' in request && !!request.cost;
@@ -154,11 +153,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
       : pkg.error ? <ErrorState inline message={pkg.error.message}>{onCost && attached && <Button variant="outline" onClick={() => onCost(false)}>Continue without cost data</Button>}</ErrorState>
       : p && p.sections.length === 0 ? <div className="empty-state"><h2>Nothing to share</h2><p>This context package has no content.</p></div>
       : p && <>
-       {disclosure && <Disclosure summary="Before you share: what this sends and costs"><ul className="assist-disclosure" aria-label="Before you share">{disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul></Disclosure>}
        <dl className="metadata">
-        <div><dt>Included</dt><dd>{p.sections.join(', ')}</dd></div>
-        <div><dt>Removed for size</dt><dd>{p.dropped.length ? p.dropped.join(', ') : 'Nothing'}</dd></div>
-        <div><dt>Never included</dt><dd>State values, .tfvars values, saved plans, plan JSON, environment, backend settings and local paths. Values that look secret are shown as [redacted] or their file is left out; detection is heuristic, so read the text below before you share it.</dd></div>
         {p.prompt && <div><dt>{quick ? 'Quick action prompt' : 'Review prompt'}</dt><dd className="mono">{p.prompt}</dd></div>}
         <div><dt>Package SHA-256</dt><dd className="mono" title={p.sha256}>{p.sha256.slice(0, 16)}…</dd></div>
        </dl>
@@ -173,7 +168,7 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
        {chatId && <ConversationPanel scope={scope} id={chatId} name={provider?.name ?? 'the assistant'} onClosed={() => setChatId(undefined)} actions={route.kind === 'context' ? <Button variant="outline" onClick={() => navigate(contextPath(route.projectId, route.workspace, 'Assistant'))}>Open in AI Assistant →</Button> : undefined} />}
       </>}
     {!chatId && p && p.sections.length > 0 && <p className="muted assist-note assist-shared">Nothing is shared until you click Send or Copy.</p>}
-    <div className="form-actions">
+    {!chatId && <div className="form-actions">
      <Button variant="ghost" onClick={onClose}>Cancel</Button>
      {p && p.sections.length > 0 && <>
       {!quick && <>{handoffs.length ? handoffs.map(h => <Button key={h.id} variant="outline" disabled={busy} onClick={() => void handOver('copy', h.name)}><Copy size={14} />Copy for {h.name}</Button>)
@@ -181,9 +176,9 @@ export function AssistDrawer({ scope, request, title, onClose, approve, onCost }
       <Button variant="outline" disabled={busy} onClick={() => void handOver('download')}><Download size={14} />Download .md</Button></>}
       {provider && settings && <Button disabled={busy || !!chatId} onClick={() => void startChat()}><Send size={14} />{!settings.disclosureAccepted ? 'Accept and send' : approve ? approve.label : 'Send'}</Button>}
      </>}
-    </div>
-    {p && p.sections.length > 0 && handoffs.length > 0 && !quick && <p className="muted assist-note">{handoffs.map(h => h.name).join(' and ')} {handoffs.length > 1 ? 'are' : 'is'} handoff-only: copy or download the context and give it to the assistant yourself. Hclaro never runs {handoffs.length > 1 ? 'them' : 'it'}.</p>}
-    {p && provider && settings && !settings.disclosureAccepted && <p className="muted assist-note">Accept and send accepts the notes above (open "Before you share") for this session and sends this to {provider.name}.</p>}
+    </div>}
+    {!chatId && p && p.sections.length > 0 && handoffs.length > 0 && !quick && <p className="muted assist-note">{handoffs.map(h => h.name).join(' and ')} {handoffs.length > 1 ? 'are' : 'is'} handoff-only: copy or download the context and give it to the assistant yourself. Hclaro never runs {handoffs.length > 1 ? 'them' : 'it'}.</p>}
+    {!chatId && p && provider && settings && !settings.disclosureAccepted && <p className="muted assist-note">Accept and send accepts the AI notes for this session and sends this to {provider.name}.</p>}
    </div>
   </Drawer>;
 }
@@ -246,7 +241,7 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
     <ol className="assist-turns" aria-label="Messages">
      {c.turns.map((t, i) => t.hidden ? <li key={i} className="assist-turn context" role="note">Hidden: this saved {t.role === 'context' ? 'project context' : 'message'} now looks like it contains a secret, a credential or a local path.</li>
        : t.role === 'context' ? <li key={i} className="assist-turn context" role="note">Project context attached (hash <code title={t.sha256}>{t.sha256?.slice(0, 12)}…</code>)</li> : <li key={i} className={`assist-turn ${t.role}`}><strong>{t.role === 'user' ? 'You' : name}</strong>
-      {t.role === 'assistant' ? <><pre className="assist-text" aria-label="Assistant reply text" tabIndex={0}>{t.text || '(empty reply)'}</pre>
+      {t.role === 'assistant' ? <><Markdown label="Assistant reply text" text={t.text || '(empty reply)'} />
         {changes.data && changes.data.changes.some(v => v.turn === i) && <ProposedChanges scope={scope} id={id} changes={changes.data.changes.filter(v => v.turn === i)} />}</>
         : t.prompt ? <p>{t.prompt.startsWith('qa-') ? 'Ran a quick action on the context package' : 'Asked for a review of the context package'} (<code>{t.prompt}</code>).</p>
         : <p>{t.text || 'Shared the context package.'}</p>}</li>)}
@@ -260,10 +255,9 @@ export function ConversationPanel({ scope, id, name, onClosed, actions, staleHin
      <textarea value={text} rows={3} disabled={locked} onChange={e => setText(e.target.value)} />
     </label>
     <label className="assist-cost"><input type="checkbox" checked={c.saved} disabled={busy || (!c.saved && c.needsReview)} onChange={e => void act('save', e.target.checked)} />
-     <span>Save conversation: keep its context, messages and replies as plain text in Hclaro's configuration folder on this machine, to reopen after Hclaro restarts. Unticking deletes the saved copy.</span></label>
+     <span title="Keeps its context, messages and replies as plain text in Hclaro's configuration folder on this machine, to reopen after Hclaro restarts. Unticking deletes the saved copy.">Save conversation</span></label>
     {long && <p className="dialog-error" role="alert">This message is longer than {settings?.maxMessage} bytes. Shorten it to send it.</p>}
     {refused && <p className="dialog-error" role="alert">{refused}</p>}
-    {accept && !locked && <Disclosure summary="Before you send: what this shares and costs"><ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul></Disclosure>}
     <div className="form-actions">
      <Button variant="ghost" disabled={busy} onClick={() => void act('close')}><MessageSquareX size={14} />Close conversation</Button>
      {!running && !c.readOnly && actions}

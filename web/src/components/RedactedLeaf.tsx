@@ -49,10 +49,10 @@ export function RedactedLeaf({ name, path, reveal }: { name?: string; path: (str
    {step === 'shown' ? <>
     <span className="json-string revealed-value" data-testid="revealed-value">{value}</span>
     <CopyButton value={value} label={`Copy value of ${name}`} iconOnly />
-    <Button type="button" variant="ghost" size="small" onClick={hide}><EyeOff size={12} aria-hidden="true" />Hide</Button>
+    <Button type="button" variant="ghost" size="icon" aria-label="Hide" title="Hide" onClick={hide}><EyeOff size={12} aria-hidden="true" /></Button>
    </> : <>
     <span className="redacted"><LockKeyhole size={11} />redacted</span>
-    {(step === 'hidden' || step === 'loading') && <Button type="button" variant="ghost" size="small" onClick={() => void run()} disabled={step === 'loading'}><Eye size={12} aria-hidden="true" />Reveal</Button>}
+    {(step === 'hidden' || step === 'loading') && <Button type="button" variant="ghost" size="icon" aria-label="Reveal" title="Reveal" onClick={() => void run()} disabled={step === 'loading'}><Eye size={12} aria-hidden="true" /></Button>}
    </>}
    {step === 'error' && error && <div className="reveal-note" role="group" aria-label={`Reveal ${name}`}>
     <p role="alert">{denied ? 'Your credentials can\u2019t read this value. The backend denied access. It stays hidden.' : error.message}</p>

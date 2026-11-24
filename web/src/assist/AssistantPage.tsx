@@ -6,7 +6,6 @@ import { api, send } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { ErrorState } from '../components/ErrorState';
-import { Disclosure } from '../components/Disclosure';
 import { Segmented } from '../components/Segmented';
 import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve } from './AskAI';
 import type { AssistListed, AssistSaved, Conversation } from '../types';
@@ -163,6 +162,9 @@ export function AssistantPage({ scope, project, workspace, noProject, onSettings
         {actionsOff && <p className="muted assist-note" role="note">{actionsOff}</p>}
        </section>
        <p className="muted assist-note">The assistant is fixed for each conversation. Changing it in Settings affects only new conversations; open conversations keep theirs.</p>
+      </div>}
+    </div>
+    {!selected && <div className="assistant-composer">
        <div className="assistant-mode">
         <span className="muted">Context</span>
         <Segmented<Mode> label="Context" value={mode} onChange={setMode} options={[{ value: 'chat', label: 'Conversation only' }, { value: 'project', label: 'Attach project context' }]} />
@@ -173,19 +175,19 @@ export function AssistantPage({ scope, project, workspace, noProject, onSettings
         <li><X size={12} aria-hidden="true" /> State, live cloud data, pricing</li>
         <li><X size={12} aria-hidden="true" /> Sensitive values</li>
        </ul>}
+       {long && <p className="dialog-error" role="alert">This message is longer than {settings.maxMessage} bytes. Shorten it to send it.</p>}
+       {failed && <p className="dialog-error" role="alert">{failed}</p>}
+       {!provider && <p className="muted assist-note">No assistant can run here. Preview the project context to copy or download it for an assistant you run yourself.</p>}
+       <div className="assistant-send-row">
        <label className="assist-compose">{mode === 'chat' ? 'Message' : 'Message (optional)'}
         <textarea value={text} rows={4} onChange={e => setText(e.target.value)} />
        </label>
-       {long && <p className="dialog-error" role="alert">This message is longer than {settings.maxMessage} bytes. Shorten it to send it.</p>}
-       {failed && <p className="dialog-error" role="alert">{failed}</p>}
-       {!settings.disclosureAccepted && provider && mode === 'chat' && <Disclosure summary="Before you send: what this shares and costs"><ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul></Disclosure>}
-       {!provider && <p className="muted assist-note">No assistant can run here. Preview the project context to copy or download it for an assistant you run yourself.</p>}
        <div className="form-actions">
         {mode === 'chat' ? <Button disabled={busy || !provider || !text.trim() || long} onClick={() => void startChat()}><Send size={14} />{settings.disclosureAccepted || !provider ? 'Start conversation' : 'Accept and send'}</Button>
           : <Button disabled={busy || long} onClick={() => setPreview('start')}><Sparkles size={14} />Preview project context</Button>}
        </div>
-      </div>}
-    </div>
+       </div>
+    </div>}
    </section>
    {preview && createPortal(<AssistDrawer scope={scope} request={preview === 'action' && action ? { kind: 'project', action: action.id, ...(action.cost ? { cost: true } : {}) } : { kind: 'project' }}
      title={preview === 'attach' ? 'Attach project context' : preview === 'action' && action ? action.label : 'Project context'} approve={approve}

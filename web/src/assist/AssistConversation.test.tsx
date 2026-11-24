@@ -59,7 +59,8 @@ describe('AI conversation', () => {
     const text = await screen.findByLabelText('Assistant reply text');
     expect(started()).toEqual([{ url: '/api/v1/ai/conversations', body: { packageSha256: hash, provider: 'claude', disclosureVersion: '4', prompt: 'review-plan@1' } }]);
     expect(screen.getByText(/Asked for a review of the context package/)).toBeInTheDocument();
-    expect(text.textContent).toBe(reply);
+    // Backticks become code formatting; everything else, markup included, stays literal text.
+    expect(text.textContent).toBe(reply.replace(/`/g, ''));
     const panel = screen.getByRole('region', { name: 'Conversation' });
     expect(within(panel).queryAllByRole('link')).toHaveLength(0);
     expect(panel.querySelector('script, a, iframe')).toBeNull();
@@ -69,7 +70,8 @@ describe('AI conversation', () => {
     expect(screen.queryByRole('button', { name: /apply|approve/i })).toBeNull();
     // Only conversation controls: no command buttons derived from the reply.
     expect(within(panel).getAllByRole('button').map(b => b.textContent)).toEqual(['Close conversation', 'Send message']);
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    // The preview's own Send/Copy footer is gone once the conversation is open (no duplicate buttons).
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
   });
 
   it.each([['single project', { kind: 'launch' }, '/api/v1'], ['Hub', { kind: 'context', contextId: '2'.repeat(32) }, `/api/v1/contexts/${'2'.repeat(32)}`]] as [string, PlanScope, string][])(
@@ -179,7 +181,6 @@ describe('AI conversation', () => {
     show();
     await screen.findByLabelText('Text to share: review prompt and context package');
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
-    expect(within(screen.getByLabelText('Before you share')).getByText(disclosure.lines[0])).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Accept and send' }));
     const sent = posts.filter(p => !p.url.endsWith('/ai/packages'));
     expect(sent.map(p => p.url)).toEqual(['/api/v1/ai/settings', '/api/v1/ai/conversations']);

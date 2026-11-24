@@ -113,8 +113,7 @@ describe('AI Assistant page', () => {
     serve({ disclosureAccepted: false });
     const user = userEvent.setup();
     show();
-    expect(within(await screen.findByLabelText('Before you send')).getByText(disclosure.lines[0])).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Message'), 'hi');
+    await user.type(await screen.findByLabelText('Message'), 'hi');
     await user.click(screen.getByRole('button', { name: 'Accept and send' }));
     expect(posts.map(p => p.url)).toEqual(['/api/v1/ai/settings', '/api/v1/ai/conversations']);
     expect(posts[0].body).toEqual({ acceptDisclosure: '5' });

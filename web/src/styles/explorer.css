@@ -401,7 +401,10 @@ kbd {
   color: var(--text);
 }
 .address-button:only-child { max-width: 100%; }
-.address-button:hover { text-decoration: underline; }
+/* The whole row opens the details: the real button stretches over it (no handler on the row). */
+.data-table tr:has(.address-button) { position: relative; cursor: pointer; }
+.address-button::after { content: ""; position: absolute; inset: 0; }
+.data-table tr:has(.address-button) .data-table-check input { position: relative; z-index: 1; }
 .address-prefix { color: var(--subtle); }
 .data-badge {
   margin-left: 8px;
