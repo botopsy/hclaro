@@ -213,6 +213,38 @@ func (m *Manager) releaseLocked(reason string) (deleted bool) {
 	return deleted
 }
 
+// Discard drops the retained saved plan early, at the user's request. It refuses a plan that
+// is not the retained one and any time an operation runs. The plan is never applicable
+// afterwards; an approval or preflight binding issued for it dies with the artifact, so
+// checkLocked refuses it. Whether the file was deleted is in the plan's note (releaseLocked).
+func (m *Manager) Discard(id string) error {
+	if _, ok := m.Plan(id); !ok {
+		return ErrNotFound
+	}
+	m.mu.Lock()
+	a := m.artifact
+	switch {
+	case m.closed:
+		m.mu.Unlock()
+		return reject("shutting_down", "Hclaro is shutting down.")
+	case a == nil || a.planID != id:
+		m.mu.Unlock()
+		return reject("not_applicable", "The saved plan file is no longer kept, so there is nothing to discard.")
+	case a.applying || m.running != nil:
+		m.mu.Unlock()
+		return reject("operation_running", "Another operation is running. Wait for it to finish.")
+	}
+	engine, version, workspace := a.engine, a.version, a.workspace
+	m.releaseLocked("You discarded this plan.")
+	m.mu.Unlock()
+	if m.Recorder != nil {
+		now := time.Now().UTC().Format(time.RFC3339)
+		op := Operation{ID: m.NewID(), Kind: "discard", Status: Succeeded, StartedAt: now, CompletedAt: now, PlanID: id, Command: []string{}}
+		m.Recorder.Record(Record{Operation: op, Root: m.root, Engine: engine, EngineVersion: version, Workspace: workspace, Final: true}.Event())
+	}
+	return nil
+}
+
 // Saved plan files hold plaintext secrets. They live in private directories named with these
 // prefixes, which SweepStale uses to find the ones a killed Hclaro left behind.
 const planDirPrefix, driftDirPrefix = "hclaro-plan-", "hclaro-drift-"

@@ -239,6 +239,12 @@ func (s *Scope) Approve(ctx context.Context, planID string, req operations.Appro
 	return s.manager.Approve(planID, req)
 }
 
+// Discard drops one of this scope's retained saved plans. It needs no revalidation: it only
+// deletes a file Hclaro made and runs no command.
+func (s *Scope) Discard(_ context.Context, planID string) error {
+	return s.manager.Discard(planID)
+}
+
 // StartApply consumes the approval of one of this scope's plans and applies its saved
 // file. The scope is revalidated here and again, fully (engine version, workspace list and
 // executable SHA-256), with the root claim held immediately before the engine runs.

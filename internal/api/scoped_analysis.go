@@ -66,6 +66,7 @@ func (noScope) Preflight(context.Context, string, operations.PreflightRequest) (
 func (noScope) Approve(context.Context, string, operations.ApprovalRequest) (operations.Approval, error) {
 	return operations.Approval{}, operations.ErrNotFound
 }
+func (noScope) Discard(context.Context, string) error { return operations.ErrNotFound }
 func (noScope) StartApply(context.Context, string, string, string) (operations.Operation, error) {
 	return operations.Operation{}, operations.ErrNotFound
 }

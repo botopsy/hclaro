@@ -303,6 +303,8 @@ func outcome(e *HistoryEntry, ev Event) Outcome {
 			return Outcome{Result: "unverified", Summary: "Git was asked to switch from " + from + " to " + to + " but did not confirm it. Check the working tree with git status. It did not change infrastructure."}
 		}
 		return Outcome{Result: "not_run", Summary: "The switch to " + to + " was refused before Git changed anything."}
+	case "discard":
+		return Outcome{Result: "completed", Summary: "A saved plan was discarded at the user's request. It can no longer be applied. Nothing ran against infrastructure or state.", Verified: true}
 	case "tool":
 		if e.Status == StatusSucceeded && ev.Action != "" {
 			return Outcome{Result: word(ev.Outcome), Summary: "A read-only project tool ran."}

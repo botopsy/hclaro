@@ -348,6 +348,26 @@ func execRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, source sou
 		}
 		writeJSON(w, 200, approvalResponse{approval, src.View()})
 	})
+	handle("POST /plans/{id}/discard", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{}
+		src, ok := planRequest(w, r, source, &body, func() bool { return true })
+		if !ok {
+			return
+		}
+		ctx, cancel := withDeadline(w, r, applyTimeout)
+		defer cancel()
+		if err := src.Discard(ctx, r.PathValue("id")); err != nil {
+			applyError(w, r, hub, src, err)
+			return
+		}
+		p, ok := src.Plan(r.PathValue("id"))
+		if !ok {
+			errorJSON(w, 404, "plan_not_found")
+			return
+		}
+		_, status := src.ContextStatus(p)
+		writeJSON(w, 200, map[string]any{"apply": status, "scope": src.View()})
+	})
 	handle("POST /plans/{id}/apply", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Token        string `json:"confirmationToken"`

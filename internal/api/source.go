@@ -29,6 +29,8 @@ type execSource interface {
 	Preflight(ctx context.Context, id string, req operations.PreflightRequest) (operations.PreflightReport, error)
 	Approve(ctx context.Context, id string, req operations.ApprovalRequest) (operations.Approval, error)
 	StartApply(ctx context.Context, id, token, typed string) (operations.Operation, error)
+	// Discard drops the retained saved plan early. It runs no command.
+	Discard(ctx context.Context, id string) error
 	PreviewImport(ctx context.Context, req imports.Request) (imports.Preview, error)
 	StartImport(ctx context.Context, req operations.ImportRequest) (operations.Operation, error)
 	Operations() []operations.Operation
@@ -61,6 +63,7 @@ func (l launchSource) StartPlan(_ context.Context, req operations.PlanStart) (op
 func (l launchSource) Approve(_ context.Context, id string, req operations.ApprovalRequest) (operations.Approval, error) {
 	return l.Manager.Approve(id, req)
 }
+func (l launchSource) Discard(_ context.Context, id string) error { return l.Manager.Discard(id) }
 func (l launchSource) StartApply(_ context.Context, id, token, typed string) (operations.Operation, error) {
 	return l.Manager.StartApply(id, token, typed)
 }

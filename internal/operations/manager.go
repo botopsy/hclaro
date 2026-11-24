@@ -61,7 +61,7 @@ type Diagnostic struct {
 
 // Kinds lists every Operation.Kind the manager starts. History maps each one; a kind
 // missing here is recorded there as unknown and possibly mutating.
-var Kinds = []string{"plan", "apply", "drift", "graph", "init", "workspace", "tool", "branch"}
+var Kinds = []string{"plan", "apply", "drift", "graph", "init", "workspace", "tool", "branch", "discard"}
 
 type Operation struct {
 	ID          string   `json:"id"`

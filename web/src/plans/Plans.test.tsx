@@ -89,6 +89,31 @@ afterEach(() => {
 });
 
 describe('Plans', () => {
+  it('discards a saved plan only after one inline confirmation, then shows the server note', async () => {
+    let discarded = false;
+    const note = 'You discarded this plan. The saved plan file was deleted.';
+    serve((url, init) => {
+      if (init?.method === 'POST' && url.endsWith(`/plans/${planId}/discard`)) {
+        discarded = true;
+        return Response.json({ apply: { available: false, artifactRetained: false, code: 'not_applicable', reason: note } });
+      }
+      if (url.endsWith(`/plans/${planId}`)) return Response.json(discarded ? { ...applicable, apply: { available: false, artifactRetained: false, code: 'not_applicable', reason: note } } : applicable);
+    });
+    view();
+    await screen.findByText('Ready to apply.');
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.getByRole('alert')).toHaveTextContent("Delete the saved plan? It can't be applied afterwards.");
+    expect(posts.filter(p => p.url.endsWith('/discard'))).toHaveLength(0);
+    // Keep backs out without calling the server.
+    await userEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(screen.queryByText(/Delete the saved plan/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete plan' }));
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent('Review only'));
+    expect(screen.getByRole('note')).toHaveTextContent(note);
+    expect(posts.filter(p => p.url.endsWith('/discard'))).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Review and apply/ })).not.toBeInTheDocument();
+  });
   it('says the configuration could not be read instead of claiming it changed', async () => {
     const reason = 'Hclaro could not read the configuration, so it cannot tell whether it changed since this plan was created: "locked/main.tf" could not be read (permission denied).';
     serve(url => url.endsWith(`/plans/${planId}`) ? Response.json({ ...plan, contextChanged: true, apply: { available: false, artifactRetained: true, code: 'configuration_unreadable', reason } }) : undefined);

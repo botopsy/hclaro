@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRightLeft, Ban, Braces, Clock, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, Pencil, Play, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
-import { api } from '../api';
+import { api, send } from '../api';
 import type { AttributeChange, ChangeDetail, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint } from '../types';
 import { Button } from '../components/ui/button';
 import { DataTable, type Column } from '../components/DataTable';
@@ -14,6 +14,7 @@ import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope'
 import { AskAI } from '../assist/AskAI';
 import { clock, engineLabel } from '../lib/format';
 import { ErrorState } from '../components/ErrorState';
+import { errorMessage } from '../lib/errorMessage';
 
 type Tab = 'changes' | 'outputs' | 'drift' | 'cost';
 const pageSize = 200;
@@ -47,6 +48,26 @@ export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, 
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(pageSize);
   const expired = useExpired(plan);
+  const client = useQueryClient();
+  // Discard deletes the saved plan file on the server; the card then shows the server's note.
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const [discardError, setDiscardError] = useState('');
+  async function discard() {
+    setDiscarding(true);
+    setDiscardError('');
+    try {
+      await send('POST', scopedPath(scope, `plans/${plan.id}/discard`), {});
+      setConfirmDiscard(false);
+      await client.invalidateQueries({ queryKey: ['plan'] });
+      void client.invalidateQueries({ queryKey: ['plans'] });
+      void client.invalidateQueries({ queryKey: ['operations'] });
+    } catch (e) {
+      setDiscardError(errorMessage(e, 'The plan could not be discarded.'));
+    } finally {
+      setDiscarding(false);
+    }
+  }
   const engine = engineLabel(plan.engine);
   const source = tab === 'drift' ? plan.drift : plan.changes;
   // Action filters and the no-op toggle apply to planned changes only, never to drift records.
@@ -72,7 +93,7 @@ export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, 
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
    {expired ? <div className="apply-banner apply-expired" role="alert"><Clock size={16} aria-hidden="true" /><div><strong>This saved plan expired{plan.apply.expiresAt ? ` at ${clock(plan.apply.expiresAt)}` : ''}.</strong> It can no longer be applied, because state or configuration may have changed since. Run a new plan to review the changes again.</div>{onRunPlan && <Button onClick={onRunPlan} disabled={!canPlan}><Play size={14} />Run new plan</Button>}</div>
-    : plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={16} aria-hidden="true" /><div><strong>Ready to apply.</strong> Applies exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}.{destructiveLine(plan) && <span className="apply-banner-warning"><TriangleAlert size={13} aria-hidden="true" />{destructiveLine(plan)}</span>}</div><div className="apply-banner-actions">{ai}{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}>Review and apply…</Button>}</div></div>
+    : plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={16} aria-hidden="true" /><div><strong>Ready to apply.</strong> Applies exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}.{destructiveLine(plan) && <span className="apply-banner-warning"><TriangleAlert size={13} aria-hidden="true" />{destructiveLine(plan)}</span>}</div><div className="apply-banner-actions">{confirmDiscard ? <><span role="alert">Delete the saved plan? It can't be applied afterwards.</span><Button variant="destructive" size="small" onClick={() => void discard()} disabled={discarding}>{discarding ? 'Deleting…' : 'Delete plan'}</Button><Button variant="ghost" size="small" onClick={() => setConfirmDiscard(false)} disabled={discarding}>Keep</Button></> : <Button variant="ghost" onClick={() => { setDiscardError(''); setConfirmDiscard(true); }} disabled={busy}>Discard</Button>}{ai}{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}>Review and apply…</Button>}</div>{discardError && <p className="dialog-error" role="alert">{discardError}</p>}</div>
     : plan.apply.code === 'unknown_actions' ? <div className="apply-banner apply-unsupported" role="alert"><Ban size={16} aria-hidden="true" /><div><strong>Apply unavailable: unsupported actions.</strong> {plan.apply.reason} Changes marked <em>Unsupported</em> below use an action combination Hclaro does not recognize, so this plan can be reviewed but never applied here.</div><div className="apply-banner-actions">{ai}</div></div>
     : <div className="apply-banner" role="note"><LockKeyhole size={16} aria-hidden="true" /><div><strong>Review only.</strong> {plan.apply.reason}</div><div className="apply-banner-actions">{ai}</div></div>}
    {plan.contextChanged && plan.apply.code !== 'configuration_unreadable' && <div className="plan-warning" role="alert"><TriangleAlert size={15} />{plan.apply.configurationReason ?? 'Configuration, variable files, the engine or the execution profile changed since this plan was created. Run a new plan to review current changes.'}</div>}
