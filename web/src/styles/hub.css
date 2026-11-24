@@ -190,7 +190,7 @@
   display: flex;
 }
 
-.hub-form input, .hub-form select, .workspace-switch {
+.hub-form input, .hub-form select {
   border: 1px solid var(--input);
   background: var(--inset);
   color: var(--text);
@@ -286,11 +286,6 @@
 
 .workspace-open strong {
   font-weight: 500;
-}
-
-.workspace-switch {
-  padding: 2px 6px;
-  font-size: 13px;
 }
 
 

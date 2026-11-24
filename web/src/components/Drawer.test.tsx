@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Drawer } from './Drawer';
 import { navigate } from '../router';
 
@@ -64,5 +64,28 @@ describe('Drawer redesign behaviour', () => {
     expect(close).toHaveBeenCalledTimes(1);
     window.dispatchEvent(new PopStateEvent('popstate'));
     expect(close).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Drawer keyboard path', () => {
+  it('moves focus in, wraps Tab inside and returns focus to the opener on close', async () => {
+    const user = userEvent.setup();
+    function Host({ open }: { open: boolean }) {
+      return <><button>opener</button>{open && <Drawer label="Details" onClose={() => {}}><button>one</button><button>two</button></Drawer>}</>;
+    }
+    const { rerender, getByText, getByRole } = render(<Host open={false} />);
+    getByText('opener').focus();
+    rerender(<Host open />);
+    expect(getByRole('complementary', { name: 'Details' })).toHaveFocus();
+    await user.tab();
+    expect(getByRole('separator')).toHaveFocus();
+    await user.tab();
+    await user.tab();
+    await user.tab();
+    expect(getByRole('separator')).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(getByText('two')).toHaveFocus();
+    rerender(<Host open={false} />);
+    expect(getByText('opener')).toHaveFocus();
   });
 });
