@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileCode2, FolderOpen, LoaderCircle, MessageSquarePlus, Send, Sparkles, Trash2, Zap } from 'lucide-react';
+import { Check, FileCode2, FolderOpen, LoaderCircle, MessageSquarePlus, Send, Sparkles, Trash2, X, Zap } from 'lucide-react';
 import { api, send } from '../api';
 import { Button } from '../components/ui/button';
 import { scopeKey, scopedPath, type PlanScope } from '../lib/scope';
 import { ErrorState } from '../components/ErrorState';
+import { Disclosure } from '../components/Disclosure';
+import { Segmented } from '../components/Segmented';
 import { AssistDrawer, ConversationPanel, assistSettingsQuery, chosenAssistant, tooLong, useAcceptThen, useDetectAssistants, type Approve } from './AskAI';
 import type { AssistListed, AssistSaved, Conversation } from '../types';
 import { errorMessage } from '../lib/errorMessage';
@@ -29,7 +31,7 @@ const quickActions = [
   { id: 'qa-improve@2', label: 'Suggest improvements' }
 ];
 
-export function AssistantPage({ scope, project, workspace, noProject }: { scope?: PlanScope; project: string; workspace: string; noProject?: boolean }) {
+export function AssistantPage({ scope, project, workspace, noProject, onSettings }: { scope?: PlanScope; project: string; workspace: string; noProject?: boolean; onSettings?: () => void }) {
   const settings = useQuery(assistSettingsQuery).data;
   const client = useQueryClient();
   const list = useQuery({
@@ -112,18 +114,21 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
   const actionsOff = noProject ? 'Open a project to use quick actions: they share its configuration.'
     : !provider ? 'Quick actions need an assistant Hclaro can run. A handoff-only assistant can use Preview project context, then Copy or Download.' : undefined;
 
-  return <div className="assistant-page">
+  const conv = (c: AssistListed) => <li key={c.id}><button type="button" className={`assistant-item ${c.id === selected ? 'active' : ''} ${c.here ? '' : 'elsewhere'}`} aria-current={c.id === selected ? 'true' : undefined} onClick={() => setSelected(c.id)}>
+    <strong>{c.title || 'Conversation'}</strong>
+    <span>{nameOf(c.provider)} · {c.kind === 'conversation' ? 'no project data' : 'project context'} · {c.state}{c.saved ? ' · saved' : ''}</span>
+    {!c.here && <span className="muted">Belongs to {c.project} / {c.workspace}</span>}
+   </button></li>;
+  return <>
+   <div className="assistant-page">
    <nav className="assistant-list" aria-label="Conversations in this session">
     <Button variant={selected ? 'outline' : 'default'} onClick={() => setSelected(undefined)}><MessageSquarePlus size={14} />New conversation</Button>
-    {conversations.length === 0 ? <p className="muted">No conversations in this session yet. They are kept in memory until Hclaro exits or AI is turned off, unless you save them.</p>
-      : <ul>{conversations.map(c => <li key={c.id}><button type="button" className={`assistant-item ${c.id === selected ? 'active' : ''} ${c.here ? '' : 'elsewhere'}`} aria-current={c.id === selected ? 'true' : undefined} onClick={() => setSelected(c.id)}>
-        <strong>{c.title || 'Conversation'}</strong>
-        <span>{nameOf(c.provider)} · {c.kind === 'conversation' ? 'no project data' : 'project context'} · {c.state}{c.saved ? ' · saved' : ''}</span>
-        {!c.here && <span className="muted">Belongs to {c.project} / {c.workspace}</span>}
-       </button></li>)}</ul>}
+    <h2 className="assistant-eyebrow">This session</h2>
+    {conversations.length === 0 ? <p className="muted">None yet. Conversations stay in memory until Hclaro exits or AI is turned off, unless you save them.</p>
+      : <ul>{conversations.map(conv)}</ul>}
     {saved.data?.available && <section aria-label="Saved conversations of this project">
-     <h2>Saved</h2>
-     {closed.length === 0 ? <p className="muted">No other saved conversations. Tick Save conversation in one to keep it for {saved.data.retentionDays ?? 30} days after its last use.</p>
+     <h2 className="assistant-eyebrow">Saved</h2>
+     {closed.length === 0 ? <p className="muted">None. Saved conversations are kept for {saved.data.retentionDays ?? 30} days after their last use.</p>
        : <ul>{closed.map(c => <li key={c.id} className="assistant-item elsewhere">
         <strong>{c.title || 'Conversation'}</strong>
         <span>{nameOf(c.provider)} {c.providerVersion} · workspace {c.workspace} · last used {new Date(c.lastActivity).toLocaleString()}</span>
@@ -135,6 +140,11 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
     </section>}
    </nav>
    <section className="assistant-main" aria-label={selected ? 'Selected conversation' : 'New conversation'}>
+    <div className="assistant-bar">
+     <span title="The assistant is fixed for each conversation. Changing it in Settings affects only new conversations; open conversations keep theirs.">Assistant <strong>{provider?.name ?? chosen?.name ?? 'none detected'}</strong>{settings.checking ? ' · checking…' : settings.strictLocal ? ' · strict local-only mode' : !provider && chosen ? ' · copy or download only' : ''}</span>
+     {onSettings && <button type="button" className="link-button" onClick={onSettings}>Change in Settings</button>}
+    </div>
+    <div className="assistant-body">
     {current && !current.here ? <div className="empty-state" role="note"><h2>Read-only here</h2><p>This conversation belongs to {current.project} / {current.workspace}. Open that project and workspace to continue it; nothing is sent from here.</p></div>
       : selected ? <ConversationPanel key={selected} scope={scope} id={selected} name={nameOf(current?.provider ?? provider?.id ?? '')} onClosed={() => {
         setSelected(undefined);
@@ -143,37 +153,43 @@ export function AssistantPage({ scope, project, workspace, noProject }: { scope?
       }} staleHint="If the project files changed, attach the current project context to continue; otherwise close it and start a new conversation." actions={<Button variant="outline" onClick={() => setPreview('attach')}><FileCode2 size={14} />Attach project context</Button>} />
       : <div className="assistant-new">
        <p className="muted">Project <strong>{project}</strong> · workspace <strong>{workspace}</strong>, from the context selector.</p>
-       <p className="muted" role="note">Assistant: <strong>{provider?.name ?? chosen?.name ?? 'none detected'}</strong>{settings.checking ? ' · checking…' : settings.strictLocal ? ' · strict local-only mode' : !provider && chosen ? ' · copy or download only' : ''}. Change it in Settings.</p>
        <section className="assistant-actions" aria-label="Quick actions">
         <h2>Quick actions</h2>
         <p className="muted assist-note">Each one previews the project context and a fixed prompt first. It uses only the configuration Hclaro reads: no state, live cloud data or pricing.</p>
-        <div className="assistant-action-grid">{quickActions.map(a => <Button key={a.id} variant="outline" disabled={busy || !!actionsOff} title={actionsOff} onClick={() => {
+        <div className="assistant-action-grid">{quickActions.map(a => <button type="button" key={a.id} className="assistant-action" disabled={busy || !!actionsOff} title={actionsOff} onClick={() => {
           setAction({ ...a, cost: false });
           setPreview('action');
-        }}><Zap size={14} />{a.label}</Button>)}</div>
+        }}><Zap size={16} aria-hidden="true" />{a.label}</button>)}</div>
         {actionsOff && <p className="muted assist-note" role="note">{actionsOff}</p>}
        </section>
        <p className="muted assist-note">The assistant is fixed for each conversation. Changing it in Settings affects only new conversations; open conversations keep theirs.</p>
-       <fieldset className="assistant-mode">
-        <legend>Context</legend>
-        <label><input type="radio" name="assistant-mode" checked={mode === 'chat'} onChange={() => setMode('chat')} />Conversation only: no project data is attached</label>
-        <label><input type="radio" name="assistant-mode" checked={mode === 'project'} onChange={() => setMode('project')} />Attach project context: preview the package first</label>
-       </fieldset>
+       <div className="assistant-mode">
+        <span className="muted">Context</span>
+        <Segmented<Mode> label="Context" value={mode} onChange={setMode} options={[{ value: 'chat', label: 'Conversation only' }, { value: 'project', label: 'Attach project context' }]} />
+       </div>
+       {mode === 'project' && <ul className="assistant-attached" aria-label="What is attached">
+        <li><Check size={12} aria-hidden="true" /> Configuration files (.tf) and the module tree</li>
+        <li><Check size={12} aria-hidden="true" /> Provider requirements</li>
+        <li><X size={12} aria-hidden="true" /> State, live cloud data, pricing</li>
+        <li><X size={12} aria-hidden="true" /> Sensitive values</li>
+       </ul>}
        <label className="assist-compose">{mode === 'chat' ? 'Message' : 'Message (optional)'}
         <textarea value={text} rows={4} onChange={e => setText(e.target.value)} />
        </label>
        {long && <p className="dialog-error" role="alert">This message is longer than {settings.maxMessage} bytes. Shorten it to send it.</p>}
        {failed && <p className="dialog-error" role="alert">{failed}</p>}
-       {!settings.disclosureAccepted && provider && mode === 'chat' && <ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul>}
+       {!settings.disclosureAccepted && provider && mode === 'chat' && <Disclosure summary="Before you send: what this shares and costs"><ul className="assist-disclosure" aria-label="Before you send">{settings.disclosure.lines.map(l => <li key={l}>{l}</li>)}</ul></Disclosure>}
        {!provider && <p className="muted assist-note">No assistant can run here. Preview the project context to copy or download it for an assistant you run yourself.</p>}
        <div className="form-actions">
         {mode === 'chat' ? <Button disabled={busy || !provider || !text.trim() || long} onClick={() => void startChat()}><Send size={14} />{settings.disclosureAccepted || !provider ? 'Start conversation' : 'Accept and send'}</Button>
           : <Button disabled={busy || long} onClick={() => setPreview('start')}><Sparkles size={14} />Preview project context</Button>}
        </div>
       </div>}
+    </div>
    </section>
    {preview && createPortal(<AssistDrawer scope={scope} request={preview === 'action' && action ? { kind: 'project', action: action.id, ...(action.cost ? { cost: true } : {}) } : { kind: 'project' }}
      title={preview === 'attach' ? 'Attach project context' : preview === 'action' && action ? action.label : 'Project context'} approve={approve}
      onCost={action?.id === 'qa-cost@1' && preview === 'action' ? cost => setAction({ ...action, cost }) : undefined} onClose={() => setPreview(undefined)} />, document.body)}
-  </div>;
+  </div>
+  </>;
 }

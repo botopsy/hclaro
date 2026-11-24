@@ -85,7 +85,7 @@ describe('AI Assistant page', () => {
   it('uses the assistant chosen in Settings, fixed per conversation', async () => {
     serve();
     show();
-    expect(await screen.findByText(/^Assistant:/)).toHaveTextContent('Assistant: Claude Code. Change it in Settings.');
+    expect(await screen.findByText(/^Assistant/, { selector: 'span' })).toHaveTextContent('Assistant Claude Code');
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.getByText(/Changing it in Settings affects only new conversations/)).toBeInTheDocument();
   });
@@ -93,19 +93,19 @@ describe('AI Assistant page', () => {
   it('opening the page asks for detection once, only if it has not run (AI-01.14)', async () => {
     serve({ checked: false, headless: false, providers: [] });
     show();
-    await screen.findByText(/^Assistant:/);
+    await screen.findByText(/^Assistant/, { selector: 'span' });
     await vi.waitFor(() => expect(posts.map(p => p.url)).toEqual(['/api/v1/ai/detect']));
     cleanup();
     serve({ checked: true });
     show();
-    await screen.findByText(/^Assistant:/);
+    await screen.findByText(/^Assistant/, { selector: 'span' });
     expect(posts).toEqual([]);
   });
 
   it('a chosen copy-only assistant offers no Send', async () => {
     serve({ headless: false, providers: [{ ...claude, mode: 'unsupported', send: false, usable: false, installed: false, reason: 'cli_missing' }, codex], defaultProvider: 'codex' });
     show();
-    expect(await screen.findByText(/^Assistant:/)).toHaveTextContent('Assistant: Codex CLI · copy or download only.');
+    expect(await screen.findByText(/^Assistant/, { selector: 'span' })).toHaveTextContent('Assistant Codex CLI · copy or download only');
     expect(screen.getByRole('button', { name: 'Start conversation' })).toBeDisabled();
   });
 
@@ -125,7 +125,7 @@ describe('AI Assistant page', () => {
     const user = userEvent.setup();
     const ctx = '3'.repeat(32);
     show({ kind: 'context', contextId: ctx });
-    await user.click(await screen.findByLabelText(/Attach project context: preview the package first/));
+    await user.click(await screen.findByRole('button', { name: 'Attach project context' }));
     await user.type(screen.getByLabelText('Message (optional)'), 'Summarize');
     await user.click(screen.getByRole('button', { name: 'Preview project context' }));
     const text = await screen.findByLabelText('Text to share: context package');
@@ -292,7 +292,7 @@ describe('AI Assistant page', () => {
     savedList = [];
     serve();
     show({ kind: 'context', contextId: '3'.repeat(32) });
-    expect(await screen.findByText(/No other saved conversations/)).toBeInTheDocument();
+    expect(await screen.findByText(/Saved conversations are kept for/)).toBeInTheDocument();
     expect(gets).toContain(`/api/v1/contexts/${'3'.repeat(32)}/ai/saved`);
   });
 });
