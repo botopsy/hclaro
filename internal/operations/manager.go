@@ -54,7 +54,7 @@ var (
 	// ErrChangeNotFound: the plan has no change with that ID. ErrNoGit: no Git service in this session.
 	ErrChangeNotFound = errors.New("plan change not found")
 	ErrNoGit          = errors.New("git context is not available")
-	ErrClosed             = errors.New("hclaro is shutting down")
+	ErrClosed         = errors.New("hclaro is shutting down")
 )
 
 type Diagnostic struct {
