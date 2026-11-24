@@ -22,12 +22,10 @@ type Props<T> = {
   active?: string;
   density?: Density;
   rowLabel?: (row: T) => string;
-  // Makes the whole row clickable. Clicks on controls inside the row (checkbox, buttons) and text selection don't count.
-  onRowClick?: (row: T) => void;
 };
 
 // One-line rows (38px, 30px compact). Group headers collapse; rows can be checked and expanded.
-export function DataTable<T>({ label, columns, rowKey, rows, groups, selected, onSelectedChange, expand, active, density = 'comfortable', rowLabel, onRowClick }: Props<T>) {
+export function DataTable<T>({ label, columns, rowKey, rows, groups, selected, onSelectedChange, expand, active, density = 'comfortable', rowLabel }: Props<T>) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const all = groups ?? [{ key: '', label: '', rows: rows ?? [] }];
@@ -65,9 +63,7 @@ export function DataTable<T>({ label, columns, rowKey, rows, groups, selected, o
          const open = expanded.has(key);
          const name = rowLabel?.(row) ?? key;
          return <Fragment key={key}>
-          <tr className={[key === active ? 'active' : '', onRowClick ? 'clickable' : ''].filter(Boolean).join(' ') || undefined} onClick={onRowClick ? e => {
-            if (!(e.target as HTMLElement).closest('button, a, input, label, select, textarea') && !window.getSelection()?.toString()) onRowClick(row);
-          } : undefined}>
+          <tr className={key === active ? 'active' : undefined}>
            {selectable && <td className="data-table-check"><input type="checkbox" aria-label={`Select ${name}`} checked={!!selected?.has(key)} onChange={e => select([key], e.target.checked)} /></td>}
            {expand && <td className="data-table-toggle"><button type="button" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${name}`} onClick={() => setExpanded(toggle(expanded, key))}>{open ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}</button></td>}
            {columns.map(c => <td key={c.key} className={c.className}>{c.cell(row)}</td>)}

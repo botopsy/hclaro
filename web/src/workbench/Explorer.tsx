@@ -96,7 +96,7 @@ export function ResourceTable({
       return <Chip tone={d.tone}>{d.label}</Chip>;
     } }
   ];
-  return <DataTable label="Resources" columns={columns} rowKey={r => r.id} rowLabel={r => r.address} rows={groupBy === 'none' ? resources : undefined} groups={groupBy === 'none' ? undefined : groupRows(resources, groupBy)} selected={selected} onSelectedChange={onSelectedChange} active={active} density={density} onRowClick={r => onOpen(r.id)} />;
+  return <DataTable label="Resources" columns={columns} rowKey={r => r.id} rowLabel={r => r.address} rows={groupBy === 'none' ? resources : undefined} groups={groupBy === 'none' ? undefined : groupRows(resources, groupBy)} selected={selected} onSelectedChange={onSelectedChange} active={active} density={density} />;
 }
 
 export function Inspector({

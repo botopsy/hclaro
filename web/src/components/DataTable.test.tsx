@@ -11,15 +11,6 @@ const a = { address: 'aws_subnet.a', type: 'aws_subnet' };
 const b = { address: 'aws_subnet.b', type: 'aws_subnet' };
 
 describe('DataTable', () => {
-  it('opens a row from a click anywhere on it, but not from its checkbox', () => {
-    const open = vi.fn();
-    render(<DataTable label="Resources" columns={columns} rowKey={r => r.address} rows={[a]} selected={new Set()} onSelectedChange={() => undefined} onRowClick={open} />);
-    fireEvent.click(screen.getByText('aws_subnet', { selector: 'td' }));
-    expect(open).toHaveBeenCalledWith(a);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select aws_subnet.a' }));
-    expect(open).toHaveBeenCalledTimes(1);
-  });
-
   it('collapses a group header row', () => {
     render(<DataTable label="Resources" columns={columns} rowKey={r => r.address} groups={[{ key: 'aws_subnet', label: 'aws_subnet', rows: [a, b] }, { key: 'aws_vpc', label: 'aws_vpc', rows: [vpc] }]} />);
     const header = screen.getByRole('button', { name: /aws_subnet\s*2/ });
