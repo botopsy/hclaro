@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"io/fs"
@@ -176,16 +177,43 @@ func listResources(w http.ResponseWriter, r *http.Request, snap workspace.Snapsh
 		resource.Attributes = nil
 		matches = append(matches, resource)
 	}
+	groupKey := func(state.Resource) string { return "" }
+	switch q.Get("group") {
+	case "":
+	case "type":
+		groupKey = func(r state.Resource) string { return r.Type }
+	case "module":
+		groupKey = func(r state.Resource) string { return r.Module }
+	default:
+		errorJSON(w, 400, "invalid_group")
+		return
+	}
+	var groups []resourceGroup
+	if q.Get("group") != "" {
+		// Order by group, then address, so a page never splits a group at random; counts cover every match.
+		slices.SortStableFunc(matches, func(a, b state.Resource) int {
+			return cmp.Or(cmp.Compare(groupKey(a), groupKey(b)), cmp.Compare(a.Address, b.Address))
+		})
+	}
 	if q.Get("sort") == "desc" {
 		slices.Reverse(matches)
 	} else if q.Get("sort") != "" && q.Get("sort") != "asc" {
 		errorJSON(w, 400, "invalid_sort")
 		return
 	}
+	if q.Get("group") != "" {
+		for _, m := range matches {
+			if k := groupKey(m); len(groups) > 0 && groups[len(groups)-1].Key == k {
+				groups[len(groups)-1].Count++
+			} else {
+				groups = append(groups, resourceGroup{k, 1})
+			}
+		}
+	}
 	total := len(matches)
 	start := min(offset, total)
 	end := min(start+limit, total)
-	writeJSON(w, 200, resourcePage{matches[start:end], total})
+	writeJSON(w, 200, resourcePage{matches[start:end], total, groups})
 }
 
 func resourceDetail(w http.ResponseWriter, snap workspace.Snapshot, id string) {
@@ -199,4 +227,11 @@ func resourceDetail(w http.ResponseWriter, snap workspace.Snapshot, id string) {
 type resourcePage struct {
 	Resources []state.Resource `json:"resources"`
 	Total     int              `json:"total"`
+	// Groups counts every match, not just this page, when the request names a group.
+	Groups []resourceGroup `json:"groups,omitempty"`
+}
+
+type resourceGroup struct {
+	Key   string `json:"key"`
+	Count int    `json:"count"`
 }

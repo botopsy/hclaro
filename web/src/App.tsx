@@ -114,7 +114,9 @@ function Workbench({
   }
   // A deep link (for example from a comparison) may name the resource to inspect.
   const [selected, setSelected] = useState<string | undefined>(() => scoped ? takeLinkedResource() : undefined);
-  const [groupBy, setGroupBy] = useState<GroupBy>(() => preferences.grouping === 'flat' ? 'none' : preferences.grouping);
+  const [groupBy, setGroupByRaw] = useState<GroupBy>(() => preferences.grouping === 'flat' ? 'none' : preferences.grouping);
+  // Pages are ordered by group, so a new grouping starts at the first page.
+  const setGroupBy = (value: GroupBy) => { setGroupByRaw(value); setPage(0); };
   const [notice, setNotice] = useState('');
   const [planId, setPlanId] = useState<string>();
   // Rows checked in Resources, kept across pages and filters. Only the managed ones can be
@@ -244,6 +246,7 @@ function Workbench({
     limit: '50'
   });
   if (module !== undefined) parameters.set('module', module);
+  if (groupBy !== 'none') parameters.set('group', groupBy);
   const resources = useQuery({
     queryKey: ['resources', readScope ? scopeKey(readScope) : 'none', parameters.toString()],
     queryFn: () => api<ResourcePage>(scopedPath(readScope!, `resources?${parameters}`)),
@@ -413,7 +416,7 @@ function Workbench({
       <section ref={listRef} className="resource-list" aria-label="Resource list">
         {resources.isPending ? <div role="status" className="empty-state"><LoaderCircle className="spin" /><p>Loading resources…</p></div> : resources.error ? <ErrorState message={resources.error.message} retry={() => {
                   void resources.refetch();
-                }} /> : resources.data?.total === 0 ? <EmptyState icon={<Box size={28} />} title={filtered ? 'No matching resources' : 'A clean slate'} action={filtered && <Button variant="outline" onClick={resetFilters}>Clear filters</Button>}>{filtered ? 'Try a different search or clear your filters.' : 'The state contains no resource instances. Hclaro reads state without creating resources.'}</EmptyState> : <><ResourceTable resources={resources.data?.resources ?? []} groupBy={groupBy} showProvider={Object.keys(w.providers).length > 1} drift={drift} selected={new Set(selection.keys())} onSelectedChange={choose} active={selected} onOpen={setSelected} density={preferences.density} /><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
+                }} /> : resources.data?.total === 0 ? <EmptyState icon={<Box size={28} />} title={filtered ? 'No matching resources' : 'A clean slate'} action={filtered && <Button variant="outline" onClick={resetFilters}>Clear filters</Button>}>{filtered ? 'Try a different search or clear your filters.' : 'The state contains no resource instances. Hclaro reads state without creating resources.'}</EmptyState> : <><ResourceTable resources={resources.data?.resources ?? []} groupCounts={resources.data?.groups} groupBy={groupBy} showProvider={Object.keys(w.providers).length > 1} drift={drift} selected={new Set(selection.keys())} onSelectedChange={choose} active={selected} onOpen={setSelected} density={preferences.density} /><div className="pagination"><span>{page * 50 + 1}–{Math.min((page + 1) * 50, resources.data?.total || 0)} of {resources.data?.total}</span><div><Button variant="ghost" size="icon" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}><ArrowLeft size={14} /></Button><span>{page + 1} / {Math.ceil((resources.data?.total || 1) / 50)}</span><Button variant="ghost" size="icon" aria-label="Next page" disabled={(page + 1) * 50 >= (resources.data?.total || 0)} onClick={() => setPage(page + 1)}><ArrowRight size={14} /></Button></div></div></>}
       </section>
       {selected && <Inspector key={`${readScope ? scopeKey(readScope) : 'none'}:${selected}`} reveal={readScope?.kind === 'context' ? path => revealValue(readScope, selected, path) : undefined} resource={detail.data} loading={detail.isPending} error={detail.error?.message} close={() => setSelected(undefined)} copy={copy} source={gitBase !== undefined && readScope && detail.data ? { path: scopedPath(readScope, `resources/${detail.data.id}/source`), prefix: gitBase } : undefined} editor={preferences.editor} notify={setNotice} drift={drift(selected)} ai={readScope} />}
      </>}

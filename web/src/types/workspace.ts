@@ -55,4 +55,5 @@ export type Workspace = {
 export type ResourcePage = {
   resources: Resource[];
   total: number;
+  groups?: { key: string; count: number }[];
 };
