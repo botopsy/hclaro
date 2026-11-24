@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, ChevronDown, GitBranch, LoaderCircle, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, GitBranch, LoaderCircle, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { send } from '../api';
 import type { GitBranchList, GitContext, GitSwitchPreview } from '../types';
 import { Button } from '../components/ui/button';
-import { useModal } from '../components/useModal';
+import { Dialog } from '../components/Dialog';
 import { shortCommit } from './GitView';
 import { errorMessage } from '../lib/errorMessage';
 
@@ -14,7 +14,7 @@ const sourceQueries = ['git-head', 'git-status', 'git-diff', 'git-branches', 'so
 // The Git branch selector (M29). It switches only to existing local branches, after a
 // preview and an explicit confirmation; the server re-checks everything before switching.
 // It is independent of the Terraform workspace selector.
-export function BranchSwitcher({ prefix, workspace, notify }: { prefix: string; workspace?: string; notify: (text: string) => void }) {
+export function BranchSwitcher({ prefix, current, workspace, notify }: { prefix: string; current: string; workspace?: string; notify: (text: string) => void }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
   const [target, setTarget] = useState<string>();
@@ -45,9 +45,9 @@ export function BranchSwitcher({ prefix, workspace, notify }: { prefix: string; 
   const shown = (l?.branches ?? []).filter(b => b.name.toLowerCase().includes(filter.trim().toLowerCase()));
   const others = (l?.branches ?? []).filter(b => !b.current);
   return <div className="branch-switcher" ref={wrapper}>
-   <button ref={trigger} type="button" className="git-badge branch-trigger" aria-expanded={open} aria-controls="branch-switcher-panel" aria-label="Switch Git branch" title="Switch to another existing local Git branch. The Terraform workspace does not change." onClick={() => setOpen(o => !o)}><ChevronDown size={13} aria-hidden="true" /></button>
+   <button ref={trigger} type="button" className="branch-trigger mono" aria-expanded={open} aria-controls="branch-switcher-panel" title="Switch to another existing local Git branch. The Terraform workspace does not change." onClick={() => setOpen(o => !o)}>{current}<ChevronDown size={13} aria-hidden="true" /></button>
    {open && <div id="branch-switcher-panel" className="switcher-popover branch-popover" role="group" aria-label="Switch Git branch">
-    <div className="switcher-label">Git branch</div>
+    <div className="switcher-label">Local branches</div>
     {list.isPending ? <p className="branch-note" role="status"><LoaderCircle className="spin" size={12} /> Listing local branches…</p>
      : list.error ? <p className="branch-note" role="alert">{errorMessage(list.error)}</p>
      : l && l.state !== 'repository' ? <p className="branch-note" role="status">{l.message}</p>
@@ -62,7 +62,7 @@ export function BranchSwitcher({ prefix, workspace, notify }: { prefix: string; 
         {shown.length === 0 && <li className="branch-note">No branch matches.</li>}</ul>}
       {(l.hidden > 0 || l.incomplete) && <p className="branch-note">{l.hidden > 0 && `${l.hidden} branch${l.hidden === 1 ? '' : 'es'} with unusual names not shown. `}{l.incomplete && 'More branches exist than are listed.'}</p>}
      </>}
-    <p className="branch-note branch-safety"><ShieldCheck size={12} aria-hidden="true" /> Existing local branches only. Never creates, fetches, stashes or discards.</p>
+    <p className="branch-note branch-safety"><ShieldCheck size={12} aria-hidden="true" /> Only existing local branches. Hclaro never creates, fetches or pulls.</p>
    </div>}
    {target && <SwitchDialog prefix={prefix} target={target} workspace={workspace} notify={notify} onClose={() => {
      setTarget(undefined);
@@ -72,9 +72,7 @@ export function BranchSwitcher({ prefix, workspace, notify }: { prefix: string; 
 }
 
 function SwitchDialog({ prefix, target, workspace, notify, onClose }: { prefix: string; target: string; workspace?: string; notify: (text: string) => void; onClose: () => void }) {
-  const dialog = useRef<HTMLDivElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
-  useModal(dialog, cancel, onClose);
   const client = useQueryClient();
   // The preview reads the working tree; it authorizes nothing, the server checks again.
   const preview = useQuery({ queryKey: ['git-switch-preview', prefix, target], queryFn: () => send<GitSwitchPreview>('POST', `${prefix}git/switch/preview`, { branch: target }), retry: false, gcTime: 0 });
@@ -90,24 +88,21 @@ function SwitchDialog({ prefix, target, workspace, notify, onClose }: { prefix: 
   });
   const from = p?.from.detached ? `detached HEAD @ ${shortCommit(p.from.commit)}` : p?.from.branch;
   const t = p?.workingTree;
-  return <div className="dialog-backdrop">
-   <div ref={dialog} className="dialog branch-dialog" role="dialog" aria-modal="true" aria-labelledby="branch-title" aria-describedby="branch-summary">
-    <div className="dialog-header"><h2 id="branch-title">Switch Git branch?</h2><Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
-    {preview.isPending ? <p id="branch-summary" role="status"><LoaderCircle className="spin" size={13} /> Checking the working tree with <code>git status</code>. Nothing is changed.</p>
-     : preview.error ? <p id="branch-summary" className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{errorMessage(preview.error)}</span></p>
+  return <Dialog title={`Switch to ${target}?`} onClose={onClose} initial={cancel} footer={<><Button ref={cancel} variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={() => run.mutate()} disabled={!p?.canSwitch || run.isPending}>{run.isPending ? <LoaderCircle className="spin" size={13} /> : <GitBranch size={13} />}Switch branch</Button></>}>
+    {preview.isPending ? <p role="status"><LoaderCircle className="spin" size={13} /> Checking the working tree with <code>git status</code>. Nothing is changed.</p>
+     : preview.error ? <p className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{errorMessage(preview.error)}</span></p>
      : p && <>
-      <p id="branch-summary" className="branch-route"><strong className="mono">{from}</strong><ArrowRight size={14} aria-label="to" /><strong className="mono">{p.to.name}</strong></p>
+      {p.blocked.map(b => <div className="info-note warn-note" role="alert" key={b.code}><TriangleAlert size={15} /><span>{b.message}</span></div>)}
+      {p.canSwitch && <p>This runs <code>git switch {p.to.name}</code> in the repository. Plans made before the switch were made from another commit and must pass their checks again.</p>}
+      <p className="branch-route"><strong className="mono">{from}</strong><ArrowRight size={14} aria-label="to" /><strong className="mono">{p.to.name}</strong></p>
       <dl className="branch-facts">
        <dt>Working tree</dt><dd className={t!.clean ? 'tone-text-create' : 'tone-text-update'}>{t!.clean ? 'Clean' : [t!.staged && `${t!.staged} staged`, t!.modified && `${t!.modified} modified`, t!.untracked && `${t!.untracked} untracked`].filter(Boolean).join(', ') || 'Not fully read'}</dd>
        <dt>Source changes</dt><dd>{p.sourceChanges.files === 0 ? 'No files differ' : `${p.sourceChanges.files} file${p.sourceChanges.files === 1 ? '' : 's'} differ · ${p.sourceChanges.iac} IaC · ${p.sourceChanges.inProject} in this project`}</dd>
        <dt>Terraform workspace</dt><dd>{workspace ? <><span className="mono">{workspace}</span> (unchanged)</> : 'Unchanged'}</dd>
       </dl>
-      {p.blocked.map(b => <div className="info-note warn-note" role="alert" key={b.code}><TriangleAlert size={15} /><span>{b.message}</span></div>)}
       {p.warnings.map(w => <div className="info-note" role="note" key={w.code}><TriangleAlert size={15} /><span>{w.message}</span></div>)}
-      <p className="muted small">Switching changes files in the working tree. It runs no init, plan, refresh or apply; plans made before the switch must pass their checks again.</p>
+      <p className="muted small">Switching changes files in the working tree. It runs no init, plan, refresh or apply.</p>
      </>}
     {run.error && <div className="info-note warn-note" role="alert"><TriangleAlert size={15} /><span>{errorMessage(run.error)}</span></div>}
-    <div className="dialog-actions"><Button ref={cancel} variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={() => run.mutate()} disabled={!p?.canSwitch || run.isPending}>{run.isPending ? <LoaderCircle className="spin" size={13} /> : <GitBranch size={13} />}Switch to {target}</Button></div>
-   </div>
-  </div>;
+  </Dialog>;
 }
