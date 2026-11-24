@@ -69,7 +69,8 @@
 .assist-turn > strong { display: block; font-size: 0.85em; }
 .assist-turn > p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assist-compose { display: grid; gap: 4px; }
-.assist-compose textarea { width: 100%; resize: vertical; font: inherit; }
+.assist-compose textarea { width: 100%; resize: vertical; font: inherit; color: var(--text); background: var(--inset); border: 1px solid var(--input); border-radius: 6px; padding: 8px 10px; }
+.assist-compose textarea:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 
 /* AI Assistant page (§4.4c): sessions and saved on the left, assistant bar, quick-action cards and composer on the right. */
 .assistant-page { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; min-height: 480px; }
