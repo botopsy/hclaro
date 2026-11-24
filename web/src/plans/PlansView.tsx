@@ -206,14 +206,14 @@ function Diagnostics({ operation }: { operation: Operation }) {
   return <ul className="diagnostics">{operation.engineDiagnostics.map((d, i) => <li key={i} className={`diag-${d.severity}`}><strong>{d.severity === 'error' ? 'Error' : 'Warning'}: {d.summary}</strong>{d.address && <code>{d.address}</code>}{d.detail && <pre>{d.detail}</pre>}</li>)}</ul>;
 }
 
-// Process exit is not the same as infrastructure state: the outcome is reported separately
-// from whether state was re-read.
 // isCleanApply: every part of the apply is confirmed (the engine finished, state was read again,
 // the saved plan file is gone), so the short card is enough and the old plan needs no review.
 export function isCleanApply(op: Operation) {
   return op.status === 'succeeded' && !op.stateReloadFailed && op.stateReloaded && !op.planFileLeft && op.outcome !== 'uncertain';
 }
 
+// Process exit is not the same as infrastructure state: the outcome is reported separately
+// from whether state was re-read.
 function ApplyResult({ operation, changes, source, canPlan, onRunPlan, openHistory, openGit }: { operation: Operation; changes?: number; source?: PlanSourceFingerprint; canPlan: boolean; onRunPlan: () => void; openHistory?: () => void; openGit?: () => void }) {
   const ok = operation.status === 'succeeded';
   // Engine success with a failed state read is not a clean success: warn, never show it as healthy.
