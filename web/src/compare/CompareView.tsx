@@ -244,6 +244,8 @@ function RulesEditor({ rules, onChange, error }: { rules: ComparisonRule[]; onCh
 
 function ComparePreflight({ left, right, projects, rules, busy, error, onConfirm, onClose }: { left: ComparisonTarget; right: ComparisonTarget; projects: Project[]; rules: number; busy: boolean; error: string; onConfirm: (reload: boolean) => void; onClose: () => void }) {
   const [reload, setReload] = useState(false);
+  // The server refuses a comparison without this acknowledgement, so the button waits for it.
+  const [understood, setUnderstood] = useState(false);
   const confirm = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   useModal(dialog, confirm, onClose);
@@ -256,9 +258,10 @@ function ComparePreflight({ left, right, projects, rules, busy, error, onConfirm
      <li><Database size={16} /><span><strong>Reads recorded state</strong> of each side that is not already read in this session: <code>version</code>, <code>workspace list</code>, <code>workspace show</code> and <code>show -json</code> with a per-command <code>TF_WORKSPACE</code>. This may contact each backend with your existing credentials.</span></li>
      <li><ShieldCheck size={16} /><span><strong>Does not plan, refresh, select a workspace or write state.</strong> Values are redacted before comparison; secrets are never compared or shown.</span></li>
     </ul>
+    <label className="check-row"><input type="checkbox" checked={understood} onChange={e => setUnderstood(e.target.checked)} /><span>I understand this reads the recorded state of both workspaces through the local CLI</span></label>
     <label className="check-row"><input type="checkbox" checked={reload} onChange={e => setReload(e.target.checked)} /><span>Read both sides again, even if they were read in this session</span></label>
     {error && <p className="dialog-error" role="alert">{error}</p>}
-    <div className="dialog-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button ref={confirm} onClick={() => onConfirm(reload)} disabled={busy}><GitCompareArrows size={14} />{busy ? 'Starting…' : 'Compare'}</Button></div>
+    <div className="dialog-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button ref={confirm} onClick={() => onConfirm(reload)} disabled={busy || !understood}><GitCompareArrows size={14} />{busy ? 'Starting…' : 'Compare'}</Button></div>
    </div>
   </div>;
 }

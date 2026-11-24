@@ -90,6 +90,8 @@ describe('Compare workspaces', () => {
     expect(dialog).toHaveTextContent('Infra / dev (left) with Infra / prod (right)');
     expect(dialog).toHaveTextContent('Does not plan, refresh, select a workspace or write state.');
     expect(posts).toHaveLength(0);
+    expect(within(dialog).getByRole('button', { name: 'Compare' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('checkbox', { name: /I understand/ }));
     await user.click(within(dialog).getByRole('button', { name: 'Compare' }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0].body).toEqual({ left: { projectId, workspace: 'dev' }, right: { projectId, workspace: 'prod' }, rules: [], reload: false, acknowledgeStateRead: true });
@@ -105,6 +107,7 @@ describe('Compare workspaces', () => {
     expect(await screen.findByText(/Limited to 2 selected resources/)).toBeInTheDocument();
     expect(posts).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: /Compare…/ }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Compare workspaces' })).getByRole('checkbox', { name: /I understand/ }));
     await user.click(within(screen.getByRole('dialog', { name: 'Compare workspaces' })).getByRole('button', { name: 'Compare' }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0].body).toMatchObject({ left: { projectId, workspace: 'dev' }, addresses: ['aws_vpc.main', 'aws_s3_bucket.logs'] });
@@ -206,6 +209,7 @@ describe('Compare workspaces', () => {
     await user.type(screen.getByRole('textbox', { name: 'Rule 2 attribute path' }), 'tags.Owner');
     expect(screen.getByText(/can hide meaningful divergence/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Compare…/ }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: /I understand/ }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Compare' }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect((posts[0].body as { rules: unknown }).rules).toEqual([{ kind: 'map', left: 'module.app', right: 'module.application' }, { kind: 'ignore', path: 'tags.Owner' }]);
