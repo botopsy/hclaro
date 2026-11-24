@@ -287,8 +287,8 @@ func New(store *workspace.Store, planner engine.Planner, root string, deps Deps)
 }
 
 func engineLabel(name string) string {
-	if name == "tofu" {
-		return "OpenTofu"
+	if label := tfpolicy.EngineLabel(name); label != "" {
+		return label
 	}
 	return "Terraform"
 }
@@ -385,29 +385,28 @@ func (m *Manager) selectVarFiles(varFiles []string, c *ExecutionContext) ([]stri
 	return selected, nil
 }
 
-// startPlanLocked starts a validated plan operation. Caller holds mu.
-func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation, release func(), environ []string) Operation {
-	command := []string{snap.Info.Engine, "plan", "-input=false", "-json", "-out=<private temporary file>"}
-	for _, name := range op.VarFiles {
-		command = append(command, "-var-file="+name)
+// planRequest is the one engine request for a plan or drift scan; the command an operation
+// shows is built from it too (planCommand), so the display cannot drift from what runs.
+func planRequest(op Operation, out string, refreshOnly bool) engine.PlanRequest {
+	r := engine.PlanRequest{Out: out, VarFiles: op.VarFiles, Replace: op.Replace, RefreshOnly: refreshOnly}
+	if op.Import != nil {
+		r.GenerateConfigOut = op.Import.GeneratedFile
 	}
 	if c := op.Context; c != nil {
-		if c.Parallelism > 0 {
-			command = append(command, fmt.Sprintf("-parallelism=%d", c.Parallelism))
-		}
-		if c.LockTimeoutSeconds > 0 {
-			command = append(command, fmt.Sprintf("-lock-timeout=%ds", c.LockTimeoutSeconds))
-		}
+		r.Parallelism, r.LockTimeoutSeconds = c.Parallelism, c.LockTimeoutSeconds
 	}
-	for _, address := range op.Replace {
-		command = append(command, "-replace="+address)
-	}
-	if op.Import != nil && op.Import.GeneratedFile != "" {
-		command = append(command, "-generate-config-out="+op.Import.GeneratedFile)
-	}
+	return r
+}
+
+func planCommand(engineName string, op Operation, refreshOnly bool) []string {
+	return op.Context.Display(planRequest(op, "", refreshOnly).Display(engineName, "<private temporary file>"))
+}
+
+// startPlanLocked starts a validated plan operation. Caller holds mu.
+func (m *Manager) startPlanLocked(snap workspace.Snapshot, op Operation, release func(), environ []string) Operation {
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
 	op.ID, op.Kind, op.Status, op.Stage = m.NewID(), "plan", Running, "Starting"
-	op.StartedAt, op.Command, op.Diagnostics, op.LogRetained = time.Now().UTC().Format(time.RFC3339), op.Context.Display(command), []EngineDiagnostic{}, true
+	op.StartedAt, op.Command, op.Diagnostics, op.LogRetained = time.Now().UTC().Format(time.RFC3339), planCommand(snap.Info.Engine, op, false), []EngineDiagnostic{}, true
 	e := &entry{op: op, log: NewLog(logEvents, logBytes), cancel: cancel, start: time.Now(), release: release, environ: environ, meta: recordMeta{m.root, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace}}
 	m.entries = append(m.entries, e)
 	m.trim()
@@ -702,10 +701,7 @@ func (m *Manager) execute(ctx context.Context, e *entry, snap workspace.Snapshot
 		e.log.Append("warn", knownIncomplete)
 	}
 	undecoded := false
-	request := engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, Replace: e.op.Replace, GenerateConfigOut: generated}
-	if bound != nil {
-		request.Parallelism, request.LockTimeoutSeconds = bound.Parallelism, bound.LockTimeoutSeconds
-	}
+	request := planRequest(e.op, out, false)
 	err = planner.Plan(ctx, request, func(line []byte) {
 		level, text, diag, ok := translate(line, "plan", label, inputs)
 		if !ok {

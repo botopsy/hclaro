@@ -171,21 +171,10 @@ func (m *Manager) StartDriftScan(req DriftStart) (Operation, DriftScan, error) {
 	if !ok {
 		return Operation{}, DriftScan{}, ErrBusy
 	}
-	command := []string{snap.Info.Engine, "plan", "-input=false", "-json", "-out=<private temporary file>", "-refresh-only"}
-	for _, name := range selected {
-		command = append(command, "-var-file="+name)
-	}
-	if bound != nil {
-		if bound.Parallelism > 0 {
-			command = append(command, fmt.Sprintf("-parallelism=%d", bound.Parallelism))
-		}
-		if bound.LockTimeoutSeconds > 0 {
-			command = append(command, fmt.Sprintf("-lock-timeout=%ds", bound.LockTimeoutSeconds))
-		}
-	}
 	now := time.Now()
 	ctx, cancel := context.WithTimeout(m.base, m.Timeout)
-	op := Operation{ID: m.NewID(), Kind: "drift", Status: Running, Stage: "Starting", StartedAt: now.UTC().Format(time.RFC3339), Command: bound.Display(command), VarFiles: selected, Replace: []string{}, Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: bound}
+	op := Operation{ID: m.NewID(), Kind: "drift", Status: Running, Stage: "Starting", StartedAt: now.UTC().Format(time.RFC3339), VarFiles: selected, Replace: []string{}, Diagnostics: []EngineDiagnostic{}, LogRetained: true, Context: bound}
+	op.Command = planCommand(snap.Info.Engine, op, true)
 	scan := &DriftScan{
 		ID: m.NewID(), OperationID: op.ID, Status: ScanRunning, StartedAt: op.StartedAt, Engine: snap.Info.Engine,
 		EngineVersion: snap.Info.Version, Workspace: snap.Info.Workspace, VarFiles: slices.Clone(selected), Context: bound.Clone(),
@@ -320,10 +309,7 @@ func (m *Manager) executeDrift(ctx context.Context, e *entry, snap workspace.Sna
 	if inputs.incomplete {
 		e.log.Append("warn", knownIncomplete)
 	}
-	request := engine.PlanRequest{Out: out, VarFiles: e.op.VarFiles, RefreshOnly: true}
-	if bound != nil {
-		request.Parallelism, request.LockTimeoutSeconds = bound.Parallelism, bound.LockTimeoutSeconds
-	}
+	request := planRequest(e.op, out, true)
 	undecoded := false
 	label := engineLabel(snap.Info.Engine)
 	err = planner.Plan(ctx, request, func(line []byte) {

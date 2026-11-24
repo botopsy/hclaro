@@ -14,8 +14,8 @@ import (
 // adapter. A plan whose minimized input is larger cannot be estimated.
 const MaxInput = 8 << 20
 
-// maxDocument mirrors the plan parser's limit on `show -json` documents.
-const maxDocument = 64 << 20
+// maxDocument is the plan parser's limit on `show -json` documents.
+const maxDocument = state.MaxBytes
 
 // maxValueString drops longer strings: prices never depend on large free-text values.
 const maxValueString = 1024

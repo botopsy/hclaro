@@ -12,6 +12,7 @@ import (
 
 	"hclaro/internal/engine"
 	"hclaro/internal/state"
+	"hclaro/internal/tfpolicy"
 )
 
 // WorkspaceRequest is a reviewed, pinned workspace command in one project root. The caller
@@ -59,7 +60,7 @@ func WorkspaceCommand(engineName string, action engine.WorkspaceAction, name str
 }
 
 var workspaceMessages = map[string]string{
-	"engine_version":         "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13. Nothing was run.",
+	"engine_version":         "Unable to read a supported engine version. Use " + tfpolicy.SupportText + ". Nothing was run.",
 	"path_changed":           "The project folder, its engine or its environment changed after you reviewed this. Nothing was run. Review it again.",
 	"workspace_list":         "Workspaces could not be listed just before running, so Hclaro did not run the command. Check backend access and credentials with the CLI, then review again.",
 	"workspaces_changed":     "The workspace list or the CLI default changed after you reviewed this, for example in a terminal. Nothing was run. Review it again.",

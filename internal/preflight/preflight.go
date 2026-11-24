@@ -9,6 +9,7 @@ import (
 	"hclaro/internal/awscli"
 	"hclaro/internal/plan"
 	"hclaro/internal/profiles"
+	"hclaro/internal/tfpolicy"
 )
 
 // Status of a check. Unknown is never treated as passed.
@@ -234,7 +235,7 @@ func Evaluate(in Input) []Check {
 	if in.EngineSupported {
 		out = append(out, check(CheckEngine, "Engine is recognized and supported", Block, Pass, label(in.Current.Engine)+" "+in.Current.Version+" is in the supported range.", ""))
 	} else {
-		out = append(out, check(CheckEngine, "Engine is recognized and supported", Block, Fail, "The engine or its version is not one Hclaro supports for applying ("+orUnknown(in.Current.Engine)+" "+orUnknown(in.Current.Version)+").", "Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13."))
+		out = append(out, check(CheckEngine, "Engine is recognized and supported", Block, Fail, "The engine or its version is not one Hclaro supports for applying ("+orUnknown(in.Current.Engine)+" "+orUnknown(in.Current.Version)+").", "Use "+tfpolicy.SupportText+"."))
 	}
 	switch {
 	case in.ExecutionMode == "remote-exec":
@@ -445,11 +446,8 @@ func noun(kind string) string {
 }
 
 func label(engine string) string {
-	switch engine {
-	case "tofu":
-		return "OpenTofu"
-	case "terraform":
-		return "Terraform"
+	if label := tfpolicy.EngineLabel(engine); label != "" {
+		return label
 	}
 	return orUnknown(engine)
 }

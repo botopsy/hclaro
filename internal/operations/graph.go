@@ -109,7 +109,7 @@ var graphMessages = map[string]string{
 	"network":                  "The backend was unreachable. Check VPN and network access, then generate the graph again.",
 	"graph_failed":             "The engine could not produce a graph. Run `graph` with your CLI to see the error; its output is not shown here because it may contain secrets.",
 	"graph_format":             "The graph output could not be read as the DOT format the engines produce. Nothing was kept.",
-	"graph_too_large":          "The graph exceeds Hclaro's size limits (16 MiB, 20,000 nodes or 200,000 edges). Nothing was kept.",
+	"graph_too_large":          fmt.Sprintf("The graph exceeds Hclaro's size limits (%d MiB, %d nodes or %d edges). Nothing was kept.", graph.MaxInputBytes>>20, graph.MaxDOTNodes, graph.MaxDOTEdges),
 	"graph_unavailable":        "This engine adapter cannot generate graphs.",
 	"timeout":                  "Generating the graph exceeded its time limit and was stopped.",
 	"cancelled":                "Generating the graph was cancelled. Nothing was kept.",

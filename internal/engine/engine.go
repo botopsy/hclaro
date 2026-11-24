@@ -247,7 +247,7 @@ func (c *CLI) Version(ctx context.Context) (string, error) {
 		v.Terraform = v.Tofu
 	}
 	if !tfpolicy.Supported(c.Name, v.Terraform) {
-		return "", errors.New("unsupported engine version; use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13")
+		return "", errors.New("unsupported engine version; use " + tfpolicy.SupportText + "")
 	}
 	return v.Terraform, nil
 }

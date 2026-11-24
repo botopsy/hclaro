@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import golden from '../../../fixtures/graph/terraform.golden.json';
 import { GraphView } from './GraphView';
 import type { DependencyGraph, GraphImpact, GraphNode, GraphOptions, Operation, PlanSummary } from '../types';
+import { testLimits } from '../testLimits';
 
 const withPlan = golden.graph as unknown as DependencyGraph;
 const planId = golden.planId;
@@ -32,7 +33,7 @@ function serve(...routes: Route[]) {
       const response = route(url, init);
       if (response) return response;
     }
-    if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64) });
+    if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64), limits: testLimits });
     if (url.endsWith('/graphs/options')) return Response.json(options);
     if (url.endsWith('/graphs')) return Response.json({ graphs: [{ ...plain, nodes: [], edges: [], resourceEdges: [] }] });
     if (url.endsWith('/plans')) return Response.json({ plans });
@@ -82,7 +83,8 @@ describe('Graph', () => {
     for (const w of withPlan.warnings) expect(notes).toHaveTextContent(w);
     const limits = notes.querySelector('.graph-limits')!;
     expect(limits).toHaveTextContent('Terraform 1.7 and later print a resource-only graph');
-    expect(limits).toHaveTextContent('16 MiB, 20,000 nodes or 200,000 edges is refused');
+    // The limits come from /session, which loads after the page.
+    await waitFor(() => expect(limits).toHaveTextContent('16 MiB, 20,000 nodes or 200,000 edges is refused'));
     expect(limits).toHaveTextContent('The last 5 graphs are kept in memory for up to 12 hours');
   });
 
@@ -204,7 +206,7 @@ describe('Graph', () => {
     view();
     expect(await screen.findByRole('heading', { name: 'No dependency graph yet' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Generate/ })).toHaveLength(1);
-    expect(document.querySelector('.empty-box .graph-limits')).toHaveTextContent('The last 5 graphs are kept in memory');
+    await waitFor(() => expect(document.querySelector('.empty-box .graph-limits')).toHaveTextContent('The last 5 graphs are kept in memory'));
     expect(posts).toHaveLength(0);
   });
 

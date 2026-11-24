@@ -78,7 +78,7 @@ func NewInits() *Inits {
 
 var initMessages = map[string]string{
 	"succeeded":         "Initialization finished. Workspaces and state can now be read; nothing else was run.",
-	"engine_version":    "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13. Nothing was initialized.",
+	"engine_version":    "Unable to read a supported engine version. Use " + tfpolicy.SupportText + ". Nothing was initialized.",
 	"path_changed":      "The project folder, its engine or its environment changed after you reviewed initialization. Nothing was run. Review the project again.",
 	"backend_migration": "The backend configuration changed, so the engine asks to migrate or reconfigure state. Hclaro never runs init with -migrate-state, -force-copy or -reconfigure. Review the backend change and run the command you intend yourself in a terminal. Nothing was migrated.",
 	"input_required":    "Init needs interactive input, such as a backend setting or a variable value. Hclaro runs init with -input=false and never asks for secrets. Provide the value through your usual configuration and run init in a terminal, or retry here once it no longer needs input.",

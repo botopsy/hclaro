@@ -96,11 +96,10 @@ type ExecutorFactory func(root, preference, selected string, environ []string) (
 
 // DefaultExecutors uses the official CLI found on PATH, exactly as DefaultEngines does.
 func DefaultExecutors(root, preference, selected string, environ []string) (string, string, engine.Planner, error) {
-	cli, err := engine.Detect(root, preference)
+	cli, err := detectCLI(root, preference, selected, environ)
 	if err != nil {
 		return "", "", nil, err
 	}
-	cli.SelectedWorkspace, cli.IgnoreInheritedWorkspace, cli.Environ = selected, true, environ
 	return cli.Name, cli.Executable, cli, nil
 }
 

@@ -141,3 +141,13 @@ func TestVarFilesListsRootFirstAndRefusesNodeModules(t *testing.T) {
 		}
 	}
 }
+
+func TestSupportTextMatchesSupported(t *testing.T) {
+	for _, c := range []struct {
+		name, lo, hi, label string
+	}{{"terraform", "1.5.0", "1.17.0", "Terraform 1.5–1.17"}, {"tofu", "1.6.0", "1.13.0", "OpenTofu 1.6–1.13"}} {
+		if !Supported(c.name, c.lo) || !Supported(c.name, c.hi) || !strings.Contains(SupportText, c.label) {
+			t.Errorf("%s: SupportText %q disagrees with Supported", c.name, SupportText)
+		}
+	}
+}

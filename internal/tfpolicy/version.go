@@ -24,6 +24,21 @@ func Supported(name, version string) bool {
 	return name == "terraform" && n >= 5 && n <= 17 || name == "tofu" && n >= 6 && n <= 13
 }
 
+// EngineLabel is the display name of a known engine, "" for any other name.
+func EngineLabel(name string) string {
+	switch name {
+	case "terraform":
+		return "Terraform"
+	case "tofu":
+		return "OpenTofu"
+	}
+	return ""
+}
+
+// SupportText names the ranges Supported accepts; user-facing messages use it so the range is
+// written once (TestSupportTextMatchesSupported pins it to Supported).
+const SupportText = "stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13"
+
 // Feature is an engine capability that some supported versions may lack.
 type Feature int
 

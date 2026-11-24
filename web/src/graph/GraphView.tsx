@@ -9,7 +9,7 @@ import { OperationLog } from '../plans/OperationLog';
 import { ActionBadge } from '../plans/PlanReview';
 import { ContextSummary, RecordedContext, ScopeSummary } from '../profiles/ContextSummary';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
-import { activeOperation, operationsQuery } from '../lib/queries';
+import { activeOperation, operationsQuery, useLimits } from '../lib/queries';
 import { internalKinds, layout, moduleAncestors, NODE_H, NODE_W, nodeForAddress, project, typePrefix, type Point, type Projection, type VisEdge, type VisNode } from './layout';
 import { clock, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
@@ -131,10 +131,10 @@ export function GraphView({
 
 // The long explanation lives in a collapsed "How this works" (§3), not in banners.
 function HowItWorks({ command }: { command?: string[] }) {
+  const limits = useLimits();
   return <>
    <p>Generated with <strong>{command?.join(' ') || 'graph'}</strong>. Links show what configuration depends on. <strong>Potential impact</strong> is what can be reached through those links; only a plan shows <strong>confirmed planned changes</strong>.</p>
-   {/* shortcut: numbers copied from internal/graph/dot.go and maxGraphs/GraphMaxAge in internal/operations/graph.go; serve them from the API if they become configurable. */}
-   <p className="graph-limits">Terraform 1.7 and later print a resource-only graph; earlier Terraform and OpenTofu print the full walk graph with internal nodes, so links and layout differ between engines and versions. Engine output over 16 MiB, 20,000 nodes or 200,000 edges is refused, not truncated. The last 5 graphs are kept in memory for up to 12 hours and are gone when Hclaro stops.</p>
+   <p className="graph-limits">Terraform 1.7 and later print a resource-only graph; earlier Terraform and OpenTofu print the full walk graph with internal nodes, so links and layout differ between engines and versions. {limits && <>Engine output over {limits.graphMaxMebibytes} MiB, {limits.graphMaxNodes.toLocaleString('en-US')} nodes or {limits.graphMaxEdges.toLocaleString('en-US')} edges is refused, not truncated. The last {limits.graphs} graphs are kept in memory for up to {limits.graphMaxAgeHours} hours and are gone when Hclaro stops.</>}</p>
   </>;
 }
 
