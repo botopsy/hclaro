@@ -35,6 +35,12 @@ type execSource interface {
 	Discard(ctx context.Context, id string) error
 	PreviewImport(ctx context.Context, req imports.Request) (imports.Preview, error)
 	StartImport(ctx context.Context, req operations.ImportRequest) (operations.Operation, error)
+	StartDriftScan(ctx context.Context, req operations.DriftStart) (operations.Operation, operations.DriftScan, error)
+	DriftScans() []operations.DriftScanView
+	driftSource
+	StartGraph(ctx context.Context, req operations.GraphStart) (operations.Operation, operations.GraphRun, error)
+	Graphs() []operations.GraphView
+	graphSource
 	Operations() []operations.Operation
 	Operation(id string) (operations.Operation, *operations.Log, bool)
 	Cancel(id string) (operations.Operation, error)
@@ -71,6 +77,12 @@ func (l launchSource) LocateChange(p *operations.Plan, id string) (gitctx.Source
 func (l launchSource) Discard(_ context.Context, id string) error { return l.Manager.Discard(id) }
 func (l launchSource) StartApply(_ context.Context, id, token, typed string) (operations.Operation, error) {
 	return l.Manager.StartApply(id, token, typed)
+}
+func (l launchSource) StartDriftScan(_ context.Context, req operations.DriftStart) (operations.Operation, operations.DriftScan, error) {
+	return l.Manager.StartDriftScan(req)
+}
+func (l launchSource) StartGraph(_ context.Context, req operations.GraphStart) (operations.Operation, operations.GraphRun, error) {
+	return l.Manager.StartGraph(req)
 }
 func (l launchSource) PreviewImport(_ context.Context, req imports.Request) (imports.Preview, error) {
 	return l.Manager.PreviewImport(req), nil
@@ -109,6 +121,12 @@ type hubSource struct{ *projects.Scope }
 
 func (h hubSource) StartPlan(ctx context.Context, req operations.PlanStart) (operations.Operation, error) {
 	return h.StartReviewedPlan(ctx, req.VarFiles, req.Replace, req.ContextFingerprint)
+}
+func (h hubSource) StartDriftScan(ctx context.Context, req operations.DriftStart) (operations.Operation, operations.DriftScan, error) {
+	return h.Scope.StartDriftScan(ctx, req.VarFiles, req.ContextFingerprint)
+}
+func (h hubSource) StartGraph(ctx context.Context, req operations.GraphStart) (operations.Operation, operations.GraphRun, error) {
+	return h.Scope.StartGraph(ctx, req.ContextFingerprint)
 }
 func (h hubSource) StartImport(ctx context.Context, req operations.ImportRequest) (operations.Operation, error) {
 	return h.Scope.StartImport(ctx, req.Request, req.PreviewSHA256, req.VarFiles, req.ContextFingerprint)

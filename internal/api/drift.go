@@ -38,44 +38,7 @@ func driftRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations
 		}
 		writeJSON(w, 200, driftOptions{canScan, reason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, snap.Info.ExecutionMode, manager.VarFiles(), projectID, context, profileError})
 	})
-	mux.HandleFunc("POST /api/v1/drift-scans", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			// The preflight must have been shown: a scan queries providers and the backend.
-			Acknowledge        *bool    `json:"acknowledgeProviderAccess"`
-			VarFiles           []string `json:"varFiles"`
-			ProfileID          string   `json:"profileId"`
-			ContextFingerprint string   `json:"contextFingerprint"`
-		}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		if body.Acknowledge == nil || !*body.Acknowledge {
-			errorJSON(w, 400, "acknowledgement_required")
-			return
-		}
-		if !validProfileParam(body.ProfileID) {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		op, scan, err := manager.StartDriftScan(operations.DriftStart{VarFiles: body.VarFiles, ProfileID: body.ProfileID, ContextFingerprint: body.ContextFingerprint})
-		switch {
-		case err == nil:
-			writeJSON(w, 202, map[string]any{"operation": op, "scan": scan})
-		case mapOpError(w, r, nil, "", err):
-		default:
-			errorJSON(w, 500, "scan_not_started")
-		}
-
-	})
-	mux.HandleFunc("GET /api/v1/drift-scans", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"scans": manager.DriftScans()})
-	})
-	mux.HandleFunc("GET /api/v1/drift-scans/{id}", func(w http.ResponseWriter, r *http.Request) {
-		serveDriftScan(w, r, manager)
-	})
-	mux.HandleFunc("GET /api/v1/drift-scans/{id}/resources/{change}", func(w http.ResponseWriter, r *http.Request) {
-		serveDriftDetail(w, r, manager)
-	})
+	analysisExecRoutes(mux, "/api/v1", nil, launchSourceOf(manager, nil))
 }
 
 // driftSource is the launch manager or a Hub workspace's execution scope.

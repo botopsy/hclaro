@@ -170,6 +170,8 @@ Existing launch routes (`/api/v1/plans`, `/api/v1/plans/{id}/{preflight,approval
 | POST | `/api/v1/contexts/{cid}/imports/preview`, `/imports` | M24.08 |
 | POST | `/api/v1/contexts/{cid}/drift-scans`, `/graphs` (and their GETs) | M24.09 |
 
+**Amendment (M26.19): one handler set.** Launch and Hub routes are registered once, against an execution source (the launch manager or one Hub scope), by `execRoutes`, `importExecRoutes`, `discoveryExecRoutes` and `analysisExecRoutes` (drift scans and graphs). Paths, bodies and the stable codes above do not change; `operation_running` (launch) and `project_busy` (Hub) stay as before. Launch drift and graph refusals now carry the same `{error, reason}` shape as Hub refusals. Only the options routes are written per side, because their responses differ.
+
 Path segments `{cid}`, `{pid}`, `{oid}` are 32 lowercase hex characters. Each mutating path is added to `security.mutating` explicitly; the Guard (Host, Origin, `Sec-Fetch-Site`, CSRF header, bearer token, JSON, 16 KiB) applies unchanged.
 
 **Request bodies** carry only the same fields as the launch equivalents: variable file references from the context's `plans/options` list, replace and import selections by opaque snapshot IDs, the backend-access acknowledgment, the profile fingerprint the UI displayed, preflight acknowledgements by check ID, the approval token and the typed phrase. Unknown fields are refused (`400 invalid_request`). There is no field for a path, executable, argv, flag, environment name or value, `-target`, or a plan file.
