@@ -83,6 +83,23 @@ func launchContext(hub *projects.Hub, snap workspace.Snapshot, profileID string)
 	return summary, true, nil
 }
 
+// launchOptionsContext is the profile part of a launch options response: the execution
+// context summary and project ID, or the profile refusal message when the profile cannot be
+// used. A launch project that is not in the Hub has none of them.
+func launchOptionsContext(hub *projects.Hub, snap workspace.Snapshot, profileID string) (context *executionSummary, projectID, profileError string) {
+	summary, registered, err := launchContext(hub, snap, profileID)
+	if registered && err == nil {
+		context, projectID = &summary, summary.ProjectID
+	} else if registered {
+		projectID = hub.LaunchID()
+	}
+	var refusal *projects.ProfileRefusal
+	if errors.As(err, &refusal) {
+		profileError = refusal.Message
+	}
+	return context, projectID, profileError
+}
+
 func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.Manager, inits *operations.Inits, hub *projects.Hub, csrf, version string) {
 	mux.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
 		// Capabilities tell the UI which optional features the server enables; the server
@@ -97,19 +114,7 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 		}
 		snap := store.Get()
 		caps := snap.Info.Capabilities
-		summary, registered, err := launchContext(hub, snap, profileID)
-		var context *executionSummary
-		projectID := ""
-		if registered && err == nil {
-			context, projectID = &summary, summary.ProjectID
-		} else if registered {
-			projectID = hub.LaunchID()
-		}
-		profileError := ""
-		var refusal *projects.ProfileRefusal
-		if errors.As(err, &refusal) {
-			profileError = refusal.Message
-		}
+		context, projectID, profileError := launchOptionsContext(hub, snap, profileID)
 		writeJSON(w, 200, planOptions{caps.CanPlan, caps.PlanReason, caps.CanApply, caps.ApplyReason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, manager.VarFiles(), projectID, context, profileError})
 	})
 	// Reload inspects the launch project again and rereads its state, as at startup.

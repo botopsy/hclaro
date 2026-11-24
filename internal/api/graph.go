@@ -25,57 +25,8 @@ func graphRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations
 		}
 		snap := store.Get()
 		canGenerate, reason := manager.GraphCapability()
-		summary, registered, err := launchContext(hub, snap, profileID)
-		var context *executionSummary
-		projectID := ""
-		if registered && err == nil {
-			context, projectID = &summary, summary.ProjectID
-		} else if registered {
-			projectID = hub.LaunchID()
-		}
-		profileError := ""
-		var refusal *projects.ProfileRefusal
-		if errors.As(err, &refusal) {
-			profileError = refusal.Message
-		}
+		context, projectID, profileError := launchOptionsContext(hub, snap, profileID)
 		writeJSON(w, 200, graphOptions{canGenerate, reason, snap.Info.Engine, snap.Info.Version, snap.Info.Workspace, snap.Info.Backend, snap.Info.ExecutionMode, []string{snap.Info.Engine, "graph"}, projectID, context, profileError})
-	})
-	mux.HandleFunc("POST /api/v1/graphs", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			// The preflight must have been shown: `graph` runs the engine and may read the backend.
-			Acknowledge        *bool  `json:"acknowledgeEngineRun"`
-			ProfileID          string `json:"profileId"`
-			ContextFingerprint string `json:"contextFingerprint"`
-		}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		if body.Acknowledge == nil || !*body.Acknowledge {
-			errorJSON(w, 400, "acknowledgement_required")
-			return
-		}
-		if !validProfileParam(body.ProfileID) {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		op, run, err := manager.StartGraph(operations.GraphStart{ProfileID: body.ProfileID, ContextFingerprint: body.ContextFingerprint})
-		switch {
-		case err == nil:
-			writeJSON(w, 202, map[string]any{"operation": op, "graph": run})
-		case mapOpError(w, r, nil, "", err):
-		default:
-			errorJSON(w, 500, "graph_not_started")
-		}
-
-	})
-	mux.HandleFunc("GET /api/v1/graphs", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"graphs": manager.Graphs()})
-	})
-	mux.HandleFunc("GET /api/v1/graphs/{id}", func(w http.ResponseWriter, r *http.Request) {
-		serveGraph(w, r, manager)
-	})
-	mux.HandleFunc("GET /api/v1/graphs/{id}/nodes/{node}", func(w http.ResponseWriter, r *http.Request) {
-		serveGraphImpact(w, r, manager)
 	})
 }
 

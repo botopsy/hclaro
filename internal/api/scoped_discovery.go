@@ -20,10 +20,7 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		if !ok {
 			return
 		}
-		out := scopedDiscoveryOptions{analysisOptions: base, Provider: "aws", Types: discovery.Types, Regions: discovery.Regions, DefaultRegion: "us-east-1", RegionSource: "default", Limits: map[string]int{
-			"maxRegions": discovery.MaxRegions, "maxPerType": discovery.MaxPerTypeLimit, "maxObjects": discovery.MaxObjects, "defaultPerType": discovery.DefaultPerType,
-			"maxConcurrency": discovery.MaxConcurrency, "defaultConcurrency": discovery.DefaultConcurrent, "pageSize": discovery.PageSize,
-		}}
+		out := scopedDiscoveryOptions{analysisOptions: base, Provider: "aws", Types: discovery.Types, Regions: discovery.Regions, DefaultRegion: "us-east-1", RegionSource: "default", Limits: discoveryLimits()}
 		switch {
 		case s == nil:
 		case hub.Discovery == nil:

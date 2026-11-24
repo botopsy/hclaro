@@ -273,3 +273,22 @@ func TestDriftGolden(t *testing.T) {
 		t.Fatalf("drift response differs from golden; rerun with -update and review the diff\n%s", got)
 	}
 }
+
+// Launch refusals use the shared {error, reason} shape, and an oversized context fingerprint
+// is refused before anything runs (M26.19).
+func TestDriftStartRefusalsHaveReasonAndBoundedFingerprint(t *testing.T) {
+	fake := &enginetest.Fake{Lines: lines(fixtures.DriftLog), PlanJSON: fixtures.DriftMixed}
+	s, _ := newDriftServer(t, fake)
+	w := s.do("POST", "/api/v1/drift-scans", `{}`)
+	got := decode[map[string]string](t, w)
+	if w.Code != 400 || got["error"] != "acknowledgement_required" || got["reason"] == "" {
+		t.Fatalf("%d %v", w.Code, got)
+	}
+	long := `{"acknowledgeProviderAccess":true,"contextFingerprint":"` + strings.Repeat("a", 129) + `"}`
+	if w := s.do("POST", "/api/v1/drift-scans", long); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_request") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if calls := strings.Join(fake.Calls(), ","); strings.Contains(calls, "plan") {
+		t.Fatalf("a refused scan ran an engine command: %s", calls)
+	}
+}

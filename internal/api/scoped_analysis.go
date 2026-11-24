@@ -69,6 +69,14 @@ func (noScope) Approve(context.Context, string, operations.ApprovalRequest) (ope
 func (noScope) LocateChange(*operations.Plan, string) (gitctx.SourceReference, error) {
 	return gitctx.SourceReference{}, operations.ErrNotFound
 }
+func (noScope) DriftScans() []operations.DriftScanView { return nil }
+func (noScope) Graphs() []operations.GraphView         { return nil }
+func (noScope) StartDriftScan(context.Context, operations.DriftStart) (operations.Operation, operations.DriftScan, error) {
+	return operations.Operation{}, operations.DriftScan{}, operations.ErrNotFound
+}
+func (noScope) StartGraph(context.Context, operations.GraphStart) (operations.Operation, operations.GraphRun, error) {
+	return operations.Operation{}, operations.GraphRun{}, operations.ErrNotFound
+}
 func (noScope) Discard(context.Context, string) error { return operations.ErrNotFound }
 func (noScope) StartApply(context.Context, string, string, string) (operations.Operation, error) {
 	return operations.Operation{}, operations.ErrNotFound
@@ -135,63 +143,6 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		}
 		writeJSON(w, 200, out)
 	}))
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/drift-scans", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			// The preflight must have been shown: a scan queries providers and the backend.
-			Acknowledge *bool    `json:"acknowledgeProviderAccess"`
-			VarFiles    []string `json:"varFiles"`
-			// ContextFingerprint is the one the scan options returned.
-			ContextFingerprint string `json:"contextFingerprint"`
-		}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		if body.Acknowledge == nil || !*body.Acknowledge {
-			reasonJSON(w, 400, "acknowledgement_required", "A drift scan may contact providers and the backend and take the state lock. Confirm provider access first.")
-			return
-		}
-		if len(body.ContextFingerprint) > 128 {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		s, ok := resolveScope(w, r, hub, true)
-		if !ok {
-			return
-		}
-		ctx, cancel := withDeadline(w, r, inspectTimeout)
-		defer cancel()
-		op, scan, err := s.StartDriftScan(ctx, body.VarFiles, body.ContextFingerprint)
-		if err != nil {
-			scopedStartError(w, r, hub, s, err)
-			return
-		}
-		writeJSON(w, 202, map[string]any{"operation": scopedOperation{op, hubSource{s}.View()}, "scan": scan})
-	}))
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		s, ok := resolveScope(w, r, hub, false)
-		if !ok {
-			return
-		}
-		scans := []operations.DriftScanView{}
-		if s != nil {
-			scans = s.DriftScans()
-		}
-		writeJSON(w, 200, map[string]any{"scans": scans})
-	}))
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans/{id}", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		if s, ok := resolveScope(w, r, hub, false); ok && s != nil {
-			serveDriftScan(w, r, s)
-		} else if ok {
-			serveDriftScan(w, r, noScope{})
-		}
-	}))
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/drift-scans/{id}/resources/{change}", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		if s, ok := resolveScope(w, r, hub, false); ok && s != nil {
-			serveDriftDetail(w, r, s)
-		} else if ok {
-			serveDriftDetail(w, r, noScope{})
-		}
-	}))
 
 	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/options", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
 		s, base, ok := scopedOptions(w, r, hub)
@@ -205,61 +156,7 @@ func scopedAnalysisRoutes(mux *http.ServeMux, hub *projects.Hub) {
 		}
 		writeJSON(w, 200, out)
 	}))
-	mux.HandleFunc("POST /api/v1/contexts/{cid}/graphs", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			// The preflight must have been shown: `graph` runs the engine and may read the backend.
-			Acknowledge        *bool  `json:"acknowledgeEngineRun"`
-			ContextFingerprint string `json:"contextFingerprint"`
-		}
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		if body.Acknowledge == nil || !*body.Acknowledge {
-			reasonJSON(w, 400, "acknowledgement_required", "Generating a graph runs the engine, which may read the backend. Confirm first.")
-			return
-		}
-		if len(body.ContextFingerprint) > 128 {
-			errorJSON(w, 400, "invalid_request")
-			return
-		}
-		s, ok := resolveScope(w, r, hub, true)
-		if !ok {
-			return
-		}
-		ctx, cancel := withDeadline(w, r, inspectTimeout)
-		defer cancel()
-		op, run, err := s.StartGraph(ctx, body.ContextFingerprint)
-		if err != nil {
-			scopedStartError(w, r, hub, s, err)
-			return
-		}
-		writeJSON(w, 202, map[string]any{"operation": scopedOperation{op, hubSource{s}.View()}, "graph": run})
-	}))
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		s, ok := resolveScope(w, r, hub, false)
-		if !ok {
-			return
-		}
-		graphs := []operations.GraphView{}
-		if s != nil {
-			graphs = s.Graphs()
-		}
-		writeJSON(w, 200, map[string]any{"graphs": graphs})
-	}))
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/{id}", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		if s, ok := resolveScope(w, r, hub, false); ok && s != nil {
-			serveGraph(w, r, s)
-		} else if ok {
-			serveGraph(w, r, noScope{})
-		}
-	}))
-	mux.HandleFunc("GET /api/v1/contexts/{cid}/graphs/{id}/nodes/{node}", scoped(hub, func(w http.ResponseWriter, r *http.Request) {
-		if s, ok := resolveScope(w, r, hub, false); ok && s != nil {
-			serveGraphImpact(w, r, s)
-		} else if ok {
-			serveGraphImpact(w, r, noScope{})
-		}
-	}))
+	analysisExecRoutes(mux, "/api/v1/contexts/{cid}", hub, hubSourceOf(hub))
 }
 
 type scopedDriftOptions struct {
