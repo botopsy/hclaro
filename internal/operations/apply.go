@@ -192,6 +192,7 @@ func (m *Manager) retainLocked(p *Plan, kept *artifact, leftover bool) {
 		defer m.mu.Unlock()
 		if m.artifact == kept && !kept.applying {
 			m.releaseLocked(expiredReason(m.PlanMaxAge))
+			m.expired[kept.planID] = kept.created.Add(m.PlanMaxAge)
 		}
 	})
 }
@@ -267,6 +268,9 @@ func (m *Manager) applyStatus(p *Plan, currentFingerprint string, rej *RejectErr
 		if errors.As(err, &r) {
 			status.Code = r.Code
 		}
+		if t := m.expired[p.ID]; !t.IsZero() && status.Code == "plan_expired" {
+			status.ExpiresAt = t.UTC().Format(time.RFC3339)
+		}
 		return status
 	}
 	return ApplyStatus{Available: true, ArtifactRetained: true, ExpiresAt: m.artifact.created.Add(m.PlanMaxAge).UTC().Format(time.RFC3339)}
@@ -281,6 +285,8 @@ func (m *Manager) checkLocked(p *Plan, currentFingerprint string, rej *RejectErr
 		return reject("unknown_actions", reason)
 	}
 	switch {
+	case m.notes[p.ID] != "" && !m.expired[p.ID].IsZero():
+		return reject("plan_expired", m.notes[p.ID])
 	case m.notes[p.ID] != "":
 		return reject("not_applicable", m.notes[p.ID])
 	case a == nil || a.planID != p.ID:
