@@ -201,17 +201,66 @@
 .settings-panel {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 9px;
-  max-width: 850px;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .setting-row {
   border-bottom: 1px solid var(--border-soft);
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
-  padding: 28px;
+  gap: 12px 24px;
+  padding: 20px 22px;
   display: flex;
+}
+
+.setting-row.setting-stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.settings-links {
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  display: flex;
+}
+
+.settings-links a {
+  color: var(--accent-text);
+}
+
+.settings-profiles {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  list-style: none;
+}
+
+.settings-profiles li {
+  border-bottom: 1px solid var(--border-soft);
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 12px;
+  display: flex;
+}
+
+.settings-profiles li:last-child {
+  border-bottom: 0;
+}
+
+.settings-profiles li > button {
+  margin-left: auto;
+}
+
+.settings-profile-form {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  display: flex;
+}
+
+.settings-profile-form .field {
+  flex: 1 1 160px;
 }
 
 .setting-row h2, .settings-security h2 {
@@ -237,7 +286,6 @@
 
 .segmented > button {
   color: var(--muted);
-  text-transform: capitalize;
   border-radius: 4px;
   align-items: center;
   gap: 6px;
@@ -254,7 +302,6 @@
 
 .settings-security {
   background: var(--inset);
-  border-radius: 0 0 9px 9px;
   gap: 15px;
   padding: 28px;
   display: flex;

@@ -120,10 +120,6 @@
     max-height: calc(100vh - 320px);
   }
 
-  .setting-row {
-    padding: 21px;
-  }
-
   .segmented > button {
     padding: 7px;
   }
