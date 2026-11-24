@@ -401,7 +401,6 @@ kbd {
   color: var(--text);
 }
 .address-button:only-child { max-width: 100%; }
-.address-button:hover { text-decoration: underline; }
 .address-prefix { color: var(--subtle); }
 .data-badge {
   margin-left: 8px;

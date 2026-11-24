@@ -72,7 +72,7 @@ export function Sidebar({ id, context, compact, onToggleCompact, onCloseDrawer, 
     <a className="brand" href="/" onClick={e => {
       e.preventDefault();
       onHome();
-    }} aria-label="Hclaro overview"><HclaroLogo className="brand-wordmark" decorative /><HclaroMark className="brand-compact" size={40} decorative /><span className="release-badge">BETA</span></a>
+    }} aria-label="Hclaro overview"><HclaroLogo className="brand-wordmark" decorative /><HclaroMark className="brand-compact" size={40} decorative /></a>
     <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={onCloseDrawer}><X size={16} aria-hidden="true" /></button>
    </div>
    <nav id={`${id}-nav`} className="sidebar-nav" aria-label="Main">
@@ -93,7 +93,7 @@ export function Sidebar({ id, context, compact, onToggleCompact, onCloseDrawer, 
        <MenuItem href={helpLinks.star}><Star size={15} aria-hidden="true" />Star on GitHub</MenuItem>
        <p className="help-note">Opens in your browser. Bug reports never include state, plans or values.</p>
       </Menu></li>
-      <li><button type="button" className="nav-item sidebar-toggle" aria-label={toggleLabel} aria-expanded={!compact} aria-controls={`${id}-nav`} onClick={onToggleCompact} {...tipProps(toggleLabel)}>{compact ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}<span className="nav-text">Collapse</span></button></li>
+      <li className="sidebar-toggle-row"><button type="button" className="nav-item sidebar-toggle" aria-label={toggleLabel} aria-expanded={!compact} aria-controls={`${id}-nav`} onClick={onToggleCompact} {...tipProps(toggleLabel)}>{compact ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}<span className="nav-text">Collapse</span></button></li>
      </>)}
     </div>
    </nav>

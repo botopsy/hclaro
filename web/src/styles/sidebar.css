@@ -156,15 +156,6 @@
   margin-bottom: 4px;
 }
 
-.release-badge {
-  letter-spacing: .9px;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 3px 4px;
-  font-size: 11px;
-}
-
 .switcher-popover {
   z-index: 40;
   border: 1px solid var(--border);
@@ -382,6 +373,12 @@
   left: -12px;
 }
 
+.sidebar-toggle-row {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
 .sidebar-bottom {
   border-top: 1px solid var(--border-soft);
   padding: 8px 0 4px;
@@ -479,13 +476,8 @@
   padding: 0;
 }
 
-.sidebar-compact .brand-wordmark, .sidebar-compact .brand .release-badge, .sidebar-compact .nav-label, .sidebar-compact .nav-text {
+.sidebar-compact .brand-wordmark, .sidebar-compact .nav-label, .sidebar-compact .nav-text {
   display: none;
-}
-
-.sidebar-compact .nav-item > svg {
-  width: 22px;
-  height: 22px;
 }
 
 .sidebar-compact .brand-compact {
@@ -537,4 +529,9 @@
 
 .palette-list .switcher-option[aria-selected="true"] {
   background: var(--surface-hover);
+}
+
+/* Collapse/expand glides instead of snapping; the content shell follows the same curve. */
+.sidebar, .workspace-shell {
+  transition: width .35s ease, margin-left .35s ease;
 }

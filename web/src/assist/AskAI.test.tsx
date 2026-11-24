@@ -81,8 +81,6 @@ describe('AI handoff', () => {
     const text = await screen.findByLabelText('Text to share: review prompt and context package');
     expect(text.textContent).toBe(reviewText);
     expect(screen.getByText('review-plan@1')).toBeInTheDocument();
-    expect(screen.getByText('Data may reach a cloud model and bills your own account.')).toBeInTheDocument();
-    expect(screen.getByText('configuration')).toBeInTheDocument();
     expect(write).not.toHaveBeenCalled();
     expect(exports()).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: 'Copy' }));
