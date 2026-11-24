@@ -118,7 +118,7 @@ Visual direction: highly legible, compact, polished developer tool; dark/light m
 ### 6.2 Screens
 **Overview:** workspace identity, resource count, module/provider breakdown, last refresh/plan time, warnings; not fake live cloud data.  
 **Resources:** hierarchical module tree, flat/table toggle, provider/type filters, names and full addresses; pagination/virtualization for large states.  
-**Resource Inspector:** full address with copy button; mode (managed/data), type, provider reference, module path, instance key, attributes, sensitive-value placeholders, source/config association when available; copy *redacted* JSON and copy address.  
+**Resource Inspector:** full address with copy button; mode (managed/data), type, provider reference, module path, instance key, attributes, sensitive-value placeholders, source/config association when available; copy *redacted* JSON and copy address. A `[redacted]` attribute has a **Reveal** action (Hub contexts only, M30): on click the server reads that one value again through `show -json` and shows it once, with **Copy** and **Hide**; it is never stored, logged, exported or sent to AI.  
 **Plans:** summary by action (create, update, delete, replace, no-op, read, unknown), searchable change list, before/after structural diff, computed/sensitive labels, provider/module grouping; plan source/time and whether apply is enabled.  
 **Operations:** list current and previous **redacted** local operation metadata; stdout/stderr streaming, stage, duration, exit code, cancel/error details.  
 **Import Wizard:** target resource address/config validation, import ID (masked if needed), preview generated import block/HCL, plan, review, explicit apply.  
@@ -317,6 +317,7 @@ fixtures/               sanitized, reproducible test state/plan fixtures
 - `GET /api/v1/workspace` → engine, version, cwd label, backend, workspace, init status.
 - `GET /api/v1/resources?query=&module=&provider=&type=&cursor=` → normalized, redacted resources (optional paging).
 - `GET /api/v1/resources/{opaque-id}` → redacted normalized instance details; IDs map to exact addresses server side.
+- `POST /api/v1/contexts/{cid}/resources/{opaque-id}/reveal` `{path:[…]}` → `{value}`: one value the server redacted, on explicit request (M30); `no-store`, rate-limited, never persisted.
 - `POST /api/v1/plans` `{kind:"normal"|"replace", resourceIds?:string[], varFiles?:string[]}` → operation ID, never executes apply.
 - `GET /api/v1/plans/{id}` → summary, safe change tree, review status.
 - `POST /api/v1/plans/{id}/apply` `{confirmationToken:string}` → operation ID after server-side authorization checks.

@@ -213,6 +213,7 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	workspaceRoutes(mux, hub)
 	toolRoutes(mux, hub)
 	scopedRoutes(mux, hub)
+	revealRoutes(mux, hub)
 	scopedImportRoutes(mux, hub)
 	scopedAnalysisRoutes(mux, hub)
 	scopedDiscoveryRoutes(mux, hub)

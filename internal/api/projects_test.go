@@ -92,7 +92,8 @@ func (s *hubServer) do(method, path, body string, opts ...opt) *httptest.Respons
 	}
 	w := httptest.NewRecorder()
 	s.handler.ServeHTTP(w, r)
-	if bytes.Contains(w.Body.Bytes(), []byte(fixtures.Canary)) {
+	// A successful reveal (M30) is the one response allowed to carry a redacted value.
+	if bytes.Contains(w.Body.Bytes(), []byte(fixtures.Canary)) && !(strings.HasSuffix(path, "/reveal") && w.Code == 200) {
 		s.t.Fatalf("canary in %s %s response", method, path)
 	}
 	return w

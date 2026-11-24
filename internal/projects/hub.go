@@ -137,6 +137,27 @@ type Context struct {
 	cancel    context.CancelFunc
 	key       string
 	profileID string
+	// read is the state-read-only adapter of this context, nil when no engine was found.
+	read  engine.Adapter
+	locks *rootlock.Set
+}
+
+// ErrNoRead means the context has no engine to read state with.
+var ErrNoRead = errors.New("this context has no engine to read state with")
+
+// ReadState runs the allowlisted `show -json` read again for this context. The caller must
+// not keep or log the raw bytes. It holds a shared root claim like the opening read, so it
+// never overlaps an init, plan or workspace command.
+func (c *Context) ReadState(ctx context.Context) ([]byte, error) {
+	if c.read == nil {
+		return nil, ErrNoRead
+	}
+	release, ok := c.locks.AcquireShared(c.RootPath)
+	if !ok {
+		return nil, ErrBusy
+	}
+	defer release()
+	return c.read.State(ctx)
 }
 
 // Snapshot returns the context's current snapshot.
@@ -735,6 +756,10 @@ func (h *Hub) OpenWith(projectID, ws, profileID string, reload bool) (*Context, 
 		return nil
 	}
 	c.store = workspace.NewScoped(info, scope)
+	if adapter != nil {
+		c.read = readOnly{adapter}
+	}
+	c.locks = h.Locks
 	h.contexts[c.ID] = c
 	h.order = append(h.order, c.ID)
 	h.wg.Add(1)

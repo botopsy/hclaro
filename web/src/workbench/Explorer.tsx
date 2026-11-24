@@ -2,7 +2,7 @@ import type { KeyboardEvent } from 'react';
 import { Box, Braces, Copy, Database, LoaderCircle, LockKeyhole, X } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Drawer } from '../components/Drawer';
-import { JsonTree } from '../components/JsonTree';
+import { JsonTree, type RevealFn } from '../components/JsonTree';
 import { DataTable, type Column, type Density, type RowGroup } from '../components/DataTable';
 import { Chip, type Tone } from '../components/Chip';
 import { AskAI } from '../assist/AskAI';
@@ -109,7 +109,8 @@ export function Inspector({
   editor,
   notify,
   drift,
-  ai
+  ai,
+  reveal
 }: {
   resource?: Resource;
   loading: boolean;
@@ -122,6 +123,8 @@ export function Inspector({
   drift: DriftMark;
   // ai is the scope a "Review with AI" package is built in; the entry point is hidden while AI is off.
   ai?: PlanScope;
+  // reveal fetches one redacted value of this resource; undefined hides the buttons (launch scope).
+  reveal?: RevealFn;
 }) {
   return <Drawer label="Resource inspector" onClose={close}>
    <div className="inspector-header"><span><Braces size={15} aria-hidden="true" />Resource details</span><Button variant="ghost" size="icon" aria-label="Close inspector" onClick={close}><X size={16} /></Button></div>
@@ -137,7 +140,7 @@ export function Inspector({
         void copy(JSON.stringify(resource.attributes, null, 2), 'Redacted JSON');
       }}><Copy size={14} /></Button></div>
     <div className="redaction-note"><LockKeyhole size={12} />Sensitive, secret-named and credential-like values are hidden.</div>
-    <div className="json-viewer"><JsonTree value={resource.attributes} /></div>
+    <div className="json-viewer"><JsonTree value={resource.attributes} reveal={reveal} /></div>
    </div>}
   </Drawer>;
 }

@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { api } from '../api';
+import { api, send } from '../api';
 import { operationActive, type Operation, type ProjectList } from '../types';
 import { scopeKey, scopedPath, type PlanScope } from './scope';
 
@@ -25,3 +25,10 @@ export const projectsQuery = {
   queryKey: ['projects'],
   queryFn: () => api<ProjectList>('projects')
 };
+
+// revealValue asks the server for one redacted scalar of a resource (M30). It is a plain call,
+// not a query: the value must never enter the query cache.
+export async function revealValue(scope: PlanScope, resourceId: string, path: (string | number)[]) {
+  const body = await send<{ value: unknown }>('POST', scopedPath(scope, `resources/${resourceId}/reveal`), { path });
+  return String(body.value);
+}
