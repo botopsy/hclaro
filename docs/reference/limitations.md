@@ -4,7 +4,7 @@ Hclaro, published by [BotOpsy](https://github.com/botopsy), is free and open sou
 
 ## Stability and support
 
-- Features may change, move or be removed between 0.x releases. Configuration files Hclaro writes (`projects.json`, `profiles.json`, `history.json`, `cost-estimates.json`) are versioned: Hclaro never overwrites a file written by a newer version and keeps a copy before any future format upgrade, but there is no automatic migration promise yet. See [config-compatibility.md](../config-compatibility.md).
+- Features may change, move or be removed between releases. Configuration files Hclaro writes (`projects.json`, `profiles.json`, `history.json`, `cost-estimates.json`) are versioned: Hclaro never overwrites a file written by a newer version and keeps a copy before any future format upgrade, but there is no automatic migration promise yet. See [config-compatibility.md](../config-compatibility.md).
 - The software is provided "as is", without warranty, as stated in the license.
 - There is no support agreement or response-time commitment.
 

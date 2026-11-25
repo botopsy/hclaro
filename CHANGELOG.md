@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.0.0 — 2026-11-25
+
+First release. Everything below the 0.1.0-beta entries is included; what has and has not been run for real is in `docs/support-matrix.md` and `docs/reference/limitations.md`. Hclaro still needs real-world testing: this release exists to collect real usage and issues.
+
 Added:
 - Install script: `https://get.hclaro.dev` serves one install script (`install.sh` in the `hclaro-website` repo; macOS, Linux and Windows from Git Bash) that downloads the release archive, verifies its sha256 against the release checksums before extracting, and installs atomically to `INSTALL_DIR` (default `/usr/local/bin`; `sudo` only if it is not writable). `HCLARO_VERSION` pins a release. It is tested against synthetic archives in that repo and is not attached to releases, so the release asset set and its checksums are unchanged.
 
