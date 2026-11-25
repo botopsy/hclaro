@@ -45,7 +45,8 @@ function withProvider(provider: DiscoveryProvider) {
 // What differs by cloud in the page's wording; the same screens serve every provider.
 const clouds: Record<DiscoveryProvider, { name: string; cli: string; account: string; ops: string; via: string; verify: string; check: string; api: string }> = {
   aws: { name: 'AWS', cli: 'AWS CLI', account: 'account', ops: 'Describe and List', via: 'STS', verify: 'STS GetCallerIdentity', check: 'one STS check', api: 'AWS APIs' },
-  gcp: { name: 'Google Cloud', cli: 'Google Cloud CLI (gcloud)', account: 'project', ops: 'list', via: 'gcloud', verify: 'gcloud config and project lookup', check: 'one project check', api: 'Google Cloud APIs' }
+  gcp: { name: 'Google Cloud', cli: 'Google Cloud CLI (gcloud)', account: 'project', ops: 'list', via: 'gcloud', verify: 'gcloud config and project lookup', check: 'one project check', api: 'Google Cloud APIs' },
+  azure: { name: 'Azure', cli: 'Azure CLI (az)', account: 'subscription', ops: 'list', via: 'az', verify: 'az account show', check: 'one subscription check', api: 'Azure APIs' }
 };
 
 // A request path: a Hub workspace uses only its own context's routes (M24.09).
@@ -159,10 +160,11 @@ export function DiscoveryView({
 function AccountCard({ options, identity, busy, blocked, error, onVerify, onScan, running, scanned }: { options: DiscoveryOptions; identity?: CloudIdentity; busy: boolean; blocked: boolean; error: string; onVerify: () => void; onScan: () => void; running: boolean; scanned: boolean }) {
   const profile = options.context?.context.profileName;
   const cloud = clouds[options.provider];
-  const awsProfile = options.provider === 'aws' ? options.context?.context.awsProfile : options.context?.context.gcpConfiguration;
+  const awsProfile = options.provider === 'aws' ? options.context?.context.awsProfile : options.provider === 'azure' ? options.context?.context.azureSubscription : options.context?.context.gcpConfiguration;
   const facts = identity && <dl className="metadata compact-metadata discovery-account-facts">
    <div><dt>Principal</dt><dd className="mono">{identity.arn} <span className="muted">({identity.principalType})</span></dd></div>
-   <div><dt>Default region</dt><dd>{identity.region ? <code>{identity.region}</code> : <span className="muted">none</span>} <span className="muted">({identity.regionSource === 'profile' ? 'from the execution profile' : identity.regionSource === 'environment' ? 'from the environment' : identity.regionSource === 'gcloud' ? 'from the gcloud configuration' : options.provider === 'gcp' ? 'no region configured' : 'no region configured; us-east-1'})</span></dd></div>
+   <div><dt>Default region</dt><dd>{identity.region ? <code>{identity.region}</code> : <span className="muted">none</span>} <span className="muted">({identity.regionSource === 'profile' ? 'from the execution profile' : identity.regionSource === 'environment' ? 'from the environment' : identity.regionSource === 'gcloud' ? 'from the gcloud configuration' : identity.regionSource === 'azure' ? 'from AZURE_DEFAULTS_LOCATION' : options.provider === 'gcp' ? 'no region configured' : options.provider === 'azure' ? 'no location configured; eastus' : 'no region configured; us-east-1'})</span></dd></div>
+   {identity.tenant && <div><dt>Tenant</dt><dd className="mono">{identity.tenant}</dd></div>}
    <div><dt>{cloud.cli}</dt><dd className="mono">{identity.cliVersion}</dd></div>
    <div><dt>Permissions</dt><dd className="muted">Checked per service when you scan. A denied service shows as missing, not empty.</dd></div>
   </dl>;
@@ -171,7 +173,7 @@ function AccountCard({ options, identity, busy, blocked, error, onVerify, onScan
     <span className={`discovery-account-mark${identity ? ' verified' : ''}`} aria-hidden="true">{identity ? <Check size={15} /> : <Cloud size={18} />}</span>
     <div>
      <h2 id="discovery-account-title">{identity ? <>{cloud.name} {cloud.account} {identity.account}</> : `${cloud.name} context not verified`}</h2>
-     <p>{identity ? <>Verified {clock(identity.verifiedAt)} with {cloud.via} for workspace <strong>{options.workspace}</strong>{profile ? <> and profile <strong>{profile}</strong></> : ' and the inherited environment'} · valid until {clock(identity.expiresAt)}. Each scan and import preparation checks the {cloud.account} again.</> : <>Hclaro never infers the {cloud.account} from a profile name. Verify asks {options.provider === 'aws' ? 'AWS ' : ''}<code>{cloud.verify}</code> (read-only{options.provider === 'aws' ? ', contacts AWS' : '; the project lookup contacts Google Cloud'}) to learn which {cloud.account} and principal the {awsProfile ? <>{options.provider === 'aws' ? 'profile' : 'configuration'} <code>{awsProfile}</code></> : 'inherited credentials'} belong to.</>}</p>
+     <p>{identity ? <>Verified {clock(identity.verifiedAt)} with {cloud.via} for workspace <strong>{options.workspace}</strong>{profile ? <> and profile <strong>{profile}</strong></> : ' and the inherited environment'} · valid until {clock(identity.expiresAt)}. Each scan and import preparation checks the {cloud.account} again.</> : <>Hclaro never infers the {cloud.account} from a profile name. Verify asks {options.provider === 'aws' ? 'AWS ' : ''}<code>{cloud.verify}</code> (read-only{options.provider === 'aws' ? ', contacts AWS' : `; the ${cloud.account} lookup contacts ${cloud.name}`}) to learn which {cloud.account} and principal the {awsProfile ? <>{options.provider === 'aws' ? 'profile' : options.provider === 'azure' ? 'subscription' : 'configuration'} <code>{awsProfile}</code></> : 'inherited credentials'} belong to.</>}</p>
     </div>
     <Button variant={identity ? 'outline' : 'default'} onClick={onVerify} disabled={busy || blocked}><ShieldCheck size={14} />{busy ? 'Verifying…' : identity ? 'Verify again' : `Verify ${cloud.name} context`}</Button>
     {identity && <Button onClick={onScan} disabled={blocked || running}><Radar size={14} />{scanned ? 'Scan again…' : 'Scan…'}</Button>}
@@ -230,7 +232,7 @@ function ScanPreview({ target, options, identity, profileId, onClose, onStarted 
      <div className="field"><span>Concurrent reads</span><Segmented label="Concurrent reads" options={concurrencyChoices.filter(n => Number(n) <= options.limits.maxConcurrency).map(n => ({ value: n, label: n }))} value={String(scope.concurrency)} onChange={n => setScope(s => ({ ...s, concurrency: Number(n) }))} /><small>Fewer reads at once reduce throttling. Throttled reads are retried with backoff.</small></div>
     </div>
     <ul className="preflight-list">
-     <li><CloudCog size={16} /><span><strong>Calls {cloud.name} list APIs {estimate.min === estimate.max ? estimate.min : `${estimate.min}–${estimate.max}`} times</strong> ({estimate.tasks} list task{estimate.tasks === 1 ? '' : 's'} plus {cloud.check}) with your local credentials. Some APIs can incur charges or count against rate limits shared with other tools.{options.provider === 'gcp' && ' Each type is listed for the whole project in one request; the regions you choose only filter what is kept.'}</span></li>
+     <li><CloudCog size={16} /><span><strong>Calls {cloud.name} list APIs {estimate.min === estimate.max ? estimate.min : `${estimate.min}–${estimate.max}`} times</strong> ({estimate.tasks} list task{estimate.tasks === 1 ? '' : 's'} plus {cloud.check}) with your local credentials. Some APIs can incur charges or count against rate limits shared with other tools.{options.provider !== 'aws' && ` Each type is listed for the whole ${cloud.account} in one request; the ${options.provider === 'azure' ? 'locations' : 'regions'} you choose only filter what is kept.`}</span></li>
      <li><ShieldCheck size={16} /><span><strong>Read-only.</strong> Only {cloud.ops} operations run; Hclaro cannot create, change or delete cloud objects, and writes no state or files.</span></li>
      <li><CircleHelp size={16} /><span>Tags and names are untrusted text: credential-like values are hidden. Rules, policies, endpoints, instance metadata and database configuration are never read into Hclaro.</span></li>
     </ul>

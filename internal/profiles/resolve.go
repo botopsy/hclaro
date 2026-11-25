@@ -48,9 +48,13 @@ type Resolved struct {
 	// AWSAuth is aws-cli or aws-vault when an AWS profile is chosen, "" otherwise.
 	AWSAuth string `json:"awsAuth,omitempty"`
 	// GCP names are set when the context selects a gcloud configuration, project or region.
-	GCPConfiguration   string         `json:"gcpConfiguration,omitempty"`
-	GCPProject         string         `json:"gcpProject,omitempty"`
-	GCPRegion          string         `json:"gcpRegion,omitempty"`
+	GCPConfiguration string `json:"gcpConfiguration,omitempty"`
+	GCPProject       string `json:"gcpProject,omitempty"`
+	GCPRegion        string `json:"gcpRegion,omitempty"`
+	// Azure names are set when the context selects a subscription, tenant or location.
+	AzureSubscription  string         `json:"azureSubscription,omitempty"`
+	AzureTenant        string         `json:"azureTenant,omitempty"`
+	AzureLocation      string         `json:"azureLocation,omitempty"`
 	AWSExpectedAccount string         `json:"awsExpectedAccount,omitempty"`
 	AWSExpectedRole    string         `json:"awsExpectedRole,omitempty"`
 	Env                []EnvStatus    `json:"env"`
@@ -86,6 +90,7 @@ func Resolve(p Profile, root string, environ []string) Resolved {
 	r.Engine, r.Workspace, r.Options, r.AWSProfile, r.AWSRegion = p.Engine, p.Workspace, p.Options, p.AWSProfile, p.AWSRegion
 	r.AWSExpectedAccount, r.AWSExpectedRole = p.AWSExpectedAccount, p.AWSExpectedRole
 	r.GCPConfiguration, r.GCPProject, r.GCPRegion = p.GCPConfiguration, p.GCPProject, p.GCPRegion
+	r.AzureSubscription, r.AzureTenant, r.AzureLocation = p.AzureSubscription, p.AzureTenant, p.AzureLocation
 	if p.AWSProfile != "" {
 		r.AWSAuth = AWSCLI
 		if p.AWSAuth == AWSVault {
@@ -150,6 +155,9 @@ func (r Resolved) fingerprint() string {
 	if r.GCPConfiguration != "" || r.GCPProject != "" || r.GCPRegion != "" {
 		field("gcp:" + r.GCPConfiguration + ":" + r.GCPProject + ":" + r.GCPRegion)
 	}
+	if r.AzureSubscription != "" || r.AzureTenant != "" || r.AzureLocation != "" {
+		field("azure:" + r.AzureSubscription + ":" + r.AzureTenant + ":" + r.AzureLocation)
+	}
 	for _, e := range r.Env {
 		field(fmt.Sprintf("env:%s:%t", e.Name, e.Present))
 	}
@@ -210,6 +218,28 @@ func gcpDropped(upper string, c, project, region string) bool {
 	return c != "" && gcpCredentialNames[upper]
 }
 
+// azureSelectionNames are inherited values that choose the Azure subscription, tenant or
+// location; a profile that names one of them replaces them. Credentials (ARM_CLIENT_*,
+// AZURE_CLIENT_*) and AZURE_CONFIG_DIR are the user's chain and are passed unchanged. Values
+// are never read.
+var azureSelectionNames = map[string]string{
+	"ARM_SUBSCRIPTION_ID": "subscription", "AZURE_SUBSCRIPTION_ID": "subscription",
+	"ARM_TENANT_ID": "tenant", "AZURE_TENANT_ID": "tenant", "AZURE_DEFAULTS_LOCATION": "location",
+}
+
+// azureDropped reports whether Compose drops the inherited variable upper for r.
+func azureDropped(upper, subscription, tenant, location string) bool {
+	switch azureSelectionNames[upper] {
+	case "subscription":
+		return subscription != ""
+	case "tenant":
+		return tenant != ""
+	case "location":
+		return location != ""
+	}
+	return false
+}
+
 func credentialSource(p Profile) string {
 	if p.AWSProfile != "" {
 		return "so AWS profile " + p.AWSProfile + " is the credential source"
@@ -229,6 +259,8 @@ func compositionNotices(p Profile, environ []string) []string {
 		case p.AWSProfile != "" && awsCredentialNames[upper] && upper != "AWS_PROFILE":
 			dropped[upper] = true
 		case gcpDropped(upper, p.GCPConfiguration, p.GCPProject, p.GCPRegion):
+			dropped[upper] = true
+		case azureDropped(upper, p.AzureSubscription, p.AzureTenant, p.AzureLocation):
 			dropped[upper] = true
 		}
 	}
@@ -250,6 +282,9 @@ func compositionNotices(p Profile, environ []string) []string {
 	}
 	if p.GCPConfiguration != "" || p.GCPProject != "" || p.GCPRegion != "" {
 		notices = append(notices, "The Google Cloud configuration, project and region are names passed to gcloud and the provider (CLOUDSDK_*). Verify identity checks the gcloud credentials on request; provider settings in the configuration can still use another project.")
+	}
+	if p.AzureSubscription != "" || p.AzureTenant != "" || p.AzureLocation != "" {
+		notices = append(notices, "The Azure subscription, tenant and location are IDs and names passed to az and the provider (ARM_*). Verify identity checks the az login on request; provider settings in the configuration can still use another subscription.")
 	}
 	if p.AWSProfile != "" || p.AWSRegion != "" {
 		notices = append(notices, "The AWS profile and region are names passed to the provider. Verify identity checks the AWS CLI credentials on request; provider aliases, assume_role or a profile set in the configuration can still use another account.")
@@ -280,6 +315,8 @@ func Compose(base []string, r Resolved) ([]string, error) {
 			continue
 		case gcpDropped(upper, r.GCPConfiguration, r.GCPProject, r.GCPRegion):
 			continue
+		case azureDropped(upper, r.AzureSubscription, r.AzureTenant, r.AzureLocation):
+			continue
 		}
 		out = append(out, item)
 	}
@@ -300,6 +337,15 @@ func Compose(base []string, r Resolved) ([]string, error) {
 	}
 	if r.GCPRegion != "" {
 		out = append(out, "CLOUDSDK_COMPUTE_REGION="+r.GCPRegion)
+	}
+	if r.AzureSubscription != "" {
+		out = append(out, "ARM_SUBSCRIPTION_ID="+r.AzureSubscription)
+	}
+	if r.AzureTenant != "" {
+		out = append(out, "ARM_TENANT_ID="+r.AzureTenant)
+	}
+	if r.AzureLocation != "" {
+		out = append(out, "AZURE_DEFAULTS_LOCATION="+r.AzureLocation)
 	}
 	return out, nil
 }

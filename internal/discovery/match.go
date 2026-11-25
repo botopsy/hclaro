@@ -1,6 +1,8 @@
 package discovery
 
 import (
+	"strings"
+
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
 )
@@ -118,7 +120,8 @@ func (idx bindingIndex) match(c CloudResourceCandidate) TerraformBindingMatch {
 	for _, b := range idx.byType[c.Type] {
 		idHit := false
 		for _, id := range b.ids {
-			if id == c.ImportID {
+			// Azure resource IDs differ in case between the CLI, the portal and state.
+			if id == c.ImportID || strings.HasPrefix(c.Type, "azurerm_") && strings.EqualFold(id, c.ImportID) {
 				idHit = true
 			}
 		}

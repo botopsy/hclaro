@@ -121,6 +121,27 @@ describe('Cloud discovery', () => {
     expect(posts.at(-1)).toMatchObject({ url: '/api/v1/discovery/identity', body: { provider: 'gcp' } });
   });
 
+  it('offers Azure when az is detected, shows the tenant and sends the provider', async () => {
+    const providers = [{ name: 'aws', label: 'AWS', cli: 'aws', detected: true }, { name: 'azure', label: 'Microsoft Azure', cli: 'az', detected: true }];
+    const azureTypes = [{ type: 'azurerm_resource_group', service: 'resources', label: 'Resource groups', global: true, operation: 'Microsoft.Resources/subscriptions/resourceGroups/read', importIdFormat: '/subscriptions/SUB/resourceGroups/NAME', permission: 'Microsoft.Resources/subscriptions/resourceGroups/read', provider: 'azure' }];
+    const azureOptions = { ...unverified, provider: 'azure', providers, types: azureTypes, regions: ['westeurope', 'eastus'], defaultRegion: 'eastus' } as unknown as DiscoveryOptions;
+    const azureIdentity = { ...verified.identity!, provider: 'azure', account: '11111111-1111-1111-1111-111111111111', tenant: '22222222-2222-2222-2222-222222222222', arn: 'a…@example.com', principalType: 'user', partition: 'azure', region: 'eastus', regionSource: 'default', cliVersion: '2.60.0' };
+    serve({ options: azureOptions, scans: [] }, url => url.includes('/discovery/options') && !url.includes('provider=azure') ? Response.json({ ...unverified, providers }) : undefined, url => url.endsWith('/discovery/identity') ? Response.json(azureIdentity) : undefined);
+    view();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Microsoft Azure' }));
+    expect(await screen.findByRole('heading', { name: 'Azure context not verified' })).toBeInTheDocument();
+    expect(gets.some(u => u.includes('/discovery/options?provider=azure'))).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Verify Azure context' }));
+    expect(posts.at(-1)).toMatchObject({ url: '/api/v1/discovery/identity', body: { provider: 'azure' } });
+    cleanup();
+    serve({ options: { ...azureOptions, identity: azureIdentity } as DiscoveryOptions, scans: [] }, url => url.includes('/discovery/options') && !url.includes('provider=azure') ? Response.json({ ...unverified, providers }) : undefined);
+    view();
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Microsoft Azure' }));
+    expect(await screen.findByRole('heading', { name: /Azure subscription 11111111-1111-1111-1111-111111111111/ })).toBeInTheDocument();
+    expect(screen.getByText('22222222-2222-2222-2222-222222222222')).toBeInTheDocument();
+  });
+
   it('picks resource types from a dropdown with checkboxes', async () => {
     serve({ options: verified, scans: [] });
     view();

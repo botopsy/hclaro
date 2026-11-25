@@ -35,6 +35,9 @@ type ExecutionContext struct {
 	GCPConfiguration   string   `json:"gcpConfiguration,omitempty"`
 	GCPProject         string   `json:"gcpProject,omitempty"`
 	GCPRegion          string   `json:"gcpRegion,omitempty"`
+	AzureSubscription  string   `json:"azureSubscription,omitempty"`
+	AzureTenant        string   `json:"azureTenant,omitempty"`
+	AzureLocation      string   `json:"azureLocation,omitempty"`
 	EnvNames           []string `json:"envNames"`
 	Identity           string   `json:"identity"`
 	Notices            []string `json:"notices"`
@@ -248,6 +251,7 @@ func FromResolved(r profiles.Resolved) ExecutionContext {
 		LockTimeoutSeconds: r.Options.LockTimeoutSeconds, AWSProfile: r.AWSProfile, AWSRegion: r.AWSRegion,
 		AWSAuth: r.AWSAuth, AWSExpectedAccount: r.AWSExpectedAccount, AWSExpectedRole: r.AWSExpectedRole,
 		GCPConfiguration: r.GCPConfiguration, GCPProject: r.GCPProject, GCPRegion: r.GCPRegion,
+		AzureSubscription: r.AzureSubscription, AzureTenant: r.AzureTenant, AzureLocation: r.AzureLocation,
 		EnvNames: []string{}, Identity: r.Identity, Notices: slices.Clone(r.Notices), Fingerprint: r.Fingerprint,
 	}
 	for _, f := range r.VarFiles {

@@ -16,16 +16,20 @@ export type ExecutionProfile = {
   awsExpectedAccount: string;
   awsExpectedRole: string;
   // Google Cloud selection (M33): names of a gcloud configuration, project and region.
+  // Azure selection (M33): subscription and tenant IDs and a location.
   gcpConfiguration?: string;
   gcpProject?: string;
   gcpRegion?: string;
+  azureSubscription?: string;
+  azureTenant?: string;
+  azureLocation?: string;
   envNames: string[];
   revision: number;
   createdAt: string;
   updatedAt: string;
   default: boolean;
 };
-export type ProfileInput = Pick<ExecutionProfile, 'name' | 'engine' | 'workspace' | 'varFiles' | 'parallelism' | 'lockTimeoutSeconds' | 'awsProfile' | 'awsRegion' | 'awsAuth' | 'awsExpectedAccount' | 'awsExpectedRole' | 'gcpConfiguration' | 'gcpProject' | 'gcpRegion' | 'envNames'>;
+export type ProfileInput = Pick<ExecutionProfile, 'name' | 'engine' | 'workspace' | 'varFiles' | 'parallelism' | 'lockTimeoutSeconds' | 'awsProfile' | 'awsRegion' | 'awsAuth' | 'awsExpectedAccount' | 'awsExpectedRole' | 'gcpConfiguration' | 'gcpProject' | 'gcpRegion' | 'azureSubscription' | 'azureTenant' | 'azureLocation' | 'envNames'>;
 type AWSAuthMethod = 'aws-cli' | 'aws-vault';
 // AWS authentication state of one execution profile (M20). Names, the STS account and ARN,
 // timestamps and codes only: never credentials, sign-in URLs, codes or CLI output.
@@ -92,6 +96,9 @@ type ResolvedContext = {
   gcpConfiguration?: string;
   gcpProject?: string;
   gcpRegion?: string;
+  azureSubscription?: string;
+  azureTenant?: string;
+  azureLocation?: string;
   env: { name: string; present: boolean }[];
   identity: 'not_verified';
   notices: string[];
@@ -134,6 +141,9 @@ export type ExecutionContext = {
   gcpConfiguration?: string;
   gcpProject?: string;
   gcpRegion?: string;
+  azureSubscription?: string;
+  azureTenant?: string;
+  azureLocation?: string;
   envNames: string[];
   identity: string;
   notices: string[];

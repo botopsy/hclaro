@@ -1,0 +1,5 @@
+[
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-prod","name":"rg-prod","location":"westeurope","tags":{"env":"prod","api_token":"AKIAIOSFODNN7EXAMPLE","owner":"DO_NOT_LEAK_HCLARO_TEST_SECRET"},"properties":{"provisioningState":"Succeeded"},"managedBy":"DO_NOT_LEAK_HCLARO_TEST_SECRET"},
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-batch","name":"rg-batch","location":"eastus","tags":null},
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/bad name","name":"bad name","location":"westeurope","tags":null}
+]

@@ -26,6 +26,8 @@ type Provider interface {
 // principal and is not an AWS-only value: other providers put their principal there.
 type Verified struct {
 	Account, ARN, PrincipalType, Partition, Region, RegionSource, CLIVersion string
+	// Tenant is the Azure tenant ("" for other providers).
+	Tenant string
 }
 
 // awsProvider lists AWS objects with the AWS CLI v2.
@@ -47,7 +49,7 @@ func (p awsProvider) Verify(ctx context.Context, pin Pin, environ []string) (Ver
 	if err != nil {
 		return Verified{}, err
 	}
-	return Verified{account, arn, principal, partition, region, source, version}, nil
+	return Verified{account, arn, principal, partition, region, source, version, ""}, nil
 }
 
 func (p awsProvider) Account(ctx context.Context, environ []string, region string) (string, error) {

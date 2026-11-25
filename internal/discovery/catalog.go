@@ -66,7 +66,7 @@ type ResourceType struct {
 	Service string `json:"service"`
 	Label   string `json:"label"`
 	Global  bool   `json:"global"`
-	// Provider is "" for AWS, else the provider name ("gcp").
+	// Provider is "" for AWS, else the provider name ("gcp", "azure").
 	Provider    string   `json:"provider,omitempty"`
 	Operation   string   `json:"operation"`
 	ImportID    string   `json:"importIdFormat"`
@@ -178,6 +178,15 @@ var GCPRegions = []string{
 	"europe-central2", "europe-north1", "europe-southwest1", "europe-west1", "europe-west2", "europe-west3", "europe-west4", "europe-west6", "europe-west8", "europe-west9", "europe-west12",
 	"asia-east1", "asia-east2", "asia-northeast1", "asia-northeast2", "asia-northeast3", "asia-south1", "asia-south2", "asia-southeast1", "asia-southeast2",
 	"australia-southeast1", "australia-southeast2", "me-central1", "me-central2", "me-west1", "africa-south1",
+}
+
+// AzureLocations are common Azure locations offered in the scan form; any location of the
+// documented shape is accepted when scanning.
+var AzureLocations = []string{
+	"eastus", "eastus2", "centralus", "northcentralus", "southcentralus", "westus", "westus2", "westus3", "canadacentral", "canadaeast", "brazilsouth", "mexicocentral",
+	"northeurope", "westeurope", "uksouth", "ukwest", "francecentral", "germanywestcentral", "switzerlandnorth", "norwayeast", "swedencentral", "polandcentral", "italynorth", "spaincentral",
+	"uaenorth", "qatarcentral", "israelcentral", "southafricanorth",
+	"centralindia", "southindia", "eastasia", "southeastasia", "japaneast", "japanwest", "koreacentral", "australiaeast", "australiasoutheast", "newzealandnorth",
 }
 
 // KnownRegion reports whether r is a selectable region.

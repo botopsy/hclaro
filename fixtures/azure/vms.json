@@ -1,0 +1,5 @@
+[
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/RG-PROD/providers/Microsoft.Compute/virtualMachines/web-1","name":"web-1","location":"westeurope","osType":"Linux","size":"Standard_D2s_v5","tags":{"env":"prod","password":"DO_NOT_LEAK_HCLARO_TEST_SECRET"},"osProfile":{"adminPassword":"DO_NOT_LEAK_HCLARO_TEST_SECRET","customData":"DO_NOT_LEAK_HCLARO_TEST_SECRET"}},
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-batch/providers/Microsoft.Compute/virtualMachines/win-1","name":"win-1","location":"eastus","osType":"Windows","size":"Standard_D4s_v5","tags":null},
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-batch/providers/Microsoft.Compute/virtualMachines/legacy-1","name":"legacy-1","location":"eastus","osType":null,"size":"Standard_A1","tags":null}
+]

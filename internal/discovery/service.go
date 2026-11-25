@@ -94,8 +94,12 @@ type Pin struct {
 	GCPConfiguration string `json:"gcpConfiguration,omitempty"`
 	GCPProject       string `json:"gcpProject,omitempty"`
 	GCPRegion        string `json:"gcpRegion,omitempty"`
-	Workspace        string `json:"workspace"`
-	Engine           string `json:"engine"`
+	// Azure names of the context (provider "azure").
+	AzureSubscription string `json:"azureSubscription,omitempty"`
+	AzureTenant       string `json:"azureTenant,omitempty"`
+	AzureLocation     string `json:"azureLocation,omitempty"`
+	Workspace         string `json:"workspace"`
+	Engine            string `json:"engine"`
 }
 
 // differs returns why current does not match p, or "".
@@ -117,6 +121,8 @@ func (p Pin) differs(current Pin) string {
 		return "The AWS profile or region of this context changed."
 	case p.GCPConfiguration != current.GCPConfiguration || p.GCPProject != current.GCPProject || p.GCPRegion != current.GCPRegion:
 		return "The Google Cloud configuration, project or region of this context changed."
+	case p.AzureSubscription != current.AzureSubscription || p.AzureTenant != current.AzureTenant || p.AzureLocation != current.AzureLocation:
+		return "The Azure subscription, tenant or location of this context changed."
 	}
 	return ""
 }
@@ -124,10 +130,12 @@ func (p Pin) differs(current Pin) string {
 // CloudIdentity is a verified AWS caller identity for one pinned context. Only the account,
 // a display form of the ARN and the principal type are kept; the user ID is dropped.
 type CloudIdentity struct {
-	ID            string `json:"id"`
-	Provider      string `json:"provider"`
-	Account       string `json:"account"`
-	ARN           string `json:"arn"`
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	Account  string `json:"account"`
+	ARN      string `json:"arn"`
+	// Tenant is the Azure tenant of the subscription in Account.
+	Tenant        string `json:"tenant,omitempty"`
 	PrincipalType string `json:"principalType"`
 	Partition     string `json:"partition"`
 	Region        string `json:"region"`
@@ -215,8 +223,11 @@ func (t ResourceType) provider() string {
 }
 
 func knownRegion(provider, r string) bool {
-	if provider == "gcp" {
+	switch provider {
+	case "gcp":
 		return gcpRegion.MatchString(r)
+	case "azure":
+		return azureLocation.MatchString(r)
 	}
 	return KnownRegion(r)
 }
@@ -455,7 +466,7 @@ func (s *Service) Verify(ctx context.Context, pin Pin, environ []string) (CloudI
 		return CloudIdentity{}, err
 	}
 	now := s.Now()
-	id := &CloudIdentity{ID: s.NewID(), Provider: prov.Name(), Account: v.Account, ARN: v.ARN, PrincipalType: v.PrincipalType, Partition: v.Partition, Region: v.Region, RegionSource: v.RegionSource, CLIVersion: v.CLIVersion, VerifiedAt: now.UTC().Format(time.RFC3339), Pin: pin, expires: now.Add(s.IdentityTTL)}
+	id := &CloudIdentity{ID: s.NewID(), Provider: prov.Name(), Account: v.Account, ARN: v.ARN, PrincipalType: v.PrincipalType, Partition: v.Partition, Region: v.Region, RegionSource: v.RegionSource, CLIVersion: v.CLIVersion, Tenant: v.Tenant, VerifiedAt: now.UTC().Format(time.RFC3339), Pin: pin, expires: now.Add(s.IdentityTTL)}
 	id.ExpiresAt = id.expires.UTC().Format(time.RFC3339)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -967,6 +978,8 @@ func (s *Service) Prepare(ctx context.Context, scanID, candidateID string, pin P
 	p.ExpiresAt = p.expires.UTC().Format(time.RFC3339)
 	region, _ := RegionOf(pin, environ)
 	switch {
+	case identity.Provider == "azure":
+		p.Warnings = append(p.Warnings, "Make sure the azurerm provider configuration you import with uses subscription "+c.Account+" (its subscription_id argument or ARM_SUBSCRIPTION_ID), or the plan will not find the object.")
 	case identity.Provider == "gcp":
 		p.Warnings = append(p.Warnings, "Make sure the google provider configuration you import with uses project "+c.Account+" (its project argument, GOOGLE_PROJECT or the default of its credentials), or the plan will not find the object.")
 	case c.Region == "":
