@@ -125,7 +125,7 @@ function AuthDialog({ projectId, profileId, onClose }: { projectId: string; prof
   useModal(dialog, close, onClose);
   return <div className="dialog-backdrop">
    <div ref={dialog} className="dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-    <div className="dialog-header"><h2 id="auth-title">AWS authentication</h2><Button ref={close} variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
+    <div className="dialog-header"><h2 id="auth-title">AWS sign-in</h2><Button ref={close} variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X size={15} /></Button></div>
     <AuthPanel projectId={projectId} profileId={profileId} />
    </div>
   </div>;
