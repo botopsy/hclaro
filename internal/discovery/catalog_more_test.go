@@ -39,6 +39,10 @@ func TestLaterTypesParseIdentityAndSafeFactsOnly(t *testing.T) {
 		{"aws_sns_topic", "sns-list-topics.json", 2, "arn:aws:sns:eu-west-1:111122223333:orders-alerts", [2]string{}},
 		{"aws_kms_key", "kms-list-aliases.json", 1, "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9", [2]string{}}, // AWS-managed, duplicate and unattached aliases are skipped
 		{"aws_cloudwatch_log_group", "logs-describe-log-groups.json", 2, "/aws/lambda/orders-webhook", [2]string{"retentionDays", "30"}},
+		{"aws_ecr_repository", "ecr-describe-repositories.json", 2, "orders/api", [2]string{"tagMutability", "IMMUTABLE"}},
+		{"aws_eks_cluster", "eks-list-clusters.json", 2, "core-eks", [2]string{}},
+		{"aws_ecs_cluster", "ecs-list-clusters.json", 2, "orders", [2]string{}},
+		{"aws_route53_zone", "route53-list-hosted-zones.json", 2, "Z0123456789ABCDEFGHIJ", [2]string{"records", "12"}},
 	}
 	for _, c := range cases {
 		got := parseFixture(t, c.typ, c.file)
@@ -134,6 +138,41 @@ func TestBatchThreeRefusesUnexpectedIdentifiers(t *testing.T) {
 		"aws_sqs_queue":            `{"QueueUrls":["https://example.com/111122223333/q"]}`,
 		"aws_sns_topic":            `{"Topics":[{"TopicArn":"not-an-arn"}]}`,
 		"aws_cloudwatch_log_group": `{"logGroups":[{"logGroupName":"bad name with spaces"}]}`,
+	} {
+		rt, _ := TypeByName(typ)
+		out, _, err := rt.parse([]byte(page), ctx)
+		if err != nil || len(out) != 1 || out[0].ImportStatus != ImportIDUnresolved {
+			t.Errorf("%s: %+v %v", typ, out, err)
+		}
+	}
+}
+
+func TestBatchFourDerivesImportIDsAndKeepsZonesGlobal(t *testing.T) {
+	// aws_ecs_cluster is imported by name, but ecs list-clusters returns ARNs.
+	c := parseFixture(t, "aws_ecs_cluster", "ecs-list-clusters.json")
+	if c[0].ImportID != "orders" || c[0].ARN != "arn:aws:ecs:eu-west-1:111122223333:cluster/orders" || c[0].Name != "orders" {
+		t.Fatalf("%+v", c[0])
+	}
+	// The provider records the ARN as the id and the name as `name`; only the name is compared.
+	if ids, ok := StateIDs("aws_ecs_cluster", map[string]any{"id": "arn:aws:ecs:eu-west-1:111122223333:cluster/orders", "name": "orders"}); !ok || len(ids) != 1 || ids[0] != "orders" {
+		t.Fatalf("%v %v", ids, ok)
+	}
+	z := parseFixture(t, "aws_route53_zone", "route53-list-hosted-zones.json")
+	if len(z[0].Regions) != 0 || z[0].Name != "example.com" || z[0].Details["private"] != "" || z[1].Details["private"] != "true" {
+		t.Fatalf("%+v", z)
+	}
+	if z[0].ARN != "arn:aws:route53:::hostedzone/Z0123456789ABCDEFGHIJ" {
+		t.Fatalf("%+v", z[0])
+	}
+}
+
+func TestBatchFourRefusesUnexpectedIdentifiers(t *testing.T) {
+	ctx := parseContext{Region: "eu-west-1", Account: account, Partition: "aws"}
+	for typ, page := range map[string]string{
+		"aws_ecr_repository": `{"repositories":[{"repositoryName":"Upper/Case"}]}`,
+		"aws_eks_cluster":    `{"clusters":["-bad"]}`,
+		"aws_ecs_cluster":    `{"clusterArns":["arn:aws:ecs:eu-west-1:111122223333:service/x/y"]}`,
+		"aws_route53_zone":   `{"HostedZones":[{"Id":"/hostedzone/lowercase"}]}`,
 	} {
 		rt, _ := TypeByName(typ)
 		out, _, err := rt.parse([]byte(page), ctx)

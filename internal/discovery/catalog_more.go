@@ -465,3 +465,125 @@ func parseLogGroups(page []byte, ctx parseContext) ([]CloudResourceCandidate, st
 	token, err := nextToken(doc.NextToken)
 	return out, token, err
 }
+
+var (
+	// ECR repository names: lower case path segments separated by "/", 2-256 characters.
+	ecrRepoName    = regexp.MustCompile(`^([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*$`)
+	eksClusterName = regexp.MustCompile(`^[0-9A-Za-z][A-Za-z0-9_-]{0,99}$`)
+	// ecs list-clusters returns ARNs; aws_ecs_cluster is imported by the cluster name.
+	ecsClusterARN  = regexp.MustCompile(`^arn:aws(-cn|-us-gov)?:ecs:[a-z0-9-]+:([0-9]{12}):cluster/([A-Za-z0-9_-]{1,255})$`)
+	ecsClusterName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,255}$`)
+	hostedZoneID   = regexp.MustCompile(`^Z[A-Z0-9]{1,31}$`)
+)
+
+// parseRepositories reads the repository name, ARN and tag mutability. Encryption settings,
+// URIs and scanning configuration are not decoded.
+func parseRepositories(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Repositories []struct {
+			Name       string `json:"repositoryName"`
+			ARN        string `json:"repositoryArn"`
+			Mutability string `json:"imageTagMutability"`
+		} `json:"repositories"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, r := range doc.Repositories {
+		it := item{typ: "aws_ecr_repository", service: "ecr", id: r.Name, arn: r.ARN, name: r.Name, valid: len(r.Name) >= 2 && len(r.Name) <= 256 && ecrRepoName.MatchString(r.Name), details: map[string]string{"tagMutability": r.Mutability}}
+		if parts := strings.Split(r.ARN, ":"); len(parts) > 4 && accountRE.MatchString(parts[4]) {
+			it.owner = parts[4]
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseEKSClusters reads cluster names only (`eks list-clusters` returns nothing else).
+func parseEKSClusters(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Clusters  []string `json:"clusters"`
+		NextToken string   `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, n := range doc.Clusters {
+		it := item{typ: "aws_eks_cluster", service: "eks", id: n, name: n, valid: eksClusterName.MatchString(n), details: map[string]string{}}
+		if it.valid {
+			it.arn = ctx.arn("eks", "cluster/"+n)
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseECSClusters reads cluster ARNs and derives the name, which is the import ID.
+func parseECSClusters(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		ClusterARNs []string `json:"clusterArns"`
+		NextToken   string   `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, a := range doc.ClusterARNs {
+		m := ecsClusterARN.FindStringSubmatch(a)
+		it := item{typ: "aws_ecs_cluster", service: "ecs", id: a, arn: a, valid: m != nil, details: map[string]string{}}
+		if m != nil {
+			it.id, it.owner, it.name = m[3], m[2], m[3]
+		}
+		c := it.candidate(ctx)
+		if m == nil {
+			c.ResourceID = cleanText(a, 255)
+		}
+		out = append(out, c)
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseHostedZones reads the zone ID, name and whether it is private. Comments, caller
+// references and delegation sets are not decoded. Route 53 is global: zones are not tied to a
+// scanned region.
+func parseHostedZones(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Zones []struct {
+			ID     string `json:"Id"`
+			Name   string `json:"Name"`
+			Count  int    `json:"ResourceRecordSetCount"`
+			Config struct {
+				Private bool `json:"PrivateZone"`
+			} `json:"Config"`
+		} `json:"HostedZones"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, z := range doc.Zones {
+		id := strings.TrimPrefix(z.ID, "/hostedzone/")
+		it := item{typ: "aws_route53_zone", service: "route53", id: id, name: strings.TrimSuffix(z.Name, "."), valid: hostedZoneID.MatchString(id), details: map[string]string{}}
+		if it.valid {
+			it.arn = "arn:" + ctx.Partition + ":route53:::hostedzone/" + id
+		}
+		if z.Config.Private {
+			it.details["private"] = "true"
+		}
+		if z.Count > 0 {
+			it.details["records"] = itoa(z.Count)
+		}
+		c := it.candidate(ctx)
+		c.Regions = []string{}
+		out = append(out, c)
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}

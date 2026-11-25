@@ -1,0 +1,6 @@
+{
+  "clusterArns": [
+    "arn:aws:ecs:eu-west-1:111122223333:cluster/orders",
+    "arn:aws:ecs:eu-west-1:111122223333:cluster/batch"
+  ]
+}
