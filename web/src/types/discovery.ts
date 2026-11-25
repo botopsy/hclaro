@@ -18,6 +18,7 @@ type DiscoveryPin = {
   profileId?: string;
   profileName?: string;
   contextFingerprint: string;
+  provider?: string;
   awsProfile?: string;
   awsRegion?: string;
   workspace: string;
