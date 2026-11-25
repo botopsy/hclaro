@@ -266,6 +266,8 @@
 .dialog {
   max-height: calc(100vh - 32px);
   overflow-y: auto;
+  /* The AWS dialog opens from the header's .context-item, which does not wrap text. */
+  white-space: normal;
 }
 
 .profile-editor fieldset {
