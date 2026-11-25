@@ -1,6 +1,6 @@
 # Getting started with hclaro
 
-This guide takes you from a clean machine to hclaro showing one of your Terraform or OpenTofu projects. hclaro is published by BotOpsy and is not production-certified: read [Status, testing and limitations](reference/limitations.md) first.
+This guide takes you from a clean machine to hclaro showing one of your Terraform or OpenTofu projects. hclaro is published by BotOpsy and needs real-world testing: read [Status, testing and limitations](reference/limitations.md) first.
 
 ## 1. Requirements
 
