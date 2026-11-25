@@ -46,7 +46,11 @@ type Resolved struct {
 	AWSProfile  string    `json:"awsProfile,omitempty"`
 	AWSRegion   string    `json:"awsRegion,omitempty"`
 	// AWSAuth is aws-cli or aws-vault when an AWS profile is chosen, "" otherwise.
-	AWSAuth            string         `json:"awsAuth,omitempty"`
+	AWSAuth string `json:"awsAuth,omitempty"`
+	// GCP names are set when the context selects a gcloud configuration, project or region.
+	GCPConfiguration   string         `json:"gcpConfiguration,omitempty"`
+	GCPProject         string         `json:"gcpProject,omitempty"`
+	GCPRegion          string         `json:"gcpRegion,omitempty"`
 	AWSExpectedAccount string         `json:"awsExpectedAccount,omitempty"`
 	AWSExpectedRole    string         `json:"awsExpectedRole,omitempty"`
 	Env                []EnvStatus    `json:"env"`
@@ -81,6 +85,7 @@ func Resolve(p Profile, root string, environ []string) Resolved {
 	r.ProfileID, r.ProfileName, r.Revision = p.ID, p.Name, p.Revision
 	r.Engine, r.Workspace, r.Options, r.AWSProfile, r.AWSRegion = p.Engine, p.Workspace, p.Options, p.AWSProfile, p.AWSRegion
 	r.AWSExpectedAccount, r.AWSExpectedRole = p.AWSExpectedAccount, p.AWSExpectedRole
+	r.GCPConfiguration, r.GCPProject, r.GCPRegion = p.GCPConfiguration, p.GCPProject, p.GCPRegion
 	if p.AWSProfile != "" {
 		r.AWSAuth = AWSCLI
 		if p.AWSAuth == AWSVault {
@@ -141,6 +146,10 @@ func (r Resolved) fingerprint() string {
 	if r.AWSAuth == AWSVault || r.AWSExpectedAccount != "" || r.AWSExpectedRole != "" {
 		field("aws-auth:" + r.AWSAuth + ":" + r.AWSExpectedAccount + ":" + r.AWSExpectedRole)
 	}
+	// Only a GCP selection is hashed, so profiles without one keep their fingerprint.
+	if r.GCPConfiguration != "" || r.GCPProject != "" || r.GCPRegion != "" {
+		field("gcp:" + r.GCPConfiguration + ":" + r.GCPProject + ":" + r.GCPRegion)
+	}
 	for _, e := range r.Env {
 		field(fmt.Sprintf("env:%s:%t", e.Name, e.Present))
 	}
@@ -173,6 +182,41 @@ var awsCredentialNames = map[string]bool{
 	"AWS_VAULT": true,
 }
 
+// gcpSelectionNames are inherited values that choose the gcloud configuration, project or
+// region; a profile that names one of them replaces them. gcpCredentialNames are inherited
+// credentials that would compete with the chosen configuration's account. Values are never read.
+var (
+	gcpSelectionNames = map[string]string{
+		"CLOUDSDK_ACTIVE_CONFIG_NAME": "configuration", "CLOUDSDK_CORE_PROJECT": "project", "GOOGLE_CLOUD_PROJECT": "project",
+		"GOOGLE_PROJECT": "project", "GCLOUD_PROJECT": "project", "CLOUDSDK_COMPUTE_REGION": "region", "GOOGLE_REGION": "region",
+	}
+	gcpCredentialNames = map[string]bool{
+		"GOOGLE_APPLICATION_CREDENTIALS": true, "GOOGLE_CREDENTIALS": true, "GOOGLE_CLOUD_KEYFILE_JSON": true, "GCLOUD_KEYFILE_JSON": true,
+		"GOOGLE_OAUTH_ACCESS_TOKEN": true, "CLOUDSDK_AUTH_ACCESS_TOKEN": true, "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE": true,
+		"CLOUDSDK_CORE_ACCOUNT": true, "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT": true, "GOOGLE_IMPERSONATE_SERVICE_ACCOUNT": true,
+	}
+)
+
+// gcpDropped reports whether Compose drops the inherited variable upper for r.
+func gcpDropped(upper string, c, project, region string) bool {
+	switch gcpSelectionNames[upper] {
+	case "configuration":
+		return c != ""
+	case "project":
+		return project != ""
+	case "region":
+		return region != ""
+	}
+	return c != "" && gcpCredentialNames[upper]
+}
+
+func credentialSource(p Profile) string {
+	if p.AWSProfile != "" {
+		return "so AWS profile " + p.AWSProfile + " is the credential source"
+	}
+	return "because this context's Google Cloud selection replaces them"
+}
+
 func compositionNotices(p Profile, environ []string) []string {
 	notices := []string{}
 	dropped := map[string]bool{}
@@ -183,6 +227,8 @@ func compositionNotices(p Profile, environ []string) []string {
 		case upper == "TF_WORKSPACE":
 			dropped["TF_WORKSPACE"] = true
 		case p.AWSProfile != "" && awsCredentialNames[upper] && upper != "AWS_PROFILE":
+			dropped[upper] = true
+		case gcpDropped(upper, p.GCPConfiguration, p.GCPProject, p.GCPRegion):
 			dropped[upper] = true
 		}
 	}
@@ -197,10 +243,13 @@ func compositionNotices(p Profile, environ []string) []string {
 	}
 	sort.Strings(creds)
 	if len(creds) > 0 {
-		notices = append(notices, "Inherited "+strings.Join(creds, ", ")+" "+map[bool]string{true: "is", false: "are"}[len(creds) == 1]+" not passed, so AWS profile "+p.AWSProfile+" is the credential source. Values were not read into Hclaro.")
+		notices = append(notices, "Inherited "+strings.Join(creds, ", ")+" "+map[bool]string{true: "is", false: "are"}[len(creds) == 1]+" not passed, "+credentialSource(p)+". Values were not read into Hclaro.")
 	}
 	if p.AWSAuth == AWSVault {
 		notices = append(notices, "Engine and AWS CLI commands run through aws-vault exec "+p.AWSProfile+" --. aws-vault passes temporary credentials to that command only; Hclaro never reads them.")
+	}
+	if p.GCPConfiguration != "" || p.GCPProject != "" || p.GCPRegion != "" {
+		notices = append(notices, "The Google Cloud configuration, project and region are names passed to gcloud and the provider (CLOUDSDK_*). Verify identity checks the gcloud credentials on request; provider settings in the configuration can still use another project.")
 	}
 	if p.AWSProfile != "" || p.AWSRegion != "" {
 		notices = append(notices, "The AWS profile and region are names passed to the provider. Verify identity checks the AWS CLI credentials on request; provider aliases, assume_role or a profile set in the configuration can still use another account.")
@@ -229,6 +278,8 @@ func Compose(base []string, r Resolved) ([]string, error) {
 			continue
 		case r.AWSRegion != "" && rule == tfpolicy.AWSRegion:
 			continue
+		case gcpDropped(upper, r.GCPConfiguration, r.GCPProject, r.GCPRegion):
+			continue
 		}
 		out = append(out, item)
 	}
@@ -240,6 +291,15 @@ func Compose(base []string, r Resolved) ([]string, error) {
 	}
 	if r.AWSRegion != "" {
 		out = append(out, "AWS_REGION="+r.AWSRegion, "AWS_DEFAULT_REGION="+r.AWSRegion)
+	}
+	if r.GCPConfiguration != "" {
+		out = append(out, "CLOUDSDK_ACTIVE_CONFIG_NAME="+r.GCPConfiguration)
+	}
+	if r.GCPProject != "" {
+		out = append(out, "CLOUDSDK_CORE_PROJECT="+r.GCPProject)
+	}
+	if r.GCPRegion != "" {
+		out = append(out, "CLOUDSDK_COMPUTE_REGION="+r.GCPRegion)
 	}
 	return out, nil
 }

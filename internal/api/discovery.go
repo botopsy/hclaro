@@ -40,10 +40,23 @@ func discoveryPin(manager *operations.Manager, check bool, profileID, expected s
 	if c != nil {
 		pin.ProjectID, pin.ProfileID, pin.ProfileName, pin.ContextFingerprint = c.ProjectID, c.ProfileID, c.ProfileName, c.Fingerprint
 		pin.AWSProfile, pin.AWSRegion = c.AWSProfile, c.AWSRegion
+		pin.GCPConfiguration, pin.GCPProject, pin.GCPRegion = c.GCPConfiguration, c.GCPProject, c.GCPRegion
 	} else {
 		pin.AWSProfile = inheritedAWSProfile()
 	}
 	return pin, environ, nil
+}
+
+// providerOf validates the provider a request names: "" and "aws" are AWS (the pin keeps ""),
+// "gcp" is Google Cloud. Anything else is refused.
+func providerOf(name string) (string, bool) {
+	switch name {
+	case "", "aws":
+		return "", true
+	case "gcp":
+		return "gcp", true
+	}
+	return "", false
 }
 
 // inheritedAWSProfile is the AWS_PROFILE Hclaro inherited, when it is a plain profile name.
@@ -76,6 +89,11 @@ func discoveryRoutes(mux *http.ServeMux, deps *Services, manager *operations.Man
 			errorJSON(w, 400, "invalid_request")
 			return
 		}
+		provider, ok := providerOf(r.URL.Query().Get("provider"))
+		if !ok {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
 		snap := manager.Snapshot()
 		canScan, reason := true, ""
 		switch {
@@ -87,15 +105,27 @@ func discoveryRoutes(mux *http.ServeMux, deps *Services, manager *operations.Man
 		context, projectID, profileError := launchOptionsContext(hub, snap, profileID)
 		var identity *discovery.CloudIdentity
 		region, regionSource := "us-east-1", "default"
+		regions, name, providers := discovery.Regions, "aws", []providerOption{}
+		if provider == "gcp" {
+			region, regionSource, regions, name = "us-central1", "default", discovery.GCPRegions, "gcp"
+		}
 		if canScan {
+			providers = providerOptions(deps.Discovery)
 			if pin, environ, perr := discoveryPin(manager, false, profileID, ""); perr == nil {
-				region, regionSource = discovery.RegionOf(pin, environ)
+				pin.Provider = provider
+				if provider == "gcp" {
+					if pin.GCPRegion != "" {
+						region, regionSource = pin.GCPRegion, "profile"
+					}
+				} else {
+					region, regionSource = discovery.RegionOf(pin, environ)
+				}
 				if id, ok := deps.Discovery.Identity(pin); ok {
 					identity = &id
 				}
 			}
 		}
-		writeJSON(w, 200, discoveryOptions{canScan, reason, "aws", discovery.Types, discovery.Regions, region, regionSource, discoveryLimits(), snap.Info.Project, snap.Info.Engine, snap.Info.Workspace, snap.Info.Backend, snap.Status, identity, projectID, context, profileError})
+		writeJSON(w, 200, discoveryOptions{canScan, reason, name, providers, typesOf(name), regions, region, regionSource, discoveryLimits(), snap.Info.Project, snap.Info.Engine, snap.Info.Workspace, snap.Info.Backend, snap.Status, identity, projectID, context, profileError})
 	})
 	discoveryExecRoutes(mux, "/api/v1", nil, available, launchSourceOf(manager, nil))
 }
@@ -142,8 +172,14 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 		var body struct {
 			ProfileID          *string `json:"profileId"`
 			ContextFingerprint string  `json:"contextFingerprint"`
+			Provider           string  `json:"provider"`
 		}
 		if !decodeBody(w, r, &body) {
+			return
+		}
+		provider, ok := providerOf(body.Provider)
+		if !ok {
+			errorJSON(w, 400, "invalid_request")
 			return
 		}
 		profileID, ok := profileOf(w, hub, body.ProfileID)
@@ -154,11 +190,12 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 		if !ok {
 			return
 		}
+		pin.Provider = provider
 		ctx, cancel := withDeadline(w, r, verifyTimeout)
 		defer cancel()
 		identity, err := svc.Verify(ctx, pin, environ)
 		if err != nil {
-			discoveryError(w, err)
+			discoveryErrorFor(w, err, provider)
 			return
 		}
 		writeJSON(w, 200, identity)
@@ -166,6 +203,7 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 	handle("POST /discovery/scans", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			IdentityID         string                   `json:"identityId"`
+			Provider           string                   `json:"provider"`
 			ProfileID          *string                  `json:"profileId"`
 			ContextFingerprint string                   `json:"contextFingerprint"`
 			Scope              discovery.DiscoveryScope `json:"scope"`
@@ -175,8 +213,13 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 		if !decodeBody(w, r, &body) {
 			return
 		}
+		provider, ok := providerOf(body.Provider)
+		if !ok {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
 		if body.Acknowledge == nil || !*body.Acknowledge {
-			reasonJSON(w, 400, "acknowledgement_required", "Listing AWS objects calls AWS APIs. Confirm the scan first.")
+			reasonJSON(w, 400, "acknowledgement_required", "Listing cloud objects calls cloud APIs. Confirm the scan first.")
 			return
 		}
 		if !ids.Valid(body.IdentityID) {
@@ -191,6 +234,7 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 		if !ok {
 			return
 		}
+		pin.Provider = provider
 		scan, err := svc.Start(pin, environ, body.IdentityID, body.Scope)
 		if err != nil {
 			discoveryError(w, err)
@@ -225,10 +269,16 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 			errorJSON(w, 400, "invalid_request")
 			return
 		}
+		provider, ok := providerOf(r.URL.Query().Get("provider"))
+		if !ok {
+			errorJSON(w, 400, "invalid_request")
+			return
+		}
 		svc, src, pin, _, ok := pinOf(w, r, false, profileID, "")
 		if !ok {
 			return
 		}
+		pin.Provider = provider
 		view, err := svc.View(id, pin, src.Snapshot())
 		if err != nil {
 			discoveryError(w, err)
@@ -262,8 +312,14 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 			ProfileID          *string `json:"profileId"`
 			ContextFingerprint string  `json:"contextFingerprint"`
 			AcknowledgeUnknown bool    `json:"acknowledgeUnknownMapping"`
+			Provider           string  `json:"provider"`
 		}
 		if !decodeBody(w, r, &body) {
+			return
+		}
+		provider, ok := providerOf(body.Provider)
+		if !ok {
+			errorJSON(w, 400, "invalid_request")
 			return
 		}
 		id, cand := r.PathValue("id"), r.PathValue("cand")
@@ -279,11 +335,12 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 		if !ok {
 			return
 		}
+		pin.Provider = provider
 		ctx, cancel := withDeadline(w, r, verifyTimeout)
 		defer cancel()
 		prefill, err := svc.Prepare(ctx, id, cand, pin, environ, src.Snapshot(), body.AcknowledgeUnknown)
 		if err != nil {
-			discoveryError(w, err)
+			discoveryErrorFor(w, err, provider)
 			return
 		}
 		writeJSON(w, 200, prefill)
@@ -291,7 +348,10 @@ func discoveryExecRoutes(mux *http.ServeMux, prefix string, hub *projects.Hub, a
 }
 
 // discoveryError maps discovery errors to typed responses. Messages never include CLI output.
-func discoveryError(w http.ResponseWriter, err error) {
+func discoveryError(w http.ResponseWriter, err error) { discoveryErrorFor(w, err, "") }
+
+// discoveryErrorFor is discoveryError with the CLI wording of provider ("" is AWS).
+func discoveryErrorFor(w http.ResponseWriter, err error, provider string) {
 	var call *awscli.CallError
 	switch {
 	case errors.As(err, &call):
@@ -302,11 +362,11 @@ func discoveryError(w http.ResponseWriter, err error) {
 		case awscli.KindMissingCLI, awscli.KindUnsupportedCLI:
 			status = 409
 		}
-		reasonJSON(w, status, call.Kind, awscli.Message(call.Kind))
+		reasonJSON(w, status, call.Kind, discovery.Message(provider, call.Kind))
 	case errors.Is(err, discovery.ErrInvalidScope):
-		reasonJSON(w, 400, "invalid_scope", "Choose 1 to 6 known regions, at least one supported type, 1 to 1000 objects per type and 1 to 4 concurrent reads.")
+		reasonJSON(w, 400, "invalid_scope", "Choose 1 to 6 known regions, at least one supported type of the provider, 1 to 1000 objects per type and 1 to 4 concurrent reads.")
 	case errors.Is(err, discovery.ErrIdentityStale):
-		reasonJSON(w, 409, "identity_required", "Verify the AWS context again: the verification is missing, expired or was made for another profile or workspace.")
+		reasonJSON(w, 409, "identity_required", "Verify the cloud context again: the verification is missing, expired or was made for another profile or workspace.")
 	case errors.Is(err, discovery.ErrTooManyScans):
 		reasonJSON(w, 409, "too_many_scans", "Two scans are already running. Wait for one to finish or cancel it.")
 	case errors.Is(err, discovery.ErrClosed):
@@ -326,10 +386,47 @@ func discoveryError(w http.ResponseWriter, err error) {
 	}
 }
 
+// providerOption is one cloud discovery can list. Detected says its CLI is on PATH; the UI
+// offers only detected providers besides AWS, whose missing CLI is explained when verifying.
+type providerOption struct {
+	Name     string `json:"name"`
+	Label    string `json:"label"`
+	CLI      string `json:"cli"`
+	Detected bool   `json:"detected"`
+}
+
+var providerInfo = map[string]providerOption{
+	"aws": {Name: "aws", Label: "AWS", CLI: "aws"},
+	"gcp": {Name: "gcp", Label: "Google Cloud", CLI: "gcloud"},
+}
+
+func providerOptions(svc *discovery.Service) []providerOption {
+	out := []providerOption{}
+	for _, name := range svc.Providers() {
+		if info, ok := providerInfo[name]; ok {
+			info.Detected = name == "aws" || svc.Detect != nil && svc.Detect(info.CLI)
+			out = append(out, info)
+		}
+	}
+	return out
+}
+
+// typesOf returns the supported types of one provider.
+func typesOf(provider string) []discovery.ResourceType {
+	out := []discovery.ResourceType{}
+	for _, t := range discovery.Types {
+		if t.Provider == "" && provider == "aws" || t.Provider == provider {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 type discoveryOptions struct {
 	CanScan       bool                     `json:"canScan"`
 	Reason        string                   `json:"reason,omitempty"`
 	Provider      string                   `json:"provider"`
+	Providers     []providerOption         `json:"providers"`
 	Types         []discovery.ResourceType `json:"types"`
 	Regions       []string                 `json:"regions"`
 	DefaultRegion string                   `json:"defaultRegion"`

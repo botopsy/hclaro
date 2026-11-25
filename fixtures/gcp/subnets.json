@@ -1,0 +1,4 @@
+[
+  {"name":"prod-euw1","region":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/regions/europe-west1","ipCidrRange":"10.10.0.0/20","network":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/global/networks/prod-vpc","description":"DO_NOT_LEAK_HCLARO_TEST_SECRET"},
+  {"name":"prod-usc1","region":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/regions/us-central1","ipCidrRange":"10.20.0.0/20","network":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/global/networks/prod-vpc"}
+]

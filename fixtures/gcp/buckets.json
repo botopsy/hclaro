@@ -1,0 +1,5 @@
+[
+  {"name":"hclaro-demo-assets","location":"EUROPE-WEST1","storage_url":"gs://hclaro-demo-assets/","default_storage_class":"STANDARD","labels":{"team":"web"}},
+  {"name":"hclaro-demo-logs","location":"US","storage_url":"gs://hclaro-demo-logs/","default_storage_class":"NEARLINE"},
+  {"name":"Bad..Bucket","location":"US","storage_url":"gs://Bad..Bucket/"}
+]

@@ -400,3 +400,10 @@ func ParseVersion(out []byte) (version string, supported bool) {
 	}
 	return m[1] + "." + m[2] + "." + m[3], m[1] == "2"
 }
+
+// Start runs one non-interactive, bounded CLI process for another cloud's read-only runner
+// (gcpcli): argv only, empty stdin, stdout limited to limit bytes. It is not an allowlist;
+// the caller checks argv first.
+func Start(ctx context.Context, name string, argv, environ []string, limit int) (out, errOut *bounded.Buffer, err error) {
+	return start(ctx, name, argv, environ, limit, false)
+}

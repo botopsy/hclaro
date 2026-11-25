@@ -111,6 +111,13 @@ var (
 //go:embed aws/*.json
 var AWS embed.FS
 
+// GCP holds fully synthetic gcloud responses for cloud discovery (M33.B): project
+// hclaro-demo-1, canary values in descriptions, metadata and labels Hclaro must never decode
+// or show, and objects whose names are not valid import IDs.
+//
+//go:embed gcp/*.json
+var GCP embed.FS
+
 // CostInfracost is a synthetic Infracost v0.10 `breakdown --format json` report for the
 // all-actions plan (M17). Prices are illustrative; a canary sits in one component name.
 //

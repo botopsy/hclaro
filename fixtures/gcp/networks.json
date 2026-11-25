@@ -1,0 +1,5 @@
+[
+  {"name":"default","id":"1111111111111111111","autoCreateSubnetworks":true,"routingConfig":{"routingMode":"REGIONAL"},"description":"DO_NOT_LEAK_HCLARO_TEST_SECRET"},
+  {"name":"prod-vpc","id":"2222222222222222222","autoCreateSubnetworks":false,"routingConfig":{"routingMode":"GLOBAL"}},
+  {"name":"Bad_Name","routingConfig":{"routingMode":"REGIONAL"}}
+]

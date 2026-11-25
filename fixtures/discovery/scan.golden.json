@@ -2,6 +2,14 @@
   "options": {
     "canScan": true,
     "provider": "aws",
+    "providers": [
+      {
+        "name": "aws",
+        "label": "AWS",
+        "cli": "aws",
+        "detected": true
+      }
+    ],
     "types": [
       {
         "type": "aws_vpc",

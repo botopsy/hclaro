@@ -11,7 +11,10 @@ type DiscoveryResourceType = {
   operation: string;
   importIdFormat: string;
   permission: string;
+  provider?: string;
 };
+export type DiscoveryProvider = 'aws' | 'gcp';
+export type DiscoveryProviderOption = { name: DiscoveryProvider; label: string; cli: string; detected: boolean };
 type DiscoveryPin = {
   contextId?: string;
   projectId?: string;
@@ -21,18 +24,21 @@ type DiscoveryPin = {
   provider?: string;
   awsProfile?: string;
   awsRegion?: string;
+  gcpConfiguration?: string;
+  gcpProject?: string;
+  gcpRegion?: string;
   workspace: string;
   engine: string;
 };
 export type CloudIdentity = {
   id: string;
-  provider: 'aws';
+  provider: DiscoveryProvider;
   account: string;
   arn: string;
   principalType: string;
   partition: string;
   region: string;
-  regionSource: 'profile' | 'environment' | 'default';
+  regionSource: 'profile' | 'environment' | 'gcloud' | 'default';
   cliVersion: string;
   verifiedAt: string;
   expiresAt: string;
@@ -41,11 +47,12 @@ export type CloudIdentity = {
 export type DiscoveryOptions = {
   canScan: boolean;
   reason?: string;
-  provider: 'aws';
+  provider: DiscoveryProvider;
+  providers?: DiscoveryProviderOption[];
   types: DiscoveryResourceType[];
   regions: string[];
   defaultRegion: string;
-  regionSource: 'profile' | 'environment' | 'default';
+  regionSource: 'profile' | 'environment' | 'gcloud' | 'default';
   limits: { maxRegions: number; maxPerType: number; maxObjects: number; defaultPerType: number; maxConcurrency: number; defaultConcurrency: number; pageSize: number };
   project: string;
   engine: string;
@@ -83,6 +90,7 @@ export type CloudResourceCandidate = {
   service: string;
   resourceId: string;
   arn?: string;
+  cloudId?: string;
   region: string;
   account: string;
   name?: string;

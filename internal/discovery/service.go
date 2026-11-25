@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"os/exec"
 	"regexp"
 	"slices"
 	"sort"
@@ -89,8 +90,12 @@ type Pin struct {
 	Provider   string `json:"provider,omitempty"`
 	AWSProfile string `json:"awsProfile,omitempty"`
 	AWSRegion  string `json:"awsRegion,omitempty"`
-	Workspace  string `json:"workspace"`
-	Engine     string `json:"engine"`
+	// GCP names of the context (provider "gcp").
+	GCPConfiguration string `json:"gcpConfiguration,omitempty"`
+	GCPProject       string `json:"gcpProject,omitempty"`
+	GCPRegion        string `json:"gcpRegion,omitempty"`
+	Workspace        string `json:"workspace"`
+	Engine           string `json:"engine"`
 }
 
 // differs returns why current does not match p, or "".
@@ -110,6 +115,8 @@ func (p Pin) differs(current Pin) string {
 		return "The cloud provider of this context changed."
 	case p.AWSProfile != current.AWSProfile || p.AWSRegion != current.AWSRegion:
 		return "The AWS profile or region of this context changed."
+	case p.GCPConfiguration != current.GCPConfiguration || p.GCPProject != current.GCPProject || p.GCPRegion != current.GCPRegion:
+		return "The Google Cloud configuration, project or region of this context changed."
 	}
 	return ""
 }
@@ -165,8 +172,14 @@ func EstimateScope(s DiscoveryScope) Estimate {
 	return e
 }
 
-// Validate normalizes s and checks it against the limits.
-func (s *DiscoveryScope) Validate() error {
+// Validate normalizes s and checks it against the limits, for AWS.
+func (s *DiscoveryScope) Validate() error { return s.ValidateFor("") }
+
+// ValidateFor is Validate for provider ("" is AWS): regions and types must belong to it.
+func (s *DiscoveryScope) ValidateFor(provider string) error {
+	if provider == "" {
+		provider = "aws"
+	}
 	if s.MaxPerType == 0 {
 		s.MaxPerType = DefaultPerType
 	}
@@ -178,13 +191,13 @@ func (s *DiscoveryScope) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, r := range s.Regions {
-		if !KnownRegion(r) || seen[r] {
+		if !knownRegion(provider, r) || seen[r] {
 			return ErrInvalidScope
 		}
 		seen[r] = true
 	}
 	for _, t := range s.Types {
-		if _, ok := TypeByName(t); !ok || seen[t] {
+		if typ, ok := TypeByName(t); !ok || seen[t] || typ.provider() != provider {
 			return ErrInvalidScope
 		}
 		seen[t] = true
@@ -192,6 +205,20 @@ func (s *DiscoveryScope) Validate() error {
 	// Types run in catalog order.
 	sort.SliceStable(s.Types, func(i, j int) bool { return typeOrder(s.Types[i]) < typeOrder(s.Types[j]) })
 	return nil
+}
+
+func (t ResourceType) provider() string {
+	if t.Provider == "" {
+		return "aws"
+	}
+	return t.Provider
+}
+
+func knownRegion(provider, r string) bool {
+	if provider == "gcp" {
+		return gcpRegion.MatchString(r)
+	}
+	return KnownRegion(r)
 }
 
 func typeOrder(name string) int {
@@ -287,6 +314,8 @@ type Service struct {
 	MaxRunning  int
 	// MaxObjects caps the objects one scan keeps; tests lower it.
 	MaxObjects int
+	// Detect reports whether a provider's CLI (aws, gcloud) is on PATH; tests replace it.
+	Detect func(cli string) bool
 
 	mu         sync.Mutex
 	identities []*CloudIdentity
@@ -300,10 +329,29 @@ type Service struct {
 	closed     bool
 }
 
+// AddProvider makes another cloud available to scans, keyed by its Name.
+func (s *Service) AddProvider(p Provider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providers[p.Name()] = p
+}
+
+// Providers lists the names of the providers this service has, sorted.
+func (s *Service) Providers() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	names := make([]string, 0, len(s.providers))
+	for name := range s.providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // New returns a service with runner.
 func New(runner awscli.Runner) *Service {
 	base, stop := context.WithCancel(context.Background())
-	return &Service{providers: map[string]Provider{"aws": awsProvider{runner}}, Now: time.Now, Sleep: sleep, NewID: ids.New, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, MaxObjects: MaxObjects, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
+	return &Service{providers: map[string]Provider{"aws": awsProvider{runner}}, Now: time.Now, Sleep: sleep, NewID: ids.New, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, MaxObjects: MaxObjects, Detect: func(cli string) bool { _, err := exec.LookPath(cli); return err == nil }, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
@@ -435,7 +483,7 @@ func (s *Service) Identity(pin Pin) (CloudIdentity, bool) {
 // Start begins a scan for a verified identity of pin. It returns at once; the scan runs in
 // the background.
 func (s *Service) Start(pin Pin, environ []string, identityID string, scope DiscoveryScope) (Scan, error) {
-	if err := scope.Validate(); err != nil {
+	if err := scope.ValidateFor(pin.Provider); err != nil {
 		return Scan{}, err
 	}
 	s.mu.Lock()
@@ -520,11 +568,11 @@ func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 		s.running--
 		scan.Status, scan.CompletedAt = status, s.Now().UTC().Format(time.RFC3339)
 		if kind != "" {
-			scan.Error, scan.Message = kind, awscli.Message(kind)
+			scan.Error, scan.Message = kind, Message(scan.Identity.Provider, kind)
 		}
 		for i := range scan.Tasks {
 			if t := &scan.Tasks[i]; t.Status == TaskPending || t.Status == TaskRunning {
-				t.Status, t.Error, t.Message = TaskCancelled, awscli.KindCancelled, awscli.Message(awscli.KindCancelled)
+				t.Status, t.Error, t.Message = TaskCancelled, awscli.KindCancelled, Message(scan.Identity.Provider, awscli.KindCancelled)
 			}
 		}
 		sortCandidates(scan.Candidates)
@@ -645,7 +693,7 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 		if kind == awscli.KindCancelled || kind == awscli.KindTimeout {
 			status = TaskCancelled
 		}
-		task.Status, task.Error, task.Message = status, kind, awscli.Message(kind)
+		task.Status, task.Error, task.Message = status, kind, Message(scan.Identity.Provider, kind)
 		return kind
 	}
 	token, count := "", 0
@@ -919,6 +967,8 @@ func (s *Service) Prepare(ctx context.Context, scanID, candidateID string, pin P
 	p.ExpiresAt = p.expires.UTC().Format(time.RFC3339)
 	region, _ := RegionOf(pin, environ)
 	switch {
+	case identity.Provider == "gcp":
+		p.Warnings = append(p.Warnings, "Make sure the google provider configuration you import with uses project "+c.Account+" (its project argument, GOOGLE_PROJECT or the default of its credentials), or the plan will not find the object.")
 	case c.Region == "":
 		p.Warnings = append(p.Warnings, "The bucket's region was not reported. Make sure the provider configuration you import with targets the bucket's region.")
 	case c.Region != region:
@@ -945,6 +995,10 @@ func (s *Service) CheckImport(token string, pin Pin, req imports.Request) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.prepared[token]
+	if ok {
+		// An import request names no provider: the prepared candidate's scan does.
+		pin.Provider = p.pin.Provider
+	}
 	if !ok || !s.Now().Before(p.expires) || p.pin.differs(pin) != "" || req.ID != p.ImportID {
 		return ErrPreparedStale
 	}

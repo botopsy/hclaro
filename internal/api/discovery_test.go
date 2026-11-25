@@ -85,7 +85,7 @@ func TestDiscoveryAPIEndToEnd(t *testing.T) {
 		Identity  *discovery.CloudIdentity `json:"identity"`
 	}](t, record(s.do("GET", "/api/v1/discovery/options", "")))
 	record(s.do("GET", "/api/v1/discovery/scans", ""))
-	if !options.CanScan || len(options.Types) != len(discovery.Types) || options.Workspace != "demo" || options.Identity != nil {
+	if !options.CanScan || len(options.Types) != len(typesOf("aws")) || options.Workspace != "demo" || options.Identity != nil {
 		t.Fatalf("%+v", options)
 	}
 	if calls := runner.Calls(); len(calls) != 0 {

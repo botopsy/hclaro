@@ -197,7 +197,9 @@ func scanAll(t *testing.T, s *Service, scope DiscoveryScope, snap workspace.Snap
 func allTypes() []string {
 	out := []string{}
 	for _, t := range Types {
-		out = append(out, t.Type)
+		if t.Provider == "" {
+			out = append(out, t.Type)
+		}
 	}
 	return out
 }
