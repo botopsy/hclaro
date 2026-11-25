@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"hclaro/internal/awscli"
+	"hclaro/internal/azcli"
 	"hclaro/internal/discovery"
 	"hclaro/internal/ids"
 	"hclaro/internal/operations"
@@ -41,6 +42,7 @@ func discoveryPin(manager *operations.Manager, check bool, profileID, expected s
 		pin.ProjectID, pin.ProfileID, pin.ProfileName, pin.ContextFingerprint = c.ProjectID, c.ProfileID, c.ProfileName, c.Fingerprint
 		pin.AWSProfile, pin.AWSRegion = c.AWSProfile, c.AWSRegion
 		pin.GCPConfiguration, pin.GCPProject, pin.GCPRegion = c.GCPConfiguration, c.GCPProject, c.GCPRegion
+		pin.AzureSubscription, pin.AzureTenant, pin.AzureLocation = c.AzureSubscription, c.AzureTenant, c.AzureLocation
 	} else {
 		pin.AWSProfile = inheritedAWSProfile()
 	}
@@ -48,15 +50,31 @@ func discoveryPin(manager *operations.Manager, check bool, profileID, expected s
 }
 
 // providerOf validates the provider a request names: "" and "aws" are AWS (the pin keeps ""),
-// "gcp" is Google Cloud. Anything else is refused.
+// "gcp" is Google Cloud, "azure" is Microsoft Azure. Anything else is refused.
 func providerOf(name string) (string, bool) {
 	switch name {
 	case "", "aws":
 		return "", true
-	case "gcp":
-		return "gcp", true
+	case "gcp", "azure":
+		return name, true
 	}
 	return "", false
+}
+
+// providerDefaults are the scan-form regions and the default one of a non-AWS provider.
+func providerDefaults(provider string) (regions []string, def string) {
+	if provider == "azure" {
+		return discovery.AzureLocations, "eastus"
+	}
+	return discovery.GCPRegions, "us-central1"
+}
+
+// profileRegion is the region the context's profile names for provider ("" for none).
+func profileRegion(pin discovery.Pin, provider string) string {
+	if provider == "azure" {
+		return pin.AzureLocation
+	}
+	return pin.GCPRegion
 }
 
 // inheritedAWSProfile is the AWS_PROFILE Hclaro inherited, when it is a plain profile name.
@@ -106,16 +124,17 @@ func discoveryRoutes(mux *http.ServeMux, deps *Services, manager *operations.Man
 		var identity *discovery.CloudIdentity
 		region, regionSource := "us-east-1", "default"
 		regions, name, providers := discovery.Regions, "aws", []providerOption{}
-		if provider == "gcp" {
-			region, regionSource, regions, name = "us-central1", "default", discovery.GCPRegions, "gcp"
+		if provider != "" {
+			regions, region = providerDefaults(provider)
+			regionSource, name = "default", provider
 		}
 		if canScan {
 			providers = providerOptions(deps.Discovery)
 			if pin, environ, perr := discoveryPin(manager, false, profileID, ""); perr == nil {
 				pin.Provider = provider
-				if provider == "gcp" {
-					if pin.GCPRegion != "" {
-						region, regionSource = pin.GCPRegion, "profile"
+				if provider != "" {
+					if r := profileRegion(pin, provider); r != "" {
+						region, regionSource = r, "profile"
 					}
 				} else {
 					region, regionSource = discovery.RegionOf(pin, environ)
@@ -359,7 +378,7 @@ func discoveryErrorFor(w http.ResponseWriter, err error, provider string) {
 		switch call.Kind {
 		case awscli.KindIdentityChanged:
 			status = 409
-		case awscli.KindMissingCLI, awscli.KindUnsupportedCLI:
+		case awscli.KindMissingCLI, awscli.KindUnsupportedCLI, azcli.KindUnsupportedCloud:
 			status = 409
 		}
 		reasonJSON(w, status, call.Kind, discovery.Message(provider, call.Kind))
@@ -396,8 +415,9 @@ type providerOption struct {
 }
 
 var providerInfo = map[string]providerOption{
-	"aws": {Name: "aws", Label: "AWS", CLI: "aws"},
-	"gcp": {Name: "gcp", Label: "Google Cloud", CLI: "gcloud"},
+	"aws":   {Name: "aws", Label: "AWS", CLI: "aws"},
+	"gcp":   {Name: "gcp", Label: "Google Cloud", CLI: "gcloud"},
+	"azure": {Name: "azure", Label: "Microsoft Azure", CLI: "az"},
 }
 
 func providerOptions(svc *discovery.Service) []providerOption {

@@ -69,6 +69,11 @@ type Profile struct {
 	GCPConfiguration string `json:"gcp_configuration,omitempty"`
 	GCPProject       string `json:"gcp_project,omitempty"`
 	GCPRegion        string `json:"gcp_region,omitempty"`
+	// AzureSubscription, AzureTenant and AzureLocation name the Azure subscription, tenant and
+	// default location of this context (M33). IDs and names only; credentials stay in az.
+	AzureSubscription string `json:"azure_subscription,omitempty"`
+	AzureTenant       string `json:"azure_tenant,omitempty"`
+	AzureLocation     string `json:"azure_location,omitempty"`
 	// AWSExpectedAccount and AWSExpectedRole guard apply: the verified STS identity must
 	// match them. They are names and patterns, never credentials.
 	AWSExpectedAccount string   `json:"aws_expected_account,omitempty"`
@@ -94,6 +99,9 @@ type Input struct {
 	GCPConfiguration   string
 	GCPProject         string
 	GCPRegion          string
+	AzureSubscription  string
+	AzureTenant        string
+	AzureLocation      string
 	EnvNames           []string
 }
 
@@ -521,13 +529,14 @@ func (s *Store) RemoveProject(projectID string) error {
 }
 
 func inputOf(p Profile) Input {
-	return Input{Name: p.Name, Engine: p.Engine, Workspace: p.Workspace, VarFiles: slices.Clone(p.VarFiles), Options: p.Options, AWSProfile: p.AWSProfile, AWSRegion: p.AWSRegion, AWSAuth: p.AWSAuth, AWSExpectedAccount: p.AWSExpectedAccount, AWSExpectedRole: p.AWSExpectedRole, GCPConfiguration: p.GCPConfiguration, GCPProject: p.GCPProject, GCPRegion: p.GCPRegion, EnvNames: slices.Clone(p.EnvNames)}
+	return Input{Name: p.Name, Engine: p.Engine, Workspace: p.Workspace, VarFiles: slices.Clone(p.VarFiles), Options: p.Options, AWSProfile: p.AWSProfile, AWSRegion: p.AWSRegion, AWSAuth: p.AWSAuth, AWSExpectedAccount: p.AWSExpectedAccount, AWSExpectedRole: p.AWSExpectedRole, GCPConfiguration: p.GCPConfiguration, GCPProject: p.GCPProject, GCPRegion: p.GCPRegion, AzureSubscription: p.AzureSubscription, AzureTenant: p.AzureTenant, AzureLocation: p.AzureLocation, EnvNames: slices.Clone(p.EnvNames)}
 }
 
 func apply(p Profile, in Input) Profile {
 	p.Name, p.Engine, p.Workspace, p.Options, p.AWSProfile, p.AWSRegion = in.Name, in.Engine, in.Workspace, in.Options, in.AWSProfile, in.AWSRegion
 	p.AWSAuth, p.AWSExpectedAccount, p.AWSExpectedRole = in.AWSAuth, in.AWSExpectedAccount, in.AWSExpectedRole
 	p.GCPConfiguration, p.GCPProject, p.GCPRegion = in.GCPConfiguration, in.GCPProject, in.GCPRegion
+	p.AzureSubscription, p.AzureTenant, p.AzureLocation = in.AzureSubscription, in.AzureTenant, in.AzureLocation
 	p.VarFiles, p.EnvNames = slices.Clone(in.VarFiles), slices.Clone(in.EnvNames)
 	return cloneProfile(p)
 }
@@ -553,6 +562,8 @@ var (
 	gcpConfigName  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 	gcpProjectID   = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
 	gcpRegionName  = regexp.MustCompile(`^[a-z]+-[a-z]+[0-9]{1,2}$`)
+	azureGUID      = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	azureLocName   = regexp.MustCompile(`^[a-z][a-z0-9]{2,29}$`)
 	awsAccount     = regexp.MustCompile(`^[0-9]{12}$`)
 	// awsRolePattern is an ARN in which * stands for part of one segment (see RoleMatches).
 	awsRolePattern = regexp.MustCompile(`^arn:aws[a-z-]{0,20}:(sts|iam)::([0-9]{12}|\*):[A-Za-z0-9+=,.@/_*-]{1,400}$`)
@@ -617,6 +628,12 @@ func check(in Input) error {
 		return invalid("gcpProject", "Enter a Google Cloud project ID such as my-project-123456 (not the project name or number).")
 	case in.GCPRegion != "" && !gcpRegionName.MatchString(in.GCPRegion):
 		return invalid("gcpRegion", "Enter a Google Cloud region such as europe-west1.")
+	case in.AzureSubscription != "" && !azureGUID.MatchString(in.AzureSubscription):
+		return invalid("azureSubscription", "Enter an Azure subscription ID (a GUID), not its name.")
+	case in.AzureTenant != "" && !azureGUID.MatchString(in.AzureTenant):
+		return invalid("azureTenant", "Enter an Azure tenant ID (a GUID).")
+	case in.AzureLocation != "" && !azureLocName.MatchString(in.AzureLocation):
+		return invalid("azureLocation", "Enter an Azure location such as westeurope.")
 	}
 	switch {
 	// "aws-cli" is stored as "", but a hand-edited file that spells it out stays readable.

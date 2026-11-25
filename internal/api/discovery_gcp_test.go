@@ -47,7 +47,7 @@ func TestDiscoveryAPIGCP(t *testing.T) {
 			t.Error("gcloud on PATH was not detected")
 		}
 	}
-	if code, _ := do("GET", "/api/v1/discovery/options?provider=azure", ""); code != 400 {
+	if code, _ := do("GET", "/api/v1/discovery/options?provider=oracle", ""); code != 400 {
 		t.Fatalf("unknown provider: %d", code)
 	}
 	if aws := decode[options](t, s.do("GET", "/api/v1/discovery/options", "")); aws.Provider != "aws" || len(aws.Types) != len(typesOf("aws")) {
@@ -57,7 +57,7 @@ func TestDiscoveryAPIGCP(t *testing.T) {
 		t.Fatal("browsing contacted a cloud")
 	}
 	// Verify, scan, read.
-	if code, _ := do("POST", "/api/v1/discovery/identity", `{"provider":"azure"}`); code != 400 {
+	if code, _ := do("POST", "/api/v1/discovery/identity", `{"provider":"oracle"}`); code != 400 {
 		t.Fatalf("identity for an unknown provider: %d", code)
 	}
 	code, body = do("POST", "/api/v1/discovery/identity", `{"provider":"gcp"}`)
@@ -75,7 +75,7 @@ func TestDiscoveryAPIGCP(t *testing.T) {
 		"gcp for aws":    `{"identityId":"` + id.ID + `",` + scope + `,"acknowledgeApiCalls":true}`,
 		"aws region":     `{"provider":"gcp","identityId":"` + id.ID + `","scope":{"regions":["eu-west-1"],"types":["google_compute_network"]},"acknowledgeApiCalls":true}`,
 		"no ack":         `{"provider":"gcp","identityId":"` + id.ID + `",` + scope + `}`,
-		"unknown prov":   `{"provider":"azure","identityId":"` + id.ID + `",` + scope + `,"acknowledgeApiCalls":true}`,
+		"unknown prov":   `{"provider":"oracle","identityId":"` + id.ID + `",` + scope + `,"acknowledgeApiCalls":true}`,
 		"gcloud command": `{"provider":"gcp","identityId":"` + id.ID + `",` + scope + `,"acknowledgeApiCalls":true,"command":"auth print-access-token"}`,
 	} {
 		if code, body := do("POST", "/api/v1/discovery/scans", req); code != 400 && code != 409 {

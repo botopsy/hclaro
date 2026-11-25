@@ -26,8 +26,9 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			return
 		}
 		out := scopedDiscoveryOptions{analysisOptions: base, Provider: "aws", Providers: []providerOption{}, Types: typesOf("aws"), Regions: discovery.Regions, DefaultRegion: "us-east-1", RegionSource: "default", Limits: discoveryLimits()}
-		if provider == "gcp" {
-			out.Provider, out.Types, out.Regions, out.DefaultRegion = "gcp", typesOf("gcp"), discovery.GCPRegions, "us-central1"
+		if provider != "" {
+			out.Provider, out.Types = provider, typesOf(provider)
+			out.Regions, out.DefaultRegion = providerDefaults(provider)
 		}
 		switch {
 		case s == nil:
@@ -47,11 +48,11 @@ func scopedDiscoveryRoutes(mux *http.ServeMux, hub *projects.Hub) {
 			out.CanScan = true
 			out.Providers = providerOptions(hub.Discovery)
 			pin.Provider = provider
-			switch {
-			case provider != "gcp":
+			switch r := profileRegion(pin, provider); {
+			case provider == "":
 				out.DefaultRegion, out.RegionSource = discovery.RegionOf(pin, environ)
-			case pin.GCPRegion != "":
-				out.DefaultRegion, out.RegionSource = pin.GCPRegion, "profile"
+			case r != "":
+				out.DefaultRegion, out.RegionSource = r, "profile"
 			}
 			if id, ok := hub.Discovery.Identity(pin); ok {
 				out.Identity = &id

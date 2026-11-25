@@ -1,0 +1,5 @@
+[
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-prod/providers/Microsoft.Storage/storageAccounts/hclaroassets","name":"hclaroassets","location":"westeurope","kind":"StorageV2","sku":"Standard_GRS","tags":{"env":"prod"},"primaryEndpoints":{"blob":"https://hclaroassets.blob.core.windows.net/"}},
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-batch/providers/Microsoft.Storage/storageAccounts/hclarologs","name":"hclarologs","location":"eastus","kind":"StorageV2","sku":"Standard_LRS","tags":null},
+  {"id":"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-batch/providers/Microsoft.Storage/storageAccounts/Bad_Account","name":"Bad_Account","location":"eastus","kind":"StorageV2","sku":"Standard_LRS","tags":null}
+]

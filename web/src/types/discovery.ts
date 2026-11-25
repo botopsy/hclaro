@@ -13,7 +13,7 @@ type DiscoveryResourceType = {
   permission: string;
   provider?: string;
 };
-export type DiscoveryProvider = 'aws' | 'gcp';
+export type DiscoveryProvider = 'aws' | 'gcp' | 'azure';
 export type DiscoveryProviderOption = { name: DiscoveryProvider; label: string; cli: string; detected: boolean };
 type DiscoveryPin = {
   contextId?: string;
@@ -27,6 +27,9 @@ type DiscoveryPin = {
   gcpConfiguration?: string;
   gcpProject?: string;
   gcpRegion?: string;
+  azureSubscription?: string;
+  azureTenant?: string;
+  azureLocation?: string;
   workspace: string;
   engine: string;
 };
@@ -35,10 +38,12 @@ export type CloudIdentity = {
   provider: DiscoveryProvider;
   account: string;
   arn: string;
+  // Azure: the tenant of the subscription in account.
+  tenant?: string;
   principalType: string;
   partition: string;
   region: string;
-  regionSource: 'profile' | 'environment' | 'gcloud' | 'default';
+  regionSource: 'profile' | 'environment' | 'gcloud' | 'azure' | 'default';
   cliVersion: string;
   verifiedAt: string;
   expiresAt: string;
@@ -52,7 +57,7 @@ export type DiscoveryOptions = {
   types: DiscoveryResourceType[];
   regions: string[];
   defaultRegion: string;
-  regionSource: 'profile' | 'environment' | 'gcloud' | 'default';
+  regionSource: 'profile' | 'environment' | 'gcloud' | 'azure' | 'default';
   limits: { maxRegions: number; maxPerType: number; maxObjects: number; defaultPerType: number; maxConcurrency: number; defaultConcurrency: number; pageSize: number };
   project: string;
   engine: string;

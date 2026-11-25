@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"hclaro/internal/awscli"
+	"hclaro/internal/azcli"
 	"hclaro/internal/gcpcli"
 	"hclaro/internal/state"
 )
@@ -22,8 +23,11 @@ func (gcpProvider) Name() string { return "gcp" }
 
 // Message is the user-facing text of an error kind for provider ("" is AWS).
 func Message(provider, kind string) string {
-	if provider == "gcp" {
+	switch provider {
+	case "gcp":
 		return gcpcli.Message(kind)
+	case "azure":
+		return azcli.Message(kind)
 	}
 	return awscli.Message(kind)
 }

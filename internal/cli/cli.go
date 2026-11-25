@@ -18,6 +18,7 @@ import (
 	"hclaro/internal/awsauth"
 	"hclaro/internal/awscli"
 	"hclaro/internal/awsvault"
+	"hclaro/internal/azcli"
 	"hclaro/internal/cost"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
@@ -424,9 +425,10 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	return serveErr
 }
 
-// newDiscovery is the discovery service with its allowlisted read-only CLIs: aws and gcloud.
+// newDiscovery is the discovery service with its allowlisted read-only CLIs: aws, gcloud and az.
 func newDiscovery() *discovery.Service {
 	s := discovery.New(awscli.Exec{})
 	s.AddProvider(discovery.GCP(gcpcli.Exec{}))
+	s.AddProvider(discovery.Azure(azcli.Exec{}))
 	return s
 }

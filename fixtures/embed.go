@@ -118,6 +118,13 @@ var AWS embed.FS
 //go:embed gcp/*.json
 var GCP embed.FS
 
+// Azure holds fully synthetic az responses for cloud discovery (M33.C): subscription
+// 11111111-1111-1111-1111-111111111111, canary values in tags and fields Hclaro must never
+// decode or show, and objects whose names are not valid import IDs.
+//
+//go:embed azure/*.json
+var Azure embed.FS
+
 // CostInfracost is a synthetic Infracost v0.10 `breakdown --format json` report for the
 // all-actions plan (M17). Prices are illustrative; a canary sits in one component name.
 //
