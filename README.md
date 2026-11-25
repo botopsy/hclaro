@@ -39,7 +39,7 @@ Release archives exist for macOS arm64/amd64, Linux amd64/arm64 and Windows amd6
 # macOS and Linux (Windows: run from Git Bash). Checks the archive's sha256 before installing.
 curl -fsSL https://get.hclaro.dev | sh
 
-# macOS with Homebrew (Linux untested)
+# Homebrew
 brew install botopsy/tap/hclaro
 ```
 
