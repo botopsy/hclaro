@@ -133,5 +133,9 @@ var moreFixtures = map[string]struct {
 	"sns list-topics":                {"sns-list-topics.json", `{"Topics":[]}`, false},
 	"kms list-aliases":               {"kms-list-aliases.json", `{"Aliases":[]}`, false},
 	"logs describe-log-groups":       {"logs-describe-log-groups.json", `{"logGroups":[]}`, false},
+	"ecr describe-repositories":      {"ecr-describe-repositories.json", `{"repositories":[]}`, false},
+	"eks list-clusters":              {"eks-list-clusters.json", `{"clusters":[]}`, false},
+	"ecs list-clusters":              {"ecs-list-clusters.json", `{"clusterArns":[]}`, false},
+	"route53 list-hosted-zones":      {"route53-list-hosted-zones.json", `{"HostedZones":[]}`, true},
 	"iam list-roles":                 {"iam-list-roles.json", `{"Roles":[]}`, true},
 }

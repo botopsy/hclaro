@@ -124,6 +124,10 @@ var readOnly = map[string]map[string]bool{
 	"sns":      {"list-topics": true},
 	"kms":      {"list-aliases": true},
 	"logs":     {"describe-log-groups": true},
+	"ecr":      {"describe-repositories": true},
+	"eks":      {"list-clusters": true},
+	"ecs":      {"list-clusters": true},
+	"route53":  {"list-hosted-zones": true},
 }
 
 var (

@@ -1,0 +1,6 @@
+{
+  "HostedZones": [
+    {"Id": "/hostedzone/Z0123456789ABCDEFGHIJ", "Name": "example.com.", "CallerReference": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "Config": {"Comment": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "PrivateZone": false}, "ResourceRecordSetCount": 12},
+    {"Id": "/hostedzone/Z0987601234ZYXWVUTSRQ", "Name": "internal.example.com.", "Config": {"PrivateZone": true}, "ResourceRecordSetCount": 4}
+  ]
+}

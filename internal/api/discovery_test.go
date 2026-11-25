@@ -105,12 +105,12 @@ func TestDiscoveryAPIEndToEnd(t *testing.T) {
 		t.Fatalf("%+v", identity)
 	}
 	for body, want := range map[string]string{
-		`{"identityId":"` + identity.ID + `",` + scope + `}`:                                                                            "acknowledgement_required",
-		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":false}`:                                                "acknowledgement_required",
-		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":true,"command":"ec2 delete-vpc"}`:                      "invalid_request",
-		`{"identityId":"` + identity.ID + `","scope":{"regions":["mars-1"],"types":["aws_vpc"]},"acknowledgeApiCalls":true}`:            "invalid_scope",
-		`{"identityId":"` + identity.ID + `","scope":{"regions":["eu-west-1"],"types":["aws_ecs_cluster"]},"acknowledgeApiCalls":true}`: "invalid_scope",
-		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":true,"profileId":"../x"}`:                              "invalid_request",
+		`{"identityId":"` + identity.ID + `",` + scope + `}`:                                                                         "acknowledgement_required",
+		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":false}`:                                             "acknowledgement_required",
+		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":true,"command":"ec2 delete-vpc"}`:                   "invalid_request",
+		`{"identityId":"` + identity.ID + `","scope":{"regions":["mars-1"],"types":["aws_vpc"]},"acknowledgeApiCalls":true}`:         "invalid_scope",
+		`{"identityId":"` + identity.ID + `","scope":{"regions":["eu-west-1"],"types":["aws_glue_job"]},"acknowledgeApiCalls":true}`: "invalid_scope",
+		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":true,"profileId":"../x"}`:                           "invalid_request",
 	} {
 		if w := s.do("POST", "/api/v1/discovery/scans", body); w.Code != 400 || decode[map[string]string](t, w)["error"] != want {
 			t.Errorf("%s: %d %s", body, w.Code, w.Body)

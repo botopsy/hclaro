@@ -157,6 +157,42 @@
         "permission": "logs:DescribeLogGroups"
       },
       {
+        "type": "aws_ecr_repository",
+        "service": "ecr",
+        "label": "ECR repositories",
+        "global": false,
+        "operation": "ecr:DescribeRepositories",
+        "importIdFormat": "Repository name",
+        "permission": "ecr:DescribeRepositories"
+      },
+      {
+        "type": "aws_eks_cluster",
+        "service": "eks",
+        "label": "EKS clusters",
+        "global": false,
+        "operation": "eks:ListClusters",
+        "importIdFormat": "Cluster name",
+        "permission": "eks:ListClusters"
+      },
+      {
+        "type": "aws_ecs_cluster",
+        "service": "ecs",
+        "label": "ECS clusters",
+        "global": false,
+        "operation": "ecs:ListClusters",
+        "importIdFormat": "Cluster name",
+        "permission": "ecs:ListClusters"
+      },
+      {
+        "type": "aws_route53_zone",
+        "service": "route53",
+        "label": "Route 53 hosted zones",
+        "global": true,
+        "operation": "route53:ListHostedZones",
+        "importIdFormat": "Hosted zone ID",
+        "permission": "route53:ListHostedZones"
+      },
+      {
         "type": "aws_iam_role",
         "service": "iam",
         "label": "IAM roles",

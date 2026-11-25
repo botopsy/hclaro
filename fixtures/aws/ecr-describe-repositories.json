@@ -1,0 +1,6 @@
+{
+  "repositories": [
+    {"repositoryName": "orders/api", "repositoryArn": "arn:aws:ecr:eu-west-1:111122223333:repository/orders/api", "registryId": "111122223333", "repositoryUri": "111122223333.dkr.ecr.eu-west-1.amazonaws.com/orders/api", "imageTagMutability": "IMMUTABLE", "encryptionConfiguration": {"encryptionType": "KMS", "kmsKey": "DO_NOT_LEAK_HCLARO_TEST_SECRET"}},
+    {"repositoryName": "tools", "repositoryArn": "arn:aws:ecr:eu-west-1:111122223333:repository/tools", "registryId": "111122223333", "imageTagMutability": "MUTABLE"}
+  ]
+}

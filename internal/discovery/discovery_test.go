@@ -792,7 +792,7 @@ func TestScopeValidation(t *testing.T) {
 		{Types: []string{"aws_vpc"}},
 		{Regions: []string{"mars-north-1"}, Types: []string{"aws_vpc"}},
 		{Regions: []string{"eu-west-1", "eu-west-1"}, Types: []string{"aws_vpc"}},
-		{Regions: []string{"eu-west-1"}, Types: []string{"aws_ecs_cluster"}},
+		{Regions: []string{"eu-west-1"}, Types: []string{"aws_glue_job"}},
 		{Regions: []string{"eu-west-1"}, Types: []string{"aws_vpc"}, MaxPerType: 5000},
 		{Regions: []string{"eu-west-1"}, Types: []string{"aws_vpc"}, Concurrency: 9},
 		{Regions: Regions[:7], Types: []string{"aws_vpc"}},
