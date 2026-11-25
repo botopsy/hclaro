@@ -37,6 +37,11 @@ function query(profileId: string, provider: DiscoveryProvider) {
   return parts.length ? `?${parts.join('&')}` : '';
 }
 
+// AWS is the default: its requests carry no provider, as before Google Cloud existed.
+function withProvider(provider: DiscoveryProvider) {
+  return provider === 'aws' ? {} : { provider };
+}
+
 // What differs by cloud in the page's wording; the same screens serve every provider.
 const clouds: Record<DiscoveryProvider, { name: string; cli: string; account: string; ops: string; via: string; verify: string; check: string; api: string }> = {
   aws: { name: 'AWS', cli: 'AWS CLI', account: 'account', ops: 'Describe and List', via: 'STS', verify: 'STS GetCallerIdentity', check: 'one STS check', api: 'AWS APIs' },
@@ -107,7 +112,7 @@ export function DiscoveryView({
     setVerifying(true);
     setVerifyError('');
     try {
-      await send<CloudIdentity>('POST', at(scope, 'identity'), { ...bound(o, profileId, scope), provider });
+      await send<CloudIdentity>('POST', at(scope, 'identity'), { ...bound(o, profileId, scope), ...withProvider(provider) });
       await options.refetch();
     } catch (e) {
       setVerifyError(errorMessage(e, `The ${clouds[provider].name} context could not be verified.`));
@@ -199,7 +204,7 @@ function ScanPreview({ target, options, identity, profileId, onClose, onStarted 
     setBusy(true);
     setError('');
     try {
-      onStarted(await send<DiscoveryScan>('POST', at(target, 'scans'), { identityId: identity.id, scope, acknowledgeApiCalls: true, provider: options.provider, ...bound(options, profileId, target) }));
+      onStarted(await send<DiscoveryScan>('POST', at(target, 'scans'), { identityId: identity.id, scope, acknowledgeApiCalls: true, ...withProvider(options.provider), ...bound(options, profileId, target) }));
     } catch (e) {
       setError(errorMessage(e, 'The scan could not be started.'));
     } finally {
@@ -273,7 +278,7 @@ function ScanResult({ scope, scan, options, profileId, onPrepared, openResource,
     setPreparing(c.id);
     setError('');
     try {
-      onPrepared(await send<DiscoveryPrefill>('POST', at(scope, `scans/${scan.id}/candidates/${c.id}/prepare`), { ...bound(options, profileId, scope), acknowledgeUnknownMapping, provider: options.provider }));
+      onPrepared(await send<DiscoveryPrefill>('POST', at(scope, `scans/${scan.id}/candidates/${c.id}/prepare`), { ...bound(options, profileId, scope), acknowledgeUnknownMapping, ...withProvider(options.provider) }));
     } catch (e) {
       setError(errorMessage(e, 'The import could not be prepared.'));
     } finally {
