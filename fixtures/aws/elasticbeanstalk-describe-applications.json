@@ -1,0 +1,6 @@
+{
+  "Applications": [
+    {"ApplicationName": "orders-web", "ApplicationArn": "arn:aws:elasticbeanstalk:eu-west-1:111122223333:application/orders-web", "Description": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "Versions": ["v1", "v2"]},
+    {"ApplicationName": "legacy admin", "ApplicationArn": "arn:aws:elasticbeanstalk:eu-west-1:111122223333:application/legacy admin"}
+  ]
+}

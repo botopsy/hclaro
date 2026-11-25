@@ -229,6 +229,51 @@
         "permission": "states:ListStateMachines"
       },
       {
+        "type": "aws_api_gateway_rest_api",
+        "service": "apigateway",
+        "label": "API Gateway REST APIs",
+        "global": false,
+        "operation": "apigateway:GET",
+        "importIdFormat": "REST API ID",
+        "permission": "apigateway:GET"
+      },
+      {
+        "type": "aws_cloudfront_distribution",
+        "service": "cloudfront",
+        "label": "CloudFront distributions",
+        "global": true,
+        "operation": "cloudfront:ListDistributions",
+        "importIdFormat": "Distribution ID",
+        "permission": "cloudfront:ListDistributions"
+      },
+      {
+        "type": "aws_elastic_beanstalk_application",
+        "service": "elasticbeanstalk",
+        "label": "Elastic Beanstalk applications",
+        "global": false,
+        "operation": "elasticbeanstalk:DescribeApplications",
+        "importIdFormat": "Application name",
+        "permission": "elasticbeanstalk:DescribeApplications"
+      },
+      {
+        "type": "aws_elastic_beanstalk_environment",
+        "service": "elasticbeanstalk",
+        "label": "Elastic Beanstalk environments",
+        "global": false,
+        "operation": "elasticbeanstalk:DescribeEnvironments",
+        "importIdFormat": "Environment ID (e-…)",
+        "permission": "elasticbeanstalk:DescribeEnvironments"
+      },
+      {
+        "type": "aws_kinesis_stream",
+        "service": "kinesis",
+        "label": "Kinesis data streams",
+        "global": false,
+        "operation": "kinesis:ListStreams",
+        "importIdFormat": "Stream name",
+        "permission": "kinesis:ListStreams"
+      },
+      {
         "type": "aws_iam_role",
         "service": "iam",
         "label": "IAM roles",

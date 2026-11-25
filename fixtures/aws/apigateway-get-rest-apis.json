@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"id": "a1b2c3d4e5", "name": "orders-api", "description": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "policy": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "endpointConfiguration": {"types": ["REGIONAL"]}, "tags": {"team": "orders"}},
+    {"id": "k6l7m8n9o0", "name": "internal-api", "endpointConfiguration": {"types": ["PRIVATE"]}}
+  ]
+}

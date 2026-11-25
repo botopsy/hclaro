@@ -1,0 +1,9 @@
+{
+  "DistributionList": {
+    "Quantity": 2,
+    "Items": [
+      {"Id": "E1A2B3C4D5E6F7", "ARN": "arn:aws:cloudfront::111122223333:distribution/E1A2B3C4D5E6F7", "Status": "Deployed", "DomainName": "d1a2b3c4d5e6f7.cloudfront.net", "Enabled": true, "Aliases": {"Quantity": 1, "Items": ["DO_NOT_LEAK_HCLARO_TEST_SECRET.example.com"]}, "Origins": {"Quantity": 1, "Items": [{"Id": "api", "CustomHeaders": {"Quantity": 1, "Items": [{"HeaderName": "x-origin-token", "HeaderValue": "DO_NOT_LEAK_HCLARO_TEST_SECRET"}]}}]}},
+      {"Id": "E9Z8Y7X6W5V4U3", "ARN": "arn:aws:cloudfront::111122223333:distribution/E9Z8Y7X6W5V4U3", "Status": "InProgress", "DomainName": "d9z8y7x6w5v4u3.cloudfront.net", "Enabled": false}
+    ]
+  }
+}

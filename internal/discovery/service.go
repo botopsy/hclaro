@@ -665,7 +665,10 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 		}
 		s.mu.Unlock()
 		pageSize := min(PageSize, limit-count)
-		args := append(slices.Clone(typ.args), "--output", "json", "--region", callRegion, "--max-items", itoa(pageSize))
+		args := append(slices.Clone(typ.args), "--output", "json", "--region", callRegion)
+		if !typ.noPaging {
+			args = append(args, "--max-items", itoa(pageSize))
+		}
 		if token != "" {
 			args = append(args, "--starting-token", token)
 		}
@@ -679,16 +682,19 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 		}
 		s.mu.Lock()
 		task.Pages++
+		added := 0
 		for _, c := range found {
 			if count >= limit {
 				break
 			}
 			count++
+			added++
 			s.add(scan, c)
 		}
 		task.Count = count
-		// The limit was reached with more pages left: objects may be missing.
-		task.Truncated = count >= limit && next != ""
+		// The limit was reached with more pages left, or an unpaged list was cut: objects may be
+		// missing.
+		task.Truncated = count >= limit && (next != "" || added < len(found))
 		s.mu.Unlock()
 		if next == "" || count >= limit {
 			break
