@@ -28,11 +28,10 @@ type WorkspaceManagerFactory func(root, preference string, environ []string) (na
 // DefaultWorkspaceManagers uses the official CLI found on PATH. Inherited TF_WORKSPACE is
 // never passed to these commands.
 func DefaultWorkspaceManagers(root, preference string, environ []string) (string, string, engine.WorkspaceManager, error) {
-	cli, err := engine.Detect(root, preference)
+	cli, err := detectCLI(root, preference, "", environ)
 	if err != nil {
 		return "", "", nil, err
 	}
-	cli.IgnoreInheritedWorkspace, cli.Environ = true, environ
 	return cli.Name, cli.Executable, cli, nil
 }
 
@@ -241,7 +240,7 @@ func (h *Hub) ReviewWorkspaceWith(ctx context.Context, id string, action engine.
 		if errors.Is(err, engine.ErrUnsafeArgs) {
 			return refuse("unsafe_cli_args", "Inherited TF_CLI_ARGS settings contain unsupported flags. Only -no-color is accepted. Restart Hclaro without them.")
 		}
-		return refuse("engine_version", "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13, and check that this project's engine is the right one.")
+		return refuse("engine_version", "Unable to read a supported engine version. Use "+tfpolicy.SupportText+", and check that this project's engine is the right one.")
 	}
 	list, err := manager.ListWorkspaces(ctx)
 	if err != nil {

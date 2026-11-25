@@ -36,11 +36,10 @@ type IniterFactory func(root, preference string, environ []string) (name, execut
 // DefaultIniters uses the official CLI found on PATH. TF_WORKSPACE is never passed: init
 // works on the CLI-default workspace and must not depend on how Hclaro was started.
 func DefaultIniters(root, preference string, environ []string) (string, string, engine.Initer, error) {
-	cli, err := engine.Detect(root, preference)
+	cli, err := detectCLI(root, preference, "", environ)
 	if err != nil {
 		return "", "", nil, err
 	}
-	cli.IgnoreInheritedWorkspace, cli.Environ = true, environ
 	return cli.Name, cli.Executable, cli, nil
 }
 

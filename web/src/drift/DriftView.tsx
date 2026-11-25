@@ -13,7 +13,7 @@ import { Chip, type Tone } from '../components/Chip';
 import { RunDialog, RunState } from '../plans/RunDialog';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { launchScope, scopeKey, scopedPath, type PlanScope } from '../lib/scope';
-import { activeOperation, operationsQuery } from '../lib/queries';
+import { activeOperation, operationsQuery, useLimits } from '../lib/queries';
 import { AskAI } from '../assist/AskAI';
 import { useVarFileChoice, VarFileChoice } from '../profiles/VarFileChoice';
 import { SourceLink } from '../git/editor';
@@ -47,10 +47,10 @@ function ResultCard({ tone, icon: Icon, title, children, actions }: { tone: 'upd
 
 // The long explanation lives in a collapsed "How this works" (§3).
 function HowItWorks() {
+  const limits = useLimits();
   return <>
    <p>A drift scan runs a <strong>refresh-only plan</strong>: it compares what state records with what providers report now. It is not a normal plan, so it does not show whether infrastructure matches your configuration, and it never writes state.</p>
-   {/* shortcut: numbers copied from maxScans/DriftMaxAge in internal/operations/drift.go; serve them from the API if they become configurable. */}
-   <p>The last 10 scan results are kept in memory for up to 12 hours and are gone when Hclaro stops.</p>
+   {limits && <p>The last {limits.driftScans} scan results are kept in memory for up to {limits.driftMaxAgeHours} hours and are gone when Hclaro stops.</p>}
   </>;
 }
 

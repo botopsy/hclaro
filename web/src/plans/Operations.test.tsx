@@ -4,11 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OperationsView } from './OperationsView';
 import type { Operation } from '../types';
+import { testLimits } from '../testLimits';
 
 const operation: Operation = { id: 'b'.repeat(32), kind: 'plan', status: 'succeeded', stage: 'Finished', startedAt: '2026-11-05T09:00:00Z', durationMs: 4200, exitCode: 0, command: ['terraform', 'plan', '-input=false', '-json', '-out=<private temporary file>'], varFiles: [], replace: [], planId: 'c'.repeat(32), stateReloaded: false, engineDiagnostics: [], cancelRequested: false, logDropped: 0, logRetained: false };
 
 function view(operations: Operation[]) {
-  const fetch = vi.fn(async () => Response.json({ operations }));
+  const fetch = vi.fn(async (url: string) => Response.json(url.endsWith('/session') ? { csrfToken: 'e'.repeat(64), limits: testLimits } : { operations }));
   vi.stubGlobal('fetch', fetch);
   const openPlan = vi.fn();
   const openPlans = vi.fn();
@@ -27,7 +28,8 @@ describe('Operations', () => {
     expect(await screen.findByText('No operations in this session')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Go to Plans' }));
     expect(openPlans).toHaveBeenCalledOnce();
-    expect(fetch).toHaveBeenCalledOnce();
+    // Going to Plans only navigates: the one operations read plus the /session read, nothing else.
+    expect(fetch.mock.calls.map(([url]) => url.replace(/^.*\/api\/v1\//, '').split('?')[0]).sort()).toEqual(['operations', 'session']);
     expect(screen.getByText('How this list is kept')).toBeInTheDocument();
   });
 

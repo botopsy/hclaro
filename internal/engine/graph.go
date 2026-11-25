@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"hclaro/internal/bounded"
+	"hclaro/internal/graph"
 	"hclaro/internal/proc"
 )
 
@@ -17,7 +18,7 @@ type Grapher interface {
 }
 
 // GraphMaxBytes bounds the DOT output read from the engine.
-const GraphMaxBytes = 16 << 20
+const GraphMaxBytes = graph.MaxInputBytes
 
 const graphLimit = 3 * time.Minute
 

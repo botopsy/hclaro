@@ -21,6 +21,7 @@ import (
 	"hclaro/internal/profiles"
 	"hclaro/internal/rootlock"
 	"hclaro/internal/state"
+	"hclaro/internal/tfpolicy"
 	"hclaro/internal/workspace"
 )
 
@@ -62,13 +63,24 @@ type Adapter interface {
 // Hclaro's environment.
 type EngineFactory func(root, preference, selected string, environ []string) (name, executable string, adapter Adapter, err error)
 
+// detectCLI is the one engine factory body: the official CLI found on PATH with the settings
+// every Hclaro command shares. Inherited TF_WORKSPACE is ignored; selected is the workspace
+// to pass, "" for commands that never select one.
+func detectCLI(root, preference, selected string, environ []string) (*engine.CLI, error) {
+	cli, err := engine.Detect(root, preference)
+	if err != nil {
+		return nil, err
+	}
+	cli.SelectedWorkspace, cli.IgnoreInheritedWorkspace, cli.Environ = selected, true, environ
+	return cli, nil
+}
+
 // DefaultEngines uses the official CLI found on PATH.
 func DefaultEngines(root, preference, selected string, environ []string) (string, string, Adapter, error) {
-	cli, err := engine.Detect(root, preference)
+	cli, err := detectCLI(root, preference, selected, environ)
 	if err != nil {
 		return "", "", nil, err
 	}
-	cli.SelectedWorkspace, cli.IgnoreInheritedWorkspace, cli.Environ = selected, true, environ
 	return cli.Name, cli.Executable, cli, nil
 }
 
@@ -603,7 +615,7 @@ func (h *Hub) inspect(ctx context.Context, p Record) (name, version string, name
 		if errors.Is(err, engine.ErrUnsafeArgs) {
 			return name, "", names, "", 0, diag("unsafe_cli_args", "Inherited TF_CLI_ARGS settings contain unsupported flags. Only -no-color is accepted. Restart Hclaro without them.")
 		}
-		return name, "", names, "", 0, diag("engine_version", "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13.")
+		return name, "", names, "", 0, diag("engine_version", "Unable to read a supported engine version. Use "+tfpolicy.SupportText+".")
 	}
 	if _, shared := dataDir(); shared {
 		return name, version, names, "", 0, diag("shared_data_dir", "TF_DATA_DIR is an absolute path, so every project would share one data directory and backend initialization. Restart Hclaro without it, or with a relative TF_DATA_DIR.")

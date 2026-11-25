@@ -355,16 +355,7 @@ func expiredReason(limit time.Duration) string {
 }
 
 func applyCommand(a *artifact) []string {
-	command := []string{a.engine, "apply", "-input=false", "-json"}
-	if c := a.context; c != nil {
-		if c.Parallelism > 0 {
-			command = append(command, fmt.Sprintf("-parallelism=%d", c.Parallelism))
-		}
-		if c.LockTimeoutSeconds > 0 {
-			command = append(command, fmt.Sprintf("-lock-timeout=%ds", c.LockTimeoutSeconds))
-		}
-	}
-	return a.context.Display(append(command, "<reviewed saved plan "+a.digest[:12]+">"))
+	return a.context.Display(applyRequest(a).Display(a.engine, "<reviewed saved plan "+a.digest[:12]+">"))
 }
 
 // applyRequest gives apply the profile options its plan ran with, from the bound context.

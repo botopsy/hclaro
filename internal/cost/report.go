@@ -25,7 +25,7 @@ const (
 const (
 	maxItems      = 2000
 	maxComponents = 20
-	maxResources  = 100_000
+	maxResources  = state.MaxResources
 )
 
 // CostComponent is one priced dimension of a resource as reported by the provider.

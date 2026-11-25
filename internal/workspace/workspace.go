@@ -257,7 +257,7 @@ func (s *Store) Load(ctx context.Context, adapter engine.Adapter, engineName str
 			fail("unsafe_cli_args", "Inherited TF_CLI_ARGS settings contain unsupported flags. Only -no-color is accepted. Remove the injected flags for version/workspace/show and restart Hclaro. No values or flags were logged.")
 			return
 		}
-		fail("engine_version", "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13 and check the executable on PATH.")
+		fail("engine_version", "Unable to read a supported engine version. Use "+tfpolicy.SupportText+" and check the executable on PATH.")
 		return
 	}
 	snap.Info.Version = version

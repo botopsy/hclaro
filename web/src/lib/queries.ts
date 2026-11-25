@@ -1,7 +1,12 @@
-import { queryOptions } from '@tanstack/react-query';
-import { api, send } from '../api';
+import { queryOptions, useQuery } from '@tanstack/react-query';
+import { api, send, sessionQuery } from '../api';
 import { operationActive, type Operation, type ProjectList } from '../types';
 import { scopeKey, scopedPath, type PlanScope } from './scope';
+
+// useLimits returns the server's limits once /session has loaded; text that quotes one waits for it.
+export function useLimits() {
+  return useQuery(sessionQuery).data?.limits;
+}
 
 type OperationList = { operations: Operation[] };
 

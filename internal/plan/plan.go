@@ -244,8 +244,8 @@ func Parse(input []byte) (Review, error) {
 	if len(doc.Deferred) > 0 {
 		review.Warnings = append(review.Warnings, fmt.Sprintf("%d deferred change(s) are not shown. Deferred changes are not supported by this version of Hclaro.", len(doc.Deferred)))
 	}
-	if len(doc.Changes)+len(doc.Drift) > 100_000 {
-		return review, errors.New("plan exceeds 100,000 change limit")
+	if len(doc.Changes)+len(doc.Drift) > state.MaxResources {
+		return review, fmt.Errorf("plan exceeds %d change limit", state.MaxResources)
 	}
 	seen := map[string]bool{}
 	for _, raw := range doc.Changes {

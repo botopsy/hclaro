@@ -9,7 +9,7 @@ import { Button } from './components/ui/button';
 import { PlansView } from './plans/PlansView';
 import { OperationsView } from './plans/OperationsView';
 import { scopeKey, scopedPath } from './lib/scope';
-import { activeOperation, revealValue } from './lib/queries';
+import { activeOperation, revealValue, useLimits } from './lib/queries';
 import { ImportView } from './imports/ImportView';
 import { DriftView } from './drift/DriftView';
 import { DiscoveryView } from './discovery/DiscoveryView';
@@ -304,10 +304,10 @@ function Workbench({
     }
   }
   const total = w ? w.managed + w.data : 0;
-  const maxReplace = 50;
+  const maxReplace = useLimits()?.maxReplace;
   const checked = Array.from(selection.values());
   const replaceTargets: ReplaceTarget[] = checked.filter(r => r.mode === 'managed').map(r => ({ id: r.id, address: r.address }));
-  const replaceBlocked = !w?.info.capabilities.canPlan ? w?.info.capabilities.planReason || 'Plans are unavailable for this workspace.' : runningOperation ? 'A command is running for this project.' : !replaceTargets.length ? 'Only managed instances can be replaced; data sources cannot.' : replaceTargets.length > maxReplace ? `Select at most ${maxReplace} managed instances to replace.` : undefined;
+  const replaceBlocked = !w?.info.capabilities.canPlan ? w?.info.capabilities.planReason || 'Plans are unavailable for this workspace.' : runningOperation ? 'A command is running for this project.' : !replaceTargets.length ? 'Only managed instances can be replaced; data sources cannot.' : maxReplace !== undefined && replaceTargets.length > maxReplace ? `Select at most ${maxReplace} managed instances to replace.` : undefined;
   function choose(keys: Set<string>) {
     const rows = resources.data?.resources ?? [];
     setSelection(current => new Map(Array.from(keys, k => [k, current.get(k) ?? rows.find(r => r.id === k)] as const).filter((e): e is [string, Resource] => !!e[1])));

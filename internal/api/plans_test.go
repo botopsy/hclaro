@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"hclaro/fixtures"
+	"hclaro/internal/engine"
 	"hclaro/internal/engine/enginetest"
+	"hclaro/internal/graph"
 	"hclaro/internal/operations"
 	"hclaro/internal/preflight"
 	"hclaro/internal/workspace"
@@ -139,6 +141,10 @@ func TestPlanFlowOverHTTP(t *testing.T) {
 	// Scoped execution for Hub workspaces is off unless enabled when Hclaro starts (M24.04).
 	if caps, ok := session["capabilities"].(map[string]any); !ok || caps["scopedExecution"] != false {
 		t.Fatalf("session capabilities: %v", session["capabilities"])
+	}
+	// The limits the UI quotes come from the constants that enforce them.
+	if limits, ok := session["limits"].(map[string]any); !ok || limits["maxReplace"] != float64(engine.MaxReplace) || limits["graphMaxNodes"] != float64(graph.MaxDOTNodes) || limits["driftScans"] != float64(operations.ServedLimits().DriftScans) {
+		t.Fatalf("session limits: %v", session["limits"])
 	}
 	options := decode[map[string]any](t, s.do("GET", "/api/v1/plans/options", ""))
 	if options["canPlan"] != true || options["workspace"] != "demo" {

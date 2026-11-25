@@ -104,7 +104,7 @@ func planRoutes(mux *http.ServeMux, store *workspace.Store, manager *operations.
 	mux.HandleFunc("GET /api/v1/session", func(w http.ResponseWriter, r *http.Request) {
 		// Capabilities tell the UI which optional features the server enables; the server
 		// still enforces each one on every request.
-		writeJSON(w, 200, map[string]any{"csrfToken": csrf, "version": version, "capabilities": map[string]bool{"scopedExecution": hub != nil && hub.ScopedExecution}})
+		writeJSON(w, 200, map[string]any{"csrfToken": csrf, "version": version, "capabilities": map[string]bool{"scopedExecution": hub != nil && hub.ScopedExecution}, "limits": operations.ServedLimits()})
 	})
 	mux.HandleFunc("GET /api/v1/plans/options", func(w http.ResponseWriter, r *http.Request) {
 		profileID := r.URL.Query().Get("profileId")

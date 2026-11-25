@@ -17,6 +17,7 @@ import (
 
 	"hclaro/internal/engine"
 	"hclaro/internal/state"
+	"hclaro/internal/tfpolicy"
 )
 
 // ToolRequest is one project utility pinned to a Hub context: project, root, engine
@@ -165,7 +166,7 @@ func ToolCommand(engineName string, tool engine.Tool, json, recursive bool) []st
 }
 
 var toolMessages = map[string]string{
-	"engine_version":    "Unable to read a supported engine version. Use stable Terraform 1.5–1.17 or OpenTofu 1.6–1.13. Nothing was run.",
+	"engine_version":    "Unable to read a supported engine version. Use " + tfpolicy.SupportText + ". Nothing was run.",
 	"path_changed":      "The project folder or its engine changed after this workspace was opened. Nothing was run. Open the workspace again.",
 	"workspace_missing": "The engine reported that this workspace does not exist. List workspaces again on the project page.",
 	"init_required":     "The engine needs this project to be initialized first. Nothing was checked. Review and run Init from the project page, or run init in a terminal.",

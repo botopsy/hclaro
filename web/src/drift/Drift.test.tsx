@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import golden from '../../../fixtures/drift/mixed.golden.json';
 import { DriftView } from './DriftView';
 import type { DriftDetail, DriftOptions, DriftScan, Operation } from '../types';
+import { testLimits } from '../testLimits';
 
 const canary = 'DO_NOT_LEAK_HCLARO_TEST_SECRET';
 const scan = golden.scan as unknown as DriftScan;
@@ -23,7 +24,7 @@ function serve(...routes: Route[]) {
       const response = route(url, init);
       if (response) return response;
     }
-    if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64) });
+    if (url.endsWith('/session')) return Response.json({ csrfToken: 'e'.repeat(64), limits: testLimits });
     if (url.endsWith('/drift-scans/options')) return Response.json(options);
     if (url.endsWith('/drift-scans')) return Response.json({ scans: [scan] });
     if (url.endsWith('/operations')) return Response.json({ operations: [finished] });
@@ -130,7 +131,7 @@ describe('Drift', () => {
     view();
     const user = userEvent.setup();
     expect(await screen.findByText('No drift scans yet')).toBeInTheDocument();
-    expect(screen.getByText(/The last 10 scan results are kept in memory for up to 12 hours/)).toBeInTheDocument();
+    expect(await screen.findByText(/The last 10 scan results are kept in memory for up to 12 hours/)).toBeInTheDocument();
     // One primary button: the empty state's.
     expect(screen.getAllByRole('button', { name: /Check drift/ })).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: /Check drift/ }));

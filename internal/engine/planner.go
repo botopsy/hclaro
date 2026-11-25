@@ -89,7 +89,22 @@ func PlanArgs(request PlanRequest) ([]string, error) {
 	if !filepath.IsAbs(request.Out) {
 		return nil, errors.New("plan output must be an absolute private path")
 	}
-	args := []string{"plan", "-input=false", "-json", "-out=" + request.Out}
+	return planArgs(request, request.Out)
+}
+
+// Display is the command PlanArgs builds, as shown to the user: the engine name first and out
+// (a placeholder, request.Out is ignored) in place of the private plan file. If the request is
+// invalid it shows only the subcommand; running it reports the real error.
+func (r PlanRequest) Display(engineName, out string) []string {
+	args, err := planArgs(r, out)
+	if err != nil {
+		args = []string{"plan"}
+	}
+	return append([]string{engineName}, args...)
+}
+
+func planArgs(request PlanRequest, out string) ([]string, error) {
+	args := []string{"plan", "-input=false", "-json", "-out=" + out}
 	if request.RefreshOnly {
 		if len(request.Replace) > 0 || request.GenerateConfigOut != "" {
 			return nil, errors.New("a refresh-only plan takes no replace or generated configuration options")
@@ -163,13 +178,27 @@ func ApplyArgs(request ApplyRequest) ([]string, error) {
 	if !filepath.IsAbs(request.Path) {
 		return nil, errors.New("saved plan path must be absolute")
 	}
+	return applyArgs(request, request.Path)
+}
+
+// Display is the command ApplyArgs builds, as shown to the user, with plan (a label, request.Path
+// is ignored) in place of the saved plan path; an invalid request shows only the subcommand.
+func (r ApplyRequest) Display(engineName, plan string) []string {
+	args, err := applyArgs(r, plan)
+	if err != nil {
+		args = []string{"apply"}
+	}
+	return append([]string{engineName}, args...)
+}
+
+func applyArgs(request ApplyRequest, path string) ([]string, error) {
 	// A saved plan never prompts, so -auto-approve is neither needed nor passed. Options come
 	// before the path: the engine stops reading flags at the first positional argument.
 	args, err := optionArgs([]string{"apply", "-input=false", "-json"}, request.Parallelism, request.LockTimeoutSeconds)
 	if err != nil {
 		return nil, err
 	}
-	return append(args, request.Path), nil
+	return append(args, path), nil
 }
 
 // Plan streams machine-readable UI lines to line. Lines longer than 1 MiB are truncated,

@@ -5,7 +5,7 @@ import { OperationLog } from './OperationLog';
 import { navigate } from '../router';
 import { globalPages } from '../navigation/config';
 import { launchScope, type PlanScope } from '../lib/scope';
-import { operationsQuery } from '../lib/queries';
+import { operationsQuery, useLimits } from '../lib/queries';
 import { clock, duration } from '../lib/format';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -18,6 +18,7 @@ const opLabel = (o: Operation) => o.kind === 'apply' ? 'Apply' : o.kind === 'dri
 // scope names the project or Hub workspace whose operations are listed.
 export function OperationsView({ openPlan, openPlans, scope = launchScope }: { openPlan: (id: string) => void; openPlans: () => void; scope?: PlanScope }) {
   const operations = useQuery(operationsQuery(scope));
+  const limits = useLimits();
   const history = <button className="link-button" onClick={() => navigate(globalPages.history.path)}>Operation history<ArrowRight size={13} aria-hidden="true" /></button>;
   if (operations.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading operations…</p></div>;
   if (operations.error) return <ErrorState inline message={operations.error.message} />;
@@ -37,7 +38,6 @@ export function OperationsView({ openPlan, openPlans, scope = launchScope }: { o
      {o.logRetained ? <OperationLog operation={o} scope={scope} /> : <p className="muted">The log for this operation is no longer kept. Only the 10 most recent logs are retained.</p>}
     </div>} />
    </div>}
-   {/* shortcut: numbers copied from maxOperations/maxLogs in internal/operations/manager.go; serve them from the API if they become configurable. */}
-   <Disclosure summary="How this list is kept"><p>This list keeps the last 100 operations and the logs of the last 10, in memory; both disappear when Hclaro stops. Logs contain sanitized summaries, not raw engine output. Operation history keeps metadata on disk, within its retention limits, but never plan files: nothing there can be applied.</p></Disclosure>
+   {limits && <Disclosure summary="How this list is kept"><p>This list keeps the last {limits.operations} operations and the logs of the last {limits.operationLogs}, in memory; both disappear when Hclaro stops. Logs contain sanitized summaries, not raw engine output. Operation history keeps metadata on disk, within its retention limits, but never plan files: nothing there can be applied.</p></Disclosure>}
   </div>;
 }

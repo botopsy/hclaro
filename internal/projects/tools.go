@@ -20,11 +20,10 @@ type ToolsFactory func(root, preference string, environ []string, selected strin
 
 // DefaultTools uses the official CLI found on PATH. Inherited TF_WORKSPACE is never passed.
 func DefaultTools(root, preference string, environ []string, selected string) (string, string, engine.Tools, error) {
-	cli, err := engine.Detect(root, preference)
+	cli, err := detectCLI(root, preference, selected, environ)
 	if err != nil {
 		return "", "", nil, err
 	}
-	cli.IgnoreInheritedWorkspace, cli.Environ, cli.SelectedWorkspace = true, environ, selected
 	return cli.Name, cli.Executable, cli, nil
 }
 

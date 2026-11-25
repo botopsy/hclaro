@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"regexp"
@@ -16,6 +17,9 @@ import (
 
 const Redacted = "[redacted]"
 const MaxBytes = 64 << 20
+
+// MaxResources bounds the instances in one state, and the changes in one plan document.
+const MaxResources = 100_000
 
 var ErrNoState = errors.New("no state snapshot recorded")
 
@@ -110,8 +114,8 @@ func Parse(input []byte) (Index, error) {
 		mod := Module{Address: m.Address, Parent: parent, Count: len(m.Resources)}
 		idx.Modules = append(idx.Modules, mod)
 		for _, r := range m.Resources {
-			if len(idx.Resources) >= 100_000 {
-				return errors.New("state exceeds 100,000 resource limit")
+			if len(idx.Resources) >= MaxResources {
+				return fmt.Errorf("state exceeds %d resource limit", MaxResources)
 			}
 			if r.Address == "" || r.Name == "" || r.Type == "" || (r.Mode != "managed" && r.Mode != "data") || seen[r.Address] {
 				return errors.New("invalid or duplicate resource record")
