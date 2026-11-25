@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"hclaro/fixtures"
+	"hclaro/internal/discovery/discoverytest"
 )
 
 func fail(msg string, code int) {
@@ -194,6 +195,10 @@ func main() {
 		}
 		page("rds-describe-db-instances.json")
 	default:
-		fail("synthetic AWS CLI: operation not supported", 252)
+		out, ok, _ := discoverytest.More(args)
+		if !ok {
+			fail("synthetic AWS CLI: operation not supported", 252)
+		}
+		os.Stdout.Write(out)
 	}
 }

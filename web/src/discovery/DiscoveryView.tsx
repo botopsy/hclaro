@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, CircleCheck, CircleDashed, CircleHelp, CircleSlash, CircleX, Cloud, CloudCog, Copy, History, Import, LoaderCircle, Play, Radar, Search, ShieldCheck, Square, TriangleAlert, X, type LucideIcon } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, CircleCheck, CircleDashed, CircleHelp, CircleSlash, CircleX, Cloud, CloudCog, Copy, History, Import, LoaderCircle, Play, Radar, Search, ShieldCheck, Square, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import { api, ApiError, send } from '../api';
 import type { CloudIdentity, CloudResourceCandidate, DiscoveryMatchStatus, DiscoveryOptions, DiscoveryPrefill, DiscoveryScan, DiscoveryScope } from '../types';
 import { Button } from '../components/ui/button';
 import { Dialog } from '../components/Dialog';
+import { Popover } from '../components/Menu';
 import { Disclosure } from '../components/Disclosure';
 import { EmptyState } from '../components/EmptyState';
 import { Segmented } from '../components/Segmented';
@@ -197,7 +198,13 @@ function ScanPreview({ target, options, identity, profileId, onClose, onStarted 
    </>}>
     <div className="discovery-scan">
     <p>Choose what to list. Only this account is scanned, never an organization or other accounts.</p>
-    <fieldset className="discovery-fieldset"><legend>Resource types</legend>{options.types.map(t => <label key={t.type} className="check"><input type="checkbox" checked={scope.types.includes(t.type)} onChange={() => toggle('types', t.type)} /><span><strong>{t.label}</strong> <code>{t.type}</code> <span className="muted">· needs {t.permission}{t.global ? ' · listed once for the account' : ''}</span></span></label>)}</fieldset>
+    <div className="discovery-types-field"><span className="discovery-types-title">Resource types</span>
+     <Popover label="Resource types" className="discovery-types" button={<>{scope.types.length === options.types.length ? `All ${options.types.length} types` : `${scope.types.length} of ${options.types.length} types`}<ChevronDown size={13} aria-hidden="true" /></>}>
+      <div className="discovery-types-actions"><Button variant="ghost" size="small" onClick={() => { setScope(s => ({ ...s, types: options.types.map(t => t.type) })); setConsent(false); }}>Select all</Button><Button variant="ghost" size="small" onClick={() => { setScope(s => ({ ...s, types: [] })); setConsent(false); }}>Clear</Button></div>
+      <div className="discovery-types-list">{options.types.map(t => <label key={t.type} className="check"><input type="checkbox" checked={scope.types.includes(t.type)} onChange={() => toggle('types', t.type)} /><span><strong>{t.label}</strong> <code>{t.type}</code> {t.global && <span className="muted">· listed once for the account</span>}</span></label>)}</div>
+     </Popover>
+     <small className="muted">Each type needs its own read permission; a denied one is shown as missing, not empty.</small>
+    </div>
     <fieldset className="discovery-fieldset"><legend>Regions <span className="muted">({scope.regions.length} of up to {options.limits.maxRegions})</span></legend><div className="discovery-regions">{options.regions.map(r => <label key={r} className="check"><input type="checkbox" checked={scope.regions.includes(r)} disabled={!scope.regions.includes(r) && scope.regions.length >= options.limits.maxRegions} onChange={() => toggle('regions', r)} /><span className="mono">{r}</span></label>)}</div></fieldset>
     <div className="form-grid">
      <label className="field"><span>Objects per type and region</span><input type="number" min={1} max={options.limits.maxPerType} value={scope.maxPerType} onChange={e => { setScope(s => ({ ...s, maxPerType: Number(e.target.value) || 0 })); setConsent(false); }} /><small>Listing stops at this limit; a truncated list is marked incomplete.</small></label>

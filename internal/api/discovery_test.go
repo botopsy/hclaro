@@ -85,7 +85,7 @@ func TestDiscoveryAPIEndToEnd(t *testing.T) {
 		Identity  *discovery.CloudIdentity `json:"identity"`
 	}](t, record(s.do("GET", "/api/v1/discovery/options", "")))
 	record(s.do("GET", "/api/v1/discovery/scans", ""))
-	if !options.CanScan || len(options.Types) != 5 || options.Workspace != "demo" || options.Identity != nil {
+	if !options.CanScan || len(options.Types) != len(discovery.Types) || options.Workspace != "demo" || options.Identity != nil {
 		t.Fatalf("%+v", options)
 	}
 	if calls := runner.Calls(); len(calls) != 0 {
@@ -105,12 +105,12 @@ func TestDiscoveryAPIEndToEnd(t *testing.T) {
 		t.Fatalf("%+v", identity)
 	}
 	for body, want := range map[string]string{
-		`{"identityId":"` + identity.ID + `",` + scope + `}`:                                                                         "acknowledgement_required",
-		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":false}`:                                             "acknowledgement_required",
-		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":true,"command":"ec2 delete-vpc"}`:                   "invalid_request",
-		`{"identityId":"` + identity.ID + `","scope":{"regions":["mars-1"],"types":["aws_vpc"]},"acknowledgeApiCalls":true}`:         "invalid_scope",
-		`{"identityId":"` + identity.ID + `","scope":{"regions":["eu-west-1"],"types":["aws_iam_role"]},"acknowledgeApiCalls":true}`: "invalid_scope",
-		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":true,"profileId":"../x"}`:                           "invalid_request",
+		`{"identityId":"` + identity.ID + `",` + scope + `}`:                                                                          "acknowledgement_required",
+		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":false}`:                                              "acknowledgement_required",
+		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":true,"command":"ec2 delete-vpc"}`:                    "invalid_request",
+		`{"identityId":"` + identity.ID + `","scope":{"regions":["mars-1"],"types":["aws_vpc"]},"acknowledgeApiCalls":true}`:          "invalid_scope",
+		`{"identityId":"` + identity.ID + `","scope":{"regions":["eu-west-1"],"types":["aws_sqs_queue"]},"acknowledgeApiCalls":true}`: "invalid_scope",
+		`{"identityId":"` + identity.ID + `",` + scope + `,"acknowledgeApiCalls":true,"profileId":"../x"}`:                            "invalid_request",
 	} {
 		if w := s.do("POST", "/api/v1/discovery/scans", body); w.Code != 400 || decode[map[string]string](t, w)["error"] != want {
 			t.Errorf("%s: %d %s", body, w.Code, w.Body)

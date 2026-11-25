@@ -111,10 +111,15 @@ func KindOf(err error) string {
 // readOnly lists the only AWS CLI operations Hclaro runs. Every one is a Describe, List or
 // Get call; nothing here can create, change or delete a cloud object.
 var readOnly = map[string]map[string]bool{
-	"sts":   {"get-caller-identity": true},
-	"ec2":   {"describe-vpcs": true, "describe-subnets": true, "describe-security-groups": true},
-	"s3api": {"list-buckets": true},
-	"rds":   {"describe-db-instances": true},
+	"sts": {"get-caller-identity": true},
+	"ec2": {"describe-vpcs": true, "describe-subnets": true, "describe-security-groups": true, "describe-instances": true,
+		"describe-volumes": true, "describe-internet-gateways": true, "describe-route-tables": true, "describe-nat-gateways": true},
+	"s3api":    {"list-buckets": true},
+	"rds":      {"describe-db-instances": true},
+	"elbv2":    {"describe-load-balancers": true},
+	"iam":      {"list-roles": true},
+	"lambda":   {"list-functions": true},
+	"dynamodb": {"list-tables": true},
 }
 
 var (

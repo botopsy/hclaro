@@ -94,5 +94,40 @@ func (r *Runner) Run(ctx context.Context, environ []string, args []string) ([]by
 		}
 		return page("rds-describe-db-instances.json")
 	}
+	if out, ok, err := More(args); ok {
+		return out, err
+	}
 	return nil, &awscli.CallError{Kind: awscli.KindFailed}
+}
+
+// More answers the later catalog types (EC2 compute and networking, load balancers, IAM
+// roles, Lambda, DynamoDB) from fixtures. Regional types answer in eu-west-1 only; IAM is
+// global and answers once. ok is false for any other operation.
+func More(args []string) (out []byte, ok bool, err error) {
+	f, ok := moreFixtures[args[0]+" "+args[1]]
+	if !ok {
+		return nil, false, nil
+	}
+	if option(args, "--region") != "eu-west-1" && !f.global {
+		return []byte(f.empty), true, nil
+	}
+	out, err = page(f.file)
+	return out, true, err
+}
+
+// moreFixtures maps the later catalog types to their fixture and the empty page other
+// regions return.
+var moreFixtures = map[string]struct {
+	file, empty string
+	global      bool
+}{
+	"ec2 describe-instances":         {"ec2-describe-instances.json", `{"Reservations":[]}`, false},
+	"ec2 describe-volumes":           {"ec2-describe-volumes.json", `{"Volumes":[]}`, false},
+	"ec2 describe-internet-gateways": {"ec2-describe-internet-gateways.json", `{"InternetGateways":[]}`, false},
+	"ec2 describe-route-tables":      {"ec2-describe-route-tables.json", `{"RouteTables":[]}`, false},
+	"ec2 describe-nat-gateways":      {"ec2-describe-nat-gateways.json", `{"NatGateways":[]}`, false},
+	"elbv2 describe-load-balancers":  {"elbv2-describe-load-balancers.json", `{"LoadBalancers":[]}`, false},
+	"lambda list-functions":          {"lambda-list-functions.json", `{"Functions":[]}`, false},
+	"dynamodb list-tables":           {"dynamodb-list-tables.json", `{"TableNames":[]}`, false},
+	"iam list-roles":                 {"iam-list-roles.json", `{"Roles":[]}`, true},
 }
