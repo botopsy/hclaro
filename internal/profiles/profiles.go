@@ -64,6 +64,11 @@ type Profile struct {
 	// AWSAuth is the credential adapter: "" runs the engine and the AWS CLI with AWS_PROFILE
 	// (aws-cli); AWSVault runs them through `aws-vault exec <AWSProfile> --`.
 	AWSAuth string `json:"aws_auth,omitempty"`
+	// GCPConfiguration, GCPProject and GCPRegion name the gcloud configuration, project and
+	// region of this context (M33). Names only; credentials stay in gcloud.
+	GCPConfiguration string `json:"gcp_configuration,omitempty"`
+	GCPProject       string `json:"gcp_project,omitempty"`
+	GCPRegion        string `json:"gcp_region,omitempty"`
 	// AWSExpectedAccount and AWSExpectedRole guard apply: the verified STS identity must
 	// match them. They are names and patterns, never credentials.
 	AWSExpectedAccount string   `json:"aws_expected_account,omitempty"`
@@ -86,6 +91,9 @@ type Input struct {
 	AWSAuth            string
 	AWSExpectedAccount string
 	AWSExpectedRole    string
+	GCPConfiguration   string
+	GCPProject         string
+	GCPRegion          string
 	EnvNames           []string
 }
 
@@ -513,12 +521,13 @@ func (s *Store) RemoveProject(projectID string) error {
 }
 
 func inputOf(p Profile) Input {
-	return Input{Name: p.Name, Engine: p.Engine, Workspace: p.Workspace, VarFiles: slices.Clone(p.VarFiles), Options: p.Options, AWSProfile: p.AWSProfile, AWSRegion: p.AWSRegion, AWSAuth: p.AWSAuth, AWSExpectedAccount: p.AWSExpectedAccount, AWSExpectedRole: p.AWSExpectedRole, EnvNames: slices.Clone(p.EnvNames)}
+	return Input{Name: p.Name, Engine: p.Engine, Workspace: p.Workspace, VarFiles: slices.Clone(p.VarFiles), Options: p.Options, AWSProfile: p.AWSProfile, AWSRegion: p.AWSRegion, AWSAuth: p.AWSAuth, AWSExpectedAccount: p.AWSExpectedAccount, AWSExpectedRole: p.AWSExpectedRole, GCPConfiguration: p.GCPConfiguration, GCPProject: p.GCPProject, GCPRegion: p.GCPRegion, EnvNames: slices.Clone(p.EnvNames)}
 }
 
 func apply(p Profile, in Input) Profile {
 	p.Name, p.Engine, p.Workspace, p.Options, p.AWSProfile, p.AWSRegion = in.Name, in.Engine, in.Workspace, in.Options, in.AWSProfile, in.AWSRegion
 	p.AWSAuth, p.AWSExpectedAccount, p.AWSExpectedRole = in.AWSAuth, in.AWSExpectedAccount, in.AWSExpectedRole
+	p.GCPConfiguration, p.GCPProject, p.GCPRegion = in.GCPConfiguration, in.GCPProject, in.GCPRegion
 	p.VarFiles, p.EnvNames = slices.Clone(in.VarFiles), slices.Clone(in.EnvNames)
 	return cloneProfile(p)
 }
@@ -541,6 +550,9 @@ var (
 	awsProfileName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+=@,-]{0,63}$`)
 	awsRegion      = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$`)
 	envName        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+	gcpConfigName  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	gcpProjectID   = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+	gcpRegionName  = regexp.MustCompile(`^[a-z]+-[a-z]+[0-9]{1,2}$`)
 	awsAccount     = regexp.MustCompile(`^[0-9]{12}$`)
 	// awsRolePattern is an ARN in which * stands for part of one segment (see RoleMatches).
 	awsRolePattern = regexp.MustCompile(`^arn:aws[a-z-]{0,20}:(sts|iam)::([0-9]{12}|\*):[A-Za-z0-9+=,.@/_*-]{1,400}$`)
@@ -597,6 +609,14 @@ func check(in Input) error {
 	}
 	if in.AWSRegion != "" && !awsRegion.MatchString(in.AWSRegion) {
 		return invalid("awsRegion", "Enter an AWS region code such as eu-west-1.")
+	}
+	switch {
+	case in.GCPConfiguration != "" && (!gcpConfigName.MatchString(in.GCPConfiguration) || state.LooksSecret(in.GCPConfiguration)):
+		return invalid("gcpConfiguration", "Enter the name of a gcloud configuration (lower-case letters, digits and - only). Never enter a key or token.")
+	case in.GCPProject != "" && !gcpProjectID.MatchString(in.GCPProject):
+		return invalid("gcpProject", "Enter a Google Cloud project ID such as my-project-123456 (not the project name or number).")
+	case in.GCPRegion != "" && !gcpRegionName.MatchString(in.GCPRegion):
+		return invalid("gcpRegion", "Enter a Google Cloud region such as europe-west1.")
 	}
 	switch {
 	// "aws-cli" is stored as "", but a hand-edited file that spells it out stays readable.

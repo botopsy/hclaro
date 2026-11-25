@@ -21,6 +21,7 @@ import (
 	"hclaro/internal/cost"
 	"hclaro/internal/discovery"
 	"hclaro/internal/engine"
+	"hclaro/internal/gcpcli"
 	"hclaro/internal/gitctx"
 	"hclaro/internal/history"
 	"hclaro/internal/operations"
@@ -303,7 +304,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	services := &api.Services{
 		History: operationHistory,
 		// AWS discovery (M16): allowlisted read-only AWS CLI calls, only on explicit request.
-		Discovery: discovery.New(awscli.Exec{}),
+		Discovery: newDiscovery(),
 		// Cost estimation (M17): off until the user opts in after the disclosure; never in
 		// strict local-only mode. Only sanitized aggregates are saved in the config folder.
 		Cost:      cost.New(cost.Exec{}, o.StrictLocal),
@@ -421,4 +422,11 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 	case <-shutdownCtx.Done():
 	}
 	return serveErr
+}
+
+// newDiscovery is the discovery service with its allowlisted read-only CLIs: aws and gcloud.
+func newDiscovery() *discovery.Service {
+	s := discovery.New(awscli.Exec{})
+	s.AddProvider(discovery.GCP(gcpcli.Exec{}))
+	return s
 }

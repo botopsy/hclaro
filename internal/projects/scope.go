@@ -377,6 +377,7 @@ func (s *Scope) DiscoveryPin(ctx context.Context, check bool, reviewed string) (
 	if execution != nil {
 		pin.ProfileID, pin.ProfileName, pin.ContextFingerprint = execution.ProfileID, execution.ProfileName, execution.Fingerprint
 		pin.AWSProfile, pin.AWSRegion = execution.AWSProfile, execution.AWSRegion
+		pin.GCPConfiguration, pin.GCPProject, pin.GCPRegion = execution.GCPConfiguration, execution.GCPProject, execution.GCPRegion
 	}
 	return pin, environ, nil
 }

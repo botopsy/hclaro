@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Check, ChevronDown, CircleCheck, CircleDashed, CircleHelp, CircleSlash, CircleX, Cloud, CloudCog, Copy, History, Import, LoaderCircle, Play, Radar, Search, ShieldCheck, Square, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import { api, ApiError, send } from '../api';
-import type { CloudIdentity, CloudResourceCandidate, DiscoveryMatchStatus, DiscoveryOptions, DiscoveryPrefill, DiscoveryScan, DiscoveryScope } from '../types';
+import type { CloudIdentity, CloudResourceCandidate, DiscoveryMatchStatus, DiscoveryOptions, DiscoveryPrefill, DiscoveryProvider, DiscoveryScan, DiscoveryScope } from '../types';
 import { Button } from '../components/ui/button';
 import { Dialog } from '../components/Dialog';
 import { Popover } from '../components/Menu';
@@ -32,9 +32,21 @@ function MatchBadge({ value }: { value: DiscoveryMatchStatus }) {
   return <Chip tone={chip} title={hint} icon={<Icon size={12} aria-hidden="true" />}>{label}</Chip>;
 }
 
-function query(profileId: string) {
-  return profileId ? `?profileId=${profileId}` : '';
+function query(profileId: string, provider: DiscoveryProvider) {
+  const parts = [profileId && `profileId=${profileId}`, provider !== 'aws' && `provider=${provider}`].filter(Boolean);
+  return parts.length ? `?${parts.join('&')}` : '';
 }
+
+// AWS is the default: its requests carry no provider, as before Google Cloud existed.
+function withProvider(provider: DiscoveryProvider) {
+  return provider === 'aws' ? {} : { provider };
+}
+
+// What differs by cloud in the page's wording; the same screens serve every provider.
+const clouds: Record<DiscoveryProvider, { name: string; cli: string; account: string; ops: string; via: string; verify: string; check: string; api: string }> = {
+  aws: { name: 'AWS', cli: 'AWS CLI', account: 'account', ops: 'Describe and List', via: 'STS', verify: 'STS GetCallerIdentity', check: 'one STS check', api: 'AWS APIs' },
+  gcp: { name: 'Google Cloud', cli: 'Google Cloud CLI (gcloud)', account: 'project', ops: 'list', via: 'gcloud', verify: 'gcloud config and project lookup', check: 'one project check', api: 'Google Cloud APIs' }
+};
 
 // A request path: a Hub workspace uses only its own context's routes (M24.09).
 function at(scope: PlanScope, path: string) {
@@ -74,13 +86,14 @@ export function DiscoveryView({
   // by Verify, Scan and Prepare import.
   const scoped = scope.kind === 'context';
   const key = scopeKey(scope);
-  const q = scoped ? '' : query(profileId);
-  const options = useQuery({ queryKey: ['discovery-options', key, profileId, workspaceStatus], queryFn: () => api<DiscoveryOptions>(at(scope, 'options') + q) });
+  const [provider, setProvider] = useState<DiscoveryProvider>('aws');
+  const q = scoped ? query('', provider) : query(profileId, provider);
+  const options = useQuery({ queryKey: ['discovery-options', key, profileId, workspaceStatus, provider], queryFn: () => api<DiscoveryOptions>(at(scope, 'options') + q) });
   const scans = useQuery({ queryKey: ['discovery-scans', key], queryFn: () => api<{ scans: DiscoveryScan[] }>(at(scope, 'scans')), enabled: !!options.data?.canScan });
   const [scanId, setScanId] = useState<string>();
   const shownId = scanId ?? scans.data?.scans[0]?.id;
   const scan = useQuery({
-    queryKey: ['discovery-scan', key, shownId, profileId, workspaceStatus],
+    queryKey: ['discovery-scan', key, shownId, profileId, workspaceStatus, provider],
     queryFn: () => api<DiscoveryScan>(at(scope, `scans/${shownId}`) + q),
     enabled: !!shownId,
     refetchInterval: q => q.state.data?.status === 'running' ? 800 : false
@@ -99,10 +112,10 @@ export function DiscoveryView({
     setVerifying(true);
     setVerifyError('');
     try {
-      await send<CloudIdentity>('POST', at(scope, 'identity'), bound(o, profileId, scope));
+      await send<CloudIdentity>('POST', at(scope, 'identity'), { ...bound(o, profileId, scope), ...withProvider(provider) });
       await options.refetch();
     } catch (e) {
-      setVerifyError(errorMessage(e, 'The AWS context could not be verified.'));
+      setVerifyError(errorMessage(e, `The ${clouds[provider].name} context could not be verified.`));
     } finally {
       setVerifying(false);
     }
@@ -117,9 +130,13 @@ export function DiscoveryView({
   if (scoped && options.error instanceof ApiError && (options.error.code === 'context_closed' || options.error.code === 'scope_changed')) return <ErrorState icon={TriangleAlert} iconSize={26} title="Open this workspace again" message={options.error.message} retry={reopen} retryLabel="Open again" note="Nothing ran." />;
   if (options.isPending) return <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading cloud discovery…</p></div>;
   if (options.error || !o) return <ErrorState inline message={options.error?.message || 'Cloud discovery is unavailable.'} />;
+  const cloud = clouds[o.provider];
+  // Only providers whose CLI is on PATH are offered; AWS stays so its missing CLI is explained.
+  const offered = (o.providers ?? []).filter(p => p.detected || p.name === provider);
   return <div className="plans discovery">
-   <Disclosure summary={<>Finds AWS objects this workspace doesn’t record yet, in {o.types.length} types. <span className="discovery-covered">What’s covered</span></>}>
-    <p>Cloud discovery lists existing AWS objects of {o.types.length} supported types only ({o.types.map((t, i) => <Fragment key={t.type}>{i ? ', ' : ''}<code>{t.type}</code></Fragment>)}) in the account your credentials belong to, at most {o.limits.maxRegions} regions, {o.limits.maxPerType.toLocaleString()} objects per type and region and {o.limits.maxObjects.toLocaleString()} objects per scan. Other AWS types, Azure and Google Cloud are not discovered. It compares them with <strong>this workspace’s recorded state</strong>. It never creates, changes or deletes cloud objects, and never writes state. Nothing is contacted until you ask.</p>
+   {offered.length > 1 && <Segmented label="Cloud provider" options={offered.map(p => ({ value: p.name, label: p.label }))} value={provider} onChange={p => { setProvider(p); setScanId(undefined); setVerifyError(''); }} />}
+   <Disclosure summary={<>Finds {cloud.name} objects this workspace doesn’t record yet, in {o.types.length} types. <span className="discovery-covered">What’s covered</span></>}>
+    <p>Cloud discovery lists existing {cloud.name} objects of {o.types.length} supported types only ({o.types.map((t, i) => <Fragment key={t.type}>{i ? ', ' : ''}<code>{t.type}</code></Fragment>)}) in the {cloud.account} your credentials belong to, at most {o.limits.maxRegions} regions, {o.limits.maxPerType.toLocaleString()} objects per type and region and {o.limits.maxObjects.toLocaleString()} objects per scan. Other {cloud.name} types and other clouds are not discovered. It compares them with <strong>this workspace’s recorded state</strong>. It never creates, changes or deletes cloud objects, and never writes state. Nothing is contacted until you ask.</p>
    </Disclosure>
    {!o.canScan && <div className="plan-warning" role="note"><TriangleAlert size={15} /><span><strong>Cloud discovery is unavailable here.</strong> {o.reason}</span></div>}
    {o.canScan && <AccountCard options={o} identity={identity} busy={verifying} blocked={blocked} error={verifyError} onVerify={() => void verify()} onScan={() => setPreview(true)} running={running} scanned={!!shownId} />}
@@ -127,7 +144,7 @@ export function DiscoveryView({
     <label className="history-select"><History size={14} /><span className="sr-only">Scan history</span><select aria-label="Scan history" value={shownId} onChange={e => setScanId(e.target.value)}>{scans.data.scans.map((s, i) => <option key={s.id} value={s.id}>{i === 0 ? 'Latest · ' : ''}{clock(s.startedAt)} · {s.identity.account}{s.status === 'completed' ? '' : ` · ${s.status}`}</option>)}</select></label>
     {running && scan.data && <Button variant="outline" size="small" onClick={() => void cancel(scan.data!.id)}><Square size={12} />Cancel scan</Button>}
    </div>}
-   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <ErrorState inline message={scan.error.message} /> : scan.data ? <ScanResult key={scan.data.id} scope={scope} scan={scan.data} options={o} profileId={profileId} onPrepared={onPrepared} openResource={openResource} copy={copy} /> : identity && o.canScan && <EmptyState icon={<Radar size={28} />} title="No discovery scan yet">Choose regions and resource types to list. Each scan calls AWS list APIs with your local credentials, only when you ask.</EmptyState>}
+   {scan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading scan…</p></div> : scan.error ? <ErrorState inline message={scan.error.message} /> : scan.data ? <ScanResult key={scan.data.id} scope={scope} scan={scan.data} options={o} profileId={profileId} onPrepared={onPrepared} openResource={openResource} copy={copy} /> : identity && o.canScan && <EmptyState icon={<Radar size={28} />} title="No discovery scan yet">Choose regions and resource types to list. Each scan calls {cloud.name} list APIs with your local credentials, only when you ask.</EmptyState>}
    {o.canScan && (o.scope ? <Disclosure summary="Execution context"><ScopeSummary scope={o.scope} executionContext={o.executionContext} title="Discovery uses" /></Disclosure> : o.context ? <Disclosure summary="Execution context"><ContextSummary summary={o.context} title="Discovery uses" /></Disclosure> : o.profileError ? <p className="dialog-error" role="alert">{o.profileError}</p> : null)}
    {preview && identity && <ScanPreview target={scope} options={o} identity={identity} profileId={profileId} onClose={() => setPreview(false)} onStarted={s => {
      setPreview(false);
@@ -141,21 +158,22 @@ export function DiscoveryView({
 // account, principal, default region, AWS CLI and permissions (the facts fold away once a scan exists).
 function AccountCard({ options, identity, busy, blocked, error, onVerify, onScan, running, scanned }: { options: DiscoveryOptions; identity?: CloudIdentity; busy: boolean; blocked: boolean; error: string; onVerify: () => void; onScan: () => void; running: boolean; scanned: boolean }) {
   const profile = options.context?.context.profileName;
-  const awsProfile = options.context?.context.awsProfile;
+  const cloud = clouds[options.provider];
+  const awsProfile = options.provider === 'aws' ? options.context?.context.awsProfile : options.context?.context.gcpConfiguration;
   const facts = identity && <dl className="metadata compact-metadata discovery-account-facts">
    <div><dt>Principal</dt><dd className="mono">{identity.arn} <span className="muted">({identity.principalType})</span></dd></div>
-   <div><dt>Default region</dt><dd><code>{identity.region}</code> <span className="muted">({identity.regionSource === 'profile' ? 'from the execution profile' : identity.regionSource === 'environment' ? 'from the environment' : 'no region configured; us-east-1'})</span></dd></div>
-   <div><dt>AWS CLI</dt><dd className="mono">{identity.cliVersion}</dd></div>
+   <div><dt>Default region</dt><dd>{identity.region ? <code>{identity.region}</code> : <span className="muted">none</span>} <span className="muted">({identity.regionSource === 'profile' ? 'from the execution profile' : identity.regionSource === 'environment' ? 'from the environment' : identity.regionSource === 'gcloud' ? 'from the gcloud configuration' : options.provider === 'gcp' ? 'no region configured' : 'no region configured; us-east-1'})</span></dd></div>
+   <div><dt>{cloud.cli}</dt><dd className="mono">{identity.cliVersion}</dd></div>
    <div><dt>Permissions</dt><dd className="muted">Checked per service when you scan. A denied service shows as missing, not empty.</dd></div>
   </dl>;
   return <section className="surface discovery-account" aria-labelledby="discovery-account-title">
    <div className="discovery-account-head">
     <span className={`discovery-account-mark${identity ? ' verified' : ''}`} aria-hidden="true">{identity ? <Check size={15} /> : <Cloud size={18} />}</span>
     <div>
-     <h2 id="discovery-account-title">{identity ? <>AWS account {identity.account}</> : 'AWS context not verified'}</h2>
-     <p>{identity ? <>Verified {clock(identity.verifiedAt)} with STS for workspace <strong>{options.workspace}</strong>{profile ? <> and profile <strong>{profile}</strong></> : ' and the inherited environment'} · valid until {clock(identity.expiresAt)}. Each scan and import preparation checks the account again.</> : <>Hclaro never infers the account from a profile name. Verify asks AWS STS <code>GetCallerIdentity</code> (read-only, contacts AWS) which account and principal the {awsProfile ? <>profile <code>{awsProfile}</code></> : 'inherited credentials'} belong to.</>}</p>
+     <h2 id="discovery-account-title">{identity ? <>{cloud.name} {cloud.account} {identity.account}</> : `${cloud.name} context not verified`}</h2>
+     <p>{identity ? <>Verified {clock(identity.verifiedAt)} with {cloud.via} for workspace <strong>{options.workspace}</strong>{profile ? <> and profile <strong>{profile}</strong></> : ' and the inherited environment'} · valid until {clock(identity.expiresAt)}. Each scan and import preparation checks the {cloud.account} again.</> : <>Hclaro never infers the {cloud.account} from a profile name. Verify asks {options.provider === 'aws' ? 'AWS ' : ''}<code>{cloud.verify}</code> (read-only{options.provider === 'aws' ? ', contacts AWS' : '; the project lookup contacts Google Cloud'}) to learn which {cloud.account} and principal the {awsProfile ? <>{options.provider === 'aws' ? 'profile' : 'configuration'} <code>{awsProfile}</code></> : 'inherited credentials'} belong to.</>}</p>
     </div>
-    <Button variant={identity ? 'outline' : 'default'} onClick={onVerify} disabled={busy || blocked}><ShieldCheck size={14} />{busy ? 'Verifying…' : identity ? 'Verify again' : 'Verify AWS context'}</Button>
+    <Button variant={identity ? 'outline' : 'default'} onClick={onVerify} disabled={busy || blocked}><ShieldCheck size={14} />{busy ? 'Verifying…' : identity ? 'Verify again' : `Verify ${cloud.name} context`}</Button>
     {identity && <Button onClick={onScan} disabled={blocked || running}><Radar size={14} />{scanned ? 'Scan again…' : 'Scan…'}</Button>}
    </div>
    {identity && (scanned ? <Disclosure summary="Account details">{facts}</Disclosure> : facts)}
@@ -166,7 +184,8 @@ function AccountCard({ options, identity, busy, blocked, error, onVerify, onScan
 
 // The scan preview states the scope, the request bounds and the possible cost before anything runs.
 function ScanPreview({ target, options, identity, profileId, onClose, onStarted }: { target: PlanScope; options: DiscoveryOptions; identity: CloudIdentity; profileId: string; onClose: () => void; onStarted: (scan: DiscoveryScan) => void }) {
-  const [scope, setScope] = useState<DiscoveryScope>({ regions: [identity.region], types: options.types.map(t => t.type), maxPerType: options.limits.defaultPerType, concurrency: options.limits.defaultConcurrency });
+  const cloud = clouds[options.provider];
+  const [scope, setScope] = useState<DiscoveryScope>({ regions: [identity.region || options.defaultRegion], types: options.types.map(t => t.type), maxPerType: options.limits.defaultPerType, concurrency: options.limits.defaultConcurrency });
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -185,23 +204,23 @@ function ScanPreview({ target, options, identity, profileId, onClose, onStarted 
     setBusy(true);
     setError('');
     try {
-      onStarted(await send<DiscoveryScan>('POST', at(target, 'scans'), { identityId: identity.id, scope, acknowledgeApiCalls: true, ...bound(options, profileId, target) }));
+      onStarted(await send<DiscoveryScan>('POST', at(target, 'scans'), { identityId: identity.id, scope, acknowledgeApiCalls: true, ...withProvider(options.provider), ...bound(options, profileId, target) }));
     } catch (e) {
       setError(errorMessage(e, 'The scan could not be started.'));
     } finally {
       setBusy(false);
     }
   }
-  return <Dialog title={`Scan AWS account ${identity.account}`} wide onClose={onClose} footer={<>
+  return <Dialog title={`Scan ${cloud.name} ${cloud.account} ${identity.account}`} wide onClose={onClose} footer={<>
     <Button variant="ghost" onClick={onClose}>Cancel</Button>
     <Button onClick={() => void start()} disabled={!valid || !consent || busy}><Play size={14} />{busy ? 'Starting…' : 'Start scan'}</Button>
    </>}>
     <div className="discovery-scan">
-    <p>Choose what to list. Only this account is scanned, never an organization or other accounts.</p>
+    <p>Choose what to list. Only this {cloud.account} is scanned, never an organization or other {cloud.account}s.</p>
     <div className="discovery-types-field"><span className="discovery-types-title">Resource types</span>
      <Popover label="Resource types" className="discovery-types" button={<>{scope.types.length === options.types.length ? `All ${options.types.length} types` : `${scope.types.length} of ${options.types.length} types`}<ChevronDown size={13} aria-hidden="true" /></>}>
       <div className="discovery-types-actions"><Button variant="ghost" size="small" onClick={() => { setScope(s => ({ ...s, types: options.types.map(t => t.type) })); setConsent(false); }}>Select all</Button><Button variant="ghost" size="small" onClick={() => { setScope(s => ({ ...s, types: [] })); setConsent(false); }}>Clear</Button></div>
-      <div className="discovery-types-list">{options.types.map(t => <label key={t.type} className="check"><input type="checkbox" checked={scope.types.includes(t.type)} onChange={() => toggle('types', t.type)} /><span><strong>{t.label}</strong> <code>{t.type}</code> {t.global && <span className="muted">· listed once for the account</span>}</span></label>)}</div>
+      <div className="discovery-types-list">{options.types.map(t => <label key={t.type} className="check"><input type="checkbox" checked={scope.types.includes(t.type)} onChange={() => toggle('types', t.type)} /><span><strong>{t.label}</strong> <code>{t.type}</code> {t.global && <span className="muted">· listed once for the {cloud.account}</span>}</span></label>)}</div>
      </Popover>
      <small className="muted">Each type needs its own read permission; a denied one is shown as missing, not empty.</small>
     </div>
@@ -211,11 +230,11 @@ function ScanPreview({ target, options, identity, profileId, onClose, onStarted 
      <div className="field"><span>Concurrent reads</span><Segmented label="Concurrent reads" options={concurrencyChoices.filter(n => Number(n) <= options.limits.maxConcurrency).map(n => ({ value: n, label: n }))} value={String(scope.concurrency)} onChange={n => setScope(s => ({ ...s, concurrency: Number(n) }))} /><small>Fewer reads at once reduce throttling. Throttled reads are retried with backoff.</small></div>
     </div>
     <ul className="preflight-list">
-     <li><CloudCog size={16} /><span><strong>Calls AWS list APIs {estimate.min === estimate.max ? estimate.min : `${estimate.min}–${estimate.max}`} times</strong> ({estimate.tasks} list task{estimate.tasks === 1 ? '' : 's'} plus one STS check) with your local credentials. Some AWS APIs can incur charges or count against API rate limits shared with other tools.</span></li>
-     <li><ShieldCheck size={16} /><span><strong>Read-only.</strong> Only Describe and List operations run; Hclaro cannot create, change or delete cloud objects, and writes no state or files.</span></li>
-     <li><CircleHelp size={16} /><span>Tags and names are untrusted text: credential-like values are hidden. Rules, policies, endpoints and database configuration are never read into Hclaro.</span></li>
+     <li><CloudCog size={16} /><span><strong>Calls {cloud.name} list APIs {estimate.min === estimate.max ? estimate.min : `${estimate.min}–${estimate.max}`} times</strong> ({estimate.tasks} list task{estimate.tasks === 1 ? '' : 's'} plus {cloud.check}) with your local credentials. Some APIs can incur charges or count against rate limits shared with other tools.{options.provider === 'gcp' && ' Each type is listed for the whole project in one request; the regions you choose only filter what is kept.'}</span></li>
+     <li><ShieldCheck size={16} /><span><strong>Read-only.</strong> Only {cloud.ops} operations run; Hclaro cannot create, change or delete cloud objects, and writes no state or files.</span></li>
+     <li><CircleHelp size={16} /><span>Tags and names are untrusted text: credential-like values are hidden. Rules, policies, endpoints, instance metadata and database configuration are never read into Hclaro.</span></li>
     </ul>
-    <label className="check consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>Call the AWS APIs listed above for account {identity.account}</span></label>
+    <label className="check consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span>Call the {cloud.api} listed above for {cloud.account} {identity.account}</span></label>
     {error && <p className="dialog-error" role="alert">{error}</p>}
     </div>
   </Dialog>;
@@ -230,9 +249,9 @@ function Outcome({ scan, options }: { scan: DiscoveryScan; options: DiscoveryOpt
   const truncated = scan.tasks.filter(t => t.truncated);
   if (scan.status === 'running') {
     const done = scan.tasks.filter(t => t.status === 'done' || t.status === 'failed').length;
-    return <section className="discovery-progress" role="status"><h2><LoaderCircle className="spin" size={16} />Scanning… {done} of {scan.tasks.length} lists done · {scan.calls} AWS requests</h2></section>;
+    return <section className="discovery-progress" role="status"><h2><LoaderCircle className="spin" size={16} />Scanning… {done} of {scan.tasks.length} lists done · {scan.calls} {clouds[options.provider].name} requests</h2></section>;
   }
-  if (scan.status === 'completed') return <p className="discovery-complete" role="status"><span className="discovery-account-mark verified" aria-hidden="true"><Check size={13} /></span><span><strong>Scan complete.</strong> {scan.results?.length ?? 0} object{scan.results?.length === 1 ? '' : 's'} found with {scan.calls} AWS requests{scan.duplicatesMerged ? `; ${scan.duplicatesMerged} duplicate report${scan.duplicatesMerged === 1 ? '' : 's'} merged` : ''}.</span></p>;
+  if (scan.status === 'completed') return <p className="discovery-complete" role="status"><span className="discovery-account-mark verified" aria-hidden="true"><Check size={13} /></span><span><strong>Scan complete.</strong> {scan.results?.length ?? 0} object{scan.results?.length === 1 ? '' : 's'} found with {scan.calls} {clouds[options.provider].name} requests{scan.duplicatesMerged ? `; ${scan.duplicatesMerged} duplicate report${scan.duplicatesMerged === 1 ? '' : 's'} merged` : ''}.</span></p>;
   const title = scan.status === 'partial' ? 'Scan incomplete' : scan.status === 'cancelled' ? 'Scan cancelled' : 'Scan failed';
   return <section className={scan.status === 'partial' ? 'drift-outcome' : 'operation-failed'} role="alert">
    <h2>{scan.status === 'partial' ? <TriangleAlert size={17} /> : <CircleX size={17} />}{title}</h2>
@@ -259,7 +278,7 @@ function ScanResult({ scope, scan, options, profileId, onPrepared, openResource,
     setPreparing(c.id);
     setError('');
     try {
-      onPrepared(await send<DiscoveryPrefill>('POST', at(scope, `scans/${scan.id}/candidates/${c.id}/prepare`), { ...bound(options, profileId, scope), acknowledgeUnknownMapping }));
+      onPrepared(await send<DiscoveryPrefill>('POST', at(scope, `scans/${scan.id}/candidates/${c.id}/prepare`), { ...bound(options, profileId, scope), acknowledgeUnknownMapping, ...withProvider(options.provider) }));
     } catch (e) {
       setError(errorMessage(e, 'The import could not be prepared.'));
     } finally {

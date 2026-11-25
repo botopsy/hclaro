@@ -100,6 +100,27 @@ describe('Cloud discovery', () => {
     expect(body).toMatchObject({ identityId: verified.identity!.id, acknowledgeApiCalls: true, scope: { regions: ['us-east-1', 'eu-west-1'], maxPerType: 200, concurrency: 2 } });
   });
 
+  it('offers Google Cloud only when gcloud is detected and sends the provider with every request', async () => {
+    const awsOnly = { ...unverified, providers: [{ name: 'aws', label: 'AWS', cli: 'aws', detected: true }, { name: 'gcp', label: 'Google Cloud', cli: 'gcloud', detected: false }] } as DiscoveryOptions;
+    serve({ options: awsOnly, scans: [] });
+    view();
+    expect(await screen.findByRole('heading', { name: 'AWS context not verified' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Cloud provider' })).not.toBeInTheDocument();
+    cleanup();
+    const gcpTypes = [{ type: 'google_compute_instance', service: 'compute', label: 'Compute Engine instances', global: true, operation: 'compute.instances.list', importIdFormat: 'projects/PROJECT/zones/ZONE/instances/NAME', permission: 'compute.instances.list', provider: 'gcp' }];
+    const gcpOptions = { ...unverified, provider: 'gcp', providers: [{ name: 'aws', label: 'AWS', cli: 'aws', detected: true }, { name: 'gcp', label: 'Google Cloud', cli: 'gcloud', detected: true }], types: gcpTypes, regions: ['europe-west1', 'us-central1'], defaultRegion: 'us-central1' } as unknown as DiscoveryOptions;
+    const gcpIdentity = { ...verified.identity!, provider: 'gcp', account: 'hclaro-demo-1', arn: 'a…@example.com', principalType: 'user', partition: 'gcp', region: 'europe-west1', regionSource: 'gcloud', cliVersion: '480.0.0' };
+    serve({ options: { ...gcpOptions, providers: gcpOptions.providers }, scans: [] }, url => url.includes('/discovery/options') && !url.includes('provider=gcp') ? Response.json({ ...awsOnly, providers: gcpOptions.providers }) : undefined, url => url.endsWith('/discovery/identity') ? Response.json(gcpIdentity) : undefined);
+    view();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Google Cloud' }));
+    expect(await screen.findByRole('heading', { name: 'Google Cloud context not verified' })).toBeInTheDocument();
+    expect(gets.some(u => u.includes('/discovery/options?provider=gcp'))).toBe(true);
+    expect(screen.getByText(/Finds Google Cloud objects/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Verify Google Cloud context' }));
+    expect(posts.at(-1)).toMatchObject({ url: '/api/v1/discovery/identity', body: { provider: 'gcp' } });
+  });
+
   it('picks resource types from a dropdown with checkboxes', async () => {
     serve({ options: verified, scans: [] });
     view();
@@ -192,7 +213,7 @@ describe('Cloud discovery', () => {
     const explainer = screen.getByText(/supported types only/);
     for (const t of ['aws_vpc', 'aws_subnet', 'aws_security_group', 'aws_s3_bucket', 'aws_db_instance']) expect(within(explainer).getByText(t)).toBeInTheDocument();
     // toLocaleString groups digits by the machine's locale (1,000 / 1.000 / 1 000).
-    expect(explainer).toHaveTextContent(/at most 6 regions, 1\D?000 objects per type and region and 5\D?000 objects per scan\. Other AWS types, Azure and Google Cloud are not discovered/);
+    expect(explainer).toHaveTextContent(/at most 6 regions, 1\D?000 objects per type and region and 5\D?000 objects per scan\. Other AWS types and other clouds are not discovered/);
     expect(screen.getByText(/stopped at 5\D?000 objects per scan; more exist/)).toBeInTheDocument();
     expect(screen.getAllByText(/Not listed: the scan reached its object limit/)).toHaveLength(2);
   });

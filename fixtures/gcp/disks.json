@@ -1,0 +1,4 @@
+[
+  {"name":"web-1","zone":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/zones/europe-west1-b","sizeGb":"50","type":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/zones/europe-west1-b/diskTypes/pd-balanced","status":"READY","labels":{"env":"prod"}},
+  {"name":"regional-1","region":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/regions/europe-west1","sizeGb":"100","type":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/regions/europe-west1/diskTypes/pd-ssd","status":"READY"}
+]

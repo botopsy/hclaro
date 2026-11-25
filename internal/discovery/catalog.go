@@ -39,10 +39,12 @@ type CloudResourceCandidate struct {
 	Service    string `json:"service"`
 	ResourceID string `json:"resourceId"`
 	ARN        string `json:"arn,omitempty"`
-	Region     string `json:"region"`
-	Account    string `json:"account"`
-	Name       string `json:"name,omitempty"`
-	Tags       []Tag  `json:"tags"`
+	// CloudID is the provider-neutral resource path of a non-AWS object (GCP: the import path).
+	CloudID string `json:"cloudId,omitempty"`
+	Region  string `json:"region"`
+	Account string `json:"account"`
+	Name    string `json:"name,omitempty"`
+	Tags    []Tag  `json:"tags"`
 	// TagsOmitted counts tags beyond the display limit or with unsafe keys.
 	TagsOmitted int `json:"tagsOmitted,omitempty"`
 	// Details are a few safe facts per type (CIDR, VPC, engine, …).
@@ -60,10 +62,12 @@ type CloudResourceCandidate struct {
 // global (listed once, not per region), the documented import ID and the state attributes
 // that hold the same identifier.
 type ResourceType struct {
-	Type        string   `json:"type"`
-	Service     string   `json:"service"`
-	Label       string   `json:"label"`
-	Global      bool     `json:"global"`
+	Type    string `json:"type"`
+	Service string `json:"service"`
+	Label   string `json:"label"`
+	Global  bool   `json:"global"`
+	// Provider is "" for AWS, else the provider name ("gcp").
+	Provider    string   `json:"provider,omitempty"`
 	Operation   string   `json:"operation"`
 	ImportID    string   `json:"importIdFormat"`
 	StateKeys   []string `json:"-"`
@@ -164,6 +168,16 @@ var Regions = []string{
 	"af-south-1", "me-south-1", "me-central-1", "il-central-1",
 	"ap-east-1", "ap-south-1", "ap-south-2", "ap-southeast-1", "ap-southeast-2", "ap-southeast-3", "ap-southeast-4", "ap-southeast-5", "ap-southeast-7",
 	"ap-northeast-1", "ap-northeast-2", "ap-northeast-3",
+}
+
+// GCPRegions are common Google Cloud regions offered in the scan form; any region of the
+// documented shape is accepted when scanning.
+var GCPRegions = []string{
+	"us-central1", "us-east1", "us-east4", "us-east5", "us-south1", "us-west1", "us-west2", "us-west3", "us-west4",
+	"northamerica-northeast1", "northamerica-northeast2", "southamerica-east1", "southamerica-west1",
+	"europe-central2", "europe-north1", "europe-southwest1", "europe-west1", "europe-west2", "europe-west3", "europe-west4", "europe-west6", "europe-west8", "europe-west9", "europe-west12",
+	"asia-east1", "asia-east2", "asia-northeast1", "asia-northeast2", "asia-northeast3", "asia-south1", "asia-south2", "asia-southeast1", "asia-southeast2",
+	"australia-southeast1", "australia-southeast2", "me-central1", "me-central2", "me-west1", "africa-south1",
 }
 
 // KnownRegion reports whether r is a selectable region.

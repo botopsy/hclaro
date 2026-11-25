@@ -1,0 +1,4 @@
+[
+  {"name":"web-1","zone":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/zones/europe-west1-b","machineType":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/zones/europe-west1-b/machineTypes/e2-medium","status":"RUNNING","labels":{"env":"prod","api_token":"AKIAIOSFODNN7EXAMPLE","owner":"DO_NOT_LEAK_HCLARO_TEST_SECRET"},"metadata":{"items":[{"key":"startup-script","value":"export TOKEN=DO_NOT_LEAK_HCLARO_TEST_SECRET"}]}},
+  {"name":"batch-1","zone":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/zones/us-central1-a","machineType":"https://www.googleapis.com/compute/v1/projects/hclaro-demo-1/zones/us-central1-a/machineTypes/n2-standard-4","status":"TERMINATED"}
+]

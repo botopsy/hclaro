@@ -26,7 +26,7 @@ lint:
 	npm --prefix web run typecheck
 	npm --prefix web run lint
 fmt:
-	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fake-aws-vault scripts/fake-infracost scripts/fixture-http scripts/hub-demo scripts/qualify
+	gofmt -w cmd internal fixtures scripts/fake-engine scripts/fake-aws scripts/fake-aws-vault scripts/fake-gcloud scripts/fake-infracost scripts/fixture-http scripts/hub-demo scripts/qualify
 
 # M27 real-engine harness (internal/qualify, docs/qualification/README.md). Maintainer-run, never
 # in PR or push CI: make qualify TF=/abs/terraform TOFU=/abs/tofu MIRROR=<mirror dir> OUT=<dir>
@@ -44,12 +44,16 @@ bin/mock/tofu$(EXE): scripts/fake-engine/main.go fixtures/state.json
 bin/mock/aws$(EXE): scripts/fake-aws/main.go $(wildcard fixtures/aws/*.json)
 	go build -trimpath -buildvcs=false -o bin/mock/aws$(EXE) ./scripts/fake-aws
 
+# A synthetic gcloud for Google Cloud discovery (M33.B), same PATH rule as the AWS CLI above.
+bin/mock/gcloud$(EXE): scripts/fake-gcloud/main.go internal/gcpcli/gcpclitest/gcpclitest.go $(wildcard fixtures/gcp/*.json)
+	go build -trimpath -buildvcs=false -o bin/mock/gcloud$(EXE) ./scripts/fake-gcloud
+
 # A synthetic Infracost CLI for cost estimates (M17); no pricing API is contacted.
 bin/mock/infracost$(EXE): scripts/fake-infracost/main.go fixtures/cost/infracost-breakdown.json
 	go build -trimpath -buildvcs=false -o bin/mock/infracost$(EXE) ./scripts/fake-infracost
 
-demo: binary bin/mock/terraform$(EXE) bin/mock/aws$(EXE) bin/mock/infracost$(EXE)
-	@echo "Synthetic demo: fake Terraform/AWS/Infracost CLIs and fixtures only. No real engine, AWS account, provider or backend is used."
+demo: binary bin/mock/terraform$(EXE) bin/mock/aws$(EXE) bin/mock/gcloud$(EXE) bin/mock/infracost$(EXE)
+	@echo "Synthetic demo: fake Terraform/AWS/gcloud/Infracost CLIs and fixtures only. No real engine, AWS or Google Cloud account, provider or backend is used."
 	PATH="$(CURDIR)/bin/mock:$$PATH" TF_DATA_DIR="$(CURDIR)/fixtures/backend" HCLARO_CONFIG_DIR="$(CURDIR)/.cache/demo/config" ./bin/hclaro$(EXE) --engine terraform --path fixtures/project --no-browser
 
 # Synthetic Hub projects and a registry under .cache/hub-demo; the real registry is untouched.
