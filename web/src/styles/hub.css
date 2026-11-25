@@ -65,6 +65,8 @@
 .projects-table { border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }
 .projects-table .data-table { min-width: 900px; }
 .projects-pin { width: 40px; }
+/* Cells clip their content with an ellipsis; a button wider than the cell drew a stray dot beside it. */
+.projects-table td.projects-pin, .projects-table td.projects-actions { overflow: visible; text-overflow: clip; }
 .projects-pinned { color: var(--accent-text); fill: currentColor; }
 .projects-nowrap { white-space: nowrap; }
 .projects-actions { text-align: right; white-space: nowrap; }
