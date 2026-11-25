@@ -72,6 +72,12 @@
 .projects-name > span:first-child { display: flex; align-items: center; gap: 8px; }
 .projects-name > span:last-child { overflow: hidden; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .projects-name:hover strong { text-decoration: underline; }
+/* The whole row opens the details: the name button stretches over it (no handler on the row), like the Resources table. */
+.projects-table tr:has(.projects-name) { position: relative; cursor: pointer; }
+.projects-name::after { content: ""; position: absolute; inset: 0; }
+.projects-table tr:has(.projects-name):hover .projects-name strong { text-decoration: underline; }
+.projects-table .projects-pin button, .projects-table .projects-actions button { position: relative; z-index: 1; }
+.projects-table .data-table td { height: 58px; padding-block: 10px; }
 .project-drawer { display: flex; flex-direction: column; gap: 18px; font-size: 12.5px; }
 .project-label { color: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .project-rename { display: flex; flex-direction: column; gap: 6px; }
