@@ -8,6 +8,8 @@ hclaro is published by [BotOpsy](https://github.com/botopsy). Thank you for your
 - **Request features** with the feature request form: describe the problem you want solved before the solution.
 - **Ask questions and share ideas** in [GitHub Discussions](https://github.com/botopsy/hclaro/discussions).
 
+Everyone taking part in the project is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 Never include state, plans, plan output, `.tfvars` contents, credentials, the private session URL or real account identifiers. Report security problems privately as described in [SECURITY.md](SECURITY.md).
 
 ## Pull requests

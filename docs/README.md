@@ -49,4 +49,5 @@ Hclaro is a local-first Terraform/OpenTofu manager with a CLI and a browser-base
 | [Release process](RELEASING.md) | Versioning, tagging, the release workflow, Homebrew and the distribution roadmap. |
 | [Brand](design/BRAND.md) | Colors, logo geometry and tokens. |
 | [Real-engine qualification](qualification/README.md) | The maintainer harness and the recorded evidence behind the support matrix. |
+| [Code of conduct](../CODE_OF_CONDUCT.md) | Expected behavior in the community and how to report a problem. |
 | [Product specification](PRD.md) | The original product requirements, kept for maintainers; not a user guide. |

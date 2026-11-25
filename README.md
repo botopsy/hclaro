@@ -91,7 +91,7 @@ Hclaro is **not production-certified**. Read [Status, testing and limitations](d
 ## Community
 
 - Bugs and feature requests: [GitHub Issues](https://github.com/botopsy/hclaro/issues). Questions and ideas: [GitHub Discussions](https://github.com/botopsy/hclaro/discussions).
-- [Contributing](CONTRIBUTING.md), [security policy](SECURITY.md) (report vulnerabilities privately) and [license](LICENSE).
+- [Contributing](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), [security policy](SECURITY.md) (report vulnerabilities privately) and [license](LICENSE).
 - **Never attach** state, plans, variable files, credentials, the private session URL or real account identifiers to an issue.
 
 Hclaro is licensed under the [Apache License, Version 2.0](LICENSE): you may use, modify, fork and redistribute it, including commercially. Bundled third-party components keep their own licenses ([`THIRD-PARTY-NOTICES.txt`](internal/ui/dist/THIRD-PARTY-NOTICES.txt)). The license grants no trademark rights; see [TRADEMARKS.md](TRADEMARKS.md). Copyright 2026 BotOpsy. BotOpsy is an independent software brand and the publishing name of Hclaro's author, not a company or a separate legal entity.
