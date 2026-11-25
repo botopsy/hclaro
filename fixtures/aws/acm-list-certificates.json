@@ -1,0 +1,6 @@
+{
+  "CertificateSummaryList": [
+    {"CertificateArn": "arn:aws:acm:eu-west-1:111122223333:certificate/0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9", "DomainName": "orders.example.com", "Status": "ISSUED", "Type": "AMAZON_ISSUED", "SubjectAlternativeNameSummaries": ["DO_NOT_LEAK_HCLARO_TEST_SECRET.example.com"]},
+    {"CertificateArn": "arn:aws:acm:eu-west-1:111122223333:certificate/1b2c3d4e-5f60-7182-93a4-b5c6d7e8f9a0", "DomainName": "legacy.example.com", "Status": "EXPIRED", "Type": "IMPORTED"}
+  ]
+}

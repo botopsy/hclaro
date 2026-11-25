@@ -1,0 +1,6 @@
+{
+  "stateMachines": [
+    {"stateMachineArn": "arn:aws:states:eu-west-1:111122223333:stateMachine:orders-workflow", "name": "orders-workflow", "type": "STANDARD", "creationDate": "2026-01-01T00:00:00+00:00"},
+    {"stateMachineArn": "arn:aws:states:eu-west-1:111122223333:stateMachine:orders-express", "name": "orders-express", "type": "EXPRESS"}
+  ]
+}

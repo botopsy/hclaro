@@ -87,9 +87,9 @@ describe('Cloud discovery', () => {
     const start = within(dialog).getByRole('button', { name: 'Start scan' });
     expect(start).toBeDisabled();
     // Default: every type in the default region (one per regional type plus S3 once), plus STS.
-    expect(within(dialog).getByText(/Calls AWS list APIs 23–45 times/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Calls AWS list APIs 27–53 times/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('checkbox', { name: 'eu-west-1' }));
-    expect(within(dialog).getByText(/Calls AWS list APIs 42–83 times/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Calls AWS list APIs 50–99 times/)).toBeInTheDocument();
     const reads = within(dialog).getByRole('group', { name: 'Concurrent reads' });
     expect(within(reads).getAllByRole('button').map(b => b.textContent)).toEqual(['1', '2', '4']);
     expect(within(reads).getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'true');
