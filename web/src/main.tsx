@@ -5,9 +5,10 @@ import { initializeSession } from './api';
 import App from './App';
 import { consumeDeepLink } from './router';
 import { applyTheme, savedTheme } from './brand/theme';
-import '@fontsource-variable/inter/wght.css';
-import '@fontsource/jetbrains-mono/latin-400.css';
-import '@fontsource/jetbrains-mono/latin-700.css';
+import '@fontsource-variable/dm-sans/wght.css';
+import '@fontsource/dm-mono/latin-400.css';
+import '@fontsource/dm-mono/latin-500.css';
+import '@fontsource/jetbrains-mono/latin-700.css'; // logo only
 import './styles.css';
 applyTheme(savedTheme());
 const queryClient = new QueryClient({

@@ -78,6 +78,7 @@
   background: var(--brand-graphite);
   color: var(--brand-letter);
   --logo-cursor-color: var(--brand-lime);
+  --logo-chevron-color: var(--brand-lime);
   box-shadow: inset 0 0 0 1px var(--brand-edge);
   flex-shrink: 0;
   justify-content: center;
@@ -142,7 +143,7 @@
   border-radius: 16px;
   width: 64px;
   height: 64px;
-  font-size: 40px;
+  font-size: 25px;
 }
 
 .about-row .hclaro-logo {

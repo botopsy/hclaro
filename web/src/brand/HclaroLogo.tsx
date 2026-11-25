@@ -39,12 +39,13 @@ export function HclaroLogo({ variant = 'auto', size, cursor = true, className, .
   return <span className={['hclaro-logo', `hclaro-${variant}`, className].filter(Boolean).join(' ')} style={style} data-variant={variant} {...a11y(rest)}><Chevron /><span className="hclaro-word" aria-hidden="true">hclaro</span>{cursor && <Cursor />}</span>;
 }
 
-// Reference app-icon containers and the letter size inside each (88/54, 64/40, 40/25, 24/15).
-export const markSizes = { 88: 54, 64: 40, 40: 25, 24: 15 } as const;
+// App-icon containers and the letter size inside each. From 32 px up the mark is ">h▯" and the letters
+// are about 0.63x the old size so the wider glyph keeps its share of the tile; 24 px keeps "h▯" (too small for a chevron).
+export const markSizes = { 88: 34, 64: 25, 40: 16, 24: 15 } as const;
 export type MarkSize = keyof typeof markSizes;
 
-// The compact mark for narrow layouts: lowercase "h" and the lime hollow cursor on navy.
+// The compact mark for narrow layouts: lime chevron (32 px and up), lowercase "h" and the lime hollow cursor on navy.
 export function HclaroMark({ size = 40, className, ...rest }: Accessible & { size?: MarkSize }) {
   const style: CSSProperties = { width: size, height: size, borderRadius: size / 4, fontSize: markSizes[size] };
-  return <span className={['hclaro-mark', className].filter(Boolean).join(' ')} style={style} data-size={size} {...a11y(rest)}><span className="hclaro-mark-glyph" aria-hidden="true">h<Cursor /></span></span>;
+  return <span className={['hclaro-mark', className].filter(Boolean).join(' ')} style={style} data-size={size} {...a11y(rest)}><span className="hclaro-mark-glyph" aria-hidden="true">{size >= 32 && <Chevron />}h<Cursor /></span></span>;
 }
