@@ -79,9 +79,9 @@ The [documentation index](docs/README.md) describes every page. The main entries
 
 ## Status and safety
 
-Hclaro is **not production-certified**. Read [Status, testing and limitations](docs/reference/limitations.md) before pointing it at infrastructure you care about.
+Hclaro **needs real-world testing**. The first release exists to collect real usage and issues so they can be fixed. Read [Status, testing and limitations](docs/reference/limitations.md) to see what has been tested and what has not.
 
-- It is tested with synthetic fixtures and fake engines in CI. Terraform 1.5.5, 1.5.7 and 1.17.2 and OpenTofu 1.6.3 and 1.13.9 have also been run end to end against disposable projects with the local backend only. No cloud provider or remote backend is certified.
+- It is tested with synthetic fixtures and fake engines in CI. Terraform 1.5.5, 1.5.7 and 1.17.2 and OpenTofu 1.6.3 and 1.13.9 have also been run end to end against disposable projects with the local backend only. The maintainer has also used it on AWS projects, but no cloud provider or remote backend has a recorded qualification run yet.
 - Release binaries are not code-signed or notarized. Checksums and build-provenance attestations (`gh attestation verify <file> -R botopsy/hclaro`) are published with each release.
 - Reading state runs your engine, which may contact the configured backend and load provider plugins with your credentials.
 - Operations that can change infrastructure need explicit user action, and plans and applies are limited to locally executed backends.

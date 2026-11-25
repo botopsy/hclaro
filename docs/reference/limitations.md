@@ -1,6 +1,6 @@
 # Status, testing and limitations
 
-Hclaro, published by [BotOpsy](https://github.com/botopsy), is free and open source under the [Apache License 2.0](../../LICENSE). It is **not production-certified**: read this page before pointing it at infrastructure you care about.
+Hclaro, published by [BotOpsy](https://github.com/botopsy), is free and open source under the [Apache License 2.0](../../LICENSE). It **needs real-world testing**: the first release exists to collect real usage and issues so they can be fixed. The maintainer has used it on AWS projects, but that use is not part of the recorded evidence below. Read this page to see what has been tested and what has not, and start with non-production projects.
 
 ## Stability and support
 
@@ -14,7 +14,7 @@ Hclaro, published by [BotOpsy](https://github.com/botopsy), is free and open sou
 | --- | --- |
 | Every feature | Go and web unit tests, plus a real-browser suite against the real Go server, all on **synthetic** state, plans and fake Terraform/OpenTofu/AWS/Infracost CLIs. Run on Linux, macOS and Windows in CI. |
 | Real engines | Terraform 1.5.5, 1.5.7 and 1.17.2 and OpenTofu 1.6.3 and 1.13.9, with the local backend, built-in resources and the `random` and `local` providers from a local mirror, against disposable projects. Every version on macOS Intel; Terraform 1.17.2 and OpenTofu 1.13.9 also on macOS Apple silicon, Linux amd64/arm64 and Windows amd64. |
-| Not yet certified | Any cloud provider, any remote backend, Terraform Cloud/HCP, and every Terraform or OpenTofu version not named above (other patches and the versions in between are not inferred). Row by row: [support-matrix.md](../support-matrix.md). |
+| No recorded qualification | Any cloud provider, any remote backend, Terraform Cloud/HCP, and every Terraform or OpenTofu version not named above (other patches and the versions in between are not inferred). Row by row: [support-matrix.md](../support-matrix.md). |
 | Platforms | Every release archive (macOS arm64/amd64, Linux amd64/arm64, Windows amd64) is cross-compiled on Linux, then checksum-verified, run with `--version` and started natively. The full test suite runs on Linux amd64, macOS arm64 and Windows amd64 only; Linux arm64 and macOS Intel get the smoke test only. See [Platforms](../support-matrix.md#platforms). |
 
 ## What is qualified, what is not yet run for real and what is off
