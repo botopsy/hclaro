@@ -1,0 +1,6 @@
+{
+  "Parameters": [
+    {"Name": "/orders/api/endpoint", "Type": "String", "Tier": "Standard", "Description": "DO_NOT_LEAK_HCLARO_TEST_SECRET", "Value": "DO_NOT_LEAK_HCLARO_TEST_SECRET"},
+    {"Name": "orders-flag", "Type": "SecureString", "Tier": "Standard"}
+  ]
+}

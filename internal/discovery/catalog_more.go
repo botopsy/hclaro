@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 )
@@ -583,6 +584,122 @@ func parseHostedZones(page []byte, ctx parseContext) ([]CloudResourceCandidate, 
 		c := it.candidate(ctx)
 		c.Regions = []string{}
 		out = append(out, c)
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+var (
+	acmARN       = regexp.MustCompile(`^arn:aws(-cn|-us-gov)?:acm:[a-z0-9-]+:([0-9]{12}):certificate/[0-9a-f-]{36}$`)
+	secretARN    = regexp.MustCompile(`^arn:aws(-cn|-us-gov)?:secretsmanager:[a-z0-9-]+:([0-9]{12}):secret:[A-Za-z0-9/_+=.@-]{1,512}-[A-Za-z0-9]{6}$`)
+	ssmParamName = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`) // regexp caps repeats at 1000: the 2048-character limit is checked in parseParameters
+	stateMachARN = regexp.MustCompile(`^arn:aws(-cn|-us-gov)?:states:[a-z0-9-]+:([0-9]{12}):stateMachine:[A-Za-z0-9_-]{1,80}$`)
+)
+
+// ownerFromARN is the account an ARN names, or "" when it has none.
+func ownerFromARN(arn string) string {
+	if parts := strings.Split(arn, ":"); len(parts) > 4 && accountRE.MatchString(parts[4]) {
+		return parts[4]
+	}
+	return ""
+}
+
+// parseCertificates reads the certificate ARN, domain, status and type. Subject alternative
+// names, key algorithms and in-use associations are not decoded.
+func parseCertificates(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Certificates []struct {
+			ARN    string `json:"CertificateArn"`
+			Domain string `json:"DomainName"`
+			Status string `json:"Status"`
+			Type   string `json:"Type"`
+		} `json:"CertificateSummaryList"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, c := range doc.Certificates {
+		it := item{typ: "aws_acm_certificate", service: "acm", id: c.ARN, arn: c.ARN, name: c.Domain, owner: ownerFromARN(c.ARN), valid: acmARN.MatchString(c.ARN), details: map[string]string{"status": c.Status, "type": c.Type}}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseSecrets reads the secret ARN, name and tags. Secret values are never part of a list
+// response and descriptions are free text, so neither is decoded. Secrets already scheduled
+// for deletion are skipped.
+func parseSecrets(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Secrets []struct {
+			ARN         string          `json:"ARN"`
+			Name        string          `json:"Name"`
+			DeletedDate json.RawMessage `json:"DeletedDate"`
+			Tags        []awsTag        `json:"Tags"`
+		} `json:"SecretList"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, sec := range doc.Secrets {
+		if d := string(sec.DeletedDate); d != "" && d != "null" {
+			continue
+		}
+		it := item{typ: "aws_secretsmanager_secret", service: "secretsmanager", id: sec.ARN, arn: sec.ARN, name: sec.Name, owner: ownerFromARN(sec.ARN), tags: sec.Tags, valid: secretARN.MatchString(sec.ARN), details: map[string]string{}}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseParameters reads the parameter name, type and tier. `ssm describe-parameters` returns
+// metadata only; values and descriptions are never decoded.
+func parseParameters(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Parameters []struct {
+			Name string `json:"Name"`
+			Type string `json:"Type"`
+			Tier string `json:"Tier"`
+		} `json:"Parameters"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, p := range doc.Parameters {
+		it := item{typ: "aws_ssm_parameter", service: "ssm", id: p.Name, name: p.Name, valid: len(p.Name) <= 2048 && ssmParamName.MatchString(p.Name), details: map[string]string{"type": p.Type, "tier": p.Tier}}
+		if it.valid {
+			it.arn = ctx.arn("ssm", "parameter/"+strings.TrimPrefix(p.Name, "/"))
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseStateMachines reads the ARN, name and type. Definitions and role ARNs are not part of
+// the list response and are never read.
+func parseStateMachines(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		StateMachines []struct {
+			ARN  string `json:"stateMachineArn"`
+			Name string `json:"name"`
+			Type string `json:"type"`
+		} `json:"stateMachines"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, m := range doc.StateMachines {
+		it := item{typ: "aws_sfn_state_machine", service: "states", id: m.ARN, arn: m.ARN, name: m.Name, owner: ownerFromARN(m.ARN), valid: stateMachARN.MatchString(m.ARN), details: map[string]string{"type": m.Type}}
+		out = append(out, it.candidate(ctx))
 	}
 	token, err := nextToken(doc.NextToken)
 	return out, token, err

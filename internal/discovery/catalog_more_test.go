@@ -43,6 +43,10 @@ func TestLaterTypesParseIdentityAndSafeFactsOnly(t *testing.T) {
 		{"aws_eks_cluster", "eks-list-clusters.json", 2, "core-eks", [2]string{}},
 		{"aws_ecs_cluster", "ecs-list-clusters.json", 2, "orders", [2]string{}},
 		{"aws_route53_zone", "route53-list-hosted-zones.json", 2, "Z0123456789ABCDEFGHIJ", [2]string{"records", "12"}},
+		{"aws_acm_certificate", "acm-list-certificates.json", 2, "arn:aws:acm:eu-west-1:111122223333:certificate/0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9", [2]string{"status", "ISSUED"}},
+		{"aws_secretsmanager_secret", "secretsmanager-list-secrets.json", 1, "arn:aws:secretsmanager:eu-west-1:111122223333:secret:orders/db-AbCdEf", [2]string{}}, // the secret scheduled for deletion is skipped
+		{"aws_ssm_parameter", "ssm-describe-parameters.json", 2, "/orders/api/endpoint", [2]string{"type", "String"}},
+		{"aws_sfn_state_machine", "stepfunctions-list-state-machines.json", 2, "arn:aws:states:eu-west-1:111122223333:stateMachine:orders-workflow", [2]string{"type", "STANDARD"}},
 	}
 	for _, c := range cases {
 		got := parseFixture(t, c.typ, c.file)
@@ -173,6 +177,37 @@ func TestBatchFourRefusesUnexpectedIdentifiers(t *testing.T) {
 		"aws_eks_cluster":    `{"clusters":["-bad"]}`,
 		"aws_ecs_cluster":    `{"clusterArns":["arn:aws:ecs:eu-west-1:111122223333:service/x/y"]}`,
 		"aws_route53_zone":   `{"HostedZones":[{"Id":"/hostedzone/lowercase"}]}`,
+	} {
+		rt, _ := TypeByName(typ)
+		out, _, err := rt.parse([]byte(page), ctx)
+		if err != nil || len(out) != 1 || out[0].ImportStatus != ImportIDUnresolved {
+			t.Errorf("%s: %+v %v", typ, out, err)
+		}
+	}
+}
+
+func TestBatchFiveNamesARNsAndSkipsDeletedSecrets(t *testing.T) {
+	sec := parseFixture(t, "aws_secretsmanager_secret", "secretsmanager-list-secrets.json")
+	if len(sec) != 1 || sec[0].Name != "orders-db" || sec[0].Account != account {
+		t.Fatalf("%+v", sec)
+	}
+	p := parseFixture(t, "aws_ssm_parameter", "ssm-describe-parameters.json")
+	if p[0].ARN != "arn:aws:ssm:eu-west-1:111122223333:parameter/orders/api/endpoint" || p[1].ARN != "arn:aws:ssm:eu-west-1:111122223333:parameter/orders-flag" || p[1].Details["type"] != "SecureString" {
+		t.Fatalf("%+v", p)
+	}
+	acm := parseFixture(t, "aws_acm_certificate", "acm-list-certificates.json")
+	if acm[0].Name != "orders.example.com" || acm[1].Details["type"] != "IMPORTED" {
+		t.Fatalf("%+v", acm)
+	}
+}
+
+func TestBatchFiveRefusesUnexpectedIdentifiers(t *testing.T) {
+	ctx := parseContext{Region: "eu-west-1", Account: account, Partition: "aws"}
+	for typ, page := range map[string]string{
+		"aws_acm_certificate":       `{"CertificateSummaryList":[{"CertificateArn":"not-an-arn"}]}`,
+		"aws_secretsmanager_secret": `{"SecretList":[{"ARN":"arn:aws:secretsmanager:eu-west-1:111122223333:secret:nosuffix","Name":"x"}]}`,
+		"aws_ssm_parameter":         `{"Parameters":[{"Name":"has space"}]}`,
+		"aws_sfn_state_machine":     `{"stateMachines":[{"stateMachineArn":"arn:aws:states:eu-west-1:111122223333:execution:x:y"}]}`,
 	} {
 		rt, _ := TypeByName(typ)
 		out, _, err := rt.parse([]byte(page), ctx)

@@ -193,6 +193,42 @@
         "permission": "route53:ListHostedZones"
       },
       {
+        "type": "aws_acm_certificate",
+        "service": "acm",
+        "label": "ACM certificates",
+        "global": false,
+        "operation": "acm:ListCertificates",
+        "importIdFormat": "Certificate ARN",
+        "permission": "acm:ListCertificates"
+      },
+      {
+        "type": "aws_secretsmanager_secret",
+        "service": "secretsmanager",
+        "label": "Secrets Manager secrets",
+        "global": false,
+        "operation": "secretsmanager:ListSecrets",
+        "importIdFormat": "Secret ARN",
+        "permission": "secretsmanager:ListSecrets"
+      },
+      {
+        "type": "aws_ssm_parameter",
+        "service": "ssm",
+        "label": "SSM parameters",
+        "global": false,
+        "operation": "ssm:DescribeParameters",
+        "importIdFormat": "Parameter name",
+        "permission": "ssm:DescribeParameters"
+      },
+      {
+        "type": "aws_sfn_state_machine",
+        "service": "states",
+        "label": "Step Functions state machines",
+        "global": false,
+        "operation": "states:ListStateMachines",
+        "importIdFormat": "State machine ARN",
+        "permission": "states:ListStateMachines"
+      },
+      {
         "type": "aws_iam_role",
         "service": "iam",
         "label": "IAM roles",
