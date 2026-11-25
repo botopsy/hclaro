@@ -1,0 +1,6 @@
+{
+  "Topics": [
+    {"TopicArn": "arn:aws:sns:eu-west-1:111122223333:orders-alerts"},
+    {"TopicArn": "arn:aws:sns:eu-west-1:111122223333:orders-events.fifo"}
+  ]
+}

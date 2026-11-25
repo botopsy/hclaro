@@ -120,6 +120,10 @@ var readOnly = map[string]map[string]bool{
 	"iam":      {"list-roles": true},
 	"lambda":   {"list-functions": true},
 	"dynamodb": {"list-tables": true},
+	"sqs":      {"list-queues": true},
+	"sns":      {"list-topics": true},
+	"kms":      {"list-aliases": true},
+	"logs":     {"describe-log-groups": true},
 }
 
 var (

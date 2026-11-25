@@ -1,0 +1,6 @@
+{
+  "QueueUrls": [
+    "https://sqs.eu-west-1.amazonaws.com/111122223333/orders-events",
+    "https://sqs.eu-west-1.amazonaws.com/111122223333/orders-events-dlq.fifo"
+  ]
+}

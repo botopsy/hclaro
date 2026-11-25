@@ -1,0 +1,6 @@
+{
+  "logGroups": [
+    {"logGroupName": "/aws/lambda/orders-webhook", "arn": "arn:aws:logs:eu-west-1:111122223333:log-group:/aws/lambda/orders-webhook:*", "retentionInDays": 30, "storedBytes": 1024, "logGroupClass": "STANDARD", "kmsKeyId": "DO_NOT_LEAK_HCLARO_TEST_SECRET"},
+    {"logGroupName": "orders-api", "arn": "arn:aws:logs:eu-west-1:111122223333:log-group:orders-api:*", "logGroupClass": "STANDARD"}
+  ]
+}

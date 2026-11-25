@@ -1,0 +1,8 @@
+{
+  "Aliases": [
+    {"AliasName": "alias/aws/s3", "AliasArn": "arn:aws:kms:eu-west-1:111122223333:alias/aws/s3", "TargetKeyId": "11111111-2222-3333-4444-555555555555"},
+    {"AliasName": "alias/orders-data", "AliasArn": "arn:aws:kms:eu-west-1:111122223333:alias/orders-data", "TargetKeyId": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9"},
+    {"AliasName": "alias/orders-data-old", "AliasArn": "arn:aws:kms:eu-west-1:111122223333:alias/orders-data-old", "TargetKeyId": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9"},
+    {"AliasName": "alias/unattached", "AliasArn": "arn:aws:kms:eu-west-1:111122223333:alias/unattached"}
+  ]
+}

@@ -129,5 +129,9 @@ var moreFixtures = map[string]struct {
 	"elbv2 describe-load-balancers":  {"elbv2-describe-load-balancers.json", `{"LoadBalancers":[]}`, false},
 	"lambda list-functions":          {"lambda-list-functions.json", `{"Functions":[]}`, false},
 	"dynamodb list-tables":           {"dynamodb-list-tables.json", `{"TableNames":[]}`, false},
+	"sqs list-queues":                {"sqs-list-queues.json", `{"QueueUrls":[]}`, false},
+	"sns list-topics":                {"sns-list-topics.json", `{"Topics":[]}`, false},
+	"kms list-aliases":               {"kms-list-aliases.json", `{"Aliases":[]}`, false},
+	"logs describe-log-groups":       {"logs-describe-log-groups.json", `{"logGroups":[]}`, false},
 	"iam list-roles":                 {"iam-list-roles.json", `{"Roles":[]}`, true},
 }
