@@ -1,0 +1,6 @@
+{
+  "Environments": [
+    {"EnvironmentId": "e-abcd1efghi", "EnvironmentName": "orders-web-prod", "ApplicationName": "orders-web", "EnvironmentArn": "arn:aws:elasticbeanstalk:eu-west-1:111122223333:environment/orders-web/orders-web-prod", "Status": "Ready", "Health": "Green", "CNAME": "DO_NOT_LEAK_HCLARO_TEST_SECRET.eu-west-1.elasticbeanstalk.com"},
+    {"EnvironmentId": "e-zyxw1vuts0", "EnvironmentName": "orders-web-old", "ApplicationName": "orders-web", "Status": "Terminated", "Health": "Grey"}
+  ]
+}

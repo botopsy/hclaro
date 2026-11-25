@@ -704,3 +704,145 @@ func parseStateMachines(page []byte, ctx parseContext) ([]CloudResourceCandidate
 	token, err := nextToken(doc.NextToken)
 	return out, token, err
 }
+
+var (
+	restAPIID   = regexp.MustCompile(`^[a-z0-9]{10}$`)
+	distID      = regexp.MustCompile(`^E[A-Z0-9]{8,20}$`)
+	ebAppName   = regexp.MustCompile(`^[A-Za-z0-9_. -]{1,100}$`)
+	ebEnvID     = regexp.MustCompile(`^e-[a-z0-9]{10}$`)
+	kinesisName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+)
+
+// parseRestAPIs reads the API ID, name and endpoint type. Descriptions, resource policies and
+// tags are not decoded. HTTP and WebSocket APIs (apigatewayv2) are a separate type.
+func parseRestAPIs(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Items []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Endpoint struct {
+				Types []string `json:"types"`
+			} `json:"endpointConfiguration"`
+		} `json:"items"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, a := range doc.Items {
+		it := item{typ: "aws_api_gateway_rest_api", service: "apigateway", id: a.ID, name: a.Name, valid: restAPIID.MatchString(a.ID), details: map[string]string{}}
+		if len(a.Endpoint.Types) > 0 {
+			it.details["endpoint"] = a.Endpoint.Types[0]
+		}
+		if it.valid {
+			it.arn = "arn:" + ctx.Partition + ":apigateway:" + ctx.Region + "::/restapis/" + a.ID
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseDistributions reads the distribution ID, domain, status and whether it is enabled.
+// Origins (which can carry custom headers), aliases and certificates are not decoded.
+// CloudFront is global: distributions are not tied to a scanned region.
+func parseDistributions(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		List struct {
+			Items []struct {
+				ID      string `json:"Id"`
+				ARN     string `json:"ARN"`
+				Domain  string `json:"DomainName"`
+				Status  string `json:"Status"`
+				Enabled bool   `json:"Enabled"`
+			} `json:"Items"`
+		} `json:"DistributionList"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, d := range doc.List.Items {
+		enabled := "false"
+		if d.Enabled {
+			enabled = "true"
+		}
+		it := item{typ: "aws_cloudfront_distribution", service: "cloudfront", id: d.ID, arn: d.ARN, name: d.Domain, owner: ownerFromARN(d.ARN), valid: distID.MatchString(d.ID), details: map[string]string{"status": d.Status, "enabled": enabled, "domain": d.Domain}}
+		c := it.candidate(ctx)
+		c.Regions = []string{}
+		out = append(out, c)
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseBeanstalkApplications reads the application name and ARN. Descriptions and version
+// lists are not decoded. The AWS CLI command has no paginator (see ResourceType.noPaging).
+func parseBeanstalkApplications(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Applications []struct {
+			Name string `json:"ApplicationName"`
+			ARN  string `json:"ApplicationArn"`
+		} `json:"Applications"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, a := range doc.Applications {
+		it := item{typ: "aws_elastic_beanstalk_application", service: "elasticbeanstalk", id: a.Name, arn: a.ARN, name: a.Name, owner: ownerFromARN(a.ARN), valid: ebAppName.MatchString(a.Name), details: map[string]string{}}
+		out = append(out, it.candidate(ctx))
+	}
+	return out, "", nil
+}
+
+// parseBeanstalkEnvironments reads the environment ID, name, application, status and health.
+// Terminated environments are skipped: they stay listed for about an hour. Endpoint URLs,
+// CNAMEs and settings are not decoded. The AWS CLI command has no paginator.
+func parseBeanstalkEnvironments(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Environments []struct {
+			ID     string `json:"EnvironmentId"`
+			Name   string `json:"EnvironmentName"`
+			App    string `json:"ApplicationName"`
+			ARN    string `json:"EnvironmentArn"`
+			Status string `json:"Status"`
+			Health string `json:"Health"`
+		} `json:"Environments"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, e := range doc.Environments {
+		if e.Status == "Terminated" {
+			continue
+		}
+		it := item{typ: "aws_elastic_beanstalk_environment", service: "elasticbeanstalk", id: e.ID, arn: e.ARN, name: e.Name, owner: ownerFromARN(e.ARN), valid: ebEnvID.MatchString(e.ID), details: map[string]string{"status": e.Status, "health": e.Health, "application": e.App}}
+		out = append(out, it.candidate(ctx))
+	}
+	return out, "", nil
+}
+
+// parseStreams reads stream names only (`kinesis list-streams` returns nothing else useful).
+func parseStreams(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Names     []string `json:"StreamNames"`
+		NextToken string   `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, n := range doc.Names {
+		it := item{typ: "aws_kinesis_stream", service: "kinesis", id: n, name: n, valid: kinesisName.MatchString(n), details: map[string]string{}}
+		if it.valid {
+			it.arn = ctx.arn("kinesis", "stream/"+n)
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}

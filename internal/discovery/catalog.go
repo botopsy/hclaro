@@ -74,7 +74,10 @@ type ResourceType struct {
 	// resourceID is a state identifier in import ID shape that is not an import ID.
 	resourceID *regexp.Regexp
 	args       []string
-	parse      func(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error)
+	// noPaging marks an operation whose AWS CLI command has no paginator and so rejects
+	// --max-items; it is listed in one call and parse never returns a next token.
+	noPaging bool
+	parse    func(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error)
 }
 
 // parseContext carries what a page parser needs to build ARNs and fill the account.
@@ -118,6 +121,11 @@ func init() {
 		{Type: "aws_secretsmanager_secret", idShape: secretARN, Service: "secretsmanager", Label: "Secrets Manager secrets", Operation: "secretsmanager:ListSecrets", ImportID: "Secret ARN", StateKeys: []string{"id", "arn"}, Permissions: "secretsmanager:ListSecrets", args: []string{"secretsmanager", "list-secrets"}, parse: parseSecrets},
 		{Type: "aws_ssm_parameter", idShape: ssmParamName, Service: "ssm", Label: "SSM parameters", Operation: "ssm:DescribeParameters", ImportID: "Parameter name", StateKeys: []string{"id", "name"}, Permissions: "ssm:DescribeParameters", args: []string{"ssm", "describe-parameters"}, parse: parseParameters},
 		{Type: "aws_sfn_state_machine", idShape: stateMachARN, Service: "states", Label: "Step Functions state machines", Operation: "states:ListStateMachines", ImportID: "State machine ARN", StateKeys: []string{"id", "arn"}, Permissions: "states:ListStateMachines", args: []string{"stepfunctions", "list-state-machines"}, parse: parseStateMachines},
+		{Type: "aws_api_gateway_rest_api", idShape: restAPIID, Service: "apigateway", Label: "API Gateway REST APIs", Operation: "apigateway:GET", ImportID: "REST API ID", StateKeys: []string{"id"}, Permissions: "apigateway:GET", args: []string{"apigateway", "get-rest-apis"}, parse: parseRestAPIs},
+		{Type: "aws_cloudfront_distribution", idShape: distID, Service: "cloudfront", Label: "CloudFront distributions", Global: true, Operation: "cloudfront:ListDistributions", ImportID: "Distribution ID", StateKeys: []string{"id"}, Permissions: "cloudfront:ListDistributions", args: []string{"cloudfront", "list-distributions"}, parse: parseDistributions},
+		{Type: "aws_elastic_beanstalk_application", idShape: ebAppName, Service: "elasticbeanstalk", Label: "Elastic Beanstalk applications", Operation: "elasticbeanstalk:DescribeApplications", ImportID: "Application name", StateKeys: []string{"id", "name"}, Permissions: "elasticbeanstalk:DescribeApplications", args: []string{"elasticbeanstalk", "describe-applications"}, parse: parseBeanstalkApplications, noPaging: true},
+		{Type: "aws_elastic_beanstalk_environment", idShape: ebEnvID, Service: "elasticbeanstalk", Label: "Elastic Beanstalk environments", Operation: "elasticbeanstalk:DescribeEnvironments", ImportID: "Environment ID (e-…)", StateKeys: []string{"id"}, Permissions: "elasticbeanstalk:DescribeEnvironments", args: []string{"elasticbeanstalk", "describe-environments"}, parse: parseBeanstalkEnvironments, noPaging: true},
+		{Type: "aws_kinesis_stream", idShape: kinesisName, Service: "kinesis", Label: "Kinesis data streams", Operation: "kinesis:ListStreams", ImportID: "Stream name", StateKeys: []string{"id", "name"}, Permissions: "kinesis:ListStreams", args: []string{"kinesis", "list-streams"}, parse: parseStreams},
 		{Type: "aws_iam_role", idShape: iamRoleName, Service: "iam", Label: "IAM roles", Global: true, Operation: "iam:ListRoles", ImportID: "Role name", StateKeys: []string{"id", "name"}, Permissions: "iam:ListRoles", args: []string{"iam", "list-roles"}, parse: parseRoles},
 	}
 }

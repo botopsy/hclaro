@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -47,6 +48,11 @@ func TestLaterTypesParseIdentityAndSafeFactsOnly(t *testing.T) {
 		{"aws_secretsmanager_secret", "secretsmanager-list-secrets.json", 1, "arn:aws:secretsmanager:eu-west-1:111122223333:secret:orders/db-AbCdEf", [2]string{}}, // the secret scheduled for deletion is skipped
 		{"aws_ssm_parameter", "ssm-describe-parameters.json", 2, "/orders/api/endpoint", [2]string{"type", "String"}},
 		{"aws_sfn_state_machine", "stepfunctions-list-state-machines.json", 2, "arn:aws:states:eu-west-1:111122223333:stateMachine:orders-workflow", [2]string{"type", "STANDARD"}},
+		{"aws_api_gateway_rest_api", "apigateway-get-rest-apis.json", 2, "a1b2c3d4e5", [2]string{"endpoint", "REGIONAL"}},
+		{"aws_cloudfront_distribution", "cloudfront-list-distributions.json", 2, "E1A2B3C4D5E6F7", [2]string{"status", "Deployed"}},
+		{"aws_elastic_beanstalk_application", "elasticbeanstalk-describe-applications.json", 2, "orders-web", [2]string{}},
+		{"aws_elastic_beanstalk_environment", "elasticbeanstalk-describe-environments.json", 1, "e-abcd1efghi", [2]string{"health", "Green"}}, // the terminated one is skipped
+		{"aws_kinesis_stream", "kinesis-list-streams.json", 2, "orders-events", [2]string{}},
 	}
 	for _, c := range cases {
 		got := parseFixture(t, c.typ, c.file)
@@ -213,6 +219,59 @@ func TestBatchFiveRefusesUnexpectedIdentifiers(t *testing.T) {
 		out, _, err := rt.parse([]byte(page), ctx)
 		if err != nil || len(out) != 1 || out[0].ImportStatus != ImportIDUnresolved {
 			t.Errorf("%s: %+v %v", typ, out, err)
+		}
+	}
+}
+
+func TestBatchSixGlobalDistributionsAndEnvironmentFacts(t *testing.T) {
+	d := parseFixture(t, "aws_cloudfront_distribution", "cloudfront-list-distributions.json")
+	if len(d[0].Regions) != 0 || d[0].Account != account || d[0].Details["enabled"] != "true" || d[1].Details["enabled"] != "false" || d[0].Name != "d1a2b3c4d5e6f7.cloudfront.net" {
+		t.Fatalf("%+v", d)
+	}
+	e := parseFixture(t, "aws_elastic_beanstalk_environment", "elasticbeanstalk-describe-environments.json")
+	if e[0].Details["application"] != "orders-web" || e[0].Name != "orders-web-prod" {
+		t.Fatalf("%+v", e)
+	}
+	// Distributions need no list in `Items` when there are none.
+	rt, _ := TypeByName("aws_cloudfront_distribution")
+	if out, _, err := rt.parse([]byte(`{"DistributionList":{"Quantity":0}}`), parseContext{}); err != nil || len(out) != 0 {
+		t.Fatalf("%+v %v", out, err)
+	}
+}
+
+func TestBatchSixRefusesUnexpectedIdentifiers(t *testing.T) {
+	ctx := parseContext{Region: "eu-west-1", Account: account, Partition: "aws"}
+	for typ, page := range map[string]string{
+		"aws_api_gateway_rest_api":          `{"items":[{"id":"UPPER"}]}`,
+		"aws_cloudfront_distribution":       `{"DistributionList":{"Items":[{"Id":"not-a-dist"}]}}`,
+		"aws_elastic_beanstalk_application": `{"Applications":[{"ApplicationName":"bad/name"}]}`,
+		"aws_elastic_beanstalk_environment": `{"Environments":[{"EnvironmentId":"env-1","Status":"Ready"}]}`,
+		"aws_kinesis_stream":                `{"StreamNames":["has space"]}`,
+	} {
+		rt, _ := TypeByName(typ)
+		out, _, err := rt.parse([]byte(page), ctx)
+		if err != nil || len(out) != 1 || out[0].ImportStatus != ImportIDUnresolved {
+			t.Errorf("%s: %+v %v", typ, out, err)
+		}
+	}
+}
+
+// Beanstalk's list calls have no paginator, so --max-items must not be sent; a list longer
+// than the per-type limit is cut and marked incomplete.
+func TestUnpagedTypesSkipMaxItemsAndMarkACutListIncomplete(t *testing.T) {
+	r := &fakeRunner{}
+	v := scanAll(t, newService(r), DiscoveryScope{Regions: []string{"eu-west-1"}, Types: []string{"aws_elastic_beanstalk_application"}, MaxPerType: 1}, snapshot())
+	for _, args := range r.recorded() {
+		if len(args) > 1 && args[0] == "elasticbeanstalk" && slices.Contains(args, "--max-items") {
+			t.Fatalf("unpaged call sent --max-items: %v", args)
+		}
+	}
+	if v.Status != ScanPartial || !v.Tasks[0].Truncated || v.Tasks[0].Count != 1 || len(v.Results) != 1 {
+		t.Fatalf("status %s task %+v results %d", v.Status, v.Tasks[0], len(v.Results))
+	}
+	for _, typ := range Types {
+		if typ.noPaging && (typ.Service != "elasticbeanstalk") {
+			t.Errorf("%s is unpaged; only Beanstalk is expected to be", typ.Type)
 		}
 	}
 }
