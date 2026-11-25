@@ -429,6 +429,7 @@
 .workspace-heading {
   align-items: center;
   gap: 12px;
+  margin-bottom: 14px;
   display: flex;
 }
 
