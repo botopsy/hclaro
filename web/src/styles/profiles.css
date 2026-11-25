@@ -22,6 +22,26 @@
   display: inline-flex;
 }
 
+/* With an AWS profile, the profile menu and its AWS state read as one pill: two buttons, one border. */
+.context-selector:has(.auth-indicator) {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  gap: 0;
+  height: 30px;
+}
+
+.context-selector:has(.auth-indicator) .profile-trigger {
+  border: 0;
+  border-radius: 6px 0 0 6px;
+  height: 28px;
+}
+
+.context-selector:has(.auth-indicator) .auth-indicator {
+  border-left: 1px solid var(--border-soft);
+  border-radius: 0 6px 6px 0;
+  height: 28px;
+}
+
 .profile-menu .popover {
   min-width: 260px;
 }
