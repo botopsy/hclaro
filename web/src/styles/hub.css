@@ -62,11 +62,12 @@
 
 /* Projects table and details drawer (§4.10) */
 .hub > .page-header .search-field { flex: 1 1 320px; }
-.projects-table { border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }
-.projects-table .data-table { min-width: 900px; }
+.projects-table { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+/* No horizontal scroll: columns shrink and clip with an ellipsis (td max-width: 0). */
+.projects-table .data-table { table-layout: auto; }
 .projects-pin { width: 40px; }
-/* Cells clip their content with an ellipsis; a button wider than the cell drew a stray dot beside it. */
-.projects-table td.projects-pin, .projects-table td.projects-actions { overflow: visible; text-overflow: clip; }
+/* The pin and action cells size to their buttons; the other columns shrink and clip instead. A button wider than a clipped cell drew a stray dot. */
+.projects-table td.projects-pin, .projects-table td.projects-actions { width: 1%; max-width: none; overflow: visible; text-overflow: clip; }
 .projects-pinned { color: var(--accent-text); fill: currentColor; }
 .projects-nowrap { white-space: nowrap; }
 .projects-actions { text-align: right; white-space: nowrap; }
