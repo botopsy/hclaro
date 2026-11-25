@@ -5,6 +5,7 @@ import { api, send } from '../api';
 import type { AttributeChange, ChangeDetail, EditorName, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint } from '../types';
 import { Button } from '../components/ui/button';
 import { DataTable, type Column } from '../components/DataTable';
+import { Dialog } from '../components/Dialog';
 import { Disclosure } from '../components/Disclosure';
 import { JsonTree } from '../components/JsonTree';
 import { actionOrder, meta, planTotal, reasonLabel, replaceOrder } from './labels';
@@ -44,7 +45,7 @@ export function sourceLabel(source?: PlanSourceFingerprint) {
   return source.dirtyKnown && source.dirty ? `${where} · ${source.dirtyFiles} uncommitted IaC file${source.dirtyFiles === 1 ? '' : 's'}` : where;
 }
 
-export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, canPlan = true, onInspectImpact, scope = launchScope, source: editorSource }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; onRunPlan?: () => void; onOpenDrift?: () => void; busy?: boolean; canPlan?: boolean; onInspectImpact?: (planId: string, address: string) => void; scope?: PlanScope; source?: PlanSource }) {
+export function PlanReview({ plan, copy, onApply, onDiscarded, onRunPlan, onOpenDrift, busy, canPlan = true, onInspectImpact, scope = launchScope, source: editorSource }: { plan: Plan; copy: (value: string, label: string) => Promise<void>; onApply?: () => void; onDiscarded?: () => void; onRunPlan?: () => void; onOpenDrift?: () => void; busy?: boolean; canPlan?: boolean; onInspectImpact?: (planId: string, address: string) => void; scope?: PlanScope; source?: PlanSource }) {
   const [tab, setTab] = useState<Tab>('changes');
   const [actions, setActions] = useState<PlanAction[]>([]);
   const [showNoOp, setShowNoOp] = useState(false);
@@ -62,6 +63,7 @@ export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, 
     try {
       await send('POST', scopedPath(scope, `plans/${plan.id}/discard`), {});
       setConfirmDiscard(false);
+      onDiscarded?.();
       await client.invalidateQueries({ queryKey: ['plan'] });
       void client.invalidateQueries({ queryKey: ['plans'] });
       void client.invalidateQueries({ queryKey: ['operations'] });
@@ -96,7 +98,7 @@ export function PlanReview({ plan, copy, onApply, onRunPlan, onOpenDrift, busy, 
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
    {expired ? <div className="apply-banner apply-expired" role="alert"><Clock size={16} aria-hidden="true" /><div><strong>This saved plan expired{plan.apply.expiresAt ? ` at ${clock(plan.apply.expiresAt)}` : ''}.</strong> It can no longer be applied, because state or configuration may have changed since. Run a new plan to review the changes again.</div>{onRunPlan && <Button onClick={onRunPlan} disabled={!canPlan}><Play size={14} />Run new plan</Button>}</div>
-    : plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={16} aria-hidden="true" /><div><strong>Ready to apply.</strong> Applies exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}.{destructiveLine(plan) && <span className="apply-banner-warning"><TriangleAlert size={13} aria-hidden="true" />{destructiveLine(plan)}</span>}</div><div className="apply-banner-actions">{confirmDiscard ? <><span role="alert">Delete the saved plan? It can't be applied afterwards.</span><Button variant="destructive" size="small" onClick={() => void discard()} disabled={discarding}>{discarding ? 'Deleting…' : 'Delete plan'}</Button><Button variant="ghost" size="small" onClick={() => setConfirmDiscard(false)} disabled={discarding}>Keep</Button></> : <Button variant="ghost" onClick={() => { setDiscardError(''); setConfirmDiscard(true); }} disabled={busy}>Discard</Button>}{ai}{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}>Review and apply…</Button>}</div>{discardError && <p className="dialog-error" role="alert">{discardError}</p>}</div>
+    : plan.apply.available ? <div className="apply-banner apply-ready" role="note"><Rocket size={16} aria-hidden="true" /><div><strong>Ready to apply.</strong> Applies exactly this saved plan, once{plan.apply.expiresAt && `, until ${clock(plan.apply.expiresAt)}`}.{destructiveLine(plan) && <span className="apply-banner-warning"><TriangleAlert size={13} aria-hidden="true" />{destructiveLine(plan)}</span>}</div><div className="apply-banner-actions"><Button variant="ghost" onClick={() => { setDiscardError(''); setConfirmDiscard(true); }} disabled={busy}>Discard</Button>{confirmDiscard && <Dialog title="Delete the saved plan?" onClose={() => !discarding && setConfirmDiscard(false)} footer={<><Button variant="ghost" onClick={() => setConfirmDiscard(false)} disabled={discarding}>Keep</Button><Button variant="destructive" onClick={() => void discard()} disabled={discarding}>{discarding ? 'Deleting…' : 'Delete plan'}</Button></>}><p>It can't be applied afterwards.</p>{discardError && <p className="dialog-error" role="alert">{discardError}</p>}</Dialog>}{ai}{onApply && <Button variant={plan.destructive ? 'destructive' : 'default'} onClick={onApply} disabled={busy}>Review and apply…</Button>}</div></div>
     : plan.apply.code === 'unknown_actions' ? <div className="apply-banner apply-unsupported" role="alert"><Ban size={16} aria-hidden="true" /><div><strong>Apply unavailable: unsupported actions.</strong> {plan.apply.reason} Changes marked <em>Unsupported</em> below use an action combination Hclaro does not recognize, so this plan can be reviewed but never applied here.</div><div className="apply-banner-actions">{ai}</div></div>
     : <div className="apply-banner" role="note"><LockKeyhole size={16} aria-hidden="true" /><div><strong>Review only.</strong> {plan.apply.reason}</div><div className="apply-banner-actions">{ai}</div></div>}
    {plan.contextChanged && plan.apply.code !== 'configuration_unreadable' && <div className="plan-warning" role="alert"><TriangleAlert size={15} />{plan.apply.configurationReason ?? 'Configuration, variable files, the engine or the execution profile changed since this plan was created. Run a new plan to review current changes.'}</div>}

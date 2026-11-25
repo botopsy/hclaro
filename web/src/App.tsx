@@ -373,6 +373,7 @@ function Workbench({
           setView('Resources');
         }} runPlan={() => {
           setPlanRequested(true);
+          setPlanId(undefined);
           setView('Plans');
         }} /> : view === 'Discovery' ? <DiscoveryView profileId={profile.selected} workspaceStatus={w?.status} copy={copy} openResource={id => {
           setSelected(id);
