@@ -21,6 +21,10 @@ var (
 	iamRoleName   = regexp.MustCompile(`^[A-Za-z0-9+=,.@_-]{1,64}$`)
 	lambdaName    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	dynamoTable   = regexp.MustCompile(`^[A-Za-z0-9_.-]{3,255}$`)
+	sqsURL        = regexp.MustCompile(`^https://sqs\.[a-z0-9-]+\.amazonaws\.com(\.cn)?/([0-9]{12})/([A-Za-z0-9_-]{1,80}(\.fifo)?)$`)
+	snsARN        = regexp.MustCompile(`^arn:aws(-cn|-us-gov)?:sns:[a-z0-9-]+:([0-9]{12}):([A-Za-z0-9_-]{1,256}(\.fifo)?)$`)
+	kmsKeyID      = regexp.MustCompile(`^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|mrk-[0-9a-f]{32})$`)
+	logGroupName  = regexp.MustCompile(`^[A-Za-z0-9_./#-]{1,512}$`)
 	iamPath       = regexp.MustCompile(`^/([A-Za-z0-9+=,.@_-]+/)*$`)
 	lbTypeAllowed = map[string]bool{"application": true, "network": true, "gateway": true}
 )
@@ -337,6 +341,124 @@ func parseTables(page []byte, ctx parseContext) ([]CloudResourceCandidate, strin
 		it := item{typ: "aws_dynamodb_table", service: "dynamodb", id: n, name: n, valid: dynamoTable.MatchString(n), details: map[string]string{}}
 		if it.valid {
 			it.arn = ctx.arn("dynamodb", "table/"+n)
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseQueues reads queue URLs only (the import ID of aws_sqs_queue); attributes and policies
+// need per-queue calls and are never read.
+func parseQueues(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		QueueURLs []string `json:"QueueUrls"`
+		NextToken string   `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, u := range doc.QueueURLs {
+		m := sqsURL.FindStringSubmatch(u)
+		it := item{typ: "aws_sqs_queue", service: "sqs", id: u, valid: m != nil, details: map[string]string{}}
+		if m != nil {
+			it.owner, it.name = m[2], m[3]
+			it.arn = "arn:" + ctx.Partition + ":sqs:" + ctx.Region + ":" + m[2] + ":" + m[3]
+			if m[4] != "" {
+				it.details["fifo"] = "true"
+			}
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseTopics reads topic ARNs only (the import ID of aws_sns_topic); policies and
+// subscriptions are never read.
+func parseTopics(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Topics []struct {
+			ARN string `json:"TopicArn"`
+		} `json:"Topics"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, t := range doc.Topics {
+		m := snsARN.FindStringSubmatch(t.ARN)
+		it := item{typ: "aws_sns_topic", service: "sns", id: t.ARN, arn: t.ARN, valid: m != nil, details: map[string]string{}}
+		if m != nil {
+			it.owner, it.name = m[2], m[3]
+			if m[4] != "" {
+				it.details["fifo"] = "true"
+			}
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseKeyAliases lists customer-managed KMS keys through their aliases. Keys without an alias
+// are not listed, and AWS-managed keys (alias/aws/...) are skipped: Terraform cannot manage
+// them, so they would only be noise. Key policies and grants are never read.
+func parseKeyAliases(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Aliases []struct {
+			Name        string `json:"AliasName"`
+			TargetKeyID string `json:"TargetKeyId"`
+		} `json:"Aliases"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	seen := map[string]bool{}
+	for _, a := range doc.Aliases {
+		if a.TargetKeyID == "" || strings.HasPrefix(a.Name, "alias/aws/") || seen[a.TargetKeyID] {
+			continue
+		}
+		seen[a.TargetKeyID] = true
+		it := item{typ: "aws_kms_key", service: "kms", id: a.TargetKeyID, name: strings.TrimPrefix(a.Name, "alias/"), valid: kmsKeyID.MatchString(a.TargetKeyID), details: map[string]string{}}
+		if it.valid {
+			it.arn = ctx.arn("kms", "key/"+a.TargetKeyID)
+		}
+		out = append(out, it.candidate(ctx))
+	}
+	token, err := nextToken(doc.NextToken)
+	return out, token, err
+}
+
+// parseLogGroups reads the name, retention and class. Stored bytes, KMS key and metric
+// filters are not decoded.
+func parseLogGroups(page []byte, ctx parseContext) ([]CloudResourceCandidate, string, error) {
+	var doc struct {
+		Groups []struct {
+			Name      string `json:"logGroupName"`
+			ARN       string `json:"arn"`
+			Retention int    `json:"retentionInDays"`
+			Class     string `json:"logGroupClass"`
+		} `json:"logGroups"`
+		NextToken string `json:"NextToken"`
+	}
+	if err := decodePage(page, &doc); err != nil {
+		return nil, "", err
+	}
+	out := []CloudResourceCandidate{}
+	for _, g := range doc.Groups {
+		// The CLI reports the ARN with a trailing ":*".
+		arn := strings.TrimSuffix(g.ARN, ":*")
+		it := item{typ: "aws_cloudwatch_log_group", service: "logs", id: g.Name, arn: arn, name: g.Name, valid: logGroupName.MatchString(g.Name), details: map[string]string{"class": g.Class}}
+		if g.Retention > 0 {
+			it.details["retentionDays"] = itoa(g.Retention)
+		}
+		if parts := strings.Split(arn, ":"); len(parts) > 4 && accountRE.MatchString(parts[4]) {
+			it.owner = parts[4]
 		}
 		out = append(out, it.candidate(ctx))
 	}

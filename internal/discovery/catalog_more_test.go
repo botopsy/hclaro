@@ -35,6 +35,10 @@ func TestLaterTypesParseIdentityAndSafeFactsOnly(t *testing.T) {
 		{"aws_lambda_function", "lambda-list-functions.json", 1, "orders-webhook", [2]string{"runtime", "python3.12"}},
 		{"aws_dynamodb_table", "dynamodb-list-tables.json", 2, "orders", [2]string{}},
 		{"aws_iam_role", "iam-list-roles.json", 2, "orders-task-role", [2]string{}},
+		{"aws_sqs_queue", "sqs-list-queues.json", 2, "https://sqs.eu-west-1.amazonaws.com/111122223333/orders-events", [2]string{}},
+		{"aws_sns_topic", "sns-list-topics.json", 2, "arn:aws:sns:eu-west-1:111122223333:orders-alerts", [2]string{}},
+		{"aws_kms_key", "kms-list-aliases.json", 1, "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9", [2]string{}}, // AWS-managed, duplicate and unattached aliases are skipped
+		{"aws_cloudwatch_log_group", "logs-describe-log-groups.json", 2, "/aws/lambda/orders-webhook", [2]string{"retentionDays", "30"}},
 	}
 	for _, c := range cases {
 		got := parseFixture(t, c.typ, c.file)
@@ -97,6 +101,44 @@ func TestLaterTypesMatchStateByDocumentedIDs(t *testing.T) {
 		ids, ok := StateIDs(typ, attrs)
 		if !ok || len(ids) == 0 {
 			t.Errorf("%s: %v %v", typ, ids, ok)
+		}
+	}
+}
+
+func TestKMSKeysComeFromCustomerAliasesOnly(t *testing.T) {
+	keys := parseFixture(t, "aws_kms_key", "kms-list-aliases.json")
+	if len(keys) != 1 || keys[0].Name != "orders-data" || keys[0].ARN != "arn:aws:kms:eu-west-1:111122223333:key/0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9" {
+		t.Fatalf("%+v", keys)
+	}
+}
+
+func TestQueuesTopicsAndLogGroupsFillAccountARNAndFifo(t *testing.T) {
+	q := parseFixture(t, "aws_sqs_queue", "sqs-list-queues.json")
+	if q[0].ARN != "arn:aws:sqs:eu-west-1:111122223333:orders-events" || q[0].Name != "orders-events" || q[1].Details["fifo"] != "true" {
+		t.Fatalf("%+v", q)
+	}
+	n := parseFixture(t, "aws_sns_topic", "sns-list-topics.json")
+	if n[0].Account != account || n[1].Details["fifo"] != "true" {
+		t.Fatalf("%+v", n)
+	}
+	// The CLI reports a log group ARN with a trailing ":*", which is not part of the ARN.
+	g := parseFixture(t, "aws_cloudwatch_log_group", "logs-describe-log-groups.json")
+	if g[0].ARN != "arn:aws:logs:eu-west-1:111122223333:log-group:/aws/lambda/orders-webhook" {
+		t.Fatalf("%+v", g[0])
+	}
+}
+
+func TestBatchThreeRefusesUnexpectedIdentifiers(t *testing.T) {
+	ctx := parseContext{Region: "eu-west-1", Account: account, Partition: "aws"}
+	for typ, page := range map[string]string{
+		"aws_sqs_queue":            `{"QueueUrls":["https://example.com/111122223333/q"]}`,
+		"aws_sns_topic":            `{"Topics":[{"TopicArn":"not-an-arn"}]}`,
+		"aws_cloudwatch_log_group": `{"logGroups":[{"logGroupName":"bad name with spaces"}]}`,
+	} {
+		rt, _ := TypeByName(typ)
+		out, _, err := rt.parse([]byte(page), ctx)
+		if err != nil || len(out) != 1 || out[0].ImportStatus != ImportIDUnresolved {
+			t.Errorf("%s: %+v %v", typ, out, err)
 		}
 	}
 }

@@ -121,6 +121,42 @@
         "permission": "dynamodb:ListTables"
       },
       {
+        "type": "aws_sqs_queue",
+        "service": "sqs",
+        "label": "SQS queues",
+        "global": false,
+        "operation": "sqs:ListQueues",
+        "importIdFormat": "Queue URL",
+        "permission": "sqs:ListQueues"
+      },
+      {
+        "type": "aws_sns_topic",
+        "service": "sns",
+        "label": "SNS topics",
+        "global": false,
+        "operation": "sns:ListTopics",
+        "importIdFormat": "Topic ARN",
+        "permission": "sns:ListTopics"
+      },
+      {
+        "type": "aws_kms_key",
+        "service": "kms",
+        "label": "KMS keys (customer-managed, with an alias)",
+        "global": false,
+        "operation": "kms:ListAliases",
+        "importIdFormat": "Key ID",
+        "permission": "kms:ListAliases"
+      },
+      {
+        "type": "aws_cloudwatch_log_group",
+        "service": "logs",
+        "label": "CloudWatch log groups",
+        "global": false,
+        "operation": "logs:DescribeLogGroups",
+        "importIdFormat": "Log group name",
+        "permission": "logs:DescribeLogGroups"
+      },
+      {
         "type": "aws_iam_role",
         "service": "iam",
         "label": "IAM roles",
