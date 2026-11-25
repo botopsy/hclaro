@@ -106,6 +106,7 @@
   padding: 0 6px;
   font-size: 22px;
   display: flex;
+  transition: gap .3s cubic-bezier(.4, 0, .2, 1), padding .3s cubic-bezier(.4, 0, .2, 1);
 }
 
 .sidebar-close {
@@ -126,10 +127,6 @@
 
 .sidebar-close {
   display: none;
-}
-
-.brand-compact {
-  display: none !important;
 }
 
 /* Static first paint inside #root until the bundle renders; no motion, so nothing to reduce. */
@@ -473,20 +470,31 @@
 }
 
 .sidebar-compact .brand {
+  gap: 0;
   padding: 0;
 }
 
 .sidebar-compact .brand-wordmark, .sidebar-compact .nav-label, .sidebar-compact .nav-text {
-  display: none;
+  opacity: 0;
+  max-width: 0;
+  transition-delay: 0s;
+}
+
+.sidebar-compact .nav-label {
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .sidebar-compact .brand-compact {
-  display: inline-flex !important;
+  opacity: 1;
+  max-width: 40px;
 }
 
+/* Icons stay left-aligned while the column narrows; 13px centres an 18px icon in the 44px row. */
 .sidebar-compact .nav-item {
-  justify-content: center;
-  padding: 9px 0;
+  gap: 0;
+  padding: 9px 13px;
 }
 
 .sidebar-compact .nav-item.active:before {
@@ -533,5 +541,28 @@
 
 /* Collapse/expand glides instead of snapping; the content shell follows the same curve. */
 .sidebar, .workspace-shell {
-  transition: width .35s ease, margin-left .35s ease;
+  transition: width .3s cubic-bezier(.4, 0, .2, 1), margin-left .3s cubic-bezier(.4, 0, .2, 1), padding .3s cubic-bezier(.4, 0, .2, 1);
 }
+
+.nav-item {
+  transition: padding .3s cubic-bezier(.4, 0, .2, 1), gap .3s cubic-bezier(.4, 0, .2, 1), background-color .15s ease, color .15s ease;
+}
+
+/* Labels, group headings and the wordmark animate in both directions: they shrink and fade
+   instead of switching to display:none, so collapse glides exactly like expand. Fading is
+   quick on the way out and slightly delayed on the way in, so text never wraps mid-glide. */
+.nav-text, .nav-label, .brand-wordmark, .brand-compact {
+  transition: max-width .3s cubic-bezier(.4, 0, .2, 1), max-height .3s cubic-bezier(.4, 0, .2, 1), margin .3s cubic-bezier(.4, 0, .2, 1), opacity .2s ease .1s;
+}
+
+.nav-text { max-width: 200px; }
+
+.nav-label {
+  max-height: 24px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.brand-wordmark { max-width: 200px; }
+.brand-compact { max-width: 0; opacity: 0; overflow: hidden; }
+

@@ -9,10 +9,10 @@
   border-radius: 10px;
 }
 .drift-card > svg { flex: none; }
-.drift-card > div { flex: 1 1 360px; display: flex; flex-direction: column; gap: 3px; }
+.drift-card > div:not(.assist-entry) { flex: 1 1 360px; display: flex; flex-direction: column; gap: 3px; }
 .drift-card h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .drift-card p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
-.drift-card .assist-entry { margin: 0; }
+.drift-card .assist-entry { margin: 0; flex: none; }
 .drift-card-update { color: var(--update); background: var(--update-bg); border-color: color-mix(in srgb, var(--update), transparent 60%); }
 .drift-card-ok { color: var(--ok); background: var(--create-bg); border-color: color-mix(in srgb, var(--ok), transparent 60%); }
 

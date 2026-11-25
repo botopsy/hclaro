@@ -17,6 +17,10 @@ import { EmptyState } from '../components/EmptyState';
 import { Disclosure } from '../components/Disclosure';
 import { planTotal } from './labels';
 
+// Survives leaving the page, so a discarded plan is not reopened from Drift or elsewhere (shortcut: cleared on reload, the server keeps the review-only record).
+const discardedIds = new Set<string>();
+export const forgetDiscardedPlans = () => discardedIds.clear();
+
 export function PlansView({
   project,
   profileId = '',
@@ -76,7 +80,9 @@ export function PlansView({
     queryKey: ['plan-options', key, workspaceStatus, profileId],
     queryFn: async () => scoped ? fromScope(await api<ScopedPlanOptions>(scopedPath(scope, 'plans/options'))) : api<PlanOptions>(`plans/options${profileId ? `?profileId=${profileId}` : ''}`)
   });
-  const plans = useQuery({ queryKey: ['plans', key], queryFn: () => api<{ plans: PlanSummary[] }>(scopedPath(scope, 'plans')) });
+  // Plans the user discarded stay out of the list so the page is ready for a fresh run.
+  const [discarded, setDiscarded] = useState<string[]>([...discardedIds]);
+  const plans = useQuery({ queryKey: ['plans', key], queryFn: () => api<{ plans: PlanSummary[] }>(scopedPath(scope, 'plans')), select: d => ({ plans: d.plans.filter(p => !discarded.includes(p.id)) }) });
   const operations = useQuery(operationsQuery(scope));
   const latestOperation = operations.data?.operations[0];
   const running = activeOperation(operations.data?.operations);
@@ -163,7 +169,7 @@ export function PlansView({
    </RunState>}
    {applied && <ApplyResult operation={applied} changes={appliedPlan && planTotal(appliedPlan.summary)} source={appliedPlan?.source} canPlan={canPlan} onRunPlan={runPlan} openHistory={openHistory} openGit={openGit} />}
    {failed && plan.data && <p className="info-line">Below is the previous successful plan, created at {clock(plan.data.createdAt)}. It does not reflect the run above.</p>}
-   {hidePlan ? <Button variant="ghost" onClick={() => setRevealedApply(applied.id)}>Show the plan that was applied</Button> : plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} source={source} copy={copy} busy={!!running} canPlan={canPlan} onApply={() => setApplying(true)} onRunPlan={runPlan} onOpenDrift={openDrift} onInspectImpact={inspectImpact} /> : empty && <EmptyState icon={<FileDiff size={28} />} title="No plans yet" action={<Button onClick={runPlan} disabled={!canPlan}><Play size={14} />Run plan</Button>} how={<p>A plan lists every proposed change: creates, updates, replacements, deletions, data reads and output changes. Hclaro keeps the saved plan for a limited time, and nothing is applied until you review it and confirm.</p>}>Run a plan to see every change {options.data ? engineLabel(options.data.engine) : 'the engine'} proposes for {project}.</EmptyState>}
+   {hidePlan ? <Button variant="ghost" onClick={() => setRevealedApply(applied.id)}>Show the plan that was applied</Button> : plan.isPending && shownId ? <div className="empty-state" role="status"><LoaderCircle className="spin" /><p>Loading plan…</p></div> : plan.error ? <ErrorState inline message={plan.error instanceof ApiError && plan.error.code === 'plan_not_found' ? 'This plan is not kept here: it was applied, replaced by a newer plan, expired, or belongs to a view that is no longer open. Nothing ran.' : plan.error.message}>{planId && <Button variant="outline" onClick={() => choosePlan(undefined)}>Show the latest plan</Button>}</ErrorState> : plan.data ? <PlanReview key={plan.data.id} plan={plan.data} scope={scope} source={source} copy={copy} busy={!!running} canPlan={canPlan} onApply={() => setApplying(true)} onDiscarded={() => { discardedIds.add(shownId!); setDiscarded([...discardedIds]); choosePlan(undefined); }} onRunPlan={runPlan} onOpenDrift={openDrift} onInspectImpact={inspectImpact} /> : empty && <EmptyState icon={<FileDiff size={28} />} title="No plans yet" action={<Button onClick={runPlan} disabled={!canPlan}><Play size={14} />Run plan</Button>} how={<p>A plan lists every proposed change: creates, updates, replacements, deletions, data reads and output changes. Hclaro keeps the saved plan for a limited time, and nothing is applied until you review it and confirm.</p>}>Run a plan to see every change {options.data ? engineLabel(options.data.engine) : 'the engine'} proposes for {project}.</EmptyState>}
    {preflightOpen && options.data && <PlanDialog options={options.data} project={project} replace={replace} busy={starting} error={startError} onConfirm={(varFiles, fingerprint) => void start(varFiles, fingerprint)} onClose={closePreflight} />}
    {applying && plan.data && <ApplyDialog plan={plan.data} scope={scope} project={project} onStarted={() => void applyStarted()} onClose={() => setApplying(false)} />}
   </div>;

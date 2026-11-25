@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The Go parser's golden output keeps the frontend honest about the API contract.
 import golden from '../../../fixtures/plan/all-actions.golden.json';
 import unsupportedGolden from '../../../fixtures/plan/unknown-actions.golden.json';
-import { PlansView } from './PlansView';
+import { PlansView, forgetDiscardedPlans } from './PlansView';
 import { ApplyDialog } from './ApplyDialog';
 import { planRoute } from '../lib/scope';
 import type { Approval, Operation, Plan, PlanOptions, PreflightCheck, PreflightReport } from '../types';
@@ -82,7 +82,7 @@ function view(planChoice?: string, replace?: { id: string; address: string }[], 
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PlansView project="platform-infra" planId={planChoice} choosePlan={choose} replace={replace} copy={async () => {}} source={source} /></QueryClientProvider>);
   return choose;
 }
-beforeEach(() => serve());
+beforeEach(() => { forgetDiscardedPlans(); serve(); });
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -118,7 +118,7 @@ describe('Plans', () => {
     await screen.findByLabelText(/Change details for aws_s3_bucket.logs/);
     expect(screen.queryByText('CONFIGURATION SOURCE')).not.toBeInTheDocument();
   });
-  it('discards a saved plan only after one inline confirmation, then shows the server note', async () => {
+  it('discards a saved plan only after one inline confirmation, then clears the page for a fresh run', async () => {
     let discarded = false;
     const note = 'You discarded this plan. The saved plan file was deleted.';
     serve((url, init) => {
@@ -131,15 +131,15 @@ describe('Plans', () => {
     view();
     await screen.findByText('Ready to apply.');
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
-    expect(screen.getByRole('alert')).toHaveTextContent("Delete the saved plan? It can't be applied afterwards.");
+    expect(screen.getByRole('dialog', { name: 'Delete the saved plan?' })).toHaveTextContent("It can't be applied afterwards.");
     expect(posts.filter(p => p.url.endsWith('/discard'))).toHaveLength(0);
     // Keep backs out without calling the server.
     await userEvent.click(screen.getByRole('button', { name: 'Keep' }));
-    expect(screen.queryByText(/Delete the saved plan/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete plan' }));
-    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent('Review only'));
-    expect(screen.getByRole('note')).toHaveTextContent(note);
+    // The discarded plan leaves the page; it is ready to run again.
+    await screen.findByText('No plans yet');
     expect(posts.filter(p => p.url.endsWith('/discard'))).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /Review and apply/ })).not.toBeInTheDocument();
   });

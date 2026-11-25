@@ -94,6 +94,7 @@
 }
 
 .summary-card strong {
+  margin-top: auto;
   color: var(--text);
   font-size: 24px;
   font-weight: 500;
