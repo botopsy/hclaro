@@ -12,7 +12,7 @@ func TestGCPSelectionValidation(t *testing.T) {
 	for name, in := range map[string]Input{
 		"configuration option": {Name: "x", GCPConfiguration: "--project=x"},
 		"configuration case":   {Name: "x", GCPConfiguration: "Prod"},
-		"configuration key":    {Name: "x", GCPConfiguration: "AIzaSyA-1234567890123456789012345678901"},
+		"configuration key":    {Name: "x", GCPConfiguration: "UPPER-case-key"},
 		"project name":         {Name: "x", GCPProject: "My Project"},
 		"project number":       {Name: "x", GCPProject: "123456789012"},
 		"project short":        {Name: "x", GCPProject: "abc"},
