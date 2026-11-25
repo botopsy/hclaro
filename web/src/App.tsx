@@ -118,6 +118,12 @@ function Workbench({
   // Pages are ordered by group, so a new grouping starts at the first page.
   const setGroupBy = (value: GroupBy) => { setGroupByRaw(value); setPage(0); };
   const [notice, setNotice] = useState('');
+  // The toast clears itself; setting a new notice restarts the timer.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(''), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [planId, setPlanId] = useState<string>();
   // Rows checked in Resources, kept across pages and filters. Only the managed ones can be
   // planned for replacement.
