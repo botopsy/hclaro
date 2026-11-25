@@ -85,10 +85,12 @@ type Pin struct {
 	ProfileID          string `json:"profileId,omitempty"`
 	ProfileName        string `json:"profileName,omitempty"`
 	ContextFingerprint string `json:"contextFingerprint"`
-	AWSProfile         string `json:"awsProfile,omitempty"`
-	AWSRegion          string `json:"awsRegion,omitempty"`
-	Workspace          string `json:"workspace"`
-	Engine             string `json:"engine"`
+	// Provider is "" for AWS (the only provider so far) or the provider name.
+	Provider   string `json:"provider,omitempty"`
+	AWSProfile string `json:"awsProfile,omitempty"`
+	AWSRegion  string `json:"awsRegion,omitempty"`
+	Workspace  string `json:"workspace"`
+	Engine     string `json:"engine"`
 }
 
 // differs returns why current does not match p, or "".
@@ -104,6 +106,8 @@ func (p Pin) differs(current Pin) string {
 		return "The launch workspace is now " + current.Workspace + ", not " + p.Workspace + "."
 	case p.Engine != current.Engine:
 		return "The project is now read with another engine."
+	case p.Provider != current.Provider:
+		return "The cloud provider of this context changed."
 	case p.AWSProfile != current.AWSProfile || p.AWSRegion != current.AWSRegion:
 		return "The AWS profile or region of this context changed."
 	}
@@ -270,8 +274,8 @@ type Prefill struct {
 
 // Service holds verifications, scans and prepared imports of this session in memory.
 type Service struct {
-	Runner awscli.Runner
-	Now    func() time.Time
+	providers map[string]Provider
+	Now       func() time.Time
 	// Sleep waits between retries of throttled calls; tests replace it.
 	Sleep func(ctx context.Context, d time.Duration) error
 	NewID func() string
@@ -299,7 +303,7 @@ type Service struct {
 // New returns a service with runner.
 func New(runner awscli.Runner) *Service {
 	base, stop := context.WithCancel(context.Background())
-	return &Service{Runner: runner, Now: time.Now, Sleep: sleep, NewID: ids.New, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, MaxObjects: MaxObjects, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
+	return &Service{providers: map[string]Provider{"aws": awsProvider{runner}}, Now: time.Now, Sleep: sleep, NewID: ids.New, IdentityTTL: 30 * time.Minute, PrepareTTL: 15 * time.Minute, ScanTimeout: 15 * time.Minute, MaxRunning: MaxRunning, MaxObjects: MaxObjects, prepared: map[string]*Prefill{}, calls: make(chan struct{}, MaxCalls), base: base, stop: stop}
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
@@ -381,37 +385,29 @@ func parseIdentity(out []byte) (account, arn, principal, partition string, err e
 	return v.Account, "ARN withheld", "unknown", partition, nil
 }
 
-// callerIdentity runs STS GetCallerIdentity in region.
-func (s *Service) callerIdentity(ctx context.Context, environ []string, region string) (account, arn, principal, partition string, err error) {
-	out, err := s.Runner.Run(ctx, environ, []string{"sts", "get-caller-identity", "--output", "json", "--region", region})
-	if err != nil {
-		return "", "", "", "", err
+// provider returns the provider named by a pin or identity ("" is AWS).
+func (s *Service) provider(name string) (Provider, bool) {
+	if name == "" {
+		name = "aws"
 	}
-	account, arn, principal, partition, err = parseIdentity(out)
-	if err != nil {
-		return "", "", "", "", &awscli.CallError{Kind: awscli.KindMalformed}
-	}
-	return account, arn, principal, partition, nil
+	p, ok := s.providers[name]
+	return p, ok
 }
 
-// Verify checks the AWS CLI version and asks STS for the caller identity of pin's context.
-// It is an explicit user action: STS is read-only but contacts AWS.
+// Verify checks the provider CLI version and asks it for the caller identity of pin's
+// context. It is an explicit user action: the identity call is read-only but contacts the
+// cloud.
 func (s *Service) Verify(ctx context.Context, pin Pin, environ []string) (CloudIdentity, error) {
-	out, err := s.Runner.Run(ctx, environ, []string{"--version"})
-	if err != nil {
-		return CloudIdentity{}, err
+	prov, ok := s.provider(pin.Provider)
+	if !ok {
+		return CloudIdentity{}, ErrInvalidScope
 	}
-	version, supported := awscli.ParseVersion(out)
-	if !supported {
-		return CloudIdentity{}, &awscli.CallError{Kind: awscli.KindUnsupportedCLI}
-	}
-	region, source := RegionOf(pin, environ)
-	account, arn, principal, partition, err := s.callerIdentity(ctx, environ, region)
+	v, err := prov.Verify(ctx, pin, environ)
 	if err != nil {
 		return CloudIdentity{}, err
 	}
 	now := s.Now()
-	id := &CloudIdentity{ID: s.NewID(), Provider: "aws", Account: account, ARN: arn, PrincipalType: principal, Partition: partition, Region: region, RegionSource: source, CLIVersion: version, VerifiedAt: now.UTC().Format(time.RFC3339), Pin: pin, expires: now.Add(s.IdentityTTL)}
+	id := &CloudIdentity{ID: s.NewID(), Provider: prov.Name(), Account: v.Account, ARN: v.ARN, PrincipalType: v.PrincipalType, Partition: v.Partition, Region: v.Region, RegionSource: v.RegionSource, CLIVersion: v.CLIVersion, VerifiedAt: now.UTC().Format(time.RFC3339), Pin: pin, expires: now.Add(s.IdentityTTL)}
 	id.ExpiresAt = id.expires.UTC().Format(time.RFC3339)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -545,7 +541,8 @@ func (s *Service) run(ctx context.Context, scan *Scan, environ []string) {
 		return
 	}
 	s.countCall(scan)
-	account, _, _, _, err := s.callerIdentity(ctx, environ, scan.Identity.Region)
+	prov, _ := s.provider(scan.Identity.Provider)
+	account, err := prov.Account(ctx, environ, scan.Identity.Region)
 	<-s.calls
 	switch {
 	case ctx.Err() != nil:
@@ -631,6 +628,7 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 	task := &scan.Tasks[i]
 	task.Status = TaskRunning
 	typ, _ := TypeByName(task.Type)
+	prov, _ := s.provider(scan.Identity.Provider)
 	region := task.Region
 	limit := scan.Scope.MaxPerType
 	pctx := parseContext{Region: region, Account: scan.Identity.Account, Partition: scan.Identity.Partition, Observed: s.Now().UTC().Format(time.RFC3339), Selected: selected}
@@ -665,14 +663,8 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 		}
 		s.mu.Unlock()
 		pageSize := min(PageSize, limit-count)
-		args := append(slices.Clone(typ.args), "--output", "json", "--region", callRegion)
-		if !typ.noPaging {
-			args = append(args, "--max-items", itoa(pageSize))
-		}
-		if token != "" {
-			args = append(args, "--starting-token", token)
-		}
-		out, err := s.call(ctx, scan, task, environ, args)
+		args := prov.ListArgs(typ, callRegion, pageSize, token)
+		out, err := s.call(ctx, prov, scan, task, environ, args)
 		if err != nil {
 			return fail(awscli.KindOf(err))
 		}
@@ -712,7 +704,7 @@ func (s *Service) runTask(ctx context.Context, scan *Scan, i int, environ []stri
 
 // call runs one list call with the shared call limit and retries throttled calls with
 // exponential backoff.
-func (s *Service) call(ctx context.Context, scan *Scan, task *Task, environ []string, args []string) ([]byte, error) {
+func (s *Service) call(ctx context.Context, prov Provider, scan *Scan, task *Task, environ []string, args []string) ([]byte, error) {
 	for attempt := 0; ; attempt++ {
 		select {
 		case s.calls <- struct{}{}:
@@ -720,7 +712,7 @@ func (s *Service) call(ctx context.Context, scan *Scan, task *Task, environ []st
 			return nil, &awscli.CallError{Kind: awscli.KindCancelled}
 		}
 		s.countCall(scan)
-		out, err := s.Runner.Run(ctx, environ, args)
+		out, err := prov.Run(ctx, environ, args)
 		<-s.calls
 		if err == nil {
 			return out, nil
@@ -914,7 +906,8 @@ func (s *Service) Prepare(ctx context.Context, scanID, candidateID string, pin P
 	case match.Status == MatchUnknown && !acknowledgeUnknown:
 		return Prefill{}, ErrAcknowledge
 	}
-	account, _, _, _, err := s.callerIdentity(ctx, environ, identity.Region)
+	prov, _ := s.provider(identity.Provider)
+	account, err := prov.Account(ctx, environ, identity.Region)
 	if err != nil {
 		return Prefill{}, err
 	}
