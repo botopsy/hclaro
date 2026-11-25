@@ -69,8 +69,8 @@
   text-rendering: optimizelegibility;
   -webkit-font-smoothing: antialiased;
   /* Addresses, types, versions, paths and code. Tailwind's font-mono reads the same variable. */
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-family: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "DM Sans Variable", "DM Sans", -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
   font-size: 13px;
 }
 

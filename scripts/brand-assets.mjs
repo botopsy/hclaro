@@ -75,15 +75,18 @@ export function wordmarkSVG(variant, {background = false} = {}) {
 // The light variant (paper tile, ink "h", olive cursor) is for light backgrounds and always has its edge.
 // Reference containers 88/64/40/24 px use font sizes 54/40/25/15 and radius = size / 4; the
 // icons below use the 64/40/24 ratio (0.625) so every raster size has identical proportions.
-export function markSVG({fontRatio = 0.625, label = true, edge = false, light = false} = {}) {
+// chevron adds the lime ">" before the h (about 60% wider glyph), so the letters shrink to 0.39 of the tile
+// to keep the same share of it; favicon.svg stays without it because tabs scale it down to 16 px.
+export function markSVG({chevron: withChevron = false, fontRatio = withChevron ? 0.39 : 0.625, label = true, edge = false, light = false} = {}) {
  const [tile, letter, cursorFill, edgeColour] = light ? [brand.paper, brand.ink, brand.olive, brand.edgeLight] : [brand.graphite, brand.letter, brand.lime, brand.edge]
  if (light) edge = true
  const size = em / fontRatio, radius = size / 4
- const content = advance + tracking + cursor.gap + cursor.width
- const x = (size - content) / 2
+ const lead = withChevron ? chevron.width + chevron.gap : 0
+ const content = lead + advance + tracking + cursor.gap + cursor.width
+ const x = (size - content) / 2 + lead
  const baseline = (size - em) / 2 + baselineInLineBox
  const title = label ? ' role="img" aria-label="Hclaro"><title>Hclaro</title' : ' aria-hidden="true"'
- return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${round(size)} ${round(size)}"${title}>${edge ? `<rect x="12" y="12" width="${round(size - 24)}" height="${round(size - 24)}" rx="${round(radius - 10)}" fill="${tile}" stroke="${edgeColour}" stroke-width="24"/>` : `<rect width="${round(size)}" height="${round(size)}" rx="${round(radius)}" fill="${tile}"/>`}${glyphRun('h', round(x), round(baseline), letter)}<path fill="${cursorFill}" fill-rule="evenodd" d="${cursorRing(round(x + advance + tracking + cursor.gap), round(baseline))}"/></svg>\n`
+ return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${round(size)} ${round(size)}"${title}>${edge ? `<rect x="12" y="12" width="${round(size - 24)}" height="${round(size - 24)}" rx="${round(radius - 10)}" fill="${tile}" stroke="${edgeColour}" stroke-width="24"/>` : `<rect width="${round(size)}" height="${round(size)}" rx="${round(radius)}" fill="${tile}"/>`}${withChevron ? chevronPath(round(x - lead), round(baseline), light ? brand.olive : brand.lime) : ''}${glyphRun('h', round(x), round(baseline), letter)}<path fill="${cursorFill}" fill-rule="evenodd" d="${cursorRing(round(x + advance + tracking + cursor.gap), round(baseline))}"/></svg>\n`
 }
 
 // Favicons and the touch icon ship in the embedded UI. The 192/512 app icons are kept with the
@@ -96,10 +99,10 @@ export function markSVG16() {
 }
 
 // [file, width, height, svg]. The light icons and @2x wordmarks are for the README and social previews.
-const lightMark = markSVG({light: true})
+const lightMark = markSVG({light: true, chevron: true})
 const rasters = [
- ['web/public/favicon-16.png', 16, 16, markSVG16()], ['web/public/favicon-32.png', 32, 32, markSVG()], ['web/public/apple-touch-icon.png', 180, 180, markSVG()],
- ...[192, 512, 1024].flatMap(size => [[`docs/design/assets/hclaro-icon-${size}.png`, size, size, markSVG()], [`docs/design/assets/hclaro-icon-light-${size}.png`, size, size, lightMark]]),
+ ['web/public/favicon-16.png', 16, 16, markSVG16()], ['web/public/favicon-32.png', 32, 32, markSVG({chevron: true})], ['web/public/apple-touch-icon.png', 180, 180, markSVG({chevron: true})],
+ ...[192, 512, 1024].flatMap(size => [[`docs/design/assets/hclaro-icon-${size}.png`, size, size, markSVG({chevron: true})], [`docs/design/assets/hclaro-icon-light-${size}.png`, size, size, lightMark]]),
  ...['light', 'dark', 'inverse'].map(variant => [`docs/design/assets/hclaro-wordmark-${variant}@2x.png`, 1200, 215, wordmarkSVG(variant, {background: true})]),
  ...['light', 'dark'].map(variant => [`docs/design/assets/hclaro-wordmark-${variant}-transparent@2x.png`, 1200, 215, wordmarkSVG(variant)])
 ]
@@ -109,7 +112,7 @@ async function main() {
  await fs.mkdir(docs, {recursive: true})
  const mark = markSVG()
  await fs.writeFile(path.join(pub, 'favicon.svg'), mark)
- await fs.writeFile(path.join(docs, 'hclaro-mark.svg'), markSVG({edge: true}))
+ await fs.writeFile(path.join(docs, 'hclaro-mark.svg'), markSVG({edge: true, chevron: true}))
  await fs.writeFile(path.join(docs, 'hclaro-mark-light.svg'), lightMark)
  for (const variant of Object.keys(wordmarkColours)) {
   await fs.writeFile(path.join(docs, `hclaro-wordmark-${variant}.svg`), wordmarkSVG(variant, {background: true}))

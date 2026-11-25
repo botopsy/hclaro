@@ -186,16 +186,16 @@ as `<HclaroLogo cursor={false} />`.
 
 ### App icon / compact mark
 
-Lowercase `#E6E8EB` `h` plus the lime hollow cursor on a graphite rounded square with a `#2A323D` hairline edge (the favicons have no edge). Reference sizes:
+From 32 px up: the lime chevron, lowercase `#E6E8EB` `h` and the lime hollow cursor (`>h▯`) on a graphite rounded square with a `#2A323D` hairline edge (the favicons have no edge). The 24 px mark and the 16 px favicon keep `h▯`, without the chevron: at those sizes it would be a few pixels and the `h` would become hard to read. Sizes:
 
 | Tile | Radius | Letter size |
 |---|---|---|
-| 88 px | 22 px | 54 px |
-| 64 px | 16 px | 40 px |
-| 40 px | 10 px | 25 px |
-| 24 px | 6 px | 15 px |
+| 88 px | 22 px | 34 px |
+| 64 px | 16 px | 25 px |
+| 40 px | 10 px | 16 px |
+| 24 px | 6 px | 15 px (no chevron) |
 
-Radius is always a quarter of the tile; the letter is 0.625 of the tile (0.614 at 88 px in the reference).
+Radius is always a quarter of the tile; with the chevron the letters are about 0.39 of the tile (0.625 at 24 px, where there is no chevron), so the wider `>h▯` glyph keeps the share of the tile that `h▯` had. `favicon.svg` stays `h▯` because tabs scale it down to 16 px; `favicon-32.png`, the touch icon and the docs icons use `>h▯`.
 
 **Small sizes.** At 24 px the cursor border is 1.35 px and stays hollow (checked in the browser at 1×
 and 2×). At 16 px the reference proportions give a 0.9 px border that blurs into a filled block, so the
@@ -239,13 +239,13 @@ are kept in `assets/` for packagers instead of being shipped in the UI.
 ## 6. Typography
 
 - **Logo:** JetBrains Mono Bold, self-hosted from `@fontsource/jetbrains-mono` (SIL Open Font License
-  1.1, listed in `THIRD-PARTY-NOTICES.txt`). The Latin 700 subset (22 kB woff2 plus a
-  woff fallback) and Latin 400 for code are bundled. They are served from the binary under `font-src 'self'`; Vite's `assetsInlineLimit: 0`
+  1.1, listed in `THIRD-PARTY-NOTICES.txt`). Only the Latin 700 subset (22 kB woff2 plus a
+  woff fallback) is bundled for the logo. They are served from the binary under `font-src 'self'`; Vite's `assetsInlineLimit: 0`
   keeps fonts out of `data:` URIs, which the CSP would block. No Google Fonts or other network request.
   If the font fails, the logo falls back to `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
   with the same geometry.
-- **Interface:** Inter (variable, `@fontsource-variable/inter`, SIL OFL 1.1, listed in `THIRD-PARTY-NOTICES.txt`), self-hosted the same way, 13 px base (`:root` font-size). All subsets are bundled (about 224 kB woff2); `unicode-range` makes the browser load only the ones a page needs, normally Latin (48 kB).
-- **Code, addresses, types, versions and paths:** JetBrains Mono through the `--font-mono` token (Latin 400 and 700 bundled; Tailwind's `font-mono` reads the same variable), falling back to `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`.
+- **Interface:** DM Sans (variable, `@fontsource-variable/dm-sans`, SIL OFL 1.1, listed in `THIRD-PARTY-NOTICES.txt`), self-hosted the same way, 13 px base (`:root` font-size). All subsets are bundled; `unicode-range` makes the browser load only the ones a page needs, normally Latin.
+- **Code, addresses, types, versions and paths:** DM Mono (`@fontsource/dm-mono`, SIL OFL 1.1; Latin 400 and 500 bundled, there is no bold, and `font-synthesis: none` keeps the browser from faking one, so monospace text uses weight 400 or 500) through the `--font-mono` token ( Tailwind's `font-mono` reads the same variable), falling back to `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`.
 
 ## 7. Assets
 

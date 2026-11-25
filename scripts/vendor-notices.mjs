@@ -4,7 +4,7 @@ import path from 'node:path'
 import {fileURLToPath} from 'node:url'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 // Runtime packages bundled into the embedded frontend. The release SBOM uses the same list.
-export const bundledPackages=['react','react-dom','scheduler','lucide-react','tailwindcss','@tanstack/react-query','@tanstack/query-core','@radix-ui/react-slot','@radix-ui/react-compose-refs','class-variance-authority','clsx','tailwind-merge','@fontsource/jetbrains-mono','@fontsource-variable/inter']
+export const bundledPackages=['react','react-dom','scheduler','lucide-react','tailwindcss','@tanstack/react-query','@tanstack/query-core','@radix-ui/react-slot','@radix-ui/react-compose-refs','class-variance-authority','clsx','tailwind-merge','@fontsource/jetbrains-mono','@fontsource/dm-mono','@fontsource-variable/dm-sans']
 export async function writeNotices(modules,output,packages) {
  let text='Hclaro frontend — third-party licenses\n\n'
  for(const name of packages) {

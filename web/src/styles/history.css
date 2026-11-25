@@ -145,7 +145,7 @@
 .history-table .history-result-column { width: 220px; }
 .row-button { padding: 0; color: var(--text); font-weight: 500; text-align: left; }
 .row-button:hover { text-decoration: underline; }
-.change-counts { display: inline-flex; gap: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+.change-counts { display: inline-flex; gap: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
 .change-create { color: var(--create); }
 .change-update { color: var(--update); }
 .change-replace { color: var(--replace); }

@@ -121,11 +121,12 @@ describe('HclaroMark', () => {
     expect(mark.style.height).toBe(`${size}px`);
     expect(mark.style.borderRadius).toBe(`${size / 4}px`);
     expect(mark.style.fontSize).toBe(`${font}px`);
-    // Lowercase h and the hollow cursor, both hidden behind the single accessible name.
+    // Chevron (32 px and up), lowercase h and the hollow cursor, hidden behind the single accessible name.
     const glyph = mark.querySelector('.hclaro-mark-glyph')!;
     expect(glyph).toHaveTextContent(/^h$/);
     expect(glyph).toHaveAttribute('aria-hidden', 'true');
     expect(glyph.querySelector('.hclaro-cursor')).not.toBeNull();
+    expect(glyph.querySelector('.hclaro-chevron') !== null).toBe(size >= 32);
   });
 
   it('uses the graphite tile with its edge, light letter and lime cursor', () => {
@@ -246,5 +247,8 @@ describe('document entry point', () => {
     expect(favicon).toContain(`fill="${reference.lime}"`);
     expect(favicon).toContain('fill-rule="evenodd"');
     expect(favicon).not.toMatch(/#a3e8bc|#14211b|<text/i);
+    // favicon.svg is scaled down to 16 px in tabs, so it keeps "h▯"; the 32 px and larger icons add the lime chevron.
+    expect(favicon).not.toContain('<polyline');
+    expect(readFileSync(path.join(import.meta.dirname, '../../../docs/design/assets/hclaro-mark.svg'), 'utf8')).toMatch(new RegExp(`<polyline[^>]*stroke="${reference.lime}"`));
   });
 });
