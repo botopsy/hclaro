@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-// The README quotes the disclosure (AI-01.13); this keeps the copy equal to the code.
+// The AI assistance guide quotes the disclosure (AI-01.13); this keeps the copy equal to the code.
 func TestReadmeQuotesTheDisclosure(t *testing.T) {
-	b, err := os.ReadFile("../../README.md")
+	b, err := os.ReadFile("../../docs/guides/ai-assistance.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	readme := strings.ReplaceAll(string(b), "\r\n", "\n") // Windows checkouts may use CRLF
 	if !strings.Contains(readme, "### Disclosure text (version "+DisclosureVersion+")") {
-		t.Fatalf("README does not quote disclosure version %s", DisclosureVersion)
+		t.Fatalf("AI assistance guide does not quote disclosure version %s", DisclosureVersion)
 	}
 	var want []string
 	for _, l := range disclosure.Lines {
@@ -30,7 +30,7 @@ func TestReadmeQuotesTheDisclosure(t *testing.T) {
 	}
 	for _, l := range want {
 		if !strings.Contains(readme, "> - "+l+"\n") {
-			t.Errorf("README lacks disclosure line: %s", l)
+			t.Errorf("AI assistance guide lacks disclosure line: %s", l)
 		}
 	}
 }

@@ -1,0 +1,13 @@
+# Drift detection
+
+Finds objects that changed outside Terraform/OpenTofu.
+
+Open **Drift detection** and choose **Check drift** to find objects that changed outside Terraform/OpenTofu. Nothing is scanned when the page opens. A dialog first explains that the scan queries provider APIs and the backend with your existing credentials (an expired SSO session or a missing VPN makes it fail), may lock the state, and writes no state. It shows the execution context and lets you choose variable files, as for a plan.
+
+Hclaro then runs `plan -input=false -json -out=<private temp file> -refresh-only` for the workspace the project reads, streams a sanitized log (cancellable), reads the file back with `show -json` and deletes it. The refresh-only plan is never kept, listed as a plan or applied, and Hclaro never runs `refresh`, `apply -refresh-only` or a state command. A scan is a refresh-only plan, **not** a normal plan: it compares what state records with what providers report now, not whether infrastructure matches your configuration. **Run a normal plan…** opens the plan dialog separately; a scan never starts one.
+
+The result shows the scan time, engine, workspace, variable files and profile, and each drifted object classified as **Changed** (values differ from state), **Missing remotely** (the provider reports the object no longer exists) or **Cannot verify** (a value was unknown during the scan), grouped by module or provider with search and filters. Each object's attributes are shown as **Recorded in state** next to **Observed during scan**, with the usual redaction; objects recorded in the current snapshot link to the resource inspector. Data sources re-read during the scan are not drift and are only counted.
+
+**No drift found** appears only after a complete scan without errors. A failed scan (lock conflict, expired credentials, network, cancellation) produces no result and says that this is not the same as no drift. If the engine fails part-way but saved an errored plan, the scan is **incomplete**: listed objects did drift, unlisted ones were not necessarily checked. A scan stops matching when the project is read in another workspace, or when the engine, configuration, variable files, data directory, environment or execution profile change; its resource list is then withheld and you are asked to scan again. Scans are kept in memory for at most 12 hours (ten at most) and hold only redacted data.
+
+Drift scans are unavailable for remote or cloud execution backends (Hclaro cannot verify a refresh-only result produced remotely), when planning is unavailable, and when no state is recorded. They share the one-operation-at-a-time slot with plans and applies.

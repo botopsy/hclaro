@@ -4,7 +4,7 @@ hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub reposito
 
 ## Version scheme
 
-- Semantic versions with a pre-release suffix during the beta: `v0.1.0-beta.1`, `v0.1.0-beta.2`, … (`0.1.0-alpha.6` < `0.1.0-beta.1` in semver order). Any version with a suffix is published as a GitHub **pre-release**.
+- Semantic versions: `v0.1.0` for a release, with an optional pre-release suffix for candidates (`v0.1.0-rc.1`, which sorts before `v0.1.0`). Any version with a suffix is published as a GitHub **pre-release**. Earlier `0.1.0-beta.N` tags exist and stay as they are.
 - The tag must match `^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`; the release job refuses anything else.
 - The version shown by `hclaro --version` comes from the tag (`make cross VERSION=…`). The default for local builds lives in four places, bumped together in one commit: `Makefile` (`VERSION ?=`), `cmd/hclaro/main.go`, `web/package.json` and `web/package-lock.json` (the root package entry).
 
@@ -22,7 +22,7 @@ hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub reposito
    make build              # rebuilds internal/ui/dist and bin/hclaro
    git diff --exit-code -- internal/ui/dist   # the committed bundle must match
    make browser-test       # needs: npm --prefix web exec -- playwright install chromium
-   make cross VERSION=0.1.0-beta.2
+   make cross VERSION=0.1.0
    ./dist/hclaro-$(go env GOOS)-$(go env GOARCH) --version
    ```
 
@@ -67,8 +67,8 @@ curl -s -o /dev/null -w '%{http_code}' -L <url>   # logged out
 Only the BotOpsy maintainer does this, after approving the release:
 
 ```sh
-git tag -a v0.1.0-beta.2 -m "Hclaro 0.1.0-beta.2"
-git push origin v0.1.0-beta.2
+git tag -a v0.1.0 -m "Hclaro 0.1.0"
+git push origin v0.1.0
 ```
 
 The `Release` workflow then:
@@ -85,7 +85,7 @@ The `Release` workflow then:
 Then review the draft on the Releases page and publish it:
 
 ```sh
-gh release edit v0.1.0-beta.2 --draft=false
+gh release edit v0.1.0 --draft=false
 ```
 
 A release is never overwritten. If the publish job fails after creating the draft, delete the draft on the Releases page and rerun the failed job. A dry run (`gh workflow run release.yml -f version=0.0.0-dryrun`, or any pull request that changes the workflow) validates, builds and smoke-tests without publishing.
@@ -93,7 +93,7 @@ A release is never overwritten. If the publish job fails after creating the draf
 ## After publishing
 
 - Download one archive, verify it with the checksums file and run it on a real machine.
-- Edit the release notes if the generated ones are unclear; link `docs/BETA.md`.
+- Edit the release notes if the generated ones are unclear; link `docs/reference/limitations.md`.
 - If a release is broken, publish a new version. Do not move or reuse a tag.
 - Delete leftover **draft** releases from the Releases page.
 
@@ -128,7 +128,7 @@ The tap is the only copy of the formula (this repository no longer carries one);
 For each release, after the release is published (draft assets are not downloadable):
 
 ```sh
-v=0.1.0-beta.4   # the new version
+v=0.1.0   # the new version
 curl -fsSL https://github.com/botopsy/hclaro/releases/download/v$v/hclaro_${v}_checksums.txt | grep -E '_(darwin|linux)_(amd64|arm64)\.tar\.gz$'
 # in a clone of botopsy/homebrew-tap, put the version into the four urls of Formula/hclaro.rb and each archive's SHA-256 next to it, then:
 grep -o 'url "[^"]*"' Formula/hclaro.rb | cut -d'"' -f2 | while read u; do curl -fsSL "$u" | shasum -a 256; done   # must match the four sha256 lines
