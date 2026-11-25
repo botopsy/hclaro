@@ -11,6 +11,10 @@ This guide takes you from a clean machine to hclaro showing one of your Terrafor
 
 ## 2. Install
 
+### Option 0: install script
+
+macOS and Linux (and Windows from Git Bash): `curl -fsSL https://get.hclaro.dev | sh`. Windows: the same command from Git Bash (or MSYS2/Cygwin); native PowerShell is not supported by the script, use the archive in Option A. It checks the archive's sha256 against the release checksums before installing and stop on a mismatch. `HCLARO_VERSION=v<version>` pins a release, `INSTALL_DIR=<absolute folder>` chooses the folder (default `/usr/local/bin`, or `%LOCALAPPDATA%\Programs\hclaro` on Windows). The script asks for `sudo` only when `INSTALL_DIR` is not writable; it never edits `PATH` and runs only `hclaro --version`. Uninstall by deleting the binary (see [Uninstall and clean up](#uninstall-and-clean-up)). To pin the script itself, use its tag: `https://raw.githubusercontent.com/botopsy/hclaro/v<version>/scripts/install.sh`. Always write the full `https://`.
+
 ### Option A: download a beta binary
 
 1. Download the archive for your platform and `hclaro_<version>_checksums.txt` from [GitHub Releases](https://github.com/botopsy/hclaro/releases).

@@ -22,7 +22,13 @@ Hclaro never runs `init`, `plan`, `refresh` or `apply` on its own, never runs `d
 
 **You need:** macOS, Linux or Windows; Terraform 1.5–1.17 or OpenTofu 1.6–1.13 on `PATH` (Hclaro uses your installed engine and never downloads one); a browser on the same machine.
 
-1. **Install.** Download the archive for your platform and the checksums file from [GitHub Releases](https://github.com/botopsy/hclaro/releases) (beta pre-releases for macOS arm64/amd64, Linux amd64/arm64 and Windows amd64), verify it, and put `hclaro` on your `PATH`:
+1. **Install.** On macOS or Linux, the installer downloads the newest release, checks its sha256 and installs `hclaro` to `/usr/local/bin` (asks for `sudo` only if that folder is not writable; set `INSTALL_DIR=$HOME/.local/bin` to avoid it, `HCLARO_VERSION=v0.1.0-beta.5` to pin a version):
+
+   ```sh
+   curl -fsSL https://get.hclaro.dev | sh
+   ```
+
+   To read the script first: `curl -fsSL <url> -o install.sh && less install.sh && sh install.sh`. On Windows, run the same command from Git Bash. The checksum comes from the same release page, so it proves the download is complete, not who published it. Or install by hand: download the archive for your platform and the checksums file from [GitHub Releases](https://github.com/botopsy/hclaro/releases) (beta pre-releases for macOS arm64/amd64, Linux amd64/arm64 and Windows amd64), verify it, and put `hclaro` on your `PATH`:
 
    ```sh
    shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing

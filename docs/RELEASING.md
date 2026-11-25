@@ -165,3 +165,7 @@ Each stage starts only when the conditions listed for it are met and written dow
 4. **Auto-update: not planned.** It would need a trusted channel design first: signed update metadata verified against a key shipped in the binary, a user-visible opt-in, no network contact without it (Hclaro's local-first promise), and a downgrade/rollback rule consistent with [config-compatibility.md](config-compatibility.md). Until such a design is reviewed, no update check, notification or download is added.
 
 Whatever the channel, configuration files follow [config-compatibility.md](config-compatibility.md): an older version never overwrites a file written by a newer one.
+
+## Install script
+
+`curl -fsSL https://get.hclaro.dev | sh` is served by the separate `hclaro-website` repository (`public/install.sh`, deployed with the site on Cloudflare). It downloads `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) and `hclaro_<version>_checksums.txt` from the GitHub release, so changing those asset names in `release.yml` means changing the script too. It installs the newest published release, pre-releases included while none is stable, so publishing a draft release is what makes it the install target.
