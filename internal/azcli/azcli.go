@@ -195,9 +195,7 @@ func Classify(stderr string) string {
 
 var cliVersion = regexp.MustCompile(`(?m)^azure-cli\s+([0-9]+)\.([0-9]+)\.([0-9]+)`)
 
-// MinMajor and MinMinor are the oldest supported Azure CLI. shortcut: owner has not decided
-// the minimum; 2.50 (2023) has the JMESPath and --only-show-errors behavior used here, raise
-// it when something newer is relied on.
+// MinMajor and MinMinor are the oldest supported Azure CLI (owner decision: 2.50).
 const (
 	MinMajor = 2
 	MinMinor = 50

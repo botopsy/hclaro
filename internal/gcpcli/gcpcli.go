@@ -177,8 +177,7 @@ func Classify(stderr string) string {
 
 var cliVersion = regexp.MustCompile(`(?m)^Google Cloud SDK ([0-9]+)\.([0-9]+)\.([0-9]+)`)
 
-// MinMajor is the oldest supported Google Cloud SDK major version. shortcut: owner has not
-// decided the minimum; 400 (2022) predates nothing Hclaro relies on, raise it when one does.
+// MinMajor is the oldest supported Google Cloud SDK major version (owner decision: 400).
 const MinMajor = 400
 
 // ParseVersion returns the Google Cloud SDK version from `gcloud --version` output and
