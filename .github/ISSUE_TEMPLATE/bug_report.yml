@@ -12,7 +12,7 @@ body:
     attributes:
       label: Hclaro version
       description: Output of `hclaro --version`.
-      placeholder: hclaro 0.1.0
+      placeholder: hclaro 1.0.0
     validations:
       required: true
   - type: dropdown
