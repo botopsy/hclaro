@@ -87,9 +87,9 @@ describe('Cloud discovery', () => {
     const start = within(dialog).getByRole('button', { name: 'Start scan' });
     expect(start).toBeDisabled();
     // Default: every type in the default region (one per regional type plus S3 once), plus STS.
-    expect(within(dialog).getByText(/Calls AWS list APIs 6–11 times/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Calls AWS list APIs 15–29 times/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('checkbox', { name: 'eu-west-1' }));
-    expect(within(dialog).getByText(/Calls AWS list APIs 10–19 times/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Calls AWS list APIs 27–53 times/)).toBeInTheDocument();
     const reads = within(dialog).getByRole('group', { name: 'Concurrent reads' });
     expect(within(reads).getAllByRole('button').map(b => b.textContent)).toEqual(['1', '2', '4']);
     expect(within(reads).getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'true');
@@ -98,6 +98,26 @@ describe('Cloud discovery', () => {
     expect(await screen.findByText('Scan complete.')).toBeInTheDocument();
     const body = posts.find(p => p.url.endsWith('/discovery/scans'))!.body;
     expect(body).toMatchObject({ identityId: verified.identity!.id, acknowledgeApiCalls: true, scope: { regions: ['us-east-1', 'eu-west-1'], maxPerType: 200, concurrency: 2 } });
+  });
+
+  it('picks resource types from a dropdown with checkboxes', async () => {
+    serve({ options: verified, scans: [] });
+    view();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Scan…/ }));
+    const dialog = screen.getByRole('dialog', { name: /Scan AWS account 111122223333/ });
+    // Closed by default: the dialog shows a summary, not the whole list.
+    const trigger = within(dialog).getByRole('button', { name: 'Resource types' });
+    expect(trigger).toHaveTextContent(`All ${verified.types.length} types`);
+    expect(within(dialog).queryByRole('checkbox', { name: /VPCs/ })).not.toBeInTheDocument();
+    await user.click(trigger);
+    await user.click(within(dialog).getByRole('button', { name: 'Clear' }));
+    expect(trigger).toHaveTextContent(`0 of ${verified.types.length} types`);
+    expect(within(dialog).getByRole('button', { name: 'Start scan' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('checkbox', { name: /VPCs/ }));
+    expect(trigger).toHaveTextContent(`1 of ${verified.types.length} types`);
+    await user.click(within(dialog).getByRole('button', { name: 'Select all' }));
+    expect(trigger).toHaveTextContent(`All ${verified.types.length} types`);
   });
 
   it('labels candidates conservatively, filters them and never shows secrets', async () => {

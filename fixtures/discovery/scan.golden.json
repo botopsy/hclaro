@@ -47,6 +47,87 @@
         "operation": "rds:DescribeDBInstances",
         "importIdFormat": "DB instance identifier",
         "permission": "rds:DescribeDBInstances"
+      },
+      {
+        "type": "aws_instance",
+        "service": "ec2",
+        "label": "EC2 instances",
+        "global": false,
+        "operation": "ec2:DescribeInstances",
+        "importIdFormat": "Instance ID (i-…)",
+        "permission": "ec2:DescribeInstances"
+      },
+      {
+        "type": "aws_ebs_volume",
+        "service": "ec2",
+        "label": "EBS volumes",
+        "global": false,
+        "operation": "ec2:DescribeVolumes",
+        "importIdFormat": "Volume ID (vol-…)",
+        "permission": "ec2:DescribeVolumes"
+      },
+      {
+        "type": "aws_internet_gateway",
+        "service": "ec2",
+        "label": "Internet gateways",
+        "global": false,
+        "operation": "ec2:DescribeInternetGateways",
+        "importIdFormat": "Internet gateway ID (igw-…)",
+        "permission": "ec2:DescribeInternetGateways"
+      },
+      {
+        "type": "aws_route_table",
+        "service": "ec2",
+        "label": "Route tables",
+        "global": false,
+        "operation": "ec2:DescribeRouteTables",
+        "importIdFormat": "Route table ID (rtb-…)",
+        "permission": "ec2:DescribeRouteTables"
+      },
+      {
+        "type": "aws_nat_gateway",
+        "service": "ec2",
+        "label": "NAT gateways",
+        "global": false,
+        "operation": "ec2:DescribeNatGateways",
+        "importIdFormat": "NAT gateway ID (nat-…)",
+        "permission": "ec2:DescribeNatGateways"
+      },
+      {
+        "type": "aws_lb",
+        "service": "elasticloadbalancing",
+        "label": "Load balancers (ALB, NLB, GWLB)",
+        "global": false,
+        "operation": "elasticloadbalancing:DescribeLoadBalancers",
+        "importIdFormat": "Load balancer ARN",
+        "permission": "elasticloadbalancing:DescribeLoadBalancers"
+      },
+      {
+        "type": "aws_lambda_function",
+        "service": "lambda",
+        "label": "Lambda functions",
+        "global": false,
+        "operation": "lambda:ListFunctions",
+        "importIdFormat": "Function name",
+        "permission": "lambda:ListFunctions"
+      },
+      {
+        "type": "aws_dynamodb_table",
+        "service": "dynamodb",
+        "label": "DynamoDB tables",
+        "global": false,
+        "operation": "dynamodb:ListTables",
+        "importIdFormat": "Table name",
+        "permission": "dynamodb:ListTables"
+      },
+      {
+        "type": "aws_iam_role",
+        "service": "iam",
+        "label": "IAM roles",
+        "global": true,
+        "operation": "iam:ListRoles",
+        "importIdFormat": "Role name",
+        "permission": "iam:ListRoles"
       }
     ],
     "regions": [

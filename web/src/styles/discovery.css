@@ -241,3 +241,58 @@
 .discovery .disclosure-body strong {
   color: var(--text);
 }
+
+/* Resource types: a dropdown with checkboxes instead of a long list. */
+.discovery-types .popover-trigger {
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--surface);
+  display: inline-flex;
+}
+
+.discovery-types .popover {
+  width: min(560px, 80vw);
+  padding: 6px;
+}
+
+.discovery-types-actions {
+  gap: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+}
+
+.discovery-types-list {
+  max-height: 260px;
+  padding: 6px 4px 2px;
+  flex-direction: column;
+  gap: 6px;
+  display: flex;
+  overflow-y: auto;
+}
+
+.discovery-types-field {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  display: flex;
+}
+
+.discovery-types-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.discovery-types-list .check {
+  align-items: flex-start;
+  line-height: 1.4;
+}
+
+.discovery-types-list .check input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+}

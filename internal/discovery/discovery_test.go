@@ -14,6 +14,7 @@ import (
 
 	"hclaro/fixtures"
 	"hclaro/internal/awscli"
+	"hclaro/internal/discovery/discoverytest"
 	"hclaro/internal/imports"
 	"hclaro/internal/state"
 	"hclaro/internal/workspace"
@@ -124,6 +125,9 @@ func fixtureAnswer(args []string, acct string) ([]byte, error) {
 			return []byte(`{"DBInstances":[]}`), nil
 		}
 		return fixture("rds-describe-db-instances.json"), nil
+	}
+	if out, ok, err := discoverytest.More(args); ok {
+		return out, err
 	}
 	return nil, &awscli.CallError{Kind: awscli.KindFailed}
 }
@@ -788,7 +792,7 @@ func TestScopeValidation(t *testing.T) {
 		{Types: []string{"aws_vpc"}},
 		{Regions: []string{"mars-north-1"}, Types: []string{"aws_vpc"}},
 		{Regions: []string{"eu-west-1", "eu-west-1"}, Types: []string{"aws_vpc"}},
-		{Regions: []string{"eu-west-1"}, Types: []string{"aws_instance"}},
+		{Regions: []string{"eu-west-1"}, Types: []string{"aws_sqs_queue"}},
 		{Regions: []string{"eu-west-1"}, Types: []string{"aws_vpc"}, MaxPerType: 5000},
 		{Regions: []string{"eu-west-1"}, Types: []string{"aws_vpc"}, Concurrency: 9},
 		{Regions: Regions[:7], Types: []string{"aws_vpc"}},

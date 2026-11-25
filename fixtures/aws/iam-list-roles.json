@@ -1,0 +1,6 @@
+{
+  "Roles": [
+    {"RoleName": "orders-task-role", "Arn": "arn:aws:iam::111122223333:role/orders-task-role", "Path": "/", "AssumeRolePolicyDocument": {"Statement": [{"Principal": {"AWS": "DO_NOT_LEAK_HCLARO_TEST_SECRET"}}]}},
+    {"RoleName": "AWSServiceRoleForElasticLoadBalancing", "Arn": "arn:aws:iam::111122223333:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing", "Path": "/aws-service-role/elasticloadbalancing.amazonaws.com/"}
+  ]
+}
