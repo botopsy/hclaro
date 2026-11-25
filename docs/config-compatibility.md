@@ -2,7 +2,7 @@
 
 Hclaro keeps a few JSON files in its configuration folder: your OS user configuration directory plus `hclaro` (`~/Library/Application Support/hclaro` on macOS, `~/.config/hclaro` or `$XDG_CONFIG_HOME/hclaro` on Linux, `%AppData%\hclaro` on Windows; `HCLARO_CONFIG_DIR` overrides it). This page is the contract for how any Hclaro version treats those files, so that switching versions, including going back to an older one, never silently corrupts or downgrades them.
 
-**During the beta there is no automatic migration promise.** `profiles.json` is at schema 2 (M20 added the AWS authentication binding); the other files are at schema 1. Format changes follow the rules below, and the changelog says so.
+**There is no automatic migration promise yet.** `profiles.json` is at schema 2 (M20 added the AWS authentication binding); the other files are at schema 1. Format changes follow the rules below, and the changelog says so.
 
 ## Files
 
@@ -47,7 +47,7 @@ Every write goes to a private temporary file in the same folder, is synced, and 
 
 - **Upgrade:** replace the binary. Files at the same schema are used as they are. When a release upgrades a schema, the previous file is kept next to it as `<file>.schema-<n>-<time>`.
 - **Go back to an older release:** the older Hclaro refuses files written by a newer schema and opens them read-only; it does not overwrite them. To use the older version normally, quit Hclaro, then either restore the `.schema-<n>-<time>` backup over the current file or move the current file away (the older version then starts empty for that file). Releases up to and including 0.1.0-beta.3 also refuse newer `projects.json`, `profiles.json` and `history.json` at startup, but could overwrite a newer `history.json` written while they were running, and replace a newer `cost-estimates.json`; quit older versions before starting a newer one.
-- **Back up:** quit Hclaro and copy the whole configuration folder. Keep the copy private: it holds folder paths, resource addresses and profile names. Do not attach these files to public issues; describe their shape instead (see [BETA.md](BETA.md#giving-feedback)).
+- **Back up:** quit Hclaro and copy the whole configuration folder. Keep the copy private: it holds folder paths, resource addresses and profile names. Do not attach these files to public issues; describe their shape instead (see [BETA.md](reference/limitations.md#giving-feedback)).
 - **Start fresh:** quit Hclaro and delete or rename the folder.
 
 ## For maintainers

@@ -1,6 +1,6 @@
 # Getting started with hclaro
 
-This guide takes you from a clean machine to hclaro showing one of your Terraform or OpenTofu projects. hclaro is published by BotOpsy and is in beta: read [BETA.md](BETA.md) first.
+This guide takes you from a clean machine to hclaro showing one of your Terraform or OpenTofu projects. hclaro is published by BotOpsy and is not production-certified: read [Status, testing and limitations](reference/limitations.md) first.
 
 ## 1. Requirements
 
@@ -15,7 +15,7 @@ This guide takes you from a clean machine to hclaro showing one of your Terrafor
 
 macOS and Linux (and Windows from Git Bash): `curl -fsSL https://get.hclaro.dev | sh`. Windows: the same command from Git Bash (or MSYS2/Cygwin); native PowerShell is not supported by the script, use the archive in Option A. It checks the archive's sha256 against the release checksums before installing and stop on a mismatch. `HCLARO_VERSION=v<version>` pins a release, `INSTALL_DIR=<absolute folder>` chooses the folder (default `/usr/local/bin`, or `%LOCALAPPDATA%\Programs\hclaro` on Windows). The script asks for `sudo` only when `INSTALL_DIR` is not writable; it never edits `PATH` and runs only `hclaro --version`. Uninstall by deleting the binary (see [Uninstall and clean up](#uninstall-and-clean-up)). To pin the script itself, use its tag: `https://raw.githubusercontent.com/botopsy/hclaro/v<version>/scripts/install.sh`. Always write the full `https://`.
 
-### Option A: download a beta binary
+### Option A: download a release binary
 
 1. Download the archive for your platform and `hclaro_<version>_checksums.txt` from [GitHub Releases](https://github.com/botopsy/hclaro/releases).
 2. Verify it:
@@ -35,7 +35,7 @@ macOS and Linux (and Windows from Git Bash): `curl -fsSL https://get.hclaro.dev 
    ```
 
    On Windows (PowerShell): `Expand-Archive .\hclaro_<version>_windows_amd64.zip $env:LOCALAPPDATA\Programs\hclaro`, then add that folder to your user `Path` in **Settings → System → About → Advanced system settings → Environment Variables** (user variables, not system). Avoid folders that other users or installers can write to, and do not run Hclaro as root or Administrator.
-4. Beta binaries are **not code-signed or notarized**: Apple and Microsoft have not checked them, and the warnings below are expected. Allow only the one binary whose checksum (and ideally attestation) you verified. Never turn off Gatekeeper (`spctl --master-disable`) or SmartScreen for the whole system.
+4. Release binaries are **not code-signed or notarized**: Apple and Microsoft have not checked them, and the warnings below are expected. Allow only the one binary whose checksum (and ideally attestation) you verified. Never turn off Gatekeeper (`spctl --master-disable`) or SmartScreen for the whole system.
    - **macOS.** If you downloaded the archive with a browser, the first `hclaro` run is blocked ("Apple could not verify…"). Open **System Settings → Privacy & Security**, click **Open Anyway** next to the hclaro message, confirm, and run it again. Or, in a terminal, remove the download flag from that one file only: `xattr -d com.apple.quarantine ~/.local/bin/hclaro`. Archives fetched with `curl` carry no such flag and are not blocked.
    - **Windows.** SmartScreen may show **Windows protected your PC**; choose **More info → Run anyway**. Or, before extracting, unblock just that archive in PowerShell: `Unblock-File .\hclaro_<version>_windows_amd64.zip`.
    - On macOS you can avoid the warning by installing from source instead (Option B, or `brew install botopsy/tap/hclaro`): a binary you build yourself is not flagged as downloaded.
@@ -72,6 +72,8 @@ make demo       # one synthetic project with 316 resources
 make demo-hub   # Workspace Hub with synthetic projects and workspaces
 ```
 
+`make demo-hub` opens three synthetic projects (a Terraform project with `default`, `dev` and `prod` workspaces, an OpenTofu project and an uninitialized one) and two comparison roots for [Compare workspaces](guides/workspace-comparison.md). The demo keeps its history in `.cache/demo/config` and its registry in `.cache/hub-demo`, never in your real configuration folder. Do not put the fake executable it builds on your normal `PATH`. Demos need a source checkout (Go 1.26+ and Make); release binaries do not include them.
+
 Open the private URL printed in the terminal. Ctrl+C stops the server.
 
 ## 4. Open your own project
@@ -95,7 +97,7 @@ Reading state can contact your configured backend and load provider plugins, usi
 
 ## 5. Find your way around
 
-The sidebar shows the current **project** and **workspace** at the top, then the project's views, **Plan & analyze**, **Manage**, and Git, Tools and Settings at the bottom. The README's [Navigation](../README.md#navigation) section describes each entry.
+The sidebar shows the current **project** and **workspace** at the top, then the project's views, **Plan & analyze**, **Manage**, and Git, Tools and Settings at the bottom. [Resource Explorer and navigation](guides/resource-explorer.md#navigation) describes each entry; the [documentation index](README.md) lists every guide.
 
 ## Troubleshooting
 
@@ -111,7 +113,7 @@ The sidebar shows the current **project** and **workspace** at the top, then the
 | Port in use | Omit `--port`, or choose another. |
 | Plan unavailable | The Plans view says why (for example a remote execution backend). Hclaro plans and applies only locally executed workspaces. |
 
-More cases: [Compatibility and troubleshooting](../README.md#compatibility-and-troubleshooting).
+More cases: [Troubleshooting](reference/troubleshooting.md).
 
 ## Upgrade, go back and back up
 

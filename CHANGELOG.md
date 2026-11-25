@@ -50,9 +50,12 @@ Added:
 - AWS authentication (M20): an execution profile now chooses how AWS credentials reach commands, the **AWS CLI** (`AWS_PROFILE`) or **aws-vault** (`aws-vault exec <profile> --`), and can name an expected 12-digit account and role ARN pattern. The header shows the profile's AWS state in words (*Not checked*, *Verified*, *Authentication required*, *Mismatch*, *Unknown*, *Missing tool*). **Verify identity** asks STS GetCallerIdentity through the same AWS CLI or aws-vault path the engine uses, only when you click; **Sign in with AWS (SSO)** runs `aws sso login --profile <name>` for IAM Identity Center profiles, and **Sign in with aws login** runs `aws login` only when the installed AWS CLI offers it. A sign-in is never treated as verified until STS answers, and it never resumes a plan or apply. An apply whose profile names an AWS profile needs the identity verified in the preflight; the approval is bound to that account and principal, and STS is asked again immediately before the apply: another identity (including after a sign-in in a terminal) or a failed check refuses it (`AUTH_CONTEXT_STALE`). With an expected account or role, the apply preflight also blocks a different account or role. Opening a Hub workspace whose profile uses aws-vault never runs aws-vault: a local backend is read without it, and a remote backend is read only after **Read again**. Hclaro never reads, stores or shows credentials, sign-in URLs or codes, and never exports credentials. Inherited role, web-identity, container-credential and `AWS_VAULT` variables are now also not passed when a profile names an AWS profile. `profiles.json` moves to schema 2; the first change after upgrading keeps a backup copy of the schema 1 file (`profiles.json.schema-1-<time>`), and older Hclaro versions then open profiles read-only.
 - Git branch switching (M29): the chevron next to the Git badge lists existing local branches and switches to one after a preview and your confirmation. It is blocked while the working tree has any uncommitted or untracked change, when the target branch would overwrite an ignored file or remove the project folder, and while any operation runs in a project inside the repository. Hclaro never creates, deletes, fetches, pulls, merges, stashes, resets or discards anything, never runs repository hooks during the switch, never changes the Terraform workspace and runs no Terraform/OpenTofu command afterwards; plans made before the switch must pass the apply preflight's source checks again. Every switch and refused attempt is recorded in History as *Branch switch*.
 
+Documentation (M28):
+- Documentation reorganized: a shorter README, an index at `docs/README.md`, one guide per feature under `docs/guides/`, reference pages under `docs/reference/` and build instructions under `docs/development/`. `docs/BETA.md` became `docs/reference/limitations.md` ("Status, testing and limitations") and no longer calls the project a beta. Corrected statements that were out of date: the resource inspector can reveal one hidden value on request (M30), and AWS cloud discovery covers more than five types.
+
 ## 0.1.0-beta.5 — 2026-11-16
 
-Real-engine qualification (M27) and Hub execution on by default. What ran against real engines is in `docs/support-matrix.md`; see `docs/BETA.md` for the limits.
+Real-engine qualification (M27) and Hub execution on by default. What ran against real engines is in `docs/support-matrix.md`; see `docs/reference/limitations.md` for the limits.
 
 Changed:
 
@@ -75,7 +78,7 @@ Distribution:
 
 ## 0.1.0-beta.4 — 2026-11-14
 
-Pre-release fixes from a review of the whole codebase (M26). Features are still tested with synthetic fixtures and fake engines; see `docs/BETA.md` and `docs/support-matrix.md` for what has run against real engines.
+Pre-release fixes from a review of the whole codebase (M26). Features are still tested with synthetic fixtures and fake engines; see `docs/reference/limitations.md` and `docs/support-matrix.md` for what has run against real engines.
 
 Build:
 

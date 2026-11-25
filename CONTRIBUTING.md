@@ -1,6 +1,6 @@
 # Contributing to hclaro
 
-hclaro is published by [BotOpsy](https://github.com/botopsy). Thank you for your interest. During the public beta the best way to contribute is feedback.
+hclaro is published by [BotOpsy](https://github.com/botopsy). Thank you for your interest. The best way to contribute is feedback.
 
 ## How to help
 
@@ -8,17 +8,19 @@ hclaro is published by [BotOpsy](https://github.com/botopsy). Thank you for your
 - **Request features** with the feature request form: describe the problem you want solved before the solution.
 - **Ask questions and share ideas** in [GitHub Discussions](https://github.com/botopsy/hclaro/discussions).
 
+Everyone taking part in the project is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 Never include state, plans, plan output, `.tfvars` contents, credentials, the private session URL or real account identifiers. Report security problems privately as described in [SECURITY.md](SECURITY.md).
 
-## Pull requests during the beta
+## Pull requests
 
-BotOpsy is **not accepting external code pull requests for hclaro during the beta**. This keeps review focused while the security-sensitive core settles; the repository limits pull requests to collaborators, and any external pull request that still arrives may be closed without review. Please open an issue instead, and include a patch or a link to your fork if it helps explain the idea.
+BotOpsy is **not accepting external code pull requests for hclaro at this time**. This keeps review focused while the security-sensitive core settles; the repository limits pull requests to collaborators, and any external pull request that still arrives may be closed without review. Please open an issue instead, and include a patch or a link to your fork if it helps explain the idea.
 
-This is a project contribution policy, not a license restriction. hclaro is licensed under the [Apache License 2.0](LICENSE): you are free to fork it, modify it and distribute your changes under that license. The policy may change after the beta; this file will say so.
+This is a project contribution policy, not a license restriction. hclaro is licensed under the [Apache License 2.0](LICENSE): you are free to fork it, modify it and distribute your changes under that license. The policy may change; this file will say so.
 
 ## Working on your own fork
 
-The product specification is [docs/PRD.md](docs/PRD.md) and the architecture is described in [docs/architecture.md](docs/architecture.md). The development rules:
+The product specification is [docs/PRD.md](docs/PRD.md) and the architecture is described in [docs/architecture.md](docs/architecture.md); build and test instructions are in [docs/development/building-and-testing.md](docs/development/building-and-testing.md). The development rules:
 
 - Use synthetic data, the fake engine (`make demo`, `make demo-hub`) and fixtures. Never use real cloud accounts, backends or credentials in tests, and never run mutating commands while developing.
 - Install with `npm ci --prefix web` (`make install`); commit lockfile changes together with any dependency change.

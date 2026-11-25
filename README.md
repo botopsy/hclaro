@@ -1,580 +1,97 @@
 # hclaro
 
-*By [BotOpsy](https://github.com/botopsy).* **A local-first workspace for Terraform and OpenTofu.** Hclaro is a single binary that starts a private web UI on your own machine (`127.0.0.1`) for the project you run it in. Browse recorded state, review plans before anything changes, and apply only a reviewed saved plan after an explicit confirmation. No accounts, telemetry, cloud service or external runtime assets.
+*By [BotOpsy](https://github.com/botopsy).* **A local-first workspace for Terraform and OpenTofu.**
 
-> **Public beta, not production-certified.** Hclaro is free and open source under the [Apache License 2.0](LICENSE), for personal and commercial use. It is tested with synthetic fixtures and fake engines in CI; real Terraform 1.5.5, 1.5.7 and 1.17.2 and OpenTofu 1.6.3 and 1.13.9 have been run end to end against disposable projects with the local backend only, and no cloud provider or remote backend is certified yet. Read [docs/BETA.md](docs/BETA.md) before pointing it at infrastructure you care about.
+Hclaro is a single binary that starts a private web UI on your own machine for the project you run it in. Browse recorded state, review plans before anything changes, and apply only a reviewed saved plan after an explicit confirmation. No accounts, telemetry, cloud service or external runtime assets.
+
+[Install](#installation) · [Documentation](docs/README.md) · [Getting started](docs/GETTING_STARTED.md) · [Releases](https://github.com/botopsy/hclaro/releases)
 
 ![Hclaro resource explorer with the grouped sidebar](docs/screenshots/navigation-expanded-dark.png)
 
-## What it does
+## Overview
 
-| Area | What you get |
+Terraform and OpenTofu show state and plans as text. Hclaro puts the same information, read through your own installed engine, in a browser UI that is easier to search, filter and review, without sending it anywhere.
+
+- **For** developers and platform engineers who work with several Terraform/OpenTofu projects and workspaces.
+- **Why not only the CLI:** a plan with hundreds of changes is hard to read in a terminal. Hclaro lists every change with its attribute diff, shows dependencies and drift, and keeps the confirmation steps for risky operations explicit.
+- **Local-first:** Hclaro listens only on `127.0.0.1`, uses the Terraform or OpenTofu CLI you already have, and keeps its own files in your user configuration folder. It runs no command on its own: plans, drift scans, imports and applies happen only when you ask for them in the UI.
+
+Hclaro is free and open source under the [Apache License 2.0](LICENSE), for personal and commercial use.
+
+## Key capabilities
+
+| | |
 | --- | --- |
-| **Explore** | Resource instances, nested modules and provider sources from recorded state; search, filters, an inspector with redacted attributes, and an overview. |
-| **Plan & analyze** | Plans with a visual review of every change; drift detection (refresh-only, never writes state); dependency graph and blast radius; comparison of two workspaces. |
-| **Change, with confirmation** | Replace selected instances and import existing objects through reviewed plans; apply only a reviewed saved plan, after preflight checks and a typed confirmation, for locally executed backends. |
-| **Manage** | Workspace Hub for several project roots, guided `init`, CLI workspace lifecycle, read-only project tools (`validate`, `fmt -check`, `providers`, output metadata), execution profiles, operation history and a Git view. |
-| **Optional, opt-in** | Read-only AWS cloud discovery through your AWS CLI; cost estimates through a local Infracost CLI (off by default; disabled by `--strict-local`). |
+| **Resource Explorer** | Resource instances, nested modules and provider sources from recorded state, with search, filters and an inspector that redacts sensitive attributes. [Guide](docs/guides/resource-explorer.md) |
+| **Visual Plan Review** | Every change in a plan with its replacement order, reason and attribute diff; replacement and import through the same reviewed plan. [Guide](docs/guides/plans-and-apply.md) |
+| **Safe Operations** | Apply only a reviewed saved plan, after preflight checks and a typed confirmation, for locally executed backends. Never `destroy`, `state rm/mv` or `force-unlock`. [Guide](docs/guides/plans-and-apply.md#apply) |
+| **Workspace Hub** | Several project roots and CLI workspaces in one place, guided `init`, workspace lifecycle and read-only project tools. [Guide](docs/guides/workspace-hub.md) |
+| **Infrastructure Analysis** | Drift detection (refresh-only, never writes state), dependency graph with potential impact, and comparison of two workspaces. [Drift](docs/guides/drift-detection.md), [graph](docs/guides/dependency-graph.md), [compare](docs/guides/workspace-comparison.md) |
+| **Developer Tools** | Execution profiles, operation history, Git status, diffs and branch switching, plus opt-in read-only cloud discovery (AWS, Google Cloud, Azure), Infracost estimates and AI review. [Profiles](docs/guides/execution-profiles.md), [history and Git](docs/guides/history-and-git.md) |
 
-Hclaro never runs `init`, `plan`, `refresh` or `apply` on its own, never runs `destroy`, `state rm/mv` or `force-unlock`, and redacts secrets on the server before data reaches the browser. Details: [SECURITY.md](SECURITY.md) and [docs/architecture.md](docs/architecture.md).
+Cost estimates and AI assistance send data to third parties only when you opt in; `hclaro --strict-local` disables them.
+
+## Installation
+
+Release archives exist for macOS arm64/amd64, Linux amd64/arm64 and Windows amd64. You also need Terraform 1.5–1.17 or OpenTofu 1.6–1.13 on `PATH`; Hclaro never downloads an engine.
+
+```sh
+# macOS and Linux (Windows: run from Git Bash). Checks the archive's sha256 before installing.
+curl -fsSL https://get.hclaro.dev | sh
+
+# macOS with Homebrew (Linux untested)
+brew install botopsy/tap/hclaro
+```
+
+Or download an archive and the checksums file from [GitHub Releases](https://github.com/botopsy/hclaro/releases), or build from source with Go 1.26+ and Make (`make binary` produces `bin/hclaro` without Node). Binaries are not code-signed or notarized, so Gatekeeper and SmartScreen warn on first launch. Verification, upgrade and uninstall: [Getting started](docs/GETTING_STARTED.md#2-install).
 
 ## Quick start
 
-**You need:** macOS, Linux or Windows; Terraform 1.5–1.17 or OpenTofu 1.6–1.13 on `PATH` (Hclaro uses your installed engine and never downloads one); a browser on the same machine.
-
-1. **Install.** On macOS or Linux, the installer downloads the newest release, checks its sha256 and installs `hclaro` to `/usr/local/bin` (asks for `sudo` only if that folder is not writable; set `INSTALL_DIR=$HOME/.local/bin` to avoid it, `HCLARO_VERSION=v0.1.0-beta.5` to pin a version):
-
-   ```sh
-   curl -fsSL https://get.hclaro.dev | sh
-   ```
-
-   To read the script first: `curl -fsSL <url> -o install.sh && less install.sh && sh install.sh`. On Windows, run the same command from Git Bash. The checksum comes from the same release page, so it proves the download is complete, not who published it. Or install by hand: download the archive for your platform and the checksums file from [GitHub Releases](https://github.com/botopsy/hclaro/releases) (beta pre-releases for macOS arm64/amd64, Linux amd64/arm64 and Windows amd64), verify it, and put `hclaro` on your `PATH`:
-
-   ```sh
-   shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing
-   ```
-
-   Binaries are not signed or notarized, so Gatekeeper and SmartScreen warn on first launch. Each release also has a CycloneDX SBOM and build-provenance attestations (`gh attestation verify <file> -R botopsy/hclaro`). On macOS with Homebrew (Linux untested), `brew install botopsy/tap/hclaro` installs the same release archive, which Gatekeeper does not block. Or build from source with Go 1.26+ and Make: `make binary` produces `bin/hclaro` without Node.
-
-2. **Try the synthetic demo** (from a source checkout; optional). It uses a fake engine and synthetic state: **no real Terraform, AWS, provider or backend is contacted.**
-
-   ```sh
-   make demo-hub   # Workspace Hub with synthetic Terraform/OpenTofu projects
-   make demo       # one synthetic project with 316 resources
-   ```
-
-3. **Open your own projects.**
-
-   ```sh
-   hclaro --hub           # Workspace Hub: register your project folders
-   cd path/to/terraform-root && hclaro   # or open one project directly
-   hclaro --strict-local  # disable every feature that sends data to a third party
-   ```
-
-   Open the private URL printed in the terminal. It contains the session credential: do not share or paste it anywhere.
-
-**First run, step by step:** add a project folder in the Hub → open it to list its CLI workspaces → choose a workspace and, if you use them, an execution profile → if the project is not initialized, review and run **Initialize…** (never automatic) → run a plan → review every change → apply the reviewed plan only after typing the confirmation → check the result in Operations and the refreshed state. Plans and applies in Hub workspaces need the experimental flag described in [docs/BETA.md](docs/BETA.md#what-is-qualified-what-is-beta-and-what-is-off); without it they run only for the project you start Hclaro in.
-
-Full walkthrough, troubleshooting and uninstall: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md). What is tested and what is not: [docs/BETA.md](docs/BETA.md).
-
-## License and feedback
-
-Hclaro is licensed under the [Apache License, Version 2.0](LICENSE). You may use it, including commercially, modify it, fork it and redistribute it under that license. Bundled third-party components keep their own licenses; see [`internal/ui/dist/THIRD-PARTY-NOTICES.txt`](internal/ui/dist/THIRD-PARTY-NOTICES.txt). The license grants no trademark rights; see [TRADEMARKS.md](TRADEMARKS.md) for how to refer to the hclaro and BotOpsy names and logos.
-
-```text
-Copyright 2026 BotOpsy
-Licensed under the Apache License, Version 2.0
+```sh
+hclaro --version                       # check the install
+cd path/to/terraform-root && hclaro    # open one project
+hclaro --hub                           # or open the Workspace Hub and register several
 ```
 
-hclaro is published by BotOpsy, an independent software brand and the publishing name of hclaro's author. BotOpsy is not a company or a separate legal entity.
+Open the private URL printed in the terminal. It contains the session credential: do not share it or paste it anywhere.
 
-Bug reports and feature requests are welcome as [GitHub Issues](https://github.com/botopsy/hclaro/issues); questions and ideas in [GitHub Discussions](https://github.com/botopsy/hclaro/discussions). During the beta the project does not accept external pull requests; see [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). **Never attach state, plans, variable files, credentials or real account identifiers.**
-
-The sections below are the detailed reference.
-
-## Run the isolated demo
-
-Go 1.26 or newer and Make are sufficient; the frontend is already built and embedded:
+To look around without real infrastructure, a source checkout has a synthetic demo that uses a fake engine and contacts nothing (it is not part of release binaries, and it is not evidence that a real engine or provider works):
 
 ```sh
-make demo
+make demo-hub   # Workspace Hub with synthetic projects
+make demo       # one synthetic project with 316 resources
 ```
 
-Open the private session URL printed in the terminal. This builds a fake CLI in `bin/mock`, selects it explicitly, and uses only the synthetic project, backend metadata, and 316-resource fixture. It never runs an installed Terraform/OpenTofu executable. Operation history from the demo is kept in `.cache/demo/config`, not in your real configuration folder. Ctrl+C stops the server. Your environment must permit local TCP listeners and a browser.
+The full walkthrough, from first project to a reviewed apply, is in [Getting started](docs/GETTING_STARTED.md).
 
-Do not install the fake executable on your normal PATH.
+## Documentation
 
-```sh
-make demo-hub
-```
+The [documentation index](docs/README.md) describes every page. The main entries:
 
-opens the Workspace Hub with three synthetic projects: a Terraform project with `default`, `dev` and `prod` workspaces, an OpenTofu project and an uninitialized one, plus two comparison roots (`stack` with `dev` and `prod`, and `stack-tofu`, the same stack recorded by OpenTofu, whose `default` workspace has a renamed module) for **Compare workspaces**. They and their registry live in `.cache/hub-demo`; your real registry is not used.
-
-## Build from source
-
-Build prerequisites: Go 1.26+, Node.js 22.12+ (Node 24 recommended), npm, and Make. Node is a **build tool only**. Go race tests also require a C compiler.
-
-```sh
-make install     # install frontend dependencies; requires npm registry access
-make build       # TypeScript + Vite, then embed assets into bin/hclaro
-make test        # Go race tests + Vitest
-make lint        # go vet + TypeScript + ESLint
-```
-
-`make install` runs `npm ci` against the committed `web/package-lock.json`. Update dependencies deliberately with `npm install --prefix web <pkg>@<version>` and commit the lockfile change.
-
-`make binary` builds from the already bundled assets without Node. It uses `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and a fixed version; rebuilding with the same Go toolchain, target, version, and assets produces the same binary bytes. `make build` regenerates the embedded assets; Vite output is deterministic for the same lockfile, so rebuilding unchanged sources produces identical files.
-
-## Use with an existing project
-
-```sh
-./bin/hclaro
-./bin/hclaro --path ./infrastructure/prod
-./bin/hclaro --port 8080
-./bin/hclaro --engine terraform
-./bin/hclaro --engine tofu
-./bin/hclaro --no-browser
-./bin/hclaro --help
-./bin/hclaro --version
-```
-
-Hclaro inspects only the selected directory; it never searches parent directories. Terraform is preferred when both CLIs are on PATH. The port is dynamically allocated unless supplied. The browser opens automatically; if it does not, use the printed URL. Exit codes: 0 success/help/version, 1 startup failure, 2 invalid arguments.
-
-Launch runs only `version -json`, `workspace show`, and `show -json`. It never runs init (init runs only from a Hub project page after you confirm it; see [Initialize a project](#initialize-a-project)), plan, refresh, apply, destroy, import, replace, or state modifications. A plan runs only when you confirm it in the UI (see [Plans](#plans)). Hclaro never runs `terraform import`/`tofu import`; imports use import blocks and a reviewed plan (see [Import](#import)). Reading state can contact the configured remote backend and load installed provider plugins. Use an initialized project and your existing credentials/environment; Hclaro does not resolve or store credentials itself.
-
-The UI displays **one recorded snapshot**, not live provider inventory or drift detection. Browsing, searching, filtering, sorting, and opening details read process memory. Use **Read again** in the context bar (or restart Hclaro) to inspect the folder and reread state after an external change, such as running `init` in a terminal; it runs no init, plan or refresh and is unavailable while an operation runs. Inherited `TF_CLI_ARGS` settings are accepted only when they contain `-no-color`; other injected flags fail explicitly because they can redirect raw output or alter reads. `TF_DATA_DIR`, `TF_WORKSPACE`, CLI configuration, and credential settings are inherited. `TF_LOG*` and update checks are disabled for child reads to prevent secret-bearing log files and update telemetry.
-
-The private URL contains a random launch credential in its **fragment**, which is removed by the app before API use. Keep that URL private. The browser stores the credential in sessionStorage for reloads; state is never placed in localStorage. Only display preferences (theme, density, grouping, editor, sidebar mode) and the details-drawer width use localStorage. A stopped/restarted server requires its new URL.
-
-## Workspace Hub
-
-```sh
-./bin/hclaro --hub                 # open the Hub; the current directory is not read
-./bin/hclaro                       # inside a project: open it, as before; elsewhere: open the Hub
-./bin/hclaro --hub --path ./prod   # open the Hub with ./prod as the launch project
-```
-
-The **project switcher** at the top of the sidebar shows the current project and how it was opened, and offers the project opened from the terminal, recent Hub projects and **All projects**, which lists registered project roots. A project is one root folder plus an engine choice and a name; a CLI workspace is a state namespace inside it. The two are never treated as the same thing, and neither is a cloud account or profile.
-
-- **Add project** takes an absolute path or a folder picked with **Browse…**, which lists one folder's subfolders at a time (hidden folders skipped, never recursive). The path is resolved through symlinks and must contain `.tf`, `.tofu` or state files; the same folder cannot be added twice, including through a symlink. Names may repeat.
-- Rename, pin, reorder (arrow buttons) and **Remove** a project. Removing forgets the entry only; no file, data directory, state or backend is touched. A moved or deleted folder stays listed with its problem and a **Repair path** action.
-- The registry is `projects.json` (schema `version: 1`) in your user configuration directory (`~/Library/Application Support/hclaro` on macOS, `~/.config/hclaro` on Linux, `%AppData%\hclaro` on Windows; `HCLARO_CONFIG_DIR` overrides it). It holds IDs, paths, names, engine choice, pins and last-opened time, nothing else. Writes are atomic. A file that cannot be decoded is moved aside to `projects.json.corrupt-<time>` and the Hub starts empty; a file from a newer Hclaro or one that cannot be read is left untouched and the Hub becomes read-only. The rules for all configuration files, upgrades and going back to an older version: [docs/config-compatibility.md](docs/config-compatibility.md).
-- Project cards use the file system only: status, initialization, backend type and lockfile. Engine version and workspaces appear once a project has been opened in the session.
-
-Opening a project runs `version -json` and `workspace list` (no `TF_WORKSPACE`, so the marked workspace is the persisted **CLI default**). Opening a workspace reads its recorded state with `version -json`, `workspace list`, `workspace show` and `show -json`, each child getting `TF_WORKSPACE=<workspace>` in its own environment. Hclaro's own environment is not changed and `workspace select` never runs, so your terminal's workspace stays as it was. The engine must report the selected workspace back before anything is shown. Each tab holds its own project and workspace in the URL (`/projects/<id>/workspaces/<name>/resources`); **New tab** opens the same view in another tab, so `dev` and `prod` can be side by side. **Read again** rereads the state. Search, recently opened projects, arrow-key lists and a production-like-name hint (by name only, never a guarantee) are available.
-
-Hub execution is **on by default**: a Hub workspace can be planned and applied as described below. Start Hclaro with `--no-hub-execution` to keep Hub workspaces **read-only**, so plans, applies and imports run only for the project Hclaro was launched with, in its CLI-selected workspace. Either way, a Hub project offers a reviewed init and reviewed workspace commands (below); its read-only **Project tools** run validate, a format check, providers and output metadata on request. With an inherited `TF_WORKSPACE`, the launch project keeps using it while Hub children replace it. An absolute `TF_DATA_DIR` would make every project share one data directory, so Hub reads are refused until Hclaro is restarted without it (a relative `TF_DATA_DIR` resolves inside each project). The per-workspace execution model for plans and applies in Hub workspaces, its safety checks and its limits are in [docs/architecture/adr-m24-scoped-execution.md](docs/architecture/adr-m24-scoped-execution.md). Hub execution is qualified with real engines for the local backend only (support matrix rows HUB-02 to HUB-17; Windows network isolation not verified); every other backend and engine pair is row HUB-01, not run with a real engine. With Hub execution on, a Hub workspace tab offers **Plans**, **Operations**, **Import & discovery**, **Drift detection** and **Dependency graph** for that workspace only, with deep links (`/projects/<id>/workspaces/<name>/plans[/<plan id>]`, `.../operations`, `.../import`, `.../discovery`, `.../drift` and `.../graph`), and its Resources list offers replacement selection; the apply dialog is headed *Apply to &lt;project&gt; / &lt;workspace&gt;*. An import writes the reviewed block into that project's folder only and runs a full plan there; the import is recorded only when you apply that reviewed plan. The new file is project configuration, so plans of every workspace of the project include the import block until you remove it. A replacement is a full plan with one `-replace` per selected instance (at most 50, never `-target`), so it shows unrelated pending changes too and cannot promise zero downtime. Drift scans and graphs run in that workspace only, after the same preflight as for the launch project, and their results are kept per workspace view. Cloud discovery verifies the AWS identity and scans with that workspace's execution profile only after you click; its verification, scans and prepared imports belong to that workspace view and are dropped when it closes. With `--no-hub-execution`, open a project from its folder (`hclaro --path <folder>`) to plan and apply it. The former opt-in flag `--experimental-hub-execution` is still accepted and changes nothing.
-
-### Initialize a project
-
-A project page offers **Initialize…** (or **Run init again…** once initialized). Nothing initializes when a project is added, listed, opened or refreshed.
-
-1. The review reads only the folder, without running the engine: canonical path, engine (and version, if the project was already inspected), backend (initialized type, or whether a `backend`/`cloud` block is declared), workspace (the CLI default; an inherited `TF_WORKSPACE` is not passed to init), data directory, lock file status, the exact command and what init writes and contacts. Inherited settings that change init, such as a CLI configuration file or `TF_PLUGIN_CACHE_DIR`, are named without their values.
-2. You tick the acknowledgement and click **Initialize**. The command is always `terraform init -input=false -no-color` / `tofu init -input=false -no-color`; Terraform 1.9 and later run `init -input=false -json` instead so progress is machine-readable. No other flag is ever added: no `-upgrade`, `-migrate-state`, `-force-copy`, `-reconfigure`, `-lock=false`, `-backend=false` or `-backend-config`. Inherited `TF_CLI_ARGS`/`TF_CLI_ARGS_init` with anything but `-no-color` makes init unavailable.
-3. The sanitized log streams in the dialog, with a **Cancel init** button. Closing the dialog does not stop init; reopening the page shows its progress. While init runs, that project's workspaces cannot be listed or read and no other operation can run in the same folder; other projects are unaffected.
-4. The result shows the status (`succeeded`, `failed`, `cancelled` or `unknown`), the engine exit code, whether `.terraform.lock.hcl` was created or changed, and next steps. Success is reported only for exit code 0 *and* an existing data directory. A failure is never retried automatically. When the engine asks to migrate or reconfigure the backend, needs interactive input, needs `-upgrade` for the lock file, or fails on credentials, network, a registry, backend settings, a state lock or the required engine version, Hclaro says which and what to do in a terminal.
-
-If the project is the one Hclaro was opened with from the terminal, its explorer, plans and imports are read again automatically once init ends, so planning becomes available without a restart.
-
-Init writes the data directory and lock file in the project and can contact provider/module registries and the backend with your inherited credentials. It is not an offline operation. If the project, its configuration, lock file, engine executable or relevant `TF_*` environment changes between review and confirmation, init is refused and you review again.
-
-### Manage CLI workspaces
-
-Choosing a workspace in Hclaro (a row on the project page, the **Workspace** selector under the project switcher or **New tab**) changes only that browser tab and never the CLI default. Three separate actions do change workspaces; each first lists workspaces with the CLI, shows the exact command and its effects, and runs only after you confirm:
-
-| Action | Command | Effect | Confirmation |
-| --- | --- | --- | --- |
-| **New workspace…** | `workspace new NAME` | Creates an empty workspace **and makes it the CLI default** (the engines always do) | Checkbox |
-| **Set CLI default…** (Advanced actions) | `workspace select NAME` | Changes the CLI default: terminal commands in this folder now use that workspace's state | Checkbox |
-| **Delete** (Advanced actions) | `workspace delete NAME` | Permanently deletes an empty workspace's state; no cloud resources | Type the exact name |
-
-- Names use letters, digits, `-` and `_`, start with a letter or digit, and are at most 90 characters, so a name can never be read as a flag. No other flag is added: no `-force`, `-or-create`, `-lock=false` or `-state`.
-- Inherited `TF_WORKSPACE` is not passed to these commands (the engines refuse to create or select a workspace while it is set). A terminal that sets `TF_WORKSPACE` keeps using it whatever the CLI default is. `TF_CLI_ARGS`, `TF_CLI_ARGS_workspace` or `TF_CLI_ARGS_workspace_<action>`/`_list` with anything but `-no-color` makes the actions unavailable.
-- Delete is offered only for a workspace that is not `default`, not the CLI default and whose recorded state has no resources or outputs, checked when you review and again just before running; the engine also refuses non-empty state without `-force`. In this release delete is limited to the `local` backend.
-- `remote`/`cloud` backends, backends without multiple-workspace support, unknown backends and uninitialized projects cannot change workspaces here; the project page says why.
-- If the workspace list or CLI default changes between review and confirmation (for example in a terminal), nothing runs and you review again. One command at a time per project folder, shared with init and plans.
-- The result shows the exit code and the CLI default before and after. If the engine succeeded but workspaces cannot be listed afterwards, the result is **not confirmed**: list workspaces again before repeating anything. Nothing is retried or undone automatically.
-- Optional fallback: **Open in a separate session** on the project page shows `hclaro --path '<folder>'` to copy. That second process reads only that folder in its CLI default workspace and does not coordinate with this session (no shared tabs, approvals or per-folder claims), so do not run plans, applies, init or workspace commands of the same folder in both at once.
-
-### Project tools
-
-Each Hub workspace tab has a **Tools** view (also reachable with **Project tools** on the project page, including for projects that are not initialized yet). For the project opened from the terminal, **Tools** in the sidebar first explains that the tools run in that folder's Hub entry, in the workspace the launch view reads. **Open tools for workspace …** switches the tab to that read-only Hub context, and **Open in new tab** keeps the current view. If the folder is not saved in the Hub yet, the page offers **Go to Save to Hub** instead. Four read-only commands run only when you click them, in that tab's project, engine and workspace:
-
-| Tool | Command | Reads | Shows |
-| --- | --- | --- | --- |
-| **Validate** | `validate -json` (falls back to `validate -no-color` if no JSON result is printed) | Configuration | Valid / not valid / **not validated**, errors and warnings with `file:line:column` (text only) |
-| **Format check** | `fmt -check -no-color`, optionally `-recursive` | Configuration | Files that are not in canonical format |
-| **Providers** | `providers` | Configuration and this workspace's state | Required providers, version constraints, module, configuration vs. state |
-| **Outputs** | `output -json` | This workspace's state | Output names, types and whether they are marked sensitive; **never values** |
-
-- Validate checks syntax and internal consistency only. It is not a plan, does not contact the backend, detect drift or prove an apply would succeed. When it cannot run (for example, providers or modules are not installed) the result says **Not validated** and offers to review Init on the project page; nothing is initialized automatically.
-- Format check never writes: plain `fmt` and `-diff` are not available. Before running, Hclaro lists the configuration files the check reads (`.tf`, `.tfvars`, `.tftest.hcl`, and `.tofu`/`.tofutest.hcl` for OpenTofu; hidden folders and editor backups skipped, like the engines) and shows only reported paths from that list. Subfolders are included only when you tick **Include subfolders**. A symbolically linked folder refuses a recursive check, and a linked configuration file that points outside the project refuses any check; in a non-recursive check a linked folder is listed as not followed.
-- Providers and outputs read state, so they get the tab's workspace as a per-command `TF_WORKSPACE`; validate and format check get none. An inherited `TF_WORKSPACE` is never passed. Provider requirements do not show which cloud account or identity is in use, and nothing is downloaded or upgraded.
-- `output -json` prints every value in plaintext, including values not marked sensitive. Hclaro decodes only each output's name, type and `sensitive` flag; the values are skipped by the decoder and never kept, logged, cached or sent to the browser. Output names that look like secrets are counted, not shown. There is no way to reveal values in this release.
-- Inherited `TF_CLI_ARGS` or `TF_CLI_ARGS_<command>` with anything but `-no-color` makes a tool unavailable. There is no command box, path, `-chdir` or executable option: the request names only the open workspace and, for format check, whether to recurse.
-- A running command stays bound to the workspace it was started in, even if you switch the tab. Tools can run in parallel with each other and in several projects at once, but not while init, a workspace command or a plan runs in the same folder. Each result shows status, exit code, duration and the sanitized log, with **Cancel** while running; a cancelled or timed-out command shows no partial result.
-- **Operations in this project** lists init, workspace commands and tool runs for the project (this workspace or all), with status and a link back to the project page. This list and its logs are in memory only (the last 50 operations and 10 logs); redacted metadata is also kept in [Operation history](#operation-history).
-
-### Execution profiles
-
-An **execution profile** names everything a command needs besides the project folder: an engine preference, a Terraform workspace selector, approved variable files, two plan options, an AWS profile alias and region, and the **names** of environment variables the command expects. Profiles belong to one Hub project (the project opened from the terminal must be saved to the Hub to use them). They never hold credentials, tokens, variable values or file contents: there is no field for them, and the server refuses unknown fields and credential-shaped values.
-
-- **Choose** a profile with **Profile** in the context bar of a Hub workspace tab, the project opened from the terminal, or the project page. The choice applies to **this browser tab only**: another tab of the same project can use another profile. **Manage** creates, edits, clones, removes and sets a default (the profile new tabs start with).
-- **Variables.** Only `.tfvars`/`.tfvars.json` files inside the project (at most five folders deep, no hidden folders, not the files the engine loads automatically) can be approved. A symbolic link is followed only if it resolves to such a file inside the project; a link out of the project, a missing file and a link to a hidden folder are refused when you save the profile and again before every operation, with the reason. Names, sizes and modification times are shown; contents never are. In the plan dialog the profile's files start checked; you can uncheck or add root files for that one plan without changing the profile.
-- **Cloud identity.** The AWS profile and region are passed as `AWS_PROFILE`, `AWS_REGION` and `AWS_DEFAULT_REGION` to each command, so your usual SSO or shared-credentials setup is used; with the aws-vault method the command runs through `aws-vault exec <profile> --` instead (see [AWS authentication](#aws-authentication)). When a profile names an AWS profile, inherited `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_SECURITY_TOKEN`, `AWS_CREDENTIAL_EXPIRATION`, `AWS_DEFAULT_PROFILE`, `AWS_ROLE_ARN`, `AWS_ROLE_SESSION_NAME`, `AWS_WEB_IDENTITY_TOKEN_FILE`, the `AWS_CONTAINER_*` credential variables and `AWS_VAULT` are not passed (they would otherwise take precedence or compete); the review says so. Resolving a context never calls a cloud API, so contexts are labeled **Identity not verified** until you verify the identity on request.
-- **Workspace.** A profile with a workspace selector can be used only with that workspace; choosing it in a Hub tab opens that workspace. A Terraform workspace is a state namespace in the project, not an AWS profile or account.
-- **Expected variables** (for example `VAULT_ADDR`, `TF_VAR_db_password`): Hclaro checks that each name is set in the environment it was started with, shows *set* or *missing*, and refuses to run while one is missing. Values are never read into Hclaro.
-- **Plan and apply options:** `-parallelism` (1–256) and `-lock-timeout` (1–3600 s), used by the plan and by the apply of its saved plan, so an apply waits for a held state lock as configured. Nothing else can be added: `-lock=false`, `-refresh=false`, `-target`, `-destroy` and `-auto-approve` have no field.
-- **Review before running.** The plan, import and init dialogs and the workspace command review show the full context (engine and version, workspace and where it comes from, root folder, backend and mode, data directory, variable files, AWS profile and region, expected variables, notices) and its fingerprint. Starting sends that fingerprint; if the profile was edited meanwhile, nothing runs and you review again.
-- **Bound to the operation.** A running plan, apply, init, workspace command or tool keeps the context it started with, even if the profile is edited or deleted. A saved plan records the profile and revision; editing or deleting the profile makes it unapplicable (`context_changed`) and invalidates an issued approval. Editing a profile also closes Hub tabs that read with it (**Open again** uses the new revision). Plans, operations and approvals show the profile, revision, workspace and aliases, never values.
-- **Environment.** Each command gets the environment Hclaro was started with, minus `TF_WORKSPACE` (the context's workspace is passed instead), `TF_LOG*` and `TF_CLI_ARGS*`, plus the AWS names above. Any inherited `TF_CLI_ARGS` or `TF_CLI_ARGS_<command>` with a flag other than `-no-color`, in any letter case, refuses every profile-bound operation. Hclaro's own environment is never changed.
-- Without a profile, everything behaves as before.
-
-Profiles are saved in `profiles.json` next to `projects.json` (schema `version: 1`, atomic `0600` writes, same recovery rules). Removing a project from the Hub removes its profiles.
-
-### Compare workspaces
-
-**Compare** in the sidebar lines up the recorded state of two workspaces, for example `dev` and `prod` of one project, or one stack in two project roots (Terraform and OpenTofu roots can be compared with each other). Each side is a registered Hub project, a CLI workspace and an optional execution profile; the card shows the root folder, engine, backend and execution mode, and when that workspace was last read in this session. Nothing is read when the page opens. **List** runs `version` and `workspace list` for that project, as on the project page.
-
-**Compare…** opens a dialog and, after you confirm, opens a read context for each side, exactly like opening the workspace in a Hub tab: `version`, `workspace list`, `workspace show` and `show -json`, with a per-command `TF_WORKSPACE` and the side's profile environment. A side already read in this session is reused without running anything; **Read both sides again** forces fresh reads. No plan, refresh, workspace selection or state write runs.
-
-- **Matching.** Resource instances match only by identical canonical address (instance keys included). A renamed module, resource or instance pairs only through an explicit **mapping rule** (`module.app` → `module.application`), which rewrites the left address prefix at a segment boundary. A mapping that lands on an address that is already matched is reported, and the instance is **uncomparable** instead of guessed.
-- **Statuses.** *Attribute differences*, *only in left*, *only in right*, *same*, **unknown** (no visible difference, but redacted values were not compared, so equality cannot be confirmed) and **uncomparable** (different type, managed vs data source, a different provider such as `hashicorp/aws` vs a fork, or a mapping conflict). The same provider from `registry.terraform.io` and `registry.opentofu.org` is one provider, with a note. Managed resources and data sources are counted separately.
-- **Different is not necessarily drift.** Both sides are recorded state of separate environments; an expected difference (a name, a region, a size) looks exactly like an unexpected one. Nothing is ever labeled drift; drift is checked only by a drift scan.
-- **Rules** for expected differences, kept in this browser tab and sent with the comparison only: **Ignore attribute** (`region`, `tags.Environment`, `tags["cost-center"]`, `ingress[*].cidr_blocks`, optionally for one resource type; a path also covers everything below it) and **Treat values as equal** (a substitution such as `dev` → `prod`, so `dev-api` and `prod-api` compare equal; optionally limited to a path). The page warns that rules can hide meaningful divergence and shows how many values each rule matched. Rule text that looks like a credential is refused.
-- **Secrets.** Attribute values are redacted on the server by the explorer's policy before they are compared. A redacted value is never compared and never shown (*redacted · not compared*), so the diff cannot reveal whether two secrets are equal. Rules hold paths and tokens, never values.
-- **Views.** Status cards double as filters; **Resources** has search, mode and type filters and 100 rows per page; the details drawer shows a side-by-side attribute diff (equal values behind **Show equal**), both redacted trees and **Open in left/right workspace**, which opens that instance in a Hub tab with the same profile. **Modules** aligns module paths (mapped ones show their left path) and opens the resource list for one module; **Providers** aligns provider sources. State records no provider versions, so none are shown.
-- **Export** downloads a Markdown or JSON summary: both identities (alias, workspace, profile, engine, backend, read time), rules, counts and every instance's status with its differing attribute **paths**. No attribute values and no folder paths are included.
-- **Partial and stale results.** If a side cannot be read (not initialized, missing workspace, backend or credential error, project removed), the comparison says which side and why and compares nothing: an unavailable workspace is never treated as empty. A workspace that genuinely records no state is compared as empty. A comparison stops matching, and its results are withheld, when either side is read again, its project or execution profile changes, or its read is released to save memory (eight reads are kept). Up to eight comparisons are kept in memory for 12 hours; nothing is written to disk.
-
-
-### Operation history
-
-**History** in the sidebar lists the operations Hclaro ran on this machine, also after a restart: plans (normal, replace, import), applies, drift scans, dependency graphs, initializations, workspace commands and project tools, for the project opened from the terminal and for Hub projects.
-
-- **What is kept.** For each operation: when it started and finished, its duration and exit code, the project (Hub alias, or folder name for a project not in the Hub; the folder path is not kept), workspace, engine and version, execution profile name and revision, a short context fingerprint, the redacted command, the diagnostic code and message, the Git commit and branch checked out in the project (read from the repository files, uncommitted changes are not detected), the last 40 sanitized log lines and, for plans, the counts and the address and action of up to 300 changes.
-- **What is never kept.** Plan files, state, attribute values, output values, variable values, environment values, credentials and raw engine output. Every value passes the same secret checks as the log before it is written, and a value that looks like a secret is withheld.
-- **Planned and executed are separate.** A plan's details show what it proposed (**Planned**) and, separately, whether an apply used it (**Executed**). An apply that the engine reported as finished is shown as *Engine reported applied*, never as verified: it is not proof that resources are healthy. Cancelled or failed applies are *Partial · may be changed*. Operations still running when Hclaro stopped show as *Interrupted · unknown* at the next start.
-- **No replay.** A plan in history has no plan file and can never be approved or applied; run a new plan and review it.
-- **Views.** Filter by project, workspace, operation and status, and search operations, addresses and commits. Tick two plans of the same project, workspace and engine to **Compare summaries**: newly planned, no longer planned and different actions, with a notice when the plan context or engine version differed.
-- **Export** downloads a redacted Markdown or JSON report of the filtered operations, without log lines; it states what was left out. From the command line, `hclaro --export-history FILE.md` (or `.json`) writes the whole history to a new file (owner-only permissions) and exits; it never overwrites a file and refuses `.terraform` and `.git` folders.
-- **Retention and deletion.** By default 500 operations, 90 days and 4 MiB are kept; **Retention** changes the limits (10–5,000 operations, 1–3,650 days, 64 KiB–16 MiB) and the oldest entries go first. Delete one entry from its details, or **Clear…** all history or one project's. Deleting history never changes infrastructure, state or files.
-
-History is saved in `history.json` next to `projects.json` (schema `version: 1`, atomic `0600` writes in a `0700` folder). A file that cannot be decoded is moved aside to `history.json.corrupt-<time>` and history starts empty; a file written by a newer Hclaro, at startup or while this one runs, is left unchanged and nothing new is recorded. Two Hclaro processes sharing the folder merge their entries: `history.json`, `projects.json`, `profiles.json` and `cost-estimates.json` are each changed under a lock file next to them (`<file>.lock`), so one process never overwrites another's change, and an operation still running in another Hclaro is not marked interrupted.
-
-## Navigation
-
-The sidebar follows the usual order of work: the **project switcher** and the Terraform/OpenTofu **workspace** on top, then the project's **Overview**, **Resources**, **Modules** and **Providers**; **Plan & analyze** (Plans, Drift detection, Dependency graph, Compare); **Manage** (Import & discovery, Operations, History); and **Git**, **Tools** and **Settings** at the bottom. Project, workspace and Git branch are shown separately and never stand in for each other; the workspace of the project opened from the terminal is shown but not switchable, because Hclaro never selects a CLI workspace for you.
-
-- **Import & discovery** opens two separate workflows, **Import existing** and **Discover cloud resources**, one click apart, and reopens the one you used last in the tab.
-- Items that do not apply are disabled with the reason as their tooltip, for example the workflows of a read-only Hub workspace.
-- Switching project never runs a command. If the switch would discard a replacement selection or an import prepared from discovery in this tab, Hclaro asks first.
-- **Collapse sidebar** keeps an icon-only rail with labels on hover and keyboard focus (Escape hides them); the choice is saved with the display preferences. Below 900 px the sidebar is a drawer opened from the menu button and closed with Escape, the close button or a click outside.
-
-## Explorer
-
-- Resource table with 50-row pages, address sorting, and composable provider/type/mode/module filters.
-- Hierarchical modules with direct resource counts; data sources remain distinct from managed resources.
-- Inspector with canonical address, provider source, module, instance key, nested JSON, and copy actions.
-- Overview with resource, data source, child-module and provider counts and distribution by type.
-- Light/dark/system themes, compact density, and flat/module grouping. Cmd/Ctrl+K focuses resource search; arrow keys navigate resource buttons; Escape closes details. Tab and native disclosure controls navigate modules and JSON.
-
-## Git changes
-
-**Git** at the bottom of the sidebar (and the Git badge in the context bar, for example `main @ 1a2b3c4`) relates the project to its local Git repository. It works for the project opened from the terminal and for Hub workspaces. Hclaro reads Git, and its only Git write is a confirmed switch to an existing local branch (below): it never runs `checkout`, `reset`, `pull`, `fetch`, `merge`, `stash`, `commit`, `push`, creates or deletes branches, or runs any other command that changes a repository.
-
-- **Badge.** Branch and HEAD commit, read from the repository's `.git` files without running Git. A detached HEAD is marked; once the Git view has run, a dot shows whether the project's IaC files are clean.
-- **Git view.** Opening it runs one `git status` (read-only, see [architecture](docs/architecture.md#git-context)). It shows the repository folder name, the project's path inside the repository (never the absolute path), branch, HEAD, linked-worktree status and the changed `.tf`, `.tf.json`, `.tofu`, `.tfvars` and `.terraform.lock.hcl` files in the project root and in its **local modules** (module sources such as `../modules/vpc`, read from the module manifest `init` writes). Changes elsewhere in the repository and non-IaC files are only counted. Warnings cover a detached HEAD, a branch without commits, untracked IaC files and IaC changes elsewhere in a monorepo.
-- **Diffs.** Choose a `.tf` or `.tf.json` file to see its line diff against HEAD (or the whole file when it is new to Git). Literals under secret-like names (`password`, `token`, `private_key`, …), credential-shaped values and every heredoc body are replaced by `[redacted]` on the server; the number of redacted lines is shown. Variable files (`.tfvars`) and the lock file are listed by name only: their contents are never sent to the browser. Diffs are never stored in history. A diff shows edited text; only a plan shows which resources change.
-- **Open in editor.** Diffs and source links have **Open in VS Code** (or **Cursor**, chosen in **Settings**). The browser sends only an opaque file ID, a line number and the editor name; the server checks that the file is an IaC file in the project or its local modules, that the line exists and that no symbolic link leads elsewhere, then asks the operating system to open the editor's own link (`vscode://file/…:line`). No command, executable or URL is accepted from the browser. If nothing happens, the editor's link handler is not registered.
-- **Branch switching.** The chevron next to the Git badge lists the repository's existing local branches (one read-only `git for-each-ref`, run when you open it), with a filter, the active branch marked and detached HEAD shown as such. Choosing a branch opens a confirmation with the current and target branch, the working tree status, how many files (IaC files, files in this project) differ, and the Terraform workspace, which **does not change**. Switching is blocked when the working tree has any modified, staged or untracked file anywhere in the repository (commit or stash it with your own Git client; Hclaro never stashes, commits, resets or discards), when the target branch tracks a path that holds an ignored file here (such as a local `.tfvars`), when the project folder does not exist on the target branch, and while any plan, apply, drift scan, graph, import, init, workspace command or project tool runs in a project inside the repository. On confirm the server checks everything again under a claim on the whole working tree, refuses if the branch or commit changed since you reviewed it, and runs `git switch --no-guess --no-recurse-submodules -- <branch>` with repository hooks disabled. Nothing runs afterwards: no `init`, `plan`, `refresh` or `apply`. Plans made before the switch are checked against the new source by the [apply preflight](#replace-and-apply) (changed IaC files block the apply; a moved HEAD with identical files is a warning to acknowledge); use **Read again** to re-inspect backend settings of the project opened from the terminal. Every switch and every refused attempt is recorded in History as *Branch switch*. Remote branches are never fetched or tracked, and branches are never created.
-- **Source links.** The resource inspector shows where a resource's `resource` or `data` block probably is (`main.tf:12`), from the recorded module, type and name and the module manifest. It is labeled **Best effort**: it is a text search, not an HCL parser, and does not prove what changes. Resources in registry or Git modules (downloaded copies) are not linked.
-- **Plans and source revisions.** Each plan records the commit, branch, whether IaC files were uncommitted and a SHA-256 of every IaC file in the project and its local modules, taken before the engine runs; the plan review shows it. If those files change afterwards, the plan shows **Plan generated from a different source revision** and cannot be applied (the apply preflight check *Plan matches the current source revision* blocks). If only HEAD moved (for example a commit that did not touch IaC files), the preflight asks you to acknowledge it.
-
-Projects outside a repository show *Not a Git repository*; without Git on `PATH` the view explains that the working tree cannot be read. Symbolic links that lead outside the project and its local modules are never followed.
-
-## Plans
-
-Open **Plans** and choose **Run plan**. A preflight dialog explains that the engine will contact providers and the backend with your existing credentials, may lock the state, and will not change infrastructure. You can add optional variable files from the project root; `terraform.tfvars` and `*.auto.tfvars` load automatically as usual.
-
-Hclaro then runs `plan -input=false -json -out=<private temp file>` and streams a sanitized progress log. You can cancel at any time: the engine is interrupted so it can release its lock. Afterwards Hclaro reads the saved plan with `show -json`, records its SHA-256, and deletes it.
-
-The review shows:
-
-- Counts per action (create, update, replace, delete, read, forget, unsupported, no change), which also filter the list. A plan with an unsupported action combination in a resource or output change can be reviewed but never applied: the server refuses it with `unknown_actions`, even with the destructive confirmation. See [Plan actions](docs/plan-actions.md).
-- Every resource change in engine order, including collateral deletions, data reads, moves, imports and deposed objects. Unchanged resources are behind a toggle.
-- Per change: the full address, the replacement order (destroy-then-create or create-then-destroy), the reason, and an attribute diff marking redacted, sensitive, `known after apply`, and `forces replacement` values. A change to a redacted value is still listed.
-- Output changes and changes made outside Terraform/OpenTofu (drift).
-- Metadata: engine, workspace, variable files, plan SHA-256, the Git source (branch, commit, uncommitted IaC files), and a warning when configuration or the source revision changed since the plan.
-
-Planning is available only for local execution (remote/cloud backends are refused) and one operation runs at a time. **Operations** lists the session's plans and applies with status, duration, exit code and their logs; this list is in memory only (the last 100 operations, logs of the last 10). Redacted metadata of every operation is also kept in [Operation history](#operation-history).
-
-## Drift detection
-
-Open **Drift detection** and choose **Check drift** to find objects that changed outside Terraform/OpenTofu. Nothing is scanned when the page opens. A dialog first explains that the scan queries provider APIs and the backend with your existing credentials (an expired SSO session or a missing VPN makes it fail), may lock the state, and writes no state. It shows the execution context and lets you choose variable files, as for a plan.
-
-Hclaro then runs `plan -input=false -json -out=<private temp file> -refresh-only` for the workspace the project reads, streams a sanitized log (cancellable), reads the file back with `show -json` and deletes it. The refresh-only plan is never kept, listed as a plan or applied, and Hclaro never runs `refresh`, `apply -refresh-only` or a state command. A scan is a refresh-only plan, **not** a normal plan: it compares what state records with what providers report now, not whether infrastructure matches your configuration. **Run a normal plan…** opens the plan dialog separately; a scan never starts one.
-
-The result shows the scan time, engine, workspace, variable files and profile, and each drifted object classified as **Changed** (values differ from state), **Missing remotely** (the provider reports the object no longer exists) or **Cannot verify** (a value was unknown during the scan), grouped by module or provider with search and filters. Each object's attributes are shown as **Recorded in state** next to **Observed during scan**, with the usual redaction; objects recorded in the current snapshot link to the resource inspector. Data sources re-read during the scan are not drift and are only counted.
-
-**No drift found** appears only after a complete scan without errors. A failed scan (lock conflict, expired credentials, network, cancellation) produces no result and says that this is not the same as no drift. If the engine fails part-way but saved an errored plan, the scan is **incomplete**: listed objects did drift, unlisted ones were not necessarily checked. A scan stops matching when the project is read in another workspace, or when the engine, configuration, variable files, data directory, environment or execution profile change; its resource list is then withheld and you are asked to scan again. Scans are kept in memory for at most 12 hours (ten at most) and hold only redacted data.
-
-Drift scans are unavailable for remote or cloud execution backends (Hclaro cannot verify a refresh-only result produced remotely), when planning is unavailable, and when no state is recorded. They share the one-operation-at-a-time slot with plans and applies.
-
-## Dependency graph
-
-Open **Dependency graph** and choose **Generate graph** to see how resources, data sources and modules depend on each other. Nothing runs when the page opens. A dialog first shows the exact command (`terraform graph` or `tofu graph`, with no flags), explains that it reads configuration and provider schemas and may read state from the backend, and that it does not plan, refresh, apply or write state. It shows the execution context, as for a plan.
-
-Terraform 1.7 and later print a resource-only graph; earlier Terraform and OpenTofu print the engine's full walk graph, with variables, locals, outputs, module calls and providers. Hclaro reads both. In the full graph, engine bookkeeping nodes (the root, `close`, `destroy` and count-boundary nodes) are left out, and internal nodes are hidden by default: two resources linked only through internal nodes are joined by a **derived** (dashed) link instead of a **declared** (solid) one. **Internal nodes** shows them. An arrow points from a resource to what it depends on.
-
-The **Canvas** zooms (wheel, buttons or `+`/`-`), pans (drag or arrow keys) and fits to the screen (`0`). The **List** shows the same nodes as an accessible, virtualized list. Filters narrow by data sources, internal nodes, provider (taken from the type name, as the engine does by default) and type; modules can be collapsed into one node each (graphs over 300 nodes start collapsed and in the list). **Find a node** highlights matches; Enter selects the first.
-
-Selecting a node shows what it depends on, its direct dependents and its **Potential impact**: every resource that depends on it, directly or through others, with the number of hops. Potential impact is graph reachability only. It does not mean those resources will change. Resource nodes are mapped to recorded instances only when the address matches by grammar (instance keys removed), never by similarity; mapped instances open in **Resources**. Nodes that cannot be read as an address are shown as unrecognized and never mapped.
-
-To see what will actually change, choose a plan in **Compare with plan**. Hclaro then marks the plan's **confirmed planned changes** on the graph and, for the selected node, lists the planned changes in its potential impact separately from the rest of the plan. Only a complete, current plan for the same workspace is accepted: an errored, incomplete or deferred plan, or one whose configuration, variable files or context changed, is refused with the reason. A dependency link is never presented as the cause of a planned change. **View in Plans** opens the plan. A replacement plan offers an optional **Inspect impact** step that opens the graph with that plan and the replaced resource selected; it does not change what is applied.
-
-A graph stops matching when the project is read in another workspace, or when the engine, configuration, data directory, environment or execution profile change; its nodes are then withheld. Graphs are kept in memory for at most 12 hours (five at most) as a redacted model: node names that look like secrets are withheld, and no DOT text, labels or attributes are kept. Cycles are detected and labeled. Output over 16 MiB, 20,000 nodes or 200,000 edges, or output that is not the DOT the engines produce, is refused. Graphs are unavailable for remote or cloud execution backends and when planning is unavailable, and share the one-operation-at-a-time slot.
-
-## Replace and apply
-
-In **Resources**, tick the checkbox of one or more managed instances (up to 50; data sources cannot be selected) and choose **Plan replacement…**. Hclaro runs a full plan with one `-replace=<address>` argument per instance, using the exact address from state. It never adds `-target`. The review lists the requested instances, flags any the plan does not actually replace, and counts every other change in the plan, including deletions and replacements you did not select. Replacing destroys and recreates objects; Hclaro does not promise zero downtime.
-
-Any plan, not only a replacement, can be applied when all of these hold:
-
-- the workspace uses local execution (remote/cloud execution stays plan-only);
-- the plan is not errored, incomplete or deferred, and has changes;
-- it is the most recent applicable plan, less than one hour old;
-- configuration, variable files, the lock file, the engine version and the workspace are unchanged since planning.
-
-Only then is the saved plan kept, in a private `0700` temp directory. **Review and apply…** opens the apply preflight. The server checks, and shows with evidence and a fix for each failure:
-
-- **Blocking (always):** engine, version and workspace match the plan; the execution profile and the context fingerprint are unchanged; the saved file is still held, unexpired and has the reviewed SHA-256; the engine version is supported; the backend runs locally; no other Hclaro operation is running in the project; the project policy file (if any) is valid.
-- **Source revision:** the IaC files of the project and its local modules (including modules outside the project folder, which the context fingerprint does not cover) must match the plan's [source fingerprint](#git-changes); a moved HEAD with identical files is a warning.
-- **Policy (configurable):** a dirty Git working tree (default: warning), a production-like workspace, profile or AWS profile name (default: warning for names such as `prod`, `*-prod`, `production`), a limit on destructive changes, and an AWS account allow-list.
-- **Plan scope:** a replace or import plan that changes other resources is a warning; every change in the whole plan is listed, with the requested ones marked, and high-risk deletions and replacements are listed separately.
-- **AWS identity:** shown when the plan uses AWS. It is *not verified* until you choose **Verify AWS identity**, which calls STS GetCallerIdentity (read-only, contacts AWS) with the plan's credentials. Hclaro never infers an account from a profile name.
-
-Apply stays disabled while anything blocks. Each warning has its own acknowledgement checkbox; there is no "accept all". Plans that delete, replace or forget anything also require typing `apply <workspace>`. The dialog shows the exact command and plan digest. When you apply, the server issues a one-time approval for that preflight, evaluates every check again, re-checks the workspace and the file's SHA-256 and runs `apply -input=false -json <saved plan>` (with the profile's `-parallelism` and `-lock-timeout`, if set). With an `awsAccounts` policy rule and a verified identity, it also asks STS again and refuses the apply if the account changed. If anything changed since the preflight (a new blocker or an unacknowledged warning), nothing is applied and the dialog runs the checks again. A saved plan never prompts, so this dialog is the only confirmation. Closing it applies nothing.
-
-To tune the advisory rules for a project, add `.hclaro/policy.json` (see [`fixtures/preflight/policy.json`](fixtures/preflight/policy.json) and [architecture](docs/architecture.md#apply-preflight)). It is data only (version 1, strict schema); an invalid file blocks applies until fixed, and it cannot relax the built-in blocking checks.
-
-The saved plan is deleted after one apply attempt, whatever the result, and also when it expires, when a newer plan replaces it, and when Hclaro stops. There is no automatic re-plan: if the engine reports the plan as stale, run a new one. A saved plan stays applicable for 1 hour; a refused apply names the reason (newer plan, expired, no changes, errored/incomplete/deferred/unsupported actions, changed configuration, variable files, engine, workspace, profile or backend, changed saved file, missing approval). A replace plan never uses `-target`: the whole saved plan is applied, including unrelated changes, and zero downtime is never promised.
-
-After an apply, the result lists three things separately: what the **engine** reported (**applied**, **not applied**, or **uncertain** when an apply failed or was interrupted after starting), whether **state** was read again, and **resource health**, which Hclaro never checks (it has no health probe). An engine success whose state read failed is shown as a warning, not a success. An uncertain outcome lists manual checks (state list and a new plan in your terminal, the provider console, any remaining lock) and is never retried; the saved plan is gone.
-
-## AWS authentication
-
-Hclaro orchestrates the AWS CLI and, optionally, aws-vault; it is not a credential wallet. It never reads, stores, shows or exports access keys, session tokens, SSO tokens, sign-in URLs or codes, and never runs `aws configure list`, `aws configure export-credentials`, `aws-vault export`, `add`, `remove` or `clear`.
-
-**Binding.** Edit an execution profile (**Manage** next to the profile selector) and fill in **AWS authentication**:
-
-| Field | Example | Meaning |
-| --- | --- | --- |
-| Method | AWS CLI profile | `aws-cli` sets `AWS_PROFILE=<profile>` for every command; `aws-vault` runs every command as `aws-vault exec <profile> -- <command>`. Never chosen automatically. |
-| AWS profile | `prod-sso` | A profile name from your AWS configuration (`~/.aws/config`, or `AWS_CONFIG_FILE`). **Find profiles** runs `aws configure list-profiles` (local, names only). |
-| AWS region | `eu-west-1` | Optional; passed as `AWS_REGION` and `AWS_DEFAULT_REGION`. |
-| Expected account ID | `111122223333` | Optional guard: apply is blocked unless STS verifies this account. |
-| Expected role ARN | `arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_Deploy_*/*` | Optional guard. `*` stands for part of one segment and never spans `:` or `/`, so `Deploy/*` does not match `DeployAdmin/…`. |
-
-**Status.** The header shows the AWS state of the tab's profile in words: *No AWS profile*, *Missing tool*, *Not checked*, *Verified*, *Authentication required*, *Error*, *Mismatch* or *Unknown*. Click it (or **AWS** next to a profile in **Manage**) for the panel. Reading the status runs only local commands (`aws --version`, `aws login help`, `aws-vault --version`, `aws configure get sso_session|sso_start_url --profile <name>`, whose values are discarded) and never contacts AWS.
-
-- **Verify identity** runs `aws sts get-caller-identity --output json` with the profile's environment, or `aws-vault exec <profile> -- aws sts get-caller-identity --output json`, the same path the engine uses. It contacts AWS and may run a configured `credential_process`, so it runs only when you click; nothing polls STS. The panel shows the account, ARN and **Last checked** time. STS reports no expiry, so Hclaro shows no countdown: *Verified* means it worked at that moment. This is the **CLI execution identity**: provider aliases, `assume_role`, web identity or a `profile` set in the Terraform configuration can make the provider use another principal or account.
-- **Sign in with AWS (SSO)** appears for profiles with `sso_session` or `sso_start_url` and runs `aws sso login --profile <name>`; the AWS CLI opens your browser itself. **Sign in with aws login** appears only when the installed AWS CLI offers `aws login`; it is a separate method and never replaces SSO. Sign-in output is not shown or kept. When it ends, the panel says *Login process completed — verify identity*; nothing is verified, and no plan or apply resumes. A sign-in can be cancelled and stops after 10 minutes.
-- **Terminal commands** lists copyable commands for when the browser cannot open or a prompt is needed: `aws sso login --profile <name>`, `aws sso login --profile <name> --use-device-code`, `aws login --profile <name>` and `aws sts get-caller-identity --profile <name>`. For aws-vault it lists `aws-vault exec <name> -- aws sts get-caller-identity`. Run one, then **Verify again**. Hclaro never asks for passwords or MFA codes.
-
-**aws-vault.** Hclaro runs aws-vault with empty stdin and cannot show its prompts. aws-vault 6.3.1 reads an MFA code from stdin, so a profile that needs one fails at once (*Authentication required*, `AUTH_INTERACTIVE_UNSUPPORTED`) instead of waiting. Run the terminal command once (aws-vault caches the session), then verify again. A GUI prompt driver such as `AWS_VAULT_PROMPT=osascript`, or the macOS dialog for a locked aws-vault keychain, can still appear when a command runs. Commands that may need credentials run through aws-vault, and the reviewed command shows the `aws-vault exec <profile> --` prefix: plan, apply, import, init, drift, graph, providers, outputs, workspace commands and state reads. The version query, `workspace show`, `fmt` and `validate` never need credentials and run without it.
-
-**Opening a workspace never prompts.** With an aws-vault profile, a Hub workspace with a **local** backend is read without aws-vault: its state and workspace list are files, so no AWS call is made. With a **remote** (or unrecognized) backend, the automatic read is deferred: the workspace shows *Read with aws-vault when you are ready*, and **Read again** reads it through aws-vault. Nothing falls back to other credentials. aws-vault keeps a region Hclaro sets (checked with aws-vault 6.3.1); without one it uses the profile's configured region. Cancelling a plan, apply or init interrupts the process Hclaro started. Checked on macOS with aws-vault 6.3.1 (file backend, synthetic credentials, no AWS call): aws-vault replaces itself with the engine (same process), so the engine receives exactly one interrupt and stops gracefully; a cancel before that point stops aws-vault and the engine never starts. Windows and aws-vault 7 were not checked: on Windows aws-vault keeps running and starts the engine as a child, so whether it stops gracefully depends on the interrupt reaching it.
-
-**Apply.** The approval is bound to the AWS identity you verify in the preflight:
-
-- When the execution profile names an AWS profile, the blocking check *AWS identity verified for this review* is unknown until you choose **Verify AWS identity** in the preflight.
-- Whenever the preflight identity was verified (also without a profile), STS is asked again immediately before the apply. Another account or principal, or a failed check, refuses the apply with `AUTH_CONTEXT_STALE`, whatever caused it: a sign-in in Hclaro, `aws sso login` in a terminal, another tool. An assumed-role session name is ignored (aws-vault and SSO name every session differently); the role is not.
-- With an expected account or role, *AWS identity matches the profile's expected account* also blocks a different account (`AUTH_ACCOUNT_MISMATCH`) or role.
-- A sign-in from the AWS panel after the preflight refuses its approval too. Changing the profile changes its revision, so plans made with the old binding cannot be applied. Nothing is retried or applied automatically after a sign-in.
-
-Remaining risks: the engine resolves credentials itself after the final STS check, so a change in the second between them is not caught. A sign-in started while an apply runs is not blocked. A plan without an execution profile whose identity you did not verify is not bound to an identity (as before M20).
-
-**Residual risks.**
-
-- **AWS CLI v1:** it can verify identity but cannot sign in.
-- **Cancelling a sign-in:** it is interrupted first, so the AWS CLI can finish writing its SSO cache, and killed after 3 seconds (killed at once on Windows). A process the AWS CLI itself started could outlive it; this was not verified with the real CLI.
-- **aws login button:** shown only when `aws login help` succeeds, which may fail on a machine where help rendering is unavailable; the button is then hidden.
-- **Withheld ARN:** if STS returns an ARN Hclaro cannot read safely (shown as *ARN withheld*), the preflight check *AWS identity verified for this review* blocks the apply, because a change of principal could not be detected. Check the profile with `aws sts get-caller-identity` in a terminal.
-- **EC2 instance role:** on an EC2 instance, a profile that exists but has no credentials can fall back to the instance role. STS shows that identity, and an expected-account guard blocks it.
-
-**Known limitations.** Security limitations (they affect which identity or secret is used):
-
-- **Endpoint and CA variables are inherited** (`AWS_ENDPOINT_URL`, `AWS_ENDPOINT_URL_STS`, `AWS_CA_BUNDLE`): they could point the STS check at another endpoint. Changing them requires control of the environment Hclaro starts in.
-- **aws-vault settings reach the engine:** aws-vault needs its own settings (`AWS_VAULT_BACKEND`, `AWS_VAULT_PROMPT`, `AWS_VAULT_KEYCHAIN_NAME`, `AWS_VAULT_FILE_PASSPHRASE`, …) and passes its whole environment to the command it runs, so Terraform/OpenTofu and providers can read them, including a file-backend passphrase (observed with aws-vault 6.3.1). Hclaro cannot remove them from that command without running another program inside aws-vault, and does not remove them from AWS CLI-method commands because a `credential_process` that calls aws-vault needs them. Prefer the OS keychain backend over `AWS_VAULT_FILE_PASSPHRASE`. Hclaro never reads, logs or shows these values.
-- **No default profile with aws-vault:** commands that never need credentials (version, `workspace show`, `fmt`, `validate`, local-backend reads) run without aws-vault and without `AWS_PROFILE`; if one of them did contact AWS it would use the `[default]` profile. None of them should.
-
-Operational limitations (they affect convenience, not which identity is used):
-
-- **Concurrent checks:** only the panel's **Verify identity** is limited to one at a time per profile; a preflight or apply check can run alongside it, so aws-vault can prompt twice.
-- **GUI prompts:** only prompts read from stdin fail at once. A keychain dialog or `AWS_VAULT_PROMPT=osascript` waits until the 20-second identity timeout or the engine timeout.
-- **Cancelled sign-in:** the AWS CLI is interrupted, then killed after 3 seconds; a helper process it started could outlive it (not checked with the real CLI).
-
-**Troubleshooting.** *Missing tool*: install AWS CLI v2 (or aws-vault) and choose **Detect tools**. *Authentication required*: sign in, then verify. *Mismatch*: signing in again to the same profile does not help; change the AWS profile or sign in to the expected account. *Unknown* (`AUTH_NETWORK`): STS was unreachable or slow (check VPN). *Error*: the profile is missing or AWS denied the call.
-
-## Cloud discovery (AWS, Google Cloud and Azure)
-
-**Import & discovery → Discover cloud resources** lists existing AWS objects in the account your local credentials belong to and labels each one against **this workspace's recorded state**, so you can bring an untracked object under management through the normal [Import](#import) flow. It is available for the project opened from the terminal. Hclaro only reads: it never creates, changes or deletes cloud objects and never writes state. Nothing contacts AWS when you open the page.
-
-1. **Verify AWS context.** Runs `aws --version` (AWS CLI v2 is required) and STS `GetCallerIdentity` with the tab's execution profile (its AWS profile and region) or the inherited environment. The banner shows the account ID, the principal (role name; an assumed-role session name is never shown), the default region and where it came from. Hclaro never infers an account from a profile name. A verification is valid for 30 minutes and only for the same profile, workspace and engine.
-2. **Scan…** opens a preview: resource types (each with the IAM permission it needs), up to 6 regions, objects per type and region (default 200, max 1000) and concurrent reads (default 2, max 4). It states how many AWS API requests the scan will make (for example *6–11*) and that some APIs can incur charges or count against rate limits; you must confirm before it starts. Each scan checks the account again and fails with *identity changed* if the credentials now belong to another account. Scans can be cancelled; throttled reads are retried with backoff; an expired SSO session stops the scan.
-3. **Results.** Every object is labelled:
-   - **Possibly untracked**: not in this workspace's state, and every instance of that type in state has a comparable identifier. Another workspace, project or tool may still manage it.
-   - **Already tracked**: exactly one managed instance of the same type holds the same import ID or ARN (with a link to it in the explorer).
-   - **Unknown**: the mapping cannot be decided (two instances match, state records a different ARN, some instances' identifiers are withheld, missing or in another format, or state could not be read). Never treated as untracked.
-   - **Unresolved**: no verified import ID (for example a subnet shared from another account through RAM).
-   A denied service or region is shown as *missing, not empty*, and a list that hit its limit is marked incomplete. Tags and names are untrusted text: credential-like values and secret-named tags are shown as `redacted`. Security group rules, policies, role trust policies, instance user data, function environment variables, endpoints, user names and database configuration are never read into Hclaro.
-4. **Prepare import** (possibly untracked objects; unknown ones after an extra confirmation) checks the account with STS again and opens the Import wizard with the import ID filled in and a suggested address. You still choose the address and resource block, preview the new file and run a reviewed plan; the server refuses the import if its ID, type, workspace, profile or account no longer match the discovered object, and a preparation is used once and expires after 15 minutes. There is no bulk import.
-
-Supported types (hashicorp/aws v5 import IDs): `aws_vpc` (VPC ID), `aws_subnet` (subnet ID), `aws_security_group` (group ID), `aws_s3_bucket` (bucket name; listed once for the account, filtered to the scanned regions when the CLI reports bucket regions) `aws_db_instance` (DB instance identifier), `aws_instance` (instance ID; terminated instances are skipped), `aws_ebs_volume` (volume ID), `aws_internet_gateway` (gateway ID), `aws_route_table` (route table ID), `aws_nat_gateway` (gateway ID; deleted gateways are skipped), `aws_lb` (load balancer ARN; Application, Network and Gateway), `aws_lambda_function` (function name), `aws_dynamodb_table` (table name) `aws_iam_role` (role name; listed once for the account, service-linked roles are marked), `aws_sqs_queue` (queue URL), `aws_sns_topic` (topic ARN), `aws_kms_key` (key ID; customer-managed keys that have an alias only, found through `kms list-aliases`, so keys without an alias are not listed and AWS-managed keys are skipped) `aws_cloudwatch_log_group` (log group name), `aws_ecr_repository` (repository name), `aws_eks_cluster` (cluster name), `aws_ecs_cluster` (cluster name, taken from the ARN `ecs list-clusters` returns; state is matched through the `name` attribute) `aws_route53_zone` (hosted zone ID; listed once for the account), `aws_acm_certificate` (certificate ARN; the ACM list call may omit certificates with some key algorithms), `aws_secretsmanager_secret` (secret ARN; secrets scheduled for deletion are skipped and secret values are never read), `aws_ssm_parameter` (parameter name; metadata only, never values) `aws_sfn_state_machine` (state machine ARN), `aws_api_gateway_rest_api` (REST API ID; HTTP and WebSocket APIs are not covered), `aws_cloudfront_distribution` (distribution ID; listed once for the account), `aws_elastic_beanstalk_application` (application name), `aws_elastic_beanstalk_environment` (environment ID; terminated environments are skipped) and `aws_kinesis_stream` (stream name). The two Beanstalk list calls have no pagination in the AWS CLI, so each returns its whole list in one call and a list longer than the per-type limit is cut and marked incomplete. Other AWS types and organization-wide scans are not supported. For Google Cloud and Azure see below. Scans are kept in memory for the session only. The `make demo` target puts a synthetic `aws` CLI first on `PATH`, so the demo never uses your real credentials.
-
-**Google Cloud.** When `gcloud` is on `PATH` the page offers a **Google Cloud** provider next to AWS. It follows the same steps: **Verify** runs the read-only `gcloud --version`, `config list` and `projects describe` (plus `auth list` when the configuration names no account) and shows the project, the principal (a person's address is shortened to its first letter and domain) and the region; a scan then lists `google_compute_network`, `google_compute_subnetwork`, `google_compute_firewall`, `google_compute_instance`, `google_compute_disk` (zonal disks only), `google_storage_bucket` and `google_sql_database_instance` with the canonical import IDs of hashicorp/google (for example `projects/PROJECT/zones/ZONE/instances/NAME`; a bucket is its name). Every call is an allowlisted argv with a fixed `--format=json(...)` projection of the few fields Hclaro reads, so descriptions, instance metadata, firewall rules, database settings and keys never leave gcloud; access tokens and every other command are refused. Hclaro does not sign you in: use `gcloud auth login` in a terminal. An execution profile can name a gcloud configuration, project and region (`CLOUDSDK_ACTIVE_CONFIG_NAME`, `CLOUDSDK_CORE_PROJECT`, `CLOUDSDK_COMPUTE_REGION`); naming a configuration also stops inherited key files and tokens from competing with it. Each type is listed for the whole project in one call and the selected regions filter the results (global objects are always kept), so a scan is bounded at 1,000 objects per type. State is matched by exact import ID only: an older provider that recorded a bare Cloud SQL instance name is reported as *unknown*, never as untracked. The scan, prepared import and verification are bound to the provider, project, configuration and region of the context. `make demo` also puts a synthetic `gcloud` first on `PATH`.
-
-**Azure.** When `az` is on `PATH` the page offers a **Microsoft Azure** provider. **Verify** runs the read-only `az --version` and `az account show` and shows the subscription, tenant and principal (a person's user name is shortened to its first letter and domain). A scan lists `azurerm_resource_group`, `azurerm_virtual_network`, `azurerm_subnet` (read from the virtual network list, so no per-network call), `azurerm_network_security_group`, `azurerm_linux_virtual_machine` and `azurerm_windows_virtual_machine` (split by the OS type `az vm list` reports), `azurerm_managed_disk` and `azurerm_storage_account` with the full resource IDs hashicorp/azurerm imports (`/subscriptions/SUB/resourceGroups/RG/providers/…`). Every call is an allowlisted argv with a fixed `--query` projection and `-o json`, so security rules, DNS servers, VM profiles and custom data, storage keys and endpoints never leave az; `az account get-access-token`, `az login` and every other command are refused. Hclaro does not sign you in: use `az login` in a terminal. An execution profile can name a subscription ID, tenant ID and location (`ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID`, `AZURE_DEFAULTS_LOCATION`); the subscription is also passed to az as `--subscription`, and verification fails when az reports another subscription or tenant. Only the public Azure cloud (`AzureCloud`) is supported: a sovereign cloud is refused with a message. Each type is listed for the whole subscription in one call and the selected locations filter the results, so a scan is bounded at 1,000 objects per type. State IDs are compared case-insensitively, because Azure resource group names differ in case between tools. The scan, prepared import and verification are bound to the provider, subscription, tenant and location of the context. `make demo` also puts a synthetic `az` first on `PATH`.
-
-## Cost estimates (Infracost, optional)
-
-The **Cost estimate** tab of a reviewed plan shows a clearly labelled estimate of the plan's **recurring monthly cost change**: the total `+/−` amount with its currency, the split between new, removed and changed resources, the priced configuration total before and after, a **coverage** figure (how many cost-bearing changes have a price), caveats, a breakdown by resource type and every changed resource with its price components. Resources without a price are labelled *Not estimated*, *Usage-based* or *No direct price*, never shown as zero. Estimates use public list prices and a 730-hour month; they are not your cloud bill and exclude discounts, savings plans, credits, free tiers and taxes.
-
-- **Off by default.** It needs the [Infracost CLI](https://www.infracost.io/docs/) v0.10, installed and authenticated by you (`infracost auth login`); Hclaro never installs it or asks for its API key. Without it the tab says *Infracost CLI not found*; plans and applies work as usual.
-- **Disclosure first.** Nothing runs and nothing is sent until you open **Review data disclosure…**, read what the CLI reads, what can leave the device (price lookups to `pricing.api.infracost.io`, or your `INFRACOST_PRICING_API_ENDPOINT`) and what is never sent, tick the confirmation and turn it on. That lasts for the Hclaro session (**Turn off** ends it); each estimate is still an explicit **Estimate cost** click.
-- **What Infracost gets.** A minimized copy of the plan in a private temporary file (deleted afterwards): resource types, actions and pricing attributes. Values marked sensitive, secret-named attributes, credential-shaped or random-looking strings, tags, descriptions, policies, user data, variables, outputs, state outputs, module sources and provider arguments other than the region are removed. The CLI receives no AWS/Azure/Google/Terraform Cloud variables and no execution profile environment.
-- **Bound to the plan.** An estimate belongs to one plan and its context fingerprint; after a context change it is marked *Out of date* and that plan cannot be estimated again. A failed or cancelled estimate never affects the plan or its apply.
-- **Saved totals.** Completed estimates keep only aggregate totals (amounts, currency, coverage, time, workspace) in `cost-estimates.json` in Hclaro's configuration folder; *Earlier estimates* lists them and **Clear saved estimates** removes them.
-- **Strict local-only mode.** `hclaro --strict-local` turns the feature off for the session (*Not available in strict local-only mode*): Infracost always prices through a remote API and Hclaro has no offline price source.
-
-`make demo` puts a synthetic `infracost` first on `PATH`; it prices the demo plan from a fixture and contacts nothing.
-
-## AI assistance (optional)
-
-Ask the AI coding assistant you already use about a plan, a drift scan, an import or a resource. Hclaro builds the context on your machine; the assistant only explains and recommends. Hclaro has no model, account, API key storage or billing of its own, and works exactly the same with no assistant installed.
-
-- **On by default; being on starts and shares nothing.** AI assistance is on from the first launch (OD-AI-13). On means the AI buttons are shown: Hclaro starts no assistant process at startup (not even to read its version), and context leaves only after you preview it and click **Accept and send**/**Review with …**, **Copy** or **Download**. Turn it off in **Settings → AI assistance**: then no AI button appears anywhere, no assistant is detected or run, running turns are cancelled, and Hclaro builds, exports and sends no context package. *AI on* is not *assistant installed*: with AI on and no assistant, Copy and Download still work.
-- **What is saved.** Only the switch and the chosen assistant ID, in `ai.json` in your configuration folder (owner-only), so both survive a restart. Never a path, credential, environment variable, prompt, project context or provider session data. A missing file means on; an unreadable one means the defaults with a warning in Settings; a write that fails changes nothing.
-- **Choosing the assistant.** Settings shows **Claude Code** and **OpenAI Codex**: *(not installed)* when missing, *(copy only)* when Hclaro will not run it. **Details** shows each one's status, version, read-only path and, for a copy-only one, the reason. Hclaro detects installed assistants (by running only their `--version`) when you open an AI preview or the AI Assistant page, or click **Check now** or turn AI on in Settings; never at startup and never in strict local-only mode. Without a saved choice Hclaro picks Claude Code if it can run it, else the first one installed. The choice drives every **Review with …**, quick action and the AI Assistant page.
-- **OpenAI Codex runs only where Hclaro can verify it.** Hclaro sends to Codex only when *every* check below passes. Otherwise Codex is copy only, with the reason in **Details**. Any check Hclaro cannot complete counts as failed. Evidence is in `tasks/AI/CODEX-INVESTIGATION.md` (sections 6 and 7).
-  - **macOS only.** Linux and Windows are copy only until their runtime behaviour has been verified.
-  - **Exactly `codex-cli 0.166.0`.** Any other version needs a new assessment.
-  - **No `AGENTS.md` or `AGENTS.override.md` in your Codex folder** (`~/.codex`, or `CODEX_HOME`). Codex sends either file to OpenAI with every message, and Hclaro does not share extra context. Move or rename the file to send from Hclaro.
-  - **No organization-managed settings.** That means no `/etc/codex`, no macOS configuration profile for `com.openai.codex` (checked with a fixed `osascript` query and the files in `/Library/Managed Preferences`), and no managed or cloud-config cache in the Codex folder. Managed settings can turn Codex tools back on over Hclaro's flags, and Codex has no option to ignore them.
-  - **A personal ChatGPT sign-in.** The sign-in must be on a Free, Go, Plus or Pro plan, with an access token valid for at least 15 more minutes.
-    - Team, Business, Enterprise and Education workspaces are copy only: they can receive settings from OpenAI's servers that Hclaro cannot see.
-    - API-key sign-in is refused.
-    - Hclaro reads only the sign-in type, the plan and the expiry from `auth.json`, and refuses a file with missing, malformed or unexpected fields. It never stores, logs or returns those values.
-  - **The effective settings match.** Before every message, `codex features list` and `codex debug models` must show that every tool feature is off and the model list has no tools. Both run locally, with every connection refused.
-  - **The local security self-check passed.** Hclaro runs the real Codex against a fake model server built into Hclaro, on this machine, with an empty Codex folder and every outside connection refused. It passes only if Codex offers no tool and refuses all 14 forged tool calls: shell, exec, file patch, code mode, sub-agent, MCP and others. The result is bound to the binary's SHA-256, its version, the argv, the model list and the effective settings, and kept in memory only. Any change runs the check again.
-- **How Hclaro runs Codex.** The verified argv uses the bundled `gpt-5.6-luna` model list with every tool removed, `--ignore-user-config`, `--ignore-rules` and `--strict-config`. Each message runs Codex once:
-  - in an empty temporary folder, with `GIT_CEILING_DIRECTORIES` set, so Codex finds no Git repository and sends no remote URL, commit or change status;
-  - with the same allowlisted environment as Claude Code, plus `CODEX_HOME`;
-  - limited to five minutes, and stopped at its first error event (a reconnect fails the turn).
-
-  A failed, cancelled or interrupted turn never shows text, even if part of a reply arrived. Codex has the same conversation features as Claude Code: Review with, follow-ups, quick actions, the AI Assistant page, saving and reopening, and cancel.
-- **Not yet verified for Codex:** a real macOS configuration profile, a Linux runtime, and a real managed (workspace) account. Until they are, those cases stay copy only.
-- **No assistant required.** With AI on, every entry point, the preview, **Copy** and **Download** work even when no assistant is installed. A detected copy-only assistant (Codex when a check fails, or Claude Code at an unverified version) gets its own **Copy for …** action. **Review with …** appears only for an assistant Hclaro has verified.
-- **Entry points.** **Review with AI** on a plan review (including replace plans, with a warning line when the plan destroys or replaces objects), on a finished drift scan, in the Import wizard and on a resource in the Explorer. Each works for the launch project and for any open Hub workspace, and a context package belongs to the workspace it was built in.
-- **AI quick actions.** The AI Assistant page offers *Describe project*, *Architecture review*, *Security review*, *Cost analysis*, *Find issues* and *Suggest improvements*. Each opens the preview with the project package and a fixed prompt; only **Start …** sends it, and the conversation continues like any other. The prompts tell the assistant the package has no state, live cloud data or pricing. *Cost analysis* offers a checkbox, unticked by default, to attach this session's existing cost estimate: its workspace, Infracost version, pricing basis and finish time, totals, coverage, per-type counts and monthly change, and caveats. Line items and the pricing endpoint are never shared, and it never runs Infracost. Only the launch project's newest estimate is offered, and only while it is completed, current and cost estimation is on; if a newer estimate finishes, you opt out or the plan context changes, the previewed package goes stale and Start is refused. A summary line that looks secret is hidden and the section and preview say the summary is incomplete. Hub workspaces never get cost data. Disclosure v7 adds these lines. Quick actions need an assistant Hclaro can run; with a handoff-only assistant use *Attach project context* and Copy or Download instead.
-- **AI Assistant page.** With AI on, **AI Assistant** appears under *Plan & analyze* in the sidebar (launch project and Hub workspaces). Start a conversation that is not tied to a plan or drift result, about the project and workspace the context selector shows. *Conversation only* sends your message and no project data. *Attach project context* opens the same preview with a project package first; only **Start conversation with this context**, or **Attach to conversation** in an open conversation, adds it, shown as *Project context attached (hash …)*. The assistant is fixed per conversation; changing it affects only new ones. Conversations of another project or workspace stay listed, read-only. A conversation-only chat started for the launch project belongs to the workspace it started in.
-- **Project package.** Built from the configuration files on disk: `.tf`, `.tofu` and their JSON forms in the project root and the local modules inside it. A structural summary comes first (module tree, provider requirements and lock versions, resource and data addresses per module, variables with type and description, outputs), then file text, smallest files first, up to 128 KiB; files that do not fit are listed as *Not included (budget)*. Backend and cloud blocks are removed. A variable default is kept only when it is a one-line literal that passes the secret scan, in a variable not marked sensitive and not named like a secret; otherwise it reads `<default omitted>`. A file with a scan hit (a credential-shaped or random-looking value, a local path, a literal under a secret-like name) is left out whole and listed under *Omitted files* with the reason. Never read: state, `.tfvars` and `.auto.tfvars`, `.terraform/` and other hidden folders, saved plans, the environment, symbolic links, files outside the project root and files Git ignores. Inside a Git repository Hclaro reads only the configuration files `git ls-files` reports as tracked or untracked-but-not-ignored (every `.gitignore`, `.git/info/exclude` and your global excludes file apply; files in nested repositories and submodules are never read). As in Git, ignore rules apply only to untracked files: a file already tracked by Git is read even if its path matches a `.gitignore` pattern. To keep such a file out, untrack it (`git rm --cached <file>`). The package is blocked when the project is in a repository and Git is missing, fails or returns more than it can read, and when a project outside any repository contains a `.gitignore` (Hclaro cannot apply it). Remote module sources are listed, never fetched. Secret detection is heuristic: a secret written as an ordinary-looking value under an ordinary name, or in a comment, is not recognized, so read the preview.
-- **Project context stays current.** Before every message Hclaro checks that the attached project package still matches the files: a fingerprint of every in-scope configuration file's content, and of which files Git ignores. Editing, adding, renaming or deleting a `.tf`, `.tofu`, JSON configuration or local-module file, changing the lock file, or a file becoming ignored or no longer ignored makes the conversation stale; other files (`.tfvars`, docs, ignored files) do not. A stale conversation sends nothing until you attach the current project context (**Attach project context**), which adds it as a new turn. The check runs right before every hand-over (start, attach, message, Copy and Download), with a fresh Git listing. What is sent is always the previewed text, never files read later; a file saved in the moment between the check and the assistant starting is caught at the next message.
-- **Preview first.** Every entry point opens a preview of the exact text that would be shared: the context package followed by a fixed, versioned review request for that kind (for example `review-plan@1`: destroys and replacements, risks, ordering, security; for drift: causes and remediation consequences; for imports: mapping and configuration mismatches), with the package's SHA-256. The same text, in the same provider-neutral format, goes to Claude Code and to whatever you copy it into. Every review request tells the assistant to answer only from the context, say what is missing, never claim to have run anything and mark commands as suggestions. Opening the preview shares nothing. If a value still looks secret or local after redaction, Hclaro blocks the package and lists only the field paths. A package goes stale when the plan, scan or workspace changes.
-- **Two modes.**
-  - *Handoff:* **Copy** or **Download** (`.md`) hands exactly the previewed bytes, review request included, to whichever assistant you choose. From that moment the text is outside Hclaro and its redaction no longer protects it.
-  - *Send to an assistant (headless):* only for an assistant Hclaro has verified for its version (see the [support matrix](docs/support-matrix.md#ai-assistants)). **Review with Claude Code** starts a conversation below the preview and submits the previewed text as the first message; you can ask follow-up questions, cancel a turn and close the conversation. Each message runs the assistant once with its tools off, an empty temporary folder as its working directory, and no cloud, Terraform, backend or Hclaro environment variables. On stdin it gets the whole conversation so far (the package, your messages and its replies): nothing is stored by the assistant, and every follow-up resends everything, so usage grows with each message. A turn times out after five minutes.
-- **Conversation limits.** A message is at most 8,000 bytes and a conversation at most 256 KiB, the size Hclaro sends each turn; the panel shows how much is used. At a limit Hclaro refuses the message, sends nothing, and keeps your text; start a new conversation from the preview. A message that looks like it holds a secret, a credential or a local path is refused the same way. If a turn fails or is cancelled, earlier messages stay and your message returns to the input. A conversation belongs to the project and workspace it started in; when that context changes (a changed configuration file, another workspace, a stale drift scan, a reopened Hub workspace), the panel says the context is stale and refuses further messages; start a new review. Up to 8 conversations stay open; starting another closes the oldest idle one.
-- **Disclosure.** The first send in a session shows a versioned disclosure next to it, and its button is **Accept and send**: nothing is sent without that click. The disclosure says the assistant may send the context to its cloud model, signed in as you, its runs bill your own assistant account, and every follow-up resends the whole conversation. Hclaro does not cap or guarantee the cost. Acceptance is never saved: it lasts for the session and ends when you turn AI off or when the disclosure text changes. Copy and Download need no acceptance.
-- **Never shared:** state or raw state contents, `.tfvars` values, saved-plan files, full plan JSON, the process environment, credentials, backend configuration values or local paths.
-- **Replies are unverified AI output.** They are shown as plain text: no links, no command buttons, no apply or approve action. Hclaro never runs or applies anything an assistant suggests and writes nothing except a proposed change you apply (below), and AI code cannot read or change approvals, saved-plan bindings, preflight, workspace selection or Git state. Conversations stay in memory for the session and end when you turn AI off or quit Hclaro, unless you save them (below); history records only, per message, the assistant, context kind, review request ID, hash of the text sent, outcome and duration.
-- **Proposed changes.** *Security review*, *Find issues* and *Suggest improvements* ask the assistant to give concrete edits as a whole-file proposal: a fenced `hclaro-change path=<file> base=<sha256>` block. The project package states the sha256 of every `.tf`/`.tofu` file it shares unchanged; a file shared with values hidden is marked *edited for sharing* and cannot be replaced. Under the reply, each proposal is a **Proposed change** card with a diff Hclaro computed from the file on disk, and **Apply** or **Reject** (no "apply all"). Hclaro refuses a proposal for any file the project package does not cover (outside the project folder, in a hidden folder such as `.terraform`, through a symbolic link, a file Git ignores, a nested repository or submodule, a folder without shared configuration, a Windows device name), for a `.tfvars` file, the lock file or any other extension, with a backend or cloud block (also with comments or an unquoted label in between; the word in a comment or string is refused too), with `[redacted]` or other hidden-value markers, with a secret-scan hit, with unbalanced brackets or an unterminated string, comment or heredoc (a structural check, not a full HCL parse), larger than 128 KiB, or when the file no longer matches the hash. **Apply** checks everything again, refuses while a plan, apply, import or init runs in the workspace, copies the old file to `ai-conversations/<project key>/` in the configuration folder (deleted with the conversation retention), and writes the proposed bytes without ever overwriting a version it has not checked: it moves the file aside to `.hclaro-aside-<id>.tmp` in the same folder, verifies it holds exactly the backed-up bytes, then hard-links the new file into place, which fails if another program saved the file meanwhile (an editor save during Apply is put back, or kept as that file and reported). The moved file is **kept** as a recovery artifact, because a program that still had the file open can write into it after Apply: `git status` shows it as an untracked file. A record in `ai-conversations/<project key>/` (with the project folder path) owns it: the first start after the 30-day retention deletes it only if it still holds exactly the backed-up bytes; anything written into it is never deleted by Hclaro. If Hclaro stops between moving the file and placing the new one, the next start puts the original back (never over a file created meanwhile). Hard links are required and checked first: on a file system without them (FAT, exFAT, some network shares) Apply and Undo change nothing and say so. New files are supported: only in an existing folder whose configuration the package shares (folders are never created), never over an existing name, never under a name Git ignores (asked with `git check-ignore`, so `.gitignore` rules of the folder and its parents, `.git/info/exclude` and `core.excludesFile` apply; refused when Git cannot answer), by the same hard-link step. On Windows a file another program holds open cannot be moved, so Apply fails without changing anything. **Undo** restores the backup (or removes a file it created) the same way, while the file still holds the applied text; the file it moves is kept like any other recovery artifact. Hclaro never runs validate, plan or apply afterwards: saved plans no longer match the configuration and are refused at apply, so run a plan to review the effect. History records the path, the hashes and the outcome, never the file. Decisions are kept for the session only. Applying needs Hub execution for Hub workspaces.
-- **Saved conversations (opt-in).** Tick **Save conversation** under a conversation to keep it after Hclaro exits; it is off by default and unticking deletes the saved copy. Hclaro writes one file per conversation to `ai-conversations/<project key>/` in its configuration folder (owner-only permissions): the shared context, your messages, the replies and metadata (title, project, workspace, assistant and version, prompt IDs, times). Never written: credentials, environment, command lines, assistant error output, provider metadata or run cost. The AI Assistant page lists the project's saved conversations: **Open** reopens one, **Delete** removes its file, **Delete all saved for this project** removes every file. Delete only ever touches the current project's own folder and is idempotent: deleting an ID that is not saved there (already deleted, or another project's) answers success and changes nothing, without saying whether it exists elsewhere. A reopened conversation continues by replaying the saved transcript only if it is in the same workspace, the same assistant can still run headless at the same major version, and its context can still be checked (no-project-data conversations, and project context whose files are unchanged; otherwise attach current project context). A review of a plan, drift scan, import or resource, or one with a cost estimate attached, belonged to its session and reopens read-only; so does a conversation whose saved text now fails the secret scan: that text is hidden and the conversation is marked for review. Each read-only conversation says why. Saved files are deleted at startup 30 days after their last use; change `retentionDays` (1–3650) in `ai-conversations/settings.json` in the configuration folder. The Hub lists only the selected project's saved conversations.
-- **What Claude Code keeps itself.** Hclaro runs it without session persistence, so it stores no transcript of these requests. Claude Code may still update small usage records of its own under `~/.claude`; with Claude Code 2.1.327 that was one built-in plugin file holding a session ID and a status marker, with no context, messages or replies. Hclaro cannot turn this off and never edits files there.
-- **Strict local-only mode.** `hclaro --strict-local` disables sending; Copy and Download stay available because you hand the text over yourself.
-- **Choosing the executable.** Hclaro finds `claude` and `codex` on `PATH`. `--claude-path /abs/path/to/claude` and `--codex-path /abs/path/to/codex` point it at other executables. The path is never set from the browser; Settings shows it read-only. GitHub Copilot CLI is no longer detected; a saved choice of it is ignored.
-
-### Disclosure text (version 10)
-
-Every preview, and the first send in a session, show this text; acceptance lasts for the session and ends when you turn AI off or the shown lines change. Lines marked *(headless)* appear only when an assistant Hclaro can run is detected, *(Claude Code)* or *(OpenAI Codex)* only when that assistant is Claude Code or OpenAI Codex. A test (`TestReadmeQuotesTheDisclosure`) keeps this copy equal to the code.
-
-> - Hclaro builds this context on your machine and shares nothing by itself. Only Copy, Download, Review with an assistant or a message you send from the AI Assistant hands anything over.
-> - Project context holds the text of this project's .tf, .tofu and JSON configuration files: the root module and local modules inside the project folder. It never holds state, .tfvars files, .terraform, saved plans, untracked files Git ignores, files in nested repositories or submodules, symbolic links or anything outside the project folder. A file already tracked by Git is included even if it matches a .gitignore pattern; backend blocks and variable defaults that may be secret are removed.
-> - Secret detection is heuristic. Hclaro redacts values that look like credentials, random keys or local paths and leaves out files that contain them, but a secret written as ordinary text, or in a comment, can pass. Read the preview before you share it.
-> - An AI assistant you give it to may send it to a cloud model, and its runs bill your own assistant account.
-> - Once copied or downloaded, the text is outside Hclaro: its redaction and blocking no longer protect it.
-> - *(headless)* Review with an assistant and the AI Assistant's quick actions start a conversation: Hclaro sends the previewed text, the context followed by a fixed review request or quick action prompt. The AI Assistant sends your message, with no project data unless you preview and attach the project context. Each message runs a detected assistant once on this machine, with its tools off, in an empty temporary folder and without cloud or Terraform credentials, and sends the conversation to its cloud model, signed in as you.
-> - *(headless)* Cost analysis can attach this session's existing Infracost estimate, only if you tick it in the preview. It shares the estimate's workspace, Infracost version, pricing basis and finish time, its totals, coverage, per-type counts and monthly change, and its caveats. Individual cost line items are never shared. Hclaro reuses the latest completed estimate of the launch project and never starts a new Infracost run for it. A line that looks secret is hidden and the summary is marked incomplete.
-> - *(headless)* Every follow-up resends the whole conversation (the context, your messages and the replies), so usage and cost grow with each message. A conversation stops at a size limit; Hclaro then asks you to start a new one and never drops messages silently.
-> - *(Claude Code)* Anthropic bills Claude Code requests directly, according to your account, subscription and applicable usage limits. Hclaro does not cap, control or guarantee the cost of any request.
-> - *(OpenAI Codex)* OpenAI Codex runs only on macOS, signed in with a personal ChatGPT plan (Free, Go, Plus or Pro), after Hclaro's local check that it offers no tools; its messages count against your plan's usage limits. Hclaro reads only the sign-in type, plan and expiry from Codex's auth.json to decide, and never stores or shares them. Hclaro does not cap, control or guarantee the cost of any request.
-> - *(headless)* The reply is unverified AI output. Hclaro shows it as text and never runs, applies or approves anything it suggests. A reply can propose a whole .tf or .tofu file: Hclaro shows its own diff and writes that file only when you apply that one proposal, keeping a backup for Undo; it never runs a plan or apply for it. It keeps the conversation in memory for this session only, unless you tick Save conversation: then the context, your messages and the replies are stored as plain text in your Hclaro configuration folder on this machine until you delete them or they are unused for 30 days (set retentionDays in ai-conversations/settings.json there).
-
-## Import
-
-**Import & discovery → Import existing** brings an object that already exists outside Terraform/OpenTofu into state. Enter the resource instance address (managed resources only, with its count index or for_each key if the block uses one), the provider's import ID, an optional provider reference such as `aws.west`, and the name of a **new** file in the root module. **Check and preview** writes nothing and runs nothing. It reports:
-
-- the address is already in state, or an object of the same type with that `id` (or, for the discovery types, the same identifier, such as an RDS DB instance identifier) is already managed elsewhere (both block the import);
-- a missing resource block (blocks the import unless the engine generates one), or a block that could not be verified;
-- an instance key that does not match the block's `count`/`for_each` (warning; the check is textual, the plan is authoritative);
-- an existing import or moved block for the same address (in `.tf`, `.tofu` or their JSON forms), a root configuration file that cannot be read or decoded, an existing destination file, override file names, and import IDs that look like credentials (all block the import).
-
-The preview shows the exact new file. **Write file and plan import** needs a separate consent checkbox. Hclaro then writes the file without overwriting anything (temporary file, then a hard link that fails if the name exists; symlinks and a swapped project directory are refused) and runs a full plan, exactly like **Run plan**: you review the import together with every other change the plan contains. Applying uses the normal apply dialog. Because an import writes state, it always requires typing `apply <workspace>`.
-
-The engine can generate the resource block (`-generate-config-out`) for root-module addresses without an instance key when no block exists. It writes a second new file, `<name>_generated.tf`, during the plan. The review shows a redacted copy of it before anything can be applied; the file on disk contains the values the engine read from the object, so review it before committing it.
-
-Hclaro never deletes files you approved. After a failed plan or apply the review says how to retry (fix the file, then run any plan: plans include import blocks in your configuration) or back out (delete the file). When importing through Hclaro is unavailable, for example for remote execution backends, the wizard still checks the request and shows a manual recipe: the import block plus `plan -out`, `show` and `apply` of the saved plan. The legacy `import` command is shown only as a labeled alternative because it writes state without a reviewable plan.
-
-## Development
-
-```sh
-make install
-make dev
-```
-
-This starts the **synthetic** backend at `127.0.0.1:9273` and Vite at `127.0.0.1:5173`; open the printed private URL. Vite proxies only same-machine, validated read-only requests; the backend still requires authorization. Neither server enables wildcard CORS. Production uses only the Go server and embedded assets.
-
-`make browser-test` builds an isolated HTTP fixture helper and runs Playwright against the real Go handler using intercepted requests. Install a browser first (`cd web && npx playwright install chromium`; Playwright is held at 1.58 because newer releases do not support macOS 13), or set `HCLARO_CHROME` to an installed Chrome executable. It checks rendering, copying, filters, themes, tablet overflow, secret boundaries, plan, apply-confirmation and import flows, and a 1,000-instance search, and writes screenshots into `.cache/screenshots/` (the README screenshot, `docs/screenshots/navigation-expanded-dark.png`, is copied from there by hand when the UI changes). It never reaches a real engine or cloud account. It also runs `tests/e2e/quick-actions.mjs`: the real binary on 127.0.0.1 with a fake `claude` (by `--claude-path`), a fake codex and the fake Infracost, checking the six AI quick actions (preview before Start, sent bytes equal the preview, follow-up), the cost checkbox and estimate staleness, and the disabled and blocked states, with no request outside 127.0.0.1 (skipped on Windows).
-
-Brand colours, logo geometry and contrast results are documented in [`docs/design/BRAND.md`](docs/design/BRAND.md). Colours live once as tokens in `web/src/styles/tokens.css`; components use the semantic tokens only. `make brand-assets` regenerates the committed favicon, touch icon and `docs/design/assets` from the reference geometry (offline, with the test Chromium).
-
-## Cross-platform binaries
-
-After `make build`, run `make cross` for macOS amd64/arm64, Linux amd64/arm64, and Windows amd64. The frontend is embedded in each binary. End users need only that binary plus the chosen Terraform/OpenTofu CLI and its normal initialized workspace.
-
-Without Make, after building the frontend:
-
-```sh
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o hclaro ./cmd/hclaro
-```
-
-PowerShell:
-
-```powershell
-$env:CGO_ENABLED='0'; $env:GOOS='windows'; $env:GOARCH='amd64'
-go build -trimpath -buildvcs=false -ldflags='-s -w' -o hclaro.exe ./cmd/hclaro
-```
-
-Cross-compilation is not OS runtime validation. Release signing, installers, and package-manager distribution are not provided.
-
-### Continuous integration
-
-Pull requests and `master` run on GitHub Actions (`.github/workflows/ci.yml`, checks `changes`, `linux`, `windows`, `macos`). Pull requests run the full suite, the embedded-asset check and the synthetic browser checks on Linux. Go and unit tests run on Windows (without the race detector) and macOS only when a pull request changes Go code, `go.mod`, `scripts/`, `fixtures/` or `.github/`. Merges to `master` always run the suite and browser checks on Linux, Windows and macOS. Changes that touch only `docs/` or Markdown files skip the checks; a skipped job reports success. The workflow has a read-only token, no secrets and no caches, and never publishes; actions are pinned to commit SHAs and Go and Node to exact versions. Releases also build on GitHub Actions, below.
-
-### Releases
-
-Pushing an annotated tag such as `v0.2.0` or `v0.2.0-beta.1` runs the `Release` workflow on GitHub Actions (`.github/workflows/release.yml`). It checks the tag points to a `master` commit whose CI passed and whose version matches, rebuilds the frontend and checks it matches the committed embed, cross-compiles with the tag's version, and packages each target as `hclaro_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) with the license, README, changelog, security policy and third-party notices, plus a SHA-256 checksums file. It adds a CycloneDX SBOM, checks that each archive holds only the expected files with no credential-like content (`scripts/release-check`), checksum-verifies every package, runs it with `--version` and starts the Hub natively on all five targets ([what that proves](docs/support-matrix.md#platforms)), and attests build provenance for every file. Finally it creates a **draft** GitHub release with the archives, checks the uploaded files against the checksums, and stops: the maintainer publishes the draft after review. Tags with a suffix (`-beta.1`, `-rc.1`) are marked as pre-releases. Only the publish job can write, with the workflow's own `GITHUB_TOKEN`; no personal access token is used. See [docs/RELEASING.md](docs/RELEASING.md).
-
-```sh
-git tag -a v<version> -m "Hclaro <version>" && git push origin v<version>
-```
-
-Binaries are unsigned: macOS Gatekeeper and Windows SmartScreen will warn on first launch. Verify downloads with `shasum -a 256 -c hclaro_<version>_checksums.txt --ignore-missing`.
-
-## Compatibility and troubleshooting
-
-The adapter accepts stable Terraform **1.5–1.17** and OpenTofu **1.6–1.13**, using the documented common `show -json` interface and JSON state format major version 1. Prereleases, other engine major versions, plan JSON, duplicates, and malformed records fail closed. Tests use synthetic official-format output and fake executables. Terraform 1.5.5, 1.5.7 and 1.17.2 and OpenTofu 1.6.3 and 1.13.9 have also been run for real against disposable projects (local backend; built-in resources and the `random` and `local` providers from a local mirror), with the platforms and exceptions listed per row; no cloud provider or remote backend has been certified. The [support matrix](docs/support-matrix.md) lists what has and has not been run for real. Remote/cloud backends are read-only, with execution mode shown explicitly. An initialized project with no `backend` or `cloud` block uses the default local backend; otherwise absent metadata remains unknown.
-
-| Situation | What to do |
+| Section | Contents |
 | --- | --- |
-| Missing CLI | Install a supported engine on PATH or select `--engine`; restart. |
-| Not a project | Use `--path` pointing directly to a root with `.tf`, `.tofu`, or state files. |
-| Uninitialized | For a Hub project, use **Initialize…** on its page; otherwise run the engine's `init` yourself, then **Read again**. When the project opened from the terminal is initialized from the Hub, it is read again automatically once init ends. Hclaro never initializes on its own. |
-| Workspace error | Check selection/initialization with the CLI; Hclaro never invents `default`. |
-| State unavailable | Check credentials, SSO/VPN/backend availability and matching provider schemas manually. Raw CLI errors are withheld because they may contain secrets. |
-| No snapshot / empty snapshot | These have separate states. Hclaro does not create or refresh state. |
-| Locked session | Open the latest private URL from the running terminal. |
-| Occupied port | Choose another `--port`, or omit the flag. |
-| Loopback permission denied | Run in an environment permitting listeners on 127.0.0.1. |
-| Plan unavailable | The Plans view states why: remote execution backend, unverified backend type, missing engine or workspace error. An unverified backend usually means a `backend` block that was not initialized: run `init` yourself, then **Read again**. |
-| State locked | Another operation holds the lock. Wait, or investigate with your CLI. Hclaro never force-unlocks. On Windows the lock also blocks reading the state: the workspace shows **Another process holds the state lock**, and planning stays off. Hclaro reads it again on its own for about two minutes; after that, use **Read again** once the other process has finished. A non-English Windows shows the generic *State unavailable* message instead. |
-| Plan credentials/network errors | The message says whether the sign-in expired (refresh SSO), no credentials were found (check the profile or environment) or access was denied (wrong identity or missing permission). Check VPN for network errors, then run the plan again. |
-| `TF_CLI_ARGS_plan` / `TF_CLI_ARGS_apply` refused | The message names the variable and flag names (never values). Unset them in the shell that starts Hclaro and restart it; an execution profile cannot override them. They could change what a reviewed plan contains. |
-| Hub: "TF_DATA_DIR is an absolute path" | Restart Hclaro without `TF_DATA_DIR`, or with a relative value, to read Hub workspaces. |
-| Hub: workspace mismatch | The engine reported a different workspace than the one selected, so nothing was shown. Check that your engine and backend honor `TF_WORKSPACE`. |
-| Hub: registry read-only | The notice says why (unreadable, or written by a newer Hclaro). Fix or move the file named there, then restart. |
-| Hub: project missing or path changed | Use **Repair path** with the folder's new location, or remove the entry. |
-| Redacted attributes | Values marked sensitive, secret-like attribute names (`password`, `token`, `private_key`, …) and credential-shaped or long random-looking values, including hex hashes, are masked on the server. There is no reveal/raw-state endpoint. |
+| [Getting started](docs/GETTING_STARTED.md) | Install, demo, first project, upgrade, uninstall. |
+| [User guides](docs/README.md#user-guides) | One guide per feature. |
+| [Command line](docs/reference/cli.md) and [troubleshooting](docs/reference/troubleshooting.md) | Flags, exit codes, common problems. |
+| [Compatibility](docs/reference/compatibility.md) and [support matrix](docs/support-matrix.md) | Supported engine versions and what has been run for real. |
+| [Architecture](docs/architecture.md) and [security model](SECURITY.md) | How Hclaro works and what it protects. |
+| [Building and testing](docs/development/building-and-testing.md) | Developing Hclaro. |
 
-Metadata (addresses, module paths, provider sources) must not be used to store secrets. Redaction relies on markers and heuristics: a secret that is not marked sensitive, has an ordinary name and does not look random can be shown. See [security policy](SECURITY.md), [architecture](docs/architecture.md), and the [support matrix](docs/support-matrix.md).
+## Status and safety
+
+Hclaro is **not production-certified**. Read [Status, testing and limitations](docs/reference/limitations.md) before pointing it at infrastructure you care about.
+
+- It is tested with synthetic fixtures and fake engines in CI. Terraform 1.5.5, 1.5.7 and 1.17.2 and OpenTofu 1.6.3 and 1.13.9 have also been run end to end against disposable projects with the local backend only. No cloud provider or remote backend is certified.
+- Release binaries are not code-signed or notarized. Checksums and build-provenance attestations (`gh attestation verify <file> -R botopsy/hclaro`) are published with each release.
+- Reading state runs your engine, which may contact the configured backend and load provider plugins with your credentials.
+- Operations that can change infrastructure need explicit user action, and plans and applies are limited to locally executed backends.
+- Secrets are redacted on the server before data reaches the browser. Redaction relies on markers and heuristics and can miss a secret; one hidden value can be revealed on request.
+- Start with non-production projects. An apply changes real infrastructure and cannot be undone by Hclaro.
+
+## Community
+
+- Bugs and feature requests: [GitHub Issues](https://github.com/botopsy/hclaro/issues). Questions and ideas: [GitHub Discussions](https://github.com/botopsy/hclaro/discussions).
+- [Contributing](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), [security policy](SECURITY.md) (report vulnerabilities privately) and [license](LICENSE).
+- **Never attach** state, plans, variable files, credentials, the private session URL or real account identifiers to an issue.
+
+Hclaro is licensed under the [Apache License, Version 2.0](LICENSE): you may use, modify, fork and redistribute it, including commercially. Bundled third-party components keep their own licenses ([`THIRD-PARTY-NOTICES.txt`](internal/ui/dist/THIRD-PARTY-NOTICES.txt)). The license grants no trademark rights; see [TRADEMARKS.md](TRADEMARKS.md). Copyright 2026 BotOpsy. BotOpsy is an independent software brand and the publishing name of Hclaro's author, not a company or a separate legal entity.
