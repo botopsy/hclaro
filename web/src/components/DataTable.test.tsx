@@ -44,4 +44,11 @@ describe('DataTable', () => {
     expect(screen.getByText('log for aws_vpc.main')).toBeInTheDocument();
     expect(within(table).getByText('aws_vpc.main').closest('tr')).toHaveClass('active');
   });
+  it('toggles a row when any part of it is clicked, once', () => {
+    render(<DataTable label="Operations" columns={columns} rowKey={r => r.address} rows={[vpc]} expand={r => `log for ${r.address}`} />);
+    fireEvent.click(screen.getByText('aws_vpc.main'));
+    expect(screen.getByText('log for aws_vpc.main')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse aws_vpc.main' }));
+    expect(screen.queryByText('log for aws_vpc.main')).not.toBeInTheDocument();
+  });
 });

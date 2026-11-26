@@ -151,13 +151,19 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	// Inspect runs the engine's version and workspace list reads. It is a POST because it
 	// executes commands; GET routes never do.
 	mux.HandleFunc("POST /api/v1/projects/{id}/inspect", func(w http.ResponseWriter, r *http.Request) {
-		var body struct{}
+		var body struct {
+			ProfileID string `json:"profileId"`
+		}
 		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !validProfileParam(body.ProfileID) {
+			reasonJSON(w, 400, "invalid_profile", "Choose an execution profile of this project.")
 			return
 		}
 		ctx, cancel := withDeadline(w, r, inspectTimeout)
 		defer cancel()
-		summary, err := hub.Inspect(ctx, r.PathValue("id"))
+		summary, err := hub.InspectWith(ctx, r.PathValue("id"), body.ProfileID)
 		if err != nil {
 			projectError(w, hub, err)
 			return

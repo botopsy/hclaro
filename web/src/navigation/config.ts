@@ -19,7 +19,7 @@ export const groupLabels: Record<NavGroup, string | undefined> = {
 
 // Where an item may be used:
 // - project: any open project workspace (terminal-opened or Hub workspace);
-// - launch:  only the project opened from the terminal (Hub workspaces are read-only);
+// - launch:  only the project opened from the terminal;
 // - execution: the project opened from the terminal, and Hub workspaces when the server
 //              enables scoped execution (M24.07–M24.09; plans, imports, replacements,
 //              applies, drift scans and graphs run in that workspace only);
@@ -114,7 +114,8 @@ export const importDiscoveryTabs: readonly { view: View; label: string }[] = [
 
 // What the sidebar is showing a project for:
 // - launch:        the project Hclaro was started with (all workflows);
-// - hub-workspace: a Hub project's CLI workspace, read-only (/projects/<id>/workspaces/<ws>);
+// - hub-workspace: a Hub project's CLI workspace (/projects/<id>/workspaces/<ws>); plans and applies need
+//                  Hub execution, which is on by default and off with --no-hub-execution;
 // - hub-project:   a Hub project page with no workspace open yet (/projects/<id>);
 // - none:          started without a project; choose one in the Hub.
 export type NavMode = 'launch' | 'hub-workspace' | 'hub-project' | 'none';
@@ -139,7 +140,7 @@ type NavState = {
 };
 
 const hubPlansOnly = 'Available only for the project opened from the terminal.';
-const hubReadOnly = 'Hub workspaces are read-only. Plans, drift scans, dependency graphs, cloud discovery, applies and imports run only for the project opened from the terminal.';
+const hubReadOnly = 'Hub execution is off (Hclaro was started with --no-hub-execution), so Hub workspaces are read-only. Plans, drift scans, dependency graphs, cloud discovery, applies and imports run only for the project opened from the terminal.';
 
 // Pages that show the current project. Global pages (Projects, Compare, History) do not.
 export function onProjectPage(route: Route) {

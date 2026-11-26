@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlansView } from '../plans/PlansView';
 import { ContextSelector } from './ContextSelector';
 import { AuthPanel } from './AuthPanel';
+import { RecordedContext } from './ContextSummary';
 import { useProfileSelection } from './selection';
 import type { AuthStatus, ExecutionProfile, ExecutionSummary, PlanOptions } from '../types';
 
@@ -58,6 +59,20 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+describe('Recorded execution context', () => {
+  const recorded = { ...summary('f'.repeat(64)).context, workspace: 'demo', awsAuth: 'aws-cli' as const, envNames: [] as string[], varFiles: [] as string[] };
+  it('shows the profile\'s live verified state instead of a fixed "not verified"', async () => {
+    auth = authStatus({ state: 'verified', account: '111122223333' });
+    render(<QueryClientProvider client={client()}><RecordedContext context={recorded} /></QueryClientProvider>);
+    expect(await screen.findByText('Verified')).toBeInTheDocument();
+    expect(screen.queryByText('Identity not verified')).not.toBeInTheDocument();
+  });
+  it('keeps the not-verified badge when the record has no project', () => {
+    render(<QueryClientProvider client={client()}><RecordedContext context={{ ...recorded, projectId: undefined }} /></QueryClientProvider>);
+    expect(screen.getByText('Identity not verified')).toBeInTheDocument();
+  });
 });
 
 describe('Execution profiles', () => {

@@ -579,7 +579,17 @@ func diag(code, message string) *workspace.Diagnostic {
 // It is only ever started by an explicit request. TF_WORKSPACE is not passed, so the
 // marked workspace is the persisted CLI default.
 func (h *Hub) Inspect(ctx context.Context, id string) (Summary, error) {
+	return h.InspectWith(ctx, id, "")
+}
+
+// InspectWith lists workspaces with the selected execution profile's environment, so the
+// profile's credentials are used instead of only the inherited ones.
+func (h *Hub) InspectWith(ctx context.Context, id, profileID string) (Summary, error) {
 	p, err := h.Registry.Get(id)
+	if err != nil {
+		return Summary{}, err
+	}
+	preference, environ, _, err := h.execution(p, profileID)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -596,7 +606,7 @@ func (h *Hub) Inspect(ctx context.Context, id string) (Summary, error) {
 	case status != StatusReady:
 		in.Diagnostic = diag(status, problem)
 	default:
-		in.Engine, in.Version, in.Workspaces, in.CLIDefault, in.Hidden, in.Diagnostic = h.inspect(ctx, p)
+		in.Engine, in.Version, in.Workspaces, in.CLIDefault, in.Hidden, in.Diagnostic = h.inspect(ctx, p, preference, environ)
 	}
 	h.mu.Lock()
 	h.inspections[id] = in
@@ -604,9 +614,9 @@ func (h *Hub) Inspect(ctx context.Context, id string) (Summary, error) {
 	return h.summary(p), nil
 }
 
-func (h *Hub) inspect(ctx context.Context, p Record) (name, version string, names []string, current string, hidden int, d *workspace.Diagnostic) {
+func (h *Hub) inspect(ctx context.Context, p Record, preference string, environ []string) (name, version string, names []string, current string, hidden int, d *workspace.Diagnostic) {
 	names = []string{}
-	name, _, adapter, err := h.Engines(p.RootPath, p.EnginePreference, "", nil)
+	name, _, adapter, err := h.Engines(p.RootPath, preference, "", environ)
 	if err != nil {
 		return p.EnginePreference, "", names, "", 0, diag("missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine.")
 	}

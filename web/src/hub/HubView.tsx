@@ -173,7 +173,7 @@ function ProjectDrawer({ project: p, writable, notify, onClose, onRepair, onRemo
   const [workspaceDialog, setWorkspaceDialog] = useState<{ action: WorkspaceAction; name: string }>();
   const profile = useProfileSelection(p.id);
   const ready = p.status === 'ready';
-  const inspect = useQuery({ queryKey: ['inspect', p.id], queryFn: () => send<Project>('POST', `projects/${p.id}/inspect`, {}), enabled: false, retry: false });
+  const inspect = useQuery({ queryKey: ['inspect', p.id, profile.selected], queryFn: () => send<Project>('POST', `projects/${p.id}/inspect`, { profileId: profile.selected }), enabled: false, retry: false });
   useEffect(() => {
     if (inspect.data) void client.invalidateQueries({ queryKey: ['projects'] });
   }, [inspect.data, client]);
@@ -409,8 +409,8 @@ export function ProjectView({ id }: { id: string }) {
   const profile = useProfileSelection(id);
   // Listing workspaces waits while an operation runs or its dialog is open: the root is claimed.
   const inspect = useQuery({
-    queryKey: ['inspect', id],
-    queryFn: () => send<Project>('POST', `projects/${id}/inspect`, {}),
+    queryKey: ['inspect', id, profile.selected],
+    queryFn: () => send<Project>('POST', `projects/${id}/inspect`, { profileId: profile.selected }),
     enabled: project?.status === 'ready' && !project.busy && !initOpen && !workspaceDialog
   });
   const initFinished = useCallback(() => {
@@ -455,7 +455,7 @@ export function ProjectView({ id }: { id: string }) {
      {inspection.hiddenWorkspaces > 0 && <p className="muted">{inspection.hiddenWorkspaces} workspace name{inspection.hiddenWorkspaces === 1 ? '' : 's'} with unusual characters {inspection.hiddenWorkspaces === 1 ? 'is' : 'are'} not shown.</p>}
      {current.workspaceActions && !current.workspaceActions.change && <p className="muted workspace-support"><AlertTriangle size={13} />Workspace changes are unavailable: {current.workspaceActions.reason}</p>}
      {advanced && current.workspaceActions?.change && !current.workspaceActions.delete && <p className="muted workspace-support"><AlertTriangle size={13} />{current.workspaceActions.deleteReason}</p>}
-     <p className="info-note"><ShieldCheck size={15} /><span>Choosing a workspace changes only this browser tab: each command Hclaro runs for it gets <code>TF_WORKSPACE</code> in its own environment. Your terminal's selected workspace stays <strong>{inspection.cliDefault || 'unchanged'}</strong>. Hub workspaces are read-only. Changing the CLI default is a separate, confirmed action under <strong>Advanced actions</strong>.</span></p>
+     <p className="info-note"><ShieldCheck size={15} /><span>Choosing a workspace changes only this browser tab: each command Hclaro runs for it gets <code>TF_WORKSPACE</code> in its own environment. Your terminal's selected workspace stays <strong>{inspection.cliDefault || 'unchanged'}</strong>. Choosing a workspace only reads it. Changing the CLI default is a separate, confirmed action under <strong>Advanced actions</strong>.</span></p>
     </>}
    </section>
    {workspaceDialog && <WorkspaceDialog projectId={id} profileId={profile.selected} action={workspaceDialog.action} initialName={workspaceDialog.name} onClose={() => {
