@@ -22,7 +22,7 @@ hclaro releases are published by BotOpsy on the `botopsy/hclaro` GitHub reposito
    make build              # rebuilds internal/ui/dist and bin/hclaro
    git diff --exit-code -- internal/ui/dist   # the committed bundle must match
    make browser-test       # needs: npm --prefix web exec -- playwright install chromium
-   make cross VERSION=1.0.0
+   make cross VERSION=1.0.1
    ./dist/hclaro-$(go env GOOS)-$(go env GOARCH) --version
    ```
 
@@ -67,8 +67,8 @@ curl -s -o /dev/null -w '%{http_code}' -L <url>   # logged out
 Only the BotOpsy maintainer does this, after approving the release:
 
 ```sh
-git tag -a v1.0.0 -m "Hclaro 1.0.0"
-git push origin v1.0.0
+git tag -a v1.0.1 -m "Hclaro 1.0.1"
+git push origin v1.0.1
 ```
 
 The `Release` workflow then:
@@ -85,7 +85,7 @@ The `Release` workflow then:
 Then review the draft on the Releases page and publish it:
 
 ```sh
-gh release edit v1.0.0 --draft=false
+gh release edit v1.0.1 --draft=false
 ```
 
 A release is never overwritten. If the publish job fails after creating the draft, delete the draft on the Releases page and rerun the failed job. A dry run (`gh workflow run release.yml -f version=0.0.0-dryrun`, or any pull request that changes the workflow) validates, builds and smoke-tests without publishing.
@@ -128,7 +128,7 @@ The tap is the only copy of the formula (this repository no longer carries one);
 For each release, after the release is published (draft assets are not downloadable):
 
 ```sh
-v=1.0.0   # the new version
+v=1.0.1   # the new version
 curl -fsSL https://github.com/botopsy/hclaro/releases/download/v$v/hclaro_${v}_checksums.txt | grep -E '_(darwin|linux)_(amd64|arm64)\.tar\.gz$'
 # in a clone of botopsy/homebrew-tap, put the version into the four urls of Formula/hclaro.rb and each archive's SHA-256 next to it, then:
 grep -o 'url "[^"]*"' Formula/hclaro.rb | cut -d'"' -f2 | while read u; do curl -fsSL "$u" | shasum -a 256; done   # must match the four sha256 lines
