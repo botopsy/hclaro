@@ -29,6 +29,7 @@ import (
 	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
+	"hclaro/internal/scanners"
 	"hclaro/internal/security"
 	"hclaro/internal/ui"
 	"hclaro/internal/update"
@@ -58,6 +59,8 @@ type Options struct {
 	ClaudePath string
 	// CodexPath is the OpenAI Codex executable, set the same way (AI-01.14).
 	CodexPath string
+	// TFLintPath, TrivyPath and CheckovPath override the scanner executables (M36-06).
+	TFLintPath, TrivyPath, CheckovPath string
 }
 
 // hiddenFlags are accepted but not listed in --help.
@@ -83,6 +86,9 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.BoolVar(&o.StrictLocal, "strict-local", false, "Strict local-only mode: disable features that send data to third-party services (cost estimation, AI requests sent by Hclaro)")
 	flags.StringVar(&o.ClaudePath, "claude-path", "", "Claude Code executable for AI requests sent from the UI (default: claude on PATH)")
 	flags.StringVar(&o.CodexPath, "codex-path", "", "OpenAI Codex executable for AI requests sent from the UI (default: codex on PATH)")
+	flags.StringVar(&o.TFLintPath, "tflint-path", "", "tflint executable for the Tools page (default: tflint on PATH)")
+	flags.StringVar(&o.TrivyPath, "trivy-path", "", "Trivy executable for the Tools page (default: trivy on PATH)")
+	flags.StringVar(&o.CheckovPath, "checkov-path", "", "Checkov executable for the Tools page (default: checkov on PATH)")
 	flags.StringVar(&o.ExportHistory, "export-history", "", "Write the redacted operation history to a new .json or .md `file` and exit")
 	flags.BoolVar(&o.NoUpdateCheck, "no-update-check", false, "Do not look up whether a newer Hclaro release exists (one request to api.github.com, no user data); also HCLARO_NO_UPDATE_CHECK=1")
 	noHubExecution := flags.Bool("no-hub-execution", false, "Keep Hub workspaces read-only: no plans, applies or imports outside the launch project")
@@ -111,7 +117,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 			o.PathSet = true
 		}
 	})
-	for name, p := range map[string]*string{"claude-path": &o.ClaudePath, "codex-path": &o.CodexPath} {
+	for name, p := range map[string]*string{"claude-path": &o.ClaudePath, "codex-path": &o.CodexPath, "tflint-path": &o.TFLintPath, "trivy-path": &o.TrivyPath, "checkov-path": &o.CheckovPath} {
 		if *p != "" {
 			abs, err := filepath.Abs(*p)
 			if err != nil {
@@ -328,6 +334,7 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		services.Update = &update.Checker{Current: version}
 	}
 	hub.Discovery = services.Discovery
+	hub.Scanners = &scanners.Runner{Paths: map[string]string{scanners.TFLint: o.TFLintPath, scanners.Trivy: o.TrivyPath, scanners.Checkov: o.CheckovPath}}
 	closers = append(closers, func() { services.Discovery.Close(5 * time.Second) })
 	cost.SweepStale("", time.Now())
 	closers = append(closers, func() { services.Cost.Close(5 * time.Second) })

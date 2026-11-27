@@ -1,8 +1,12 @@
 package projects
 
 import (
+	"context"
 	"errors"
+	"hclaro/internal/scanners"
+	"hclaro/internal/workspace"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -142,24 +146,48 @@ func inside(root, target string) bool {
 	return err == nil && filepath.IsLocal(rel)
 }
 
-// StartTool runs one read-only project utility in an open Hub context. The context pins the
-// project, root, engine executable and workspace; the environment is pinned now. Utilities
-// take a shared claim on the root, so several can run together but never alongside init, a
-// workspace command or a plan.
-func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) (operations.Operation, error) {
+// toolPrep is everything a tool run needs, resolved and pinned: the context's project, root,
+// engine executable, environment and a shared claim on the root (release must be called).
+type toolPrep struct {
+	p                 Record
+	c                 *Context
+	environ, notices  []string
+	files             map[string]bool
+	folders           int
+	skipped           []string
+	recursive         bool
+	name, executable  string
+	tools             engine.Tools
+	rootInfo, exeInfo os.FileInfo
+	release           func()
+}
+
+// revalidate reports "path_changed" when the root or the engine executable is not the one
+// pinned when the run was prepared.
+func (t *toolPrep) revalidate() string {
+	now, err := os.Stat(t.p.RootPath)
+	resolved, evalErr := filepath.EvalSymlinks(t.p.RootPath)
+	exe, exeErr := os.Stat(t.executable)
+	if err != nil || evalErr != nil || exeErr != nil || resolved != t.p.RootPath || !os.SameFile(t.rootInfo, now) || !os.SameFile(t.exeInfo, exe) {
+		return "path_changed"
+	}
+	return ""
+}
+
+func (h *Hub) prepareTool(id, contextID string, tool engine.Tool, recursive bool) (*toolPrep, error) {
 	if !engine.ValidTool(tool) {
-		return operations.Operation{}, ErrInvalidTool
+		return nil, ErrInvalidTool
 	}
 	p, err := h.Registry.Get(id)
 	if err != nil {
-		return operations.Operation{}, err
+		return nil, err
 	}
 	c, _, err := h.Context(contextID)
 	if err != nil || c.ProjectID != p.ID || c.RootPath != p.RootPath {
-		return operations.Operation{}, ErrContextNotFound
+		return nil, ErrContextNotFound
 	}
-	refuse := func(code, message string) (operations.Operation, error) {
-		return operations.Operation{}, &ToolRefusal{code, message}
+	refuse := func(code, message string) (*toolPrep, error) {
+		return nil, &ToolRefusal{code, message}
 	}
 	if status, problem := check(p.RootPath); status != StatusReady {
 		return refuse(status, problem)
@@ -181,7 +209,7 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 		// this context, so the tool does not run with it.
 		pref, composed, now, err := h.execution(p, c.profileID)
 		if err != nil || now == nil || now.Fingerprint != c.Execution.Fingerprint {
-			return operations.Operation{}, ErrContextChanged
+			return nil, ErrContextChanged
 		}
 		preference, environ, notices = pref, composed, append(notices, c.Execution.Notices...)
 	}
@@ -191,7 +219,7 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 	if tool == engine.ToolFormat {
 		var refusal *ToolRefusal
 		if files, folders, skipped, refusal = FormatScope(p.RootPath, c.Engine, recursive); refusal != nil {
-			return operations.Operation{}, refusal
+			return nil, refusal
 		}
 	} else {
 		recursive = false
@@ -201,30 +229,34 @@ func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) 
 		return refuse("missing_cli", "Terraform/OpenTofu was not found on PATH. Install a supported CLI, or change this project's engine.")
 	}
 	if name != c.Engine || executable != c.Executable {
-		return operations.Operation{}, ErrContextChanged
+		return nil, ErrContextChanged
 	}
 	rootInfo, statErr := statIdentity(p.RootPath)
 	exeInfo, exeErr := statIdentity(executable)
 	if statErr != nil || exeErr != nil {
-		return operations.Operation{}, ErrContextChanged
+		return nil, ErrContextChanged
 	}
 	release, ok := h.Locks.AcquireShared(p.RootPath)
 	if !ok {
-		return operations.Operation{}, ErrBusy
+		return nil, ErrBusy
+	}
+	return &toolPrep{p, c, environ, notices, files, folders, skipped, recursive, name, executable, tools, rootInfo, exeInfo, release}, nil
+}
+
+// StartTool runs one read-only project utility in an open Hub context. The context pins the
+// project, root, engine executable and workspace; the environment is pinned now. Utilities
+// take a shared claim on the root, so several can run together but never alongside init, a
+// workspace command or a plan.
+func (h *Hub) StartTool(id, contextID string, tool engine.Tool, recursive bool) (operations.Operation, error) {
+	t, err := h.prepareTool(id, contextID, tool, recursive)
+	if err != nil {
+		return operations.Operation{}, err
 	}
 	return h.Inits.StartTool(operations.ToolRequest{
-		ProjectID: p.ID, ContextID: c.ID, Root: p.RootPath, Engine: name, EngineVersion: c.Snapshot().Info.Version, Workspace: c.Workspace, Tool: tool, Recursive: recursive,
-		Tools: tools, Environ: environ, Notices: notices, Files: files, Folders: folders, Skipped: skipped, Context: c.Execution.Clone(),
-		Revalidate: func() string {
-			now, err := os.Stat(p.RootPath)
-			resolved, evalErr := filepath.EvalSymlinks(p.RootPath)
-			exe, exeErr := os.Stat(executable)
-			if err != nil || evalErr != nil || exeErr != nil || resolved != p.RootPath || !os.SameFile(rootInfo, now) || !os.SameFile(exeInfo, exe) {
-				return "path_changed"
-			}
-			return ""
-		},
-		Release: release,
+		ProjectID: t.p.ID, ContextID: t.c.ID, Root: t.p.RootPath, Engine: t.name, EngineVersion: t.c.Snapshot().Info.Version, Workspace: t.c.Workspace, Tool: tool, Recursive: t.recursive,
+		Tools: t.tools, Environ: t.environ, Notices: t.notices, Files: t.files, Folders: t.folders, Skipped: t.skipped, Context: t.c.Execution.Clone(),
+		Revalidate: t.revalidate,
+		Release:    t.release,
 	})
 }
 
@@ -234,4 +266,97 @@ func (h *Hub) Operations(id string) ([]operations.Operation, error) {
 		return nil, err
 	}
 	return h.Inits.List(id), nil
+}
+
+// ScannerInfo reports which scanners are installed and supported, and which of their own
+// configuration files the project has. It only reads `--version`, and only when the Tools page
+// asks.
+func (h *Hub) ScannerInfo(ctx context.Context, id string) ([]scanners.Info, error) {
+	p, err := h.Registry.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if h.Scanners == nil {
+		return nil, ErrInvalidTool
+	}
+	infos := make([]scanners.Info, 0, len(scanners.Names))
+	for _, name := range scanners.Names {
+		infos = append(infos, h.Scanners.Detect(ctx, name, p.RootPath))
+	}
+	return infos, nil
+}
+
+// StartScan runs one scanner over an open Hub context's project folder. Like StartTool it
+// pins the context, takes a shared claim on the root and runs in the background. The scanner
+// gets neither the engine nor the execution profile's environment.
+func (h *Hub) StartScan(id, contextID, name string, recursive bool) (operations.Operation, error) {
+	if !scanners.Valid(name) || h.Scanners == nil || recursive && name != scanners.TFLint {
+		return operations.Operation{}, ErrInvalidTool
+	}
+	p, err := h.Registry.Get(id)
+	if err != nil {
+		return operations.Operation{}, err
+	}
+	c, _, err := h.Context(contextID)
+	if err != nil || c.ProjectID != p.ID || c.RootPath != p.RootPath {
+		return operations.Operation{}, ErrContextNotFound
+	}
+	if status, problem := check(p.RootPath); status != StatusReady {
+		return operations.Operation{}, &ToolRefusal{status, problem}
+	}
+	if h.Inits == nil {
+		return operations.Operation{}, &ToolRefusal{"unavailable", "Project tools are not available in this session."}
+	}
+	rootInfo, err := statIdentity(p.RootPath)
+	if err != nil {
+		return operations.Operation{}, ErrContextChanged
+	}
+	release, ok := h.Locks.AcquireShared(p.RootPath)
+	if !ok {
+		return operations.Operation{}, ErrBusy
+	}
+	return h.Inits.StartScan(operations.ToolRequest{
+		ProjectID: p.ID, ContextID: c.ID, Root: p.RootPath, Engine: c.Engine, EngineVersion: c.Snapshot().Info.Version, Workspace: c.Workspace,
+		Environ: os.Environ(), Scan: &operations.ScanRun{Name: name, Recursive: recursive, Runner: h.Scanners},
+		Revalidate: func() string {
+			now, err := os.Stat(p.RootPath)
+			resolved, evalErr := filepath.EvalSymlinks(p.RootPath)
+			if err != nil || evalErr != nil || resolved != p.RootPath || !os.SameFile(rootInfo, now) {
+				return "path_changed"
+			}
+			return ""
+		},
+		Release: release,
+	})
+}
+
+// ScanSummary is the latest finished scan of one scanner that still describes the project's
+// configuration.
+type ScanSummary struct {
+	Scanner    string         `json:"scanner"`
+	Counts     map[string]int `json:"counts"`
+	FinishedAt string         `json:"finishedAt"`
+}
+
+// CurrentScans returns, per scanner, the newest finished scan of this context's workspace
+// whose configuration fingerprint equals the current one. Nothing runs and nothing blocks.
+func (h *Hub) CurrentScans(c *Context) []ScanSummary {
+	out := []ScanSummary{}
+	if h.Inits == nil {
+		return out
+	}
+	now := workspace.Fingerprint(c.RootPath, nil, "scan")
+	if now == "" {
+		return out
+	}
+	seen := map[string]bool{}
+	for _, op := range h.Inits.List(c.ProjectID) { // newest first
+		t := op.Tool
+		if op.Kind != "tool" || t == nil || t.Scan == nil || seen[t.Scan.Scanner] || t.Workspace != c.Workspace || t.Scan.Fingerprint != now || t.Outcome == "not_checked" {
+			continue
+		}
+		seen[t.Scan.Scanner] = true
+		out = append(out, ScanSummary{t.Scan.Scanner, maps.Clone(t.Scan.Counts), op.CompletedAt})
+	}
+	return out
 }

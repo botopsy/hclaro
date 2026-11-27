@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -50,6 +51,8 @@ type ToolRequest struct {
 	Release    func()
 	// Context is the execution profile context, recorded in the operation metadata.
 	Context *ExecutionContext
+	// Scan, when set, makes this a scanner run (M36-06); the engine fields above are unused.
+	Scan *ScanRun
 }
 
 // ToolResult is the sanitized result of a project utility. Outcome is "passed", "findings"
@@ -74,6 +77,7 @@ type ToolResult struct {
 	Format    *FormatResult    `json:"format,omitempty"`
 	Providers *ProvidersResult `json:"providers,omitempty"`
 	Outputs   *OutputsResult   `json:"outputs,omitempty"`
+	Scan      *ScanResult      `json:"scan,omitempty"`
 }
 
 func (t *ToolResult) clone() *ToolResult {
@@ -93,6 +97,11 @@ func (t *ToolResult) clone() *ToolResult {
 		p.Configuration, p.State = slices.Clone(p.Configuration), slices.Clone(p.State)
 		c.Providers = &p
 	}
+	if t.Scan != nil {
+		sc := *t.Scan
+		sc.Config, sc.Counts = slices.Clone(sc.Config), maps.Clone(sc.Counts)
+		c.Scan = &sc
+	}
 	if t.Outputs != nil {
 		o := *t.Outputs
 		o.Items = slices.Clone(o.Items)
@@ -105,11 +114,13 @@ func (t *ToolResult) clone() *ToolResult {
 // as text only; Hclaro never opens it.
 type Finding struct {
 	Severity string `json:"severity"`
-	Summary  string `json:"summary"`
-	Detail   string `json:"detail,omitempty"`
-	File     string `json:"file,omitempty"`
-	Line     int    `json:"line,omitempty"`
-	Column   int    `json:"column,omitempty"`
+	// Rule is the scanner rule ID; engine diagnostics have none.
+	Rule    string `json:"rule,omitempty"`
+	Summary string `json:"summary"`
+	Detail  string `json:"detail,omitempty"`
+	File    string `json:"file,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Column  int    `json:"column,omitempty"`
 }
 
 // FormatResult lists the files fmt -check reported. Checked counts the configuration files
@@ -184,10 +195,18 @@ var toolMessages = map[string]string{
 	"timeout":           "The command exceeded its time limit and was stopped. Partial output was discarded. Nothing was changed.",
 	"shutdown":          "Hclaro stopped while the command was running. No result is shown.",
 	"validation_errors": "The configuration is not valid. Validate checks syntax and internal consistency only; it does not contact providers or the backend.",
+	"scan_findings":     "The scan reported findings. They come from the scanner's own rules and are advice only: Hclaro does not block a plan or apply because of them.",
+	"scanner_missing":   "The scanner is not installed or its version is not supported. Nothing was run.",
+	"scanner_plugins":   "tflint needs its plugins installed. Hclaro never runs tflint --init (it downloads plugins). Run `tflint --init` in the project folder yourself, then scan again.",
+	"scanner_download":  "Trivy needs to download data it does not have. Hclaro runs it offline and nothing was downloaded. Run `trivy config .` in the project folder yourself once, then scan again.",
+	"scanner_failed":    "The scanner failed. Details are withheld because scanner messages can echo configuration.",
 	"unformatted":       "Some files are not in canonical format. Hclaro checks only; it never rewrites files. Run fmt yourself to format them.",
 }
 
 func toolSuccess(t engine.Tool, r *ToolResult) string {
+	if r.Scan != nil {
+		return scanSuccess
+	}
 	switch t {
 	case engine.ToolValidate:
 		return "The configuration is valid. This checks syntax and internal consistency only: it is not a plan, does not detect drift and does not prove an apply would succeed."
@@ -209,14 +228,19 @@ func (r *Inits) StartTool(req ToolRequest) (Operation, error) {
 		Kind: "tool", Command: req.Context.Display(ToolCommand(req.Engine, req.Tool, true, req.Recursive)), ProjectID: req.ProjectID, Notices: slices.Clone(req.Notices), Context: req.Context.Clone(),
 		Tool: &ToolResult{Tool: req.Tool, ContextID: req.ContextID, Workspace: req.Workspace, UsesWorkspace: engine.WorkspaceDependent(req.Tool), Outcome: "not_checked", Findings: []Finding{}},
 	}
-	conflict := func(entries []*initEntry) error {
+	return r.begin(op, recordMeta{req.Root, req.Engine, req.EngineVersion, req.Workspace}, req.Release, toolConflict(req.ContextID, req.Tool), func(ctx context.Context, e *initEntry) { r.runTool(ctx, e, req) })
+}
+
+// toolConflict refuses a second run of the same tool in a context and bounds all runs.
+func toolConflict(contextID string, tool engine.Tool) func([]*initEntry) error {
+	return func(entries []*initEntry) error {
 		running := 0
 		for _, e := range entries {
 			if e.op.Kind != "tool" || !active(e.op.Status) {
 				continue
 			}
 			running++
-			if e.op.Tool.ContextID == req.ContextID && e.op.Tool.Tool == req.Tool {
+			if e.op.Tool.ContextID == contextID && e.op.Tool.Tool == tool {
 				return ErrToolRunning
 			}
 		}
@@ -225,7 +249,6 @@ func (r *Inits) StartTool(req ToolRequest) (Operation, error) {
 		}
 		return nil
 	}
-	return r.begin(op, recordMeta{req.Root, req.Engine, req.EngineVersion, req.Workspace}, req.Release, conflict, func(ctx context.Context, e *initEntry) { r.runTool(ctx, e, req) })
 }
 
 func (r *Inits) runTool(ctx context.Context, e *initEntry, req ToolRequest) {
@@ -248,7 +271,7 @@ func (r *Inits) runTool(ctx context.Context, e *initEntry, req ToolRequest) {
 	} else {
 		o.Diagnostic = &Diagnostic{Code: code, Message: message}
 	}
-	if status != Succeeded && code != "validation_errors" && code != "unformatted" {
+	if status != Succeeded && code != "validation_errors" && code != "unformatted" && code != "scan_findings" {
 		o.Tool.Outcome = "not_checked"
 		o.Tool.Valid = nil
 	}
@@ -269,6 +292,9 @@ func (r *Inits) runTool(ctx context.Context, e *initEntry, req ToolRequest) {
 func (r *Inits) executeTool(ctx context.Context, e *initEntry, req ToolRequest) (code string, exitCode *int) {
 	for _, n := range req.Notices {
 		e.log.Append("warn", n)
+	}
+	if req.Scan != nil {
+		return r.executeScan(ctx, e, req)
 	}
 	r.stage(e, "Checking engine version")
 	version, err := req.Tools.Version(ctx)

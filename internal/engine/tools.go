@@ -43,6 +43,9 @@ type Tools interface {
 	// OutputsMetadata returns output names, types and sensitive flags. Values are dropped
 	// inside the adapter and never returned.
 	OutputsMetadata(ctx context.Context) (Outputs, error)
+	// OutputValues returns the outputs with their values. Only the Hub's explicit "show
+	// values" and "reveal" requests call it; the caller must not store, log or cache them.
+	OutputValues(ctx context.Context) ([]OutputValue, error)
 }
 
 // Capture is the bounded output of one completed utility command. A non-zero exit is not an
@@ -137,6 +140,52 @@ func (c *CLI) OutputsMetadata(ctx context.Context) (Outputs, error) {
 		return Outputs{}, err
 	}
 	return OutputsFrom(out)
+}
+
+// OutputValue is one root module output with its value as JSON text. It exists only for the
+// duration of one request.
+type OutputValue struct {
+	Name      string
+	Type      string
+	Sensitive bool
+	Value     json.RawMessage
+}
+
+// OutputValues runs `output -json` and returns every readable output with its value.
+func (c *CLI) OutputValues(ctx context.Context) ([]OutputValue, error) {
+	out, err := c.capture(ctx, ToolOutputs, ToolArgs(ToolOutputs, false, false))
+	if err != nil {
+		return nil, err
+	}
+	return OutputValuesFrom(out)
+}
+
+// OutputValuesFrom parses a finished `output -json` like OutputsFrom, keeping values. Names
+// that are not plain identifiers are skipped.
+func OutputValuesFrom(out Capture) ([]OutputValue, error) {
+	if out.ExitCode != 0 {
+		return nil, &ExitError{Code: out.ExitCode, Hint: ClassifyTool(string(out.Stderr))}
+	}
+	if out.Truncated {
+		return nil, ErrUnreadableOutputs
+	}
+	var doc map[string]struct {
+		Sensitive bool            `json:"sensitive"`
+		Type      json.RawMessage `json:"type"`
+		Value     json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(out.Stdout, &doc); err != nil || doc == nil {
+		return nil, ErrUnreadableOutputs
+	}
+	items := []OutputValue{}
+	for name, v := range doc {
+		if !outputName.MatchString(name) || len(items) == maxOutputs {
+			continue
+		}
+		items = append(items, OutputValue{Name: name, Type: TypeLabel(v.Type), Sensitive: v.Sensitive, Value: v.Value})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	return items, nil
 }
 
 func OutputsFrom(out Capture) (Outputs, error) {

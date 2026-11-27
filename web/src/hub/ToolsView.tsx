@@ -1,11 +1,13 @@
 import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, CircleX, FileCheck2, FileCode2, Info, KeyRound, LoaderCircle, Play, ShieldCheck, Terminal } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, CircleX, Eye, EyeOff, FileCheck2, FileCode2, Info, KeyRound, LoaderCircle, LockKeyhole, Play, ShieldCheck, Terminal } from 'lucide-react';
 import { api, send } from '../api';
-import { operationActive, type ContextInfo, type Operation, type ToolName, type ToolResult } from '../types';
+import { operationActive, type ContextInfo, type Operation, type OutputValue, type ToolName, type ToolResult } from '../types';
 import { RecordedContext } from '../profiles/ContextSummary';
 import { Button } from '../components/ui/button';
 import { Disclosure } from '../components/Disclosure';
+import { Dialog } from '../components/Dialog';
+import { CopyButton } from '../components/CopyButton';
 import { Segmented } from '../components/Segmented';
 import { EmptyState } from '../components/EmptyState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -14,6 +16,7 @@ import { navigate, projectPath } from '../router';
 import { clock, duration } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
 import { projectsQuery } from '../lib/queries';
+import { ScanResultPanel, ScannerCards, scanSummary } from './ScannerCards';
 
 type ToolInfo = {
   name: ToolName;
@@ -49,7 +52,7 @@ export const tools: ToolInfo[] = [{
   argv: () => ['output', '-json'],
   description: 'Shows output names, types and whether they are marked sensitive. Values are discarded inside Hclaro and never shown, including values that are not marked sensitive.'
 }];
-const toolTitle = Object.fromEntries(tools.map(t => [t.name, t.title])) as Record<ToolName, string>;
+const toolTitle = { ...Object.fromEntries(tools.map(t => [t.name, t.title])), tflint: 'tflint', trivy: 'Trivy', checkov: 'Checkov' } as Record<ToolName, string>;
 const readsState = (tool: ToolName) => tool === 'providers' || tool === 'outputs-metadata';
 
 function operationLabel(op: Operation) {
@@ -68,6 +71,10 @@ export function ToolsView({ context }: { context: ContextInfo }) {
   const [starting, setStarting] = useState<ToolName>();
   const [error, setError] = useState<{ tool: ToolName; text: string }>();
   const [scope, setScope] = useState<'workspace' | 'project'>('workspace');
+  // Every tool's result opens in a dialog. After a click on Run it
+  // opens once that run finishes (never for an older run); closing it drops what it showed.
+  const [dialog, setDialog] = useState<ToolName>();
+  const [awaiting, setAwaiting] = useState<{ tool: ToolName; previous?: string }>();
   const key = ['project-operations', context.projectId];
   const list = useQuery({
     queryKey: key,
@@ -84,6 +91,12 @@ export function ToolsView({ context }: { context: ContextInfo }) {
     : undefined;
   const operations = list.data?.operations || [];
   const latest = (tool: ToolName) => operations.find(o => o.tool?.contextId === context.id && o.tool.tool === tool);
+  const awaitedLast = awaiting && latest(awaiting.tool);
+  const open = dialog ?? (awaiting && awaitedLast && awaitedLast.id !== awaiting.previous && !operationActive(awaitedLast) ? awaiting.tool : undefined);
+  const closeDialog = () => {
+    setDialog(undefined);
+    setAwaiting(undefined);
+  };
   const shown = scope === 'workspace' ? operations.filter(o => o.tool?.workspace === context.workspace || o.kind !== 'tool') : operations;
   const refresh = useCallback(() => {
     void client.invalidateQueries({ queryKey: key });
@@ -92,12 +105,14 @@ export function ToolsView({ context }: { context: ContextInfo }) {
   async function run(tool: ToolName) {
     setStarting(tool);
     setError(undefined);
+    setAwaiting({ tool, previous: latest(tool)?.id });
     try {
       const body = tool === 'fmt-check' ? { contextId: context.id, recursive } : { contextId: context.id };
       await send<Operation>('POST', `projects/${context.projectId}/operations/${tool}`, body);
       refresh();
     } catch (e) {
       setError({ tool, text: errorMessage(e) });
+      setAwaiting(undefined);
     } finally {
       setStarting(undefined);
     }
@@ -129,13 +144,15 @@ export function ToolsView({ context }: { context: ContextInfo }) {
         <code className="tool-command">{[engine, ...t.argv(recursive && t.name === 'fmt-check')].join(' ')}</code>
         {t.name === 'fmt-check' && <label className="tool-option"><input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} disabled={busy} /><span>Include subfolders (<code>-recursive</code>). Hidden folders are skipped and linked folders are never followed.</span></label>}
         {error?.tool === t.name && <p className="dialog-error" role="alert">{error.text}</p>}
-        {last && (active ? last.logRetained && <OperationLog key={last.id} operation={last} onFinished={refresh} /> : <ToolResultPanel op={last} projectId={context.projectId} />)}
+        {last && (active ? last.logRetained && <OperationLog key={last.id} operation={last} onFinished={refresh} /> : <ResultsNote op={last} onOpen={() => setDialog(t.name)} />)}
         <div className="tool-actions">
          {reason && <span className="tool-blocked" id={`tool-${t.name}-blocked`}>{reason}</span>}
          <Button size="small" variant="outline" onClick={() => void run(t.name)} disabled={busy || !!reason} aria-describedby={reason ? `tool-${t.name}-blocked` : undefined}>{busy ? <><LoaderCircle className="spin" size={13} />Running…</> : <><Play size={13} />{last ? 'Run again' : 'Run'}</>}</Button>
         </div>
        </section>;
      })}</div>
+   {open && latest(open) && !operationActive(latest(open)!) && <Dialog title={`${toolTitle[open]} · workspace ${context.workspace}`} wide onClose={closeDialog}><ToolResultPanel op={latest(open)!} projectId={context.projectId} /></Dialog>}
+   <ScannerCards context={context} operations={operations} blocked={blocked} refresh={refresh} onStart={name => setAwaiting({ tool: name, previous: latest(name)?.id })} onOpen={setDialog} />
    <section className="tools-runs" aria-labelledby="tools-runs-title">
     <div className="tools-runs-head"><h2 id="tools-runs-title">Recent runs in this project</h2>
      <Segmented label="Show runs" value={scope} onChange={setScope} options={[{ value: 'workspace', label: 'This workspace' }, { value: 'project', label: 'All workspaces' }]} />
@@ -146,7 +163,7 @@ export function ToolsView({ context }: { context: ContextInfo }) {
      : <div className="operations-table"><DataTable label="Recent runs" columns={columns} rows={shown} rowKey={o => o.id} rowLabel={operationLabel} expand={o => <div className="operation-details">
        <code className="history-command">{o.command.join(' ')}</code>
        {/* The newest run of each tool here is already shown under its card. */}
-       {o.tool && latest(o.tool.tool)?.id !== o.id && !operationActive(o) &&<ToolResultPanel op={o} projectId={context.projectId} />}
+       {o.tool && !operationActive(o) && <ToolResultPanel op={o} projectId={context.projectId} />}
        {o.kind !== 'tool' && o.diagnostic && !operationActive(o) && <p className="muted">{o.diagnostic.message}</p>}
        {o.logRetained ? <OperationLog operation={o} onFinished={refresh} /> : <p className="muted">The log for this operation is no longer kept. Only the most recent logs are retained.</p>}
       </div>} /></div>}
@@ -154,11 +171,13 @@ export function ToolsView({ context }: { context: ContextInfo }) {
   </div>;
 }
 
+const scanOutcome = { passed: 'No findings', findings: 'Findings', not_checked: 'Not scanned' };
 const outcomeText: Record<ToolName, Record<ToolResult['outcome'], string>> = {
   validate: { passed: 'Valid', findings: 'Not valid', not_checked: 'Not validated' },
   'fmt-check': { passed: 'Formatted', findings: 'Needs formatting', not_checked: 'Not checked' },
   providers: { passed: 'Listed', findings: 'Listed', not_checked: 'Not listed' },
-  'outputs-metadata': { passed: 'Read', findings: 'Read', not_checked: 'Not read' }
+  'outputs-metadata': { passed: 'Read', findings: 'Read', not_checked: 'Not read' },
+  tflint: scanOutcome, trivy: scanOutcome, checkov: scanOutcome
 };
 
 function OutcomeLabel({ op }: { op: Operation }) {
@@ -166,19 +185,21 @@ function OutcomeLabel({ op }: { op: Operation }) {
   if (operationActive(op)) return <span className="tool-outcome"><LoaderCircle className="spin" size={13} />Running</span>;
   if (op.status === 'cancelled') return <span className="tool-outcome tone-warn"><CircleX size={13} />Cancelled</span>;
   const Icon = t.outcome === 'passed' ? CheckCircle2 : t.outcome === 'findings' ? AlertTriangle : CircleX;
-  return <span className={`tool-outcome tool-outcome-${t.outcome}`}><Icon size={13} />{outcomeText[t.tool][t.outcome]}{t.tool === 'validate' && t.outcome !== 'not_checked' && (t.errors || t.warnings) ? ` · ${t.errors} error${t.errors === 1 ? '' : 's'}, ${t.warnings} warning${t.warnings === 1 ? '' : 's'}` : ''}</span>;
+  return <span className={`tool-outcome tool-outcome-${t.outcome}`}><Icon size={13} />{t.scan && t.outcome !== 'not_checked' ? scanSummary(t.scan.counts) : outcomeText[t.tool][t.outcome]}{t.tool === 'validate' && t.outcome !== 'not_checked' && (t.errors || t.warnings) ? ` · ${t.errors} error${t.errors === 1 ? '' : 's'}, ${t.warnings} warning${t.warnings === 1 ? '' : 's'}` : ''}</span>;
 }
 
 const successText: Record<ToolName, string> = {
   validate: 'The configuration is valid. This checks syntax and internal consistency only: it is not a plan, does not detect drift and does not prove an apply would succeed.',
   'fmt-check': 'Every checked file is in canonical format. Nothing was written.',
   providers: 'Provider requirements of the configuration and of this workspace\'s state. They do not prove which cloud account or identity is in use.',
-  'outputs-metadata': 'Names, types and sensitivity of the root module outputs in this workspace\'s state. Values were discarded inside Hclaro and are never displayed.'
+  'outputs-metadata': 'Names, types and sensitivity of the root module outputs in this workspace\'s state. Values were discarded inside Hclaro and are never displayed.',
+  tflint: '', trivy: '', checkov: ''
 };
 
 // The finished run's sanitized result, shown inline under its tool card.
 function ToolResultPanel({ op, projectId }: { op: Operation; projectId: string }) {
   const t = op.tool!;
+  if (t.scan) return <ScanResultPanel op={op} />;
   const ok = op.status === 'succeeded';
   const needsInit = op.diagnostic?.code === 'init_required' || op.diagnostic?.code === 'plugins_missing';
   return <section className={`init-result tool-result ${ok ? 'init-result-ok' : 'init-result-problem'}`} role={ok ? 'status' : 'alert'} aria-label={`${toolTitle[t.tool]} result`}>
@@ -194,7 +215,7 @@ function ToolResultPanel({ op, projectId }: { op: Operation; projectId: string }
    {(t.errors + t.warnings > t.findings.length) && <p className="muted">{t.errors + t.warnings - t.findings.length} more diagnostics are not shown.</p>}
    {t.format && <FormatSummary format={t.format} />}
    {t.providers && <ProvidersTable providers={t.providers} />}
-   {t.outputs && <OutputsTable outputs={t.outputs} />}
+   {t.outputs && <OutputsTable outputs={t.outputs} contextId={t.contextId} />}
    <p className="safe-note"><ShieldCheck size={13} />Read-only: nothing was written, applied or retried.</p>
   </section>;
 }
@@ -217,10 +238,56 @@ function ProvidersTable({ providers: p }: { providers: NonNullable<ToolResult['p
   </>;
 }
 
-function OutputsTable({ outputs: o }: { outputs: NonNullable<ToolResult['outputs']> }) {
+// Output names, types and flags from the run. "Show values" reads them again, only on click, and
+// keeps them in this component's memory: nothing is stored, and a hidden value (sensitive or
+// secret-looking) appears only after its own Reveal.
+function OutputsTable({ outputs: o, contextId }: { outputs: NonNullable<ToolResult['outputs']>; contextId: string }) {
+  const [values, setValues] = useState<OutputValue[]>();
+  const [unlisted, setUnlisted] = useState(0);
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  async function show() {
+    setBusy('*');
+    setError('');
+    try {
+      const r = await send<{ outputs: OutputValue[]; unlisted: number }>('POST', `contexts/${contextId}/outputs/values`, {});
+      setValues(r.outputs);
+      setUnlisted(r.unlisted);
+      setRevealed({});
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy('');
+    }
+  }
+  async function reveal(name: string) {
+    setBusy(name);
+    setError('');
+    try {
+      const r = await send<{ value: string }>('POST', `contexts/${contextId}/outputs/${encodeURIComponent(name)}/reveal`, {});
+      setRevealed(current => ({ ...current, [name]: r.value }));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy('');
+    }
+  }
+  const rows: OutputValue[] = values || o.items.map(item => ({ ...item, hidden: true }));
+  const hiddenCount = unlisted || o.hidden;
   return <>
-   {o.items.length ? <table className="resources-table tool-table"><thead><tr><th scope="col">Output</th><th scope="col">Type</th><th scope="col">Sensitive</th><th scope="col">Value</th></tr></thead><tbody>{o.items.map(item => <tr key={item.name}><td className="mono">{item.name}</td><td className="mono">{item.type}</td><td>{item.sensitive ? <span className="hub-tag hub-tag-warn">Marked sensitive</span> : <span className="muted">Not marked</span>}</td><td className="muted">Not shown</td></tr>)}</tbody></table> : <p className="muted">This workspace's state records no root module outputs.</p>}
-   {o.hidden > 0 && <p className="muted">{o.hidden} output name{o.hidden === 1 ? '' : 's'} that look{o.hidden === 1 ? 's' : ''} like a secret or use{o.hidden === 1 ? 's' : ''} unusual characters {o.hidden === 1 ? 'is' : 'are'} not shown.</p>}
-   <p className="muted">Values are never displayed in this release, even for outputs not marked sensitive: an unmarked output can still contain a secret.</p>
+   {rows.length ? <table className="resources-table tool-table"><thead><tr><th scope="col">Output</th><th scope="col">Type</th><th scope="col">Sensitive</th><th scope="col">Value</th></tr></thead><tbody>{rows.map(item => <tr key={item.name}><td className="mono">{item.name}</td><td className="mono">{item.type}</td><td>{item.sensitive ? <span className="hub-tag hub-tag-warn">Marked sensitive</span> : <span className="hub-tag hub-tag-ok">Not marked</span>}</td>
+     <td className="output-value">{!values ? <span className="muted">Not shown</span>
+      : revealed[item.name] !== undefined ? <><code className="mono revealed-value">{revealed[item.name]}</code> <CopyButton value={revealed[item.name]} label={`Copy value of ${item.name}`} iconOnly /> <Button type="button" variant="ghost" size="icon" aria-label="Hide" title="Hide" onClick={() => setRevealed(current => Object.fromEntries(Object.entries(current).filter(([name]) => name !== item.name)))}><EyeOff size={12} aria-hidden="true" /></Button></>
+      : item.hidden ? <><span className="redacted"><LockKeyhole size={11} />hidden</span> <Button type="button" variant="ghost" size="icon" aria-label={`Reveal ${item.name}`} title="Reveal" onClick={() => void reveal(item.name)} disabled={!!busy}>{busy === item.name ? <LoaderCircle className="spin" size={12} /> : <Eye size={12} aria-hidden="true" />}</Button></>
+      : <><code className="mono">{item.value}{item.truncated && '…'}</code> {!item.truncated && <CopyButton value={item.value || ''} label={`Copy value of ${item.name}`} iconOnly />}</>}</td></tr>)}</tbody></table> : <p className="muted">This workspace's state records no root module outputs.</p>}
+   {hiddenCount > 0 && <p className="muted">{hiddenCount} output name{hiddenCount === 1 ? '' : 's'} that look{hiddenCount === 1 ? 's' : ''} like a secret or use{hiddenCount === 1 ? 's' : ''} unusual characters {hiddenCount === 1 ? 'is' : 'are'} not shown.</p>}
+   {error && <p className="dialog-error" role="alert">{error}</p>}
+   <div className="tool-actions"><Button size="small" variant="outline" onClick={() => void show()} disabled={!!busy}>{busy === '*' ? <><LoaderCircle className="spin" size={13} />Reading…</> : <><KeyRound size={13} />{values ? 'Refresh values' : 'Show values'}</>}</Button></div>
+   <p className="muted">Values are read from the state again only when you click, shown here and kept nowhere else: not in logs, history or exports. Sensitive outputs and values that look like secrets stay hidden until you reveal them one by one.</p>
   </>;
+}
+
+function ResultsNote({ op, onOpen }: { op: Operation; onOpen: () => void }) {
+  return <p className="muted"><OutcomeLabel op={op} /> · {clock(op.startedAt)} <button className="link-button" onClick={onOpen}>Open results</button></p>;
 }

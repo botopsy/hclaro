@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRightLeft, Ban, Braces, Clock, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, Pencil, Play, RefreshCcw, Rocket, Search, TriangleAlert, Waypoints, X } from 'lucide-react';
+import { ArrowRightLeft, Ban, Braces, Clock, Copy, Fingerprint, GitBranch, Import, LoaderCircle, LockKeyhole, Pencil, Play, RefreshCcw, Rocket, Search, ShieldAlert, TriangleAlert, Waypoints, X } from 'lucide-react';
 import { api, send } from '../api';
-import type { AttributeChange, ChangeDetail, EditorName, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint } from '../types';
+import type { AttributeChange, ChangeDetail, EditorName, OutputChange, Plan, PlanAction, PlanChange, PlanSourceFingerprint, ScanSummary } from '../types';
 import { Button } from '../components/ui/button';
 import { DataTable, type Column } from '../components/DataTable';
 import { Dialog } from '../components/Dialog';
@@ -16,6 +16,7 @@ import { AskAI } from '../assist/AskAI';
 import { clock, engineLabel } from '../lib/format';
 import { ErrorState } from '../components/ErrorState';
 import { SourceLink } from '../git/editor';
+import { scanSummary } from '../hub/ScannerCards';
 import { errorMessage } from '../lib/errorMessage';
 
 // Where a change's source link goes: the Git API prefix, the editor from Settings and a notifier.
@@ -95,6 +96,7 @@ export function PlanReview({ plan, copy, onApply, onDiscarded, onRunPlan, onOpen
     <div><span className="muted">Source</span><strong className="mono" title={plan.source?.commit}><GitBranch size={12} /> {sourceLabel(plan.source)}</strong></div>
     <div><span className="muted">Saved plan SHA-256</span><button className="hash" onClick={() => void copy(plan.artifactSha256, 'Plan digest')} title={plan.artifactSha256} aria-label="Copy saved plan SHA-256"><Fingerprint size={12} />{plan.artifactSha256.slice(0, 12)}<Copy size={11} /></button></div>
    </div>
+   {scope.kind === 'context' && <ScanHint contextId={scope.contextId} />}
    {plan.kind === 'replace' && <ReplaceSummary plan={plan} onInspectImpact={onInspectImpact} />}
    {plan.kind === 'import' && plan.import && <ImportSummary plan={plan} copy={copy} />}
    {expired ? <div className="apply-banner apply-expired" role="alert"><Clock size={16} aria-hidden="true" /><div><strong>This saved plan expired{plan.apply.expiresAt ? ` at ${clock(plan.apply.expiresAt)}` : ''}.</strong> It can no longer be applied, because state or configuration may have changed since. Run a new plan to review the changes again.</div>{onRunPlan && <Button onClick={onRunPlan} disabled={!canPlan}><Play size={14} />Run new plan</Button>}</div>
@@ -252,4 +254,13 @@ function AttributeTable({ rows }: { rows: AttributeChange[] }) {
 function Outputs({ outputs }: { outputs: OutputChange[] }) {
   if (!outputs.length) return <div className="empty-state"><Braces size={26} /><h2>No output changes</h2></div>;
   return <div className="surface outputs"><table className="diff-table"><thead><tr><th scope="col">Output</th><th scope="col">Action</th><th scope="col">Value</th></tr></thead><tbody>{outputs.map(o => <tr key={o.name}><th scope="row"><code>{o.name}</code>{o.sensitive && <span className="flag"><LockKeyhole size={10} />sensitive</span>}</th><td><ActionBadge action={o.action} /></td><td className="muted">value hidden</td></tr>)}</tbody></table><p className="redaction-note"><LockKeyhole size={12} />Output values are never shown in Hclaro, including values that aren’t marked sensitive.</p></div>;
+}
+
+// A one-line reminder of a finished scanner run that still describes this configuration. It
+// only reads kept results (nothing runs) and never blocks or gates an apply.
+function ScanHint({ contextId }: { contextId: string }) {
+  const scans = useQuery({ queryKey: ['scans', contextId], queryFn: () => api<{ scans: ScanSummary[] }>(`contexts/${contextId}/scans`), retry: false });
+  const found = scans.data?.scans.filter(s => Object.values(s.counts).some(n => n)) || [];
+  if (!found.length) return null;
+  return <p className="muted scan-hint" role="status"><ShieldAlert size={13} aria-hidden="true" /> Security scan: {found.map(s => `${scanSummary(s.counts)} (${s.scanner}, ${clock(s.finishedAt)})`).join('; ')}. See Tools for details. This never blocks an apply.</p>;
 }

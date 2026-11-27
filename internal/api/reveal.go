@@ -14,6 +14,88 @@ import (
 // revealLimit bounds reveals per minute, so a script running in the page cannot dump the state.
 const revealLimit = 10
 
+// outputRoutes show an open workspace's output values and reveal single ones on request. Each
+// call runs `output -json` once; values are sent with no-store and never logged, cached or
+// stored. Names that look like secrets and sensitive outputs are hidden until revealed.
+func outputRoutes(mux *http.ServeMux, hub *projects.Hub) {
+	var mu sync.Mutex
+	var recent []time.Time
+	allow := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		now := time.Now()
+		for len(recent) > 0 && now.Sub(recent[0]) >= time.Minute {
+			recent = recent[1:]
+		}
+		if len(recent) >= 30 {
+			return false
+		}
+		recent = append(recent, now)
+		return true
+	}
+	fail := func(w http.ResponseWriter, err error) {
+		var refusal *projects.ToolRefusal
+		switch {
+		case errors.As(err, &refusal):
+			reasonJSON(w, 409, refusal.Code, refusal.Message)
+		case errors.Is(err, projects.ErrContextNotFound):
+			reasonJSON(w, 404, "context_closed", "This workspace view is no longer open. Open the workspace again.")
+		case errors.Is(err, projects.ErrContextChanged):
+			reasonJSON(w, 409, "context_changed", "The project's engine, folder or execution profile changed after this workspace was opened. Nothing was run. Open the workspace again.")
+		case errors.Is(err, projects.ErrBusy):
+			reasonJSON(w, 409, "project_busy", "Another operation is running in this project. Wait for it to finish, then try again.")
+		case errors.Is(err, projects.ErrOutputNotFound):
+			reasonJSON(w, 404, "output_not_found", "That output is no longer in the state. Show the values again.")
+		case errors.Is(err, projects.ErrOutputTooLong):
+			reasonJSON(w, 400, "too_long", "This value is too long to reveal.")
+		default:
+			reasonJSON(w, 502, "outputs_failed", "The engine could not read the outputs. Check that the workspace is initialized and your credentials work, then try again.")
+		}
+	}
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/outputs/values", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		c := openContext(w, r, hub)
+		if c == nil {
+			return
+		}
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !allow() {
+			reasonJSON(w, 429, "outputs_rate_limited", "Too many requests in the last minute. Wait a moment, then try again.")
+			return
+		}
+		items, unlisted, err := hub.OutputValues(r.Context(), c.ProjectID, c.ID)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"outputs": items, "unlisted": unlisted})
+	})
+	mux.HandleFunc("POST /api/v1/contexts/{cid}/outputs/{name}/reveal", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		c := openContext(w, r, hub)
+		if c == nil {
+			return
+		}
+		var body struct{}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if !allow() {
+			reasonJSON(w, 429, "outputs_rate_limited", "Too many requests in the last minute. Wait a moment, then try again.")
+			return
+		}
+		value, err := hub.RevealOutput(r.Context(), c.ProjectID, c.ID, r.PathValue("name"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"value": value})
+	})
+}
+
 // revealRoutes serves M30: one server-redacted scalar, on explicit request. The value is
 // returned once with no-store and is never logged, cached, stored or given to AI.
 func revealRoutes(mux *http.ServeMux, hub *projects.Hub) {

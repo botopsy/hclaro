@@ -14,6 +14,7 @@ hclaro [flags]
 | `--no-hub-execution` | Keep Hub workspaces read-only: plans, applies and imports run only for the launch project. (`--experimental-hub-execution` is still accepted and does nothing.) |
 | `--strict-local` | Disable features that send data to third parties: [cost estimation](../guides/cost-estimation.md) and AI requests sent by Hclaro. |
 | `--claude-path FILE`, `--codex-path FILE` | Executables for [AI assistance](../guides/ai-assistance.md) (default: `claude` and `codex` on `PATH`). |
+| `--tflint-path FILE`, `--trivy-path FILE`, `--checkov-path FILE` | Executables for the optional [scanner cards](../guides/scanners.md) (default: `tflint`, `trivy` and `checkov` on `PATH`). |
 | `--export-history FILE` | Write the redacted [operation history](../guides/history-and-git.md#operation-history) to a new `.json` or `.md` file and exit. |
 | `--version`, `--help` | Print the version or usage and exit. |
 

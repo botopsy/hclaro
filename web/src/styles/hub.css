@@ -415,6 +415,10 @@
   color: var(--warn);
 }
 
+.hub-tag-ok {
+  color: var(--ok);
+}
+
 
 .status-queued,
 .status-cancelling {
@@ -511,7 +515,7 @@
   display: flex;
 }
 
-/* A card whose result is a table (Providers, Outputs) takes the full row so every column shows. */
+/* A card whose result is a table takes the full row so every column shows. */
 .tool-card:has(.tool-table) {
   grid-column: 1 / -1;
 }
@@ -693,4 +697,39 @@
 
 @media (max-width: 720px) {
   .tool-findings li { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* Scanner cards (M36-06). */
+.scanners {
+  flex-direction: column;
+  gap: 12px;
+  display: flex;
+}
+
+.scanners > h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.scanners > p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.severity-chip {
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.severity-critical, .severity-high { color: var(--destroy); }
+.severity-medium { color: var(--warn); }
+.severity-low, .severity-unrated { color: var(--muted); }
+
+.tool-result h4 {
+  margin: 12px 0 0;
+  font-size: 13px;
 }
