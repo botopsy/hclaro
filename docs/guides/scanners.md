@@ -10,7 +10,7 @@ The Tools page of a Hub workspace can run three optional static scanners next to
 | Trivy | `trivy config --format json --quiet --skip-check-update .` | 0.57 and later |
 | Checkov | `checkov -d . -o json --framework terraform --quiet --compact --skip-download` | 3.x |
 
-- Nothing runs until you click **Run**. Opening the page only reads each scanner's `--version`. A version outside the range disables the card and says why.
+- Nothing runs until you click **Run**. Opening the page only reads each scanner's `--version`. A version outside the range disables the card and says why. The three version checks run together and each may take up to 30 seconds (Checkov is slow to start).
 - The scanner runs in the project folder with a minimal environment: `PATH`, `HOME`, temp folders, proxy and CA settings. It gets none of the execution profile's variables, no `AWS_*`, `ARM_*`, `GOOGLE_*`, `TF_VAR_*` or tokens. tflint's deep-check mode is not enabled.
 - The project's own `.tflint.hcl`, `.trivyignore`/`trivy.yaml` and `.checkov.yaml` are used by the scanner as usual; the card lists which it found.
 - Use `--tflint-path`, `--trivy-path` and `--checkov-path` to pick an executable that is not first on `PATH`.

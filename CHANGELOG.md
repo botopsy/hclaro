@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+Fixed:
+- Scanner detection waits up to 30 seconds for `--version` (was 10), because Checkov can take 12 seconds to start and then showed "version could not be read"; the three scanners are now checked in parallel, so a slow one does not delay the others.
+
 ## 1.0.1 — 2026-11-27
 
 Added:

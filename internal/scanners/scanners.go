@@ -155,8 +155,9 @@ type Runner struct {
 }
 
 const (
-	runLimit      = 5 * time.Minute
-	versionLimit  = 10 * time.Second
+	runLimit = 5 * time.Minute
+	// Checkov is a large Python program: its --version takes 1 to 12 seconds, so 10 was too short.
+	versionLimit  = 30 * time.Second
 	maxStdout     = 16 << 20
 	maxStderr     = 64 << 10
 	gracePeriod   = 5 * time.Second

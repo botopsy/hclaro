@@ -2,10 +2,12 @@ package api
 
 import (
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"hclaro/internal/engine/enginetest"
 	"hclaro/internal/operations"
@@ -79,5 +81,35 @@ func TestScannerRoutes(t *testing.T) {
 	}
 	if op := s.waitOp(decode[operations.Operation](t, w).ID); op.Diagnostic.Code != "scanner_missing" {
 		t.Fatalf("%+v", op.Diagnostic)
+	}
+}
+
+// A slow --version (Checkov takes seconds to start) is waited for, and the three checks start
+// together so one slow scanner does not hold the others up.
+func TestScannerDetectionRunsInParallel(t *testing.T) {
+	s, p := toolServer(t, &enginetest.Fake{VersionValue: "1.9.8"})
+	paths := map[string]string{}
+	var fakes []*scannerstest.Fake
+	for _, name := range scanners.Names {
+		f := scannerstest.Install(t, name, "", "", "", 0, false)
+		f.SlowVersion(t, 4)
+		fakes = append(fakes, f)
+		paths[name] = f.Path
+	}
+	s.hub.Scanners = &scanners.Runner{Paths: paths}
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- s.do("GET", "/api/v1/projects/"+p.ID+"/scanners", "") }()
+	// One at a time would start the second after about four seconds.
+	for deadline := time.Now().Add(3500 * time.Millisecond); ; time.Sleep(50 * time.Millisecond) {
+		if fakes[0].VersionStarted() && fakes[1].VersionStarted() && fakes[2].VersionStarted() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the version checks did not all start within 3.5s: not parallel")
+		}
+	}
+	w := <-done
+	if w.Code != 200 || strings.Count(w.Body.String(), `"supported":true`) != 3 {
+		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
