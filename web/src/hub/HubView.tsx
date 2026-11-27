@@ -11,7 +11,6 @@ import { ProductionBadge } from '../components/ProductionBadge';
 import { projectsQuery } from '../lib/queries';
 import { InitWizard } from './InitWizard';
 import { WorkspaceDialog } from './WorkspaceDialog';
-import { ContextSelector } from '../profiles/ContextSelector';
 import { useProfileSelection } from '../profiles/selection';
 import { dateTime, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
@@ -173,7 +172,7 @@ function ProjectDrawer({ project: p, writable, notify, onClose, onRepair, onRemo
   const [workspaceDialog, setWorkspaceDialog] = useState<{ action: WorkspaceAction; name: string }>();
   const profile = useProfileSelection(p.id);
   const ready = p.status === 'ready';
-  const inspect = useQuery({ queryKey: ['inspect', p.id], queryFn: () => send<Project>('POST', `projects/${p.id}/inspect`, {}), enabled: false, retry: false });
+  const inspect = useQuery({ queryKey: ['inspect', p.id, profile.selected], queryFn: () => send<Project>('POST', `projects/${p.id}/inspect`, { profileId: profile.selected }), enabled: false, retry: false });
   useEffect(() => {
     if (inspect.data) void client.invalidateQueries({ queryKey: ['projects'] });
   }, [inspect.data, client]);
@@ -409,8 +408,8 @@ export function ProjectView({ id }: { id: string }) {
   const profile = useProfileSelection(id);
   // Listing workspaces waits while an operation runs or its dialog is open: the root is claimed.
   const inspect = useQuery({
-    queryKey: ['inspect', id],
-    queryFn: () => send<Project>('POST', `projects/${id}/inspect`, {}),
+    queryKey: ['inspect', id, profile.selected],
+    queryFn: () => send<Project>('POST', `projects/${id}/inspect`, { profileId: profile.selected }),
     enabled: project?.status === 'ready' && !project.busy && !initOpen && !workspaceDialog
   });
   const initFinished = useCallback(() => {
@@ -439,7 +438,6 @@ export function ProjectView({ id }: { id: string }) {
    {current.busy === 'workspace' && !workspaceDialog && <div className="hub-banner" role="status"><LoaderCircle className="spin" size={15} /><span><strong>A workspace command is running.</strong> Workspaces can be listed when it finishes.</span></div>}
    {current.busy === 'init' && !initOpen && <div className="hub-banner" role="status"><LoaderCircle className="spin" size={15} /><span><strong>Initialization is running.</strong> Workspaces can be listed when it finishes.</span><span className="context-spacer" /><Button size="small" variant="outline" onClick={() => setInitOpen(true)}>Show progress</Button></div>}
    <section className="surface"><div className="surface-heading"><div><h2>{current.alias} {productionLike(current.alias) && <ProductionBadge />}</h2><p className="mono">{current.rootPath}</p></div>{current.status === 'ready' ? <div className="hub-actions"><Button size="small" variant="outline" onClick={() => navigate(contextPath(id, toolsWorkspace, 'Tools'))} title={`Validate, format check, providers and outputs. Opens in workspace ${toolsWorkspace}.`}><Wrench size={13} />Project tools</Button><Button size="small" variant={current.initialized ? 'outline' : 'default'} onClick={() => setInitOpen(true)} disabled={!!current.busy && current.busy !== 'init'}><Play size={13} />{current.initialized ? 'Run init again…' : 'Initialize…'}</Button></div> : <FolderOpen size={18} />}</div>
-    {current.status === 'ready' && <div className="project-profile"><ContextSelector projectId={id} selection={profile} workspaces={inspection?.workspaces} /></div>}
     <dl className="metadata"><div><dt>Engine</dt><dd>{inspection?.engine ? `${engineLabel(inspection.engine, 'Automatic')} ${inspection.version || ''}` : engineLabel(current.enginePreference, 'Automatic')}</dd></div><div><dt>Initialized</dt><dd>{current.initialized ? 'Yes' : 'Not detected'}</dd></div><div><dt>Backend type</dt><dd>{current.backend}</dd></div><div><dt>Execution mode</dt><dd>{current.executionMode}</dd></div><div><dt>Data directory</dt><dd className="mono">{env?.dataDir || '.terraform'}</dd></div><div><dt>Provider lockfile</dt><dd>{current.providerLock ? 'Present' : 'Not detected'}</dd></div></dl>
     {current.status === 'ready' && <SeparateSession rootPath={current.rootPath} engine={current.enginePreference} />}
    </section>
@@ -455,7 +453,7 @@ export function ProjectView({ id }: { id: string }) {
      {inspection.hiddenWorkspaces > 0 && <p className="muted">{inspection.hiddenWorkspaces} workspace name{inspection.hiddenWorkspaces === 1 ? '' : 's'} with unusual characters {inspection.hiddenWorkspaces === 1 ? 'is' : 'are'} not shown.</p>}
      {current.workspaceActions && !current.workspaceActions.change && <p className="muted workspace-support"><AlertTriangle size={13} />Workspace changes are unavailable: {current.workspaceActions.reason}</p>}
      {advanced && current.workspaceActions?.change && !current.workspaceActions.delete && <p className="muted workspace-support"><AlertTriangle size={13} />{current.workspaceActions.deleteReason}</p>}
-     <p className="info-note"><ShieldCheck size={15} /><span>Choosing a workspace changes only this browser tab: each command Hclaro runs for it gets <code>TF_WORKSPACE</code> in its own environment. Your terminal's selected workspace stays <strong>{inspection.cliDefault || 'unchanged'}</strong>. Hub workspaces are read-only. Changing the CLI default is a separate, confirmed action under <strong>Advanced actions</strong>.</span></p>
+     <p className="info-note"><ShieldCheck size={15} /><span>Choosing a workspace changes only this browser tab: each command Hclaro runs for it gets <code>TF_WORKSPACE</code> in its own environment. Your terminal's selected workspace stays <strong>{inspection.cliDefault || 'unchanged'}</strong>. Choosing a workspace only reads it. Changing the CLI default is a separate, confirmed action under <strong>Advanced actions</strong>.</span></p>
     </>}
    </section>
    {workspaceDialog && <WorkspaceDialog projectId={id} profileId={profile.selected} action={workspaceDialog.action} initialName={workspaceDialog.name} onClose={() => {

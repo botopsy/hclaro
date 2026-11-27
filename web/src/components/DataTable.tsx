@@ -63,7 +63,10 @@ export function DataTable<T>({ label, columns, rowKey, rows, groups, selected, o
          const open = expanded.has(key);
          const name = rowLabel?.(row) ?? key;
          return <Fragment key={key}>
-          <tr className={key === active ? 'active' : undefined}>
+          <tr className={[key === active ? 'active' : '', expand ? 'data-table-clickable' : ''].filter(Boolean).join(' ') || undefined} onClick={expand ? e => {
+           // The toggle button handles keyboard use; a click on any other control or a text selection must not toggle.
+           if (!(e.target as HTMLElement).closest('button, a, input, label, select, textarea') && !window.getSelection()?.toString()) setExpanded(toggle(expanded, key));
+          } : undefined}>
            {selectable && <td className="data-table-check"><input type="checkbox" aria-label={`Select ${name}`} checked={!!selected?.has(key)} onChange={e => select([key], e.target.checked)} /></td>}
            {expand && <td className="data-table-toggle"><button type="button" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${name}`} onClick={() => setExpanded(toggle(expanded, key))}>{open ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}</button></td>}
            {columns.map(c => <td key={c.key} className={c.className}>{c.cell(row)}</td>)}

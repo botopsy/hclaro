@@ -136,3 +136,5 @@
 .data-table-group button { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 600; }
 .data-table-count { color: var(--subtle); font-weight: 400; }
 .data-table-detail td { height: auto; padding: 10px 14px; white-space: normal; max-width: none; background: var(--inset); }
+
+.data-table-clickable { cursor: pointer; }

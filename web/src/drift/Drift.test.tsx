@@ -94,7 +94,7 @@ describe('Drift', () => {
     let drawer = await screen.findByRole('complementary', { name: 'Drift details' });
     await within(drawer).findByText('What changed');
     expect(row.closest('tr')).toHaveClass('active');
-    expect(within(drawer).getByRole('heading', { name: 'aws_security_group.web' })).toBeInTheDocument();
+    expect(within(drawer).getByText('aws_security_group.web')).toBeInTheDocument();
     expect(within(drawer).getByRole('columnheader', { name: 'Recorded in state' })).toBeInTheDocument();
     expect(within(drawer).getByRole('columnheader', { name: 'Provider reports now' })).toBeInTheDocument();
     expect(within(drawer).getAllByText('0.0.0.0/0').length).toBeGreaterThan(0);

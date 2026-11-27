@@ -46,7 +46,7 @@ export function ContextSummary({ summary, title = 'Execution context' }: { summa
 // RecordedContext shows the context an operation or plan was bound to.
 export function RecordedContext({ context }: { context?: ExecutionContext }) {
   if (!context?.profileId) return <span className="muted">No profile (inherited environment)</span>;
-  return <span>Profile <strong>{context.profileName}</strong> (rev {context.profileRevision}) · workspace <strong>{context.workspace}</strong>{context.awsProfile && <> · AWS profile <code>{context.awsProfile}</code>{context.awsAuth === 'aws-vault' && ' via aws-vault'}</>}{context.awsExpectedAccount && <> · expects <code>{context.awsExpectedAccount}</code></>}{context.awsRegion && <> · <code>{context.awsRegion}</code></>} <IdentityBadge /></span>;
+  return <span>Profile <strong>{context.profileName}</strong> (rev {context.profileRevision}) · workspace <strong>{context.workspace}</strong>{context.awsProfile && <> · AWS profile <code>{context.awsProfile}</code>{context.awsAuth === 'aws-vault' && ' via aws-vault'}</>}{context.awsExpectedAccount && <> · expects <code>{context.awsExpectedAccount}</code></>}{context.awsRegion && <> · <code>{context.awsRegion}</code></>} {context.projectId && context.profileId && context.awsProfile ? <AuthIndicator projectId={context.projectId} profileId={context.profileId} /> : <IdentityBadge />}</span>;
 }
 
 // ScopeSummary shows the identity of a Hub workspace's execution scope, as the server pinned it.

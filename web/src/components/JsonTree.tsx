@@ -1,5 +1,5 @@
 import { LockKeyhole } from 'lucide-react';
-import { RedactedLeaf, type RevealFn } from './RedactedLeaf';
+import { RedactedLeaf, prettyJson, type RevealFn } from './RedactedLeaf';
 export type { RevealFn } from './RedactedLeaf';
 export function JsonTree({
   value,
@@ -24,5 +24,6 @@ export function JsonTree({
   </details>;
   }
   if (value === '[redacted]') return reveal && path.length ? <RedactedLeaf name={name} path={path} reveal={reveal} /> : <div className="json-leaf"><span className="json-key">{name}</span><span className="redacted"><LockKeyhole size={11} />redacted</span></div>;
-  return <div className="json-leaf"><span className="json-key">{name}</span><span className={typeof value === 'string' ? 'json-string' : 'json-value'}>{value === null ? 'null' : String(value)}</span></div>;
+  const pretty = typeof value === 'string' ? prettyJson(value) : undefined;
+  return <div className="json-leaf"><span className="json-key">{name}</span><span className={typeof value === 'string' ? `json-string${pretty ? ' json-pretty' : ''}` : 'json-value'}>{pretty ?? (value === null ? 'null' : String(value))}</span></div>;
 }

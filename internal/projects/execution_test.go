@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -279,5 +280,34 @@ func TestRemoveReportsProfilesLeftBehind(t *testing.T) {
 	}
 	if _, err := hub.Registry.Get(ids["network"]); err == nil {
 		t.Fatal("project still registered")
+	}
+}
+
+func TestInspectWithProfileListsWorkspacesWithProfileEnvironment(t *testing.T) {
+	hub, ids, spy := profileFixture(t)
+	network := ids["network"]
+	p, err := hub.Profiles.Create(network, profiles.Input{Name: "dev", AWSProfile: "dev-sso", AWSRegion: "eu-west-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, err := hub.InspectWith(context.Background(), network, p.ID); err != nil || s.Inspection == nil || s.Inspection.Diagnostic != nil {
+		t.Fatalf("%v %+v", err, s.Inspection)
+	}
+	if !spyContains(t, spy, "AWS_PROFILE=dev-sso", "AWS_REGION=eu-west-1", "workspace") {
+		t.Fatalf("workspace list ignored the profile:\n%s", strings.Join(spyLines(t, spy), "\n"))
+	}
+	if _, err := hub.InspectWith(context.Background(), network, "missing"); err == nil {
+		t.Fatal("an unknown profile was accepted")
+	}
+}
+
+func TestExecutionContextCarriesProjectID(t *testing.T) {
+	hub, ids, _ := profileFixture(t)
+	network := ids["network"]
+	p, _ := hub.Profiles.Create(network, profiles.Input{Name: "dev", AWSProfile: "dev-sso"})
+	rec, _ := hub.Registry.Get(network)
+	_, _, c, err := hub.execution(rec, p.ID)
+	if err != nil || c == nil || c.ProjectID != network {
+		t.Fatalf("%v %+v", err, c)
 	}
 }

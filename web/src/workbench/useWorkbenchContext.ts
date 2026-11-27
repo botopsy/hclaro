@@ -18,7 +18,7 @@ export function useWorkbenchContext(route: Route, generation: number) {
   const project = projects.data?.projects?.find(p => p.id === scoped?.projectId);
   const launchProject = !scoped ? projects.data?.projects?.find(p => p.launch) : undefined;
   // Execution profiles belong to registered projects. The choice is kept per browser tab.
-  const profileProject = scoped ? scoped.projectId : launchProject?.id;
+  const profileProject = scoped ? scoped.projectId : route.kind === 'project' ? route.projectId : launchProject?.id;
   const profile = useProfileSelection(profileProject);
   const profileReady = !profileProject || profile.profiles.isFetched;
   const opened = useQuery({

@@ -39,10 +39,6 @@
 /* Drift details drawer */
 .drift-drawer { display: flex; flex-direction: column; gap: 18px; }
 .drift-drawer h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
-.drift-drawer-title { display: flex; align-items: flex-start; gap: 8px; }
-.drift-drawer-title > div { flex: 1; min-width: 0; }
-.drift-drawer-title h2 { font-size: 15px; letter-spacing: 0; }
-.drift-drawer-title p { margin: 4px 0 0; font-size: 12px; }
 .drift-diff td, .drift-diff th { overflow-wrap: anywhere; }
 .drift-recorded code { color: var(--destroy); }
 .drift-observed code { color: var(--create); }

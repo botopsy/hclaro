@@ -6,6 +6,18 @@ import { CopyButton } from './CopyButton';
 
 export type RevealFn = (path: (string | number)[]) => Promise<string>;
 
+// prettyJson returns s indented when it is a JSON object/array string (e.g. an IAM policy), else undefined.
+export function prettyJson(s: string): string | undefined {
+  const t = s.trim();
+  if (t[0] !== '{' && t[0] !== '[') return undefined;
+  try {
+    const v: unknown = JSON.parse(t);
+    return v !== null && typeof v === 'object' ? JSON.stringify(v, null, 2) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The page may stay hidden this long before a revealed value is dropped.
 const hiddenLimitMs = 5 * 60 * 1000;
 
@@ -47,7 +59,7 @@ export function RedactedLeaf({ name, path, reveal }: { name?: string; path: (str
   return <div className="json-leaf revealable">
    <span className="json-key">{name}</span>
    {step === 'shown' ? <>
-    <span className="json-string revealed-value" data-testid="revealed-value">{value}</span>
+    <span className={`json-string revealed-value${prettyJson(value) ? ' json-pretty' : ''}`} data-testid="revealed-value">{prettyJson(value) ?? value}</span>
     <CopyButton value={value} label={`Copy value of ${name}`} iconOnly />
     <Button type="button" variant="ghost" size="icon" aria-label="Hide" title="Hide" onClick={hide}><EyeOff size={12} aria-hidden="true" /></Button>
    </> : <>
