@@ -263,6 +263,7 @@
 
 .revealable { flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
 .revealable > .json-key { margin-right: auto; }
+.json-pretty { flex: 1; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono, 'DM Mono', monospace); font-size: 12px; }
 .revealed-value { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .reveal-note { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .reveal-note p { flex: 1 1 100%; margin: 0; }

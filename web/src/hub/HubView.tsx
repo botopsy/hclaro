@@ -11,7 +11,6 @@ import { ProductionBadge } from '../components/ProductionBadge';
 import { projectsQuery } from '../lib/queries';
 import { InitWizard } from './InitWizard';
 import { WorkspaceDialog } from './WorkspaceDialog';
-import { ContextSelector } from '../profiles/ContextSelector';
 import { useProfileSelection } from '../profiles/selection';
 import { dateTime, engineLabel } from '../lib/format';
 import { errorMessage } from '../lib/errorMessage';
@@ -439,7 +438,6 @@ export function ProjectView({ id }: { id: string }) {
    {current.busy === 'workspace' && !workspaceDialog && <div className="hub-banner" role="status"><LoaderCircle className="spin" size={15} /><span><strong>A workspace command is running.</strong> Workspaces can be listed when it finishes.</span></div>}
    {current.busy === 'init' && !initOpen && <div className="hub-banner" role="status"><LoaderCircle className="spin" size={15} /><span><strong>Initialization is running.</strong> Workspaces can be listed when it finishes.</span><span className="context-spacer" /><Button size="small" variant="outline" onClick={() => setInitOpen(true)}>Show progress</Button></div>}
    <section className="surface"><div className="surface-heading"><div><h2>{current.alias} {productionLike(current.alias) && <ProductionBadge />}</h2><p className="mono">{current.rootPath}</p></div>{current.status === 'ready' ? <div className="hub-actions"><Button size="small" variant="outline" onClick={() => navigate(contextPath(id, toolsWorkspace, 'Tools'))} title={`Validate, format check, providers and outputs. Opens in workspace ${toolsWorkspace}.`}><Wrench size={13} />Project tools</Button><Button size="small" variant={current.initialized ? 'outline' : 'default'} onClick={() => setInitOpen(true)} disabled={!!current.busy && current.busy !== 'init'}><Play size={13} />{current.initialized ? 'Run init again…' : 'Initialize…'}</Button></div> : <FolderOpen size={18} />}</div>
-    {current.status === 'ready' && <div className="project-profile"><ContextSelector projectId={id} selection={profile} workspaces={inspection?.workspaces} /></div>}
     <dl className="metadata"><div><dt>Engine</dt><dd>{inspection?.engine ? `${engineLabel(inspection.engine, 'Automatic')} ${inspection.version || ''}` : engineLabel(current.enginePreference, 'Automatic')}</dd></div><div><dt>Initialized</dt><dd>{current.initialized ? 'Yes' : 'Not detected'}</dd></div><div><dt>Backend type</dt><dd>{current.backend}</dd></div><div><dt>Execution mode</dt><dd>{current.executionMode}</dd></div><div><dt>Data directory</dt><dd className="mono">{env?.dataDir || '.terraform'}</dd></div><div><dt>Provider lockfile</dt><dd>{current.providerLock ? 'Present' : 'Not detected'}</dd></div></dl>
     {current.status === 'ready' && <SeparateSession rootPath={current.rootPath} engine={current.enginePreference} />}
    </section>
