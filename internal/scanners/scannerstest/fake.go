@@ -82,3 +82,25 @@ func (f *Fake) Cwd() string {
 	b, _ := os.ReadFile(f.CwdFile)
 	return strings.TrimSpace(string(b))
 }
+
+// VersionStarted reports whether a --version call of a SlowVersion fake has begun.
+func (f *Fake) VersionStarted() bool {
+	_, err := os.Stat(f.Path + ".vstart")
+	return err == nil
+}
+
+// SlowVersion makes --version take about seconds before it answers, like Checkov's start-up.
+func (f *Fake) SlowVersion(t testing.TB, seconds int) {
+	t.Helper()
+	b, err := os.ReadFile(f.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.Replace(string(b), "\nif [ \"$1\" = \"--version\" ]; then ", fmt.Sprintf("\nif [ \"$1\" = \"--version\" ]; then : > \"$0.vstart\"; sleep %d; ", seconds), 1)
+	if script == string(b) {
+		t.Fatal("version line not found in the fake scanner")
+	}
+	if err := os.WriteFile(f.Path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"hclaro/internal/engine"
 	"hclaro/internal/operations"
@@ -279,10 +280,17 @@ func (h *Hub) ScannerInfo(ctx context.Context, id string) ([]scanners.Info, erro
 	if h.Scanners == nil {
 		return nil, ErrInvalidTool
 	}
-	infos := make([]scanners.Info, 0, len(scanners.Names))
-	for _, name := range scanners.Names {
-		infos = append(infos, h.Scanners.Detect(ctx, name, p.RootPath))
+	// In parallel: a slow --version (Checkov) must not delay the others.
+	infos := make([]scanners.Info, len(scanners.Names))
+	var wg sync.WaitGroup
+	for i, name := range scanners.Names {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			infos[i] = h.Scanners.Detect(ctx, name, p.RootPath)
+		}()
 	}
+	wg.Wait()
 	return infos, nil
 }
 
