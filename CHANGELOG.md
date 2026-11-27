@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.1 — 2026-11-27
 
 Added:
 - Tools > Outputs: **Show values** in the Outputs result reads the workspace's output values on click and shows them in that panel. Outputs marked sensitive, and those whose name or value looks like a secret, show *Hidden* with a per-output **Reveal** (and **Hide**). Values come from new `POST /api/v1/contexts/{cid}/outputs/values` and `.../outputs/{name}/reveal`, are sent with `no-store`, rate-limited, and are never stored in the operation, its log, history or exports. Every Tools result (Validate, Format check, Providers, Outputs and the scanners) now opens in a dialog when the run finishes (**Open results** on the card, or Recent runs, reopens it); closing it drops any revealed value. Show values is in that dialog.

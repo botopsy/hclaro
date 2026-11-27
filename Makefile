@@ -1,5 +1,5 @@
 SHELL := /bin/sh
-VERSION ?= 1.0.0
+VERSION ?= 1.0.1
 EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 export GOCACHE := $(CURDIR)/.cache/go
 export CGO_ENABLED := 0
