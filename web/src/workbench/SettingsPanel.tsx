@@ -4,6 +4,7 @@ import { LoaderCircle, Monitor, Moon, Plus, ShieldCheck, Sun } from 'lucide-reac
 import { send, sessionQuery } from '../api';
 import { Segmented } from '../components/Segmented';
 import { helpLinks, releaseUrl } from '../navigation/help';
+import { useUpdateStatus } from '../components/UpdateNotice';
 import { blankProfile } from '../profiles/ProfilesDialog';
 import { profilesQuery } from '../profiles/selection';
 import { assistSettingsQuery } from '../assist/AskAI';
@@ -25,10 +26,12 @@ export function SettingsPanel({
   project?: { id: string; name: string };
 }) {
   const version = useQuery(sessionQuery).data?.version;
+  const updates = useUpdateStatus().data;
   const row = (title: string, text: ReactNode, control: ReactNode) => <div className="setting-row"><div><h2>{title}</h2><p>{text}</p></div>{control}</div>;
   const link = (href: string, label: string) => <a href={href} target="_blank" rel="noopener noreferrer">{label}</a>;
   return <div className="settings-panel">
    <div className="setting-row about-row"><div><h2>About Hclaro</h2><p>A local workspace for Terraform and OpenTofu.</p><p className="settings-links">{link(releaseUrl(version), "What's new")}{link(helpLinks.bug, 'Report a bug')}{link(helpLinks.star, 'GitHub')}</p></div><HclaroLogo /></div>
+   {updates && row('Update check', updates.enabled ? <>On: Hclaro asks GitHub once a day whether a newer release exists and sends no project data. Start with <code>--no-update-check</code> to turn it off.</> : 'Off: Hclaro does not look for new releases.', null)}
    {row('Appearance', 'Follow your system, or choose a theme.', <Segmented label="Theme" value={preferences.theme} onChange={theme => changePreference({ theme })} options={[{ value: 'system', label: 'System', icon: <Monitor size={14} /> }, { value: 'light', label: 'Light', icon: <Sun size={14} /> }, { value: 'dark', label: 'Dark', icon: <Moon size={14} /> }]} />)}
    {row('Resource density', 'Adjust the space between resource rows.', <select aria-label="Resource density" value={preferences.density} onChange={e => changePreference({ density: e.target.value as Preferences['density'] })}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select>)}
    {row('Default grouping', 'How Resources groups its rows when it opens.', <select aria-label="Default grouping" value={preferences.grouping} onChange={e => changePreference({ grouping: e.target.value as Preferences['grouping'] })}><option value="module">Module tree</option><option value="type">By type</option><option value="flat">Flat list</option></select>)}

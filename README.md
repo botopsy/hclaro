@@ -31,6 +31,8 @@ Hclaro is free and open source under the [Apache License 2.0](LICENSE), for pers
 
 Cost estimates and AI assistance send data to third parties only when you opt in; `hclaro --strict-local` disables them.
 
+Hclaro checks once a day whether a newer release exists (one request to `api.github.com`, no project or user data) and shows a notice bottom right. Turn it off with `--no-update-check` or `HCLARO_NO_UPDATE_CHECK=1`; `--strict-local` also turns it off.
+
 ## Installation
 
 Release archives exist for macOS arm64/amd64, Linux amd64/arm64 and Windows amd64. You also need Terraform 1.5–1.17 or OpenTofu 1.6–1.13 on `PATH`; Hclaro never downloads an engine.

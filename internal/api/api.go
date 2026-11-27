@@ -20,6 +20,7 @@ import (
 	"hclaro/internal/projects"
 	"hclaro/internal/security"
 	"hclaro/internal/state"
+	"hclaro/internal/update"
 	"hclaro/internal/workspace"
 )
 
@@ -54,6 +55,8 @@ type Services struct {
 	History *history.Store
 	// Bootstrap is the browser launch link's one-time nonce; nil disables the exchange route.
 	Bootstrap *security.Bootstrap
+	// Update looks up the latest release for the update notice (M35); nil disables it.
+	Update *update.Checker
 }
 
 // Handler serves the API and embedded UI. hub is nil when the Workspace Hub is disabled;
@@ -75,6 +78,10 @@ func Handler(store *workspace.Store, manager *operations.Manager, hub *projects.
 	discoveryRoutes(mux, deps, manager, hub)
 	costRoutes(mux, deps, store, manager)
 	assistRoutes(mux, deps, store, manager, hub)
+	mux.HandleFunc("GET /api/v1/update", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, 200, deps.Update.Status(r.Context()))
+	})
 	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": version})
 	})

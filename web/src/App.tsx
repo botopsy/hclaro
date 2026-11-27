@@ -43,6 +43,7 @@ import { AssistantPage } from './assist/AssistantPage';
 import { providerName } from './lib/format';
 import { ModulesGrid, ProvidersGrid } from './workbench/Directory';
 import { ProductionBadge } from './components/ProductionBadge';
+import { UpdateNotice } from './components/UpdateNotice';
 import { errorMessage } from './lib/errorMessage';
 import { useDebounced } from './lib/useDebounced';
 // Each project workspace gets its own Workbench instance (keyed below), so filters,
@@ -483,6 +484,7 @@ function Workbench({
       setCreatingWorkspace(undefined);
       requestSwitch(contextPath(scoped.projectId, ws, isExplorerView(view) ? view : 'Resources'));
     }} />}
+  <UpdateNotice />
   {notice && <div role="status" className="toast"><Check size={15} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={13} /></button></div>}
  </div>;
 }

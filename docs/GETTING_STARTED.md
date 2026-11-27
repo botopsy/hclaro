@@ -91,6 +91,7 @@ hclaro --engine tofu                  # choose the engine when both are installe
 hclaro --hub                          # Workspace Hub; the current folder is not read
 hclaro --no-browser                   # print the URL instead of opening a browser
 hclaro --strict-local                 # disable third-party features (cost estimation)
+hclaro --no-update-check              # never look up newer releases (also HCLARO_NO_UPDATE_CHECK=1)
 ```
 
 Reading state can contact your configured backend and load provider plugins, using your existing credentials and environment. Nothing else runs until you ask for it in the UI: plans, drift scans, graphs, discovery scans, init, workspace commands, imports and applies each show what they will do and wait for your confirmation.

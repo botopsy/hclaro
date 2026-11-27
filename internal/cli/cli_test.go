@@ -124,3 +124,16 @@ func TestSessionDepsRefuseImportsOfManagedObjects(t *testing.T) {
 		t.Fatalf("state IDs %v %v", ids, ok)
 	}
 }
+
+func TestNoUpdateCheck(t *testing.T) {
+	if o, err := Parse(nil, io.Discard); err != nil || o.NoUpdateCheck {
+		t.Fatalf("update check should be on by default: %+v %v", o, err)
+	}
+	if o, err := Parse([]string{"--no-update-check"}, io.Discard); err != nil || !o.NoUpdateCheck {
+		t.Fatalf("flag: %+v %v", o, err)
+	}
+	t.Setenv("HCLARO_NO_UPDATE_CHECK", "1")
+	if o, err := Parse(nil, io.Discard); err != nil || !o.NoUpdateCheck {
+		t.Fatalf("env: %+v %v", o, err)
+	}
+}

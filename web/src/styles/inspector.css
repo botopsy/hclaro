@@ -267,3 +267,26 @@
 .revealed-value { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .reveal-note { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .reveal-note p { flex: 1 1 100%; margin: 0; }
+
+/* Update notice (M35): bottom right, clear of the centered toast. */
+.update-notice {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+.update-notice > svg { color: var(--accent-text); flex-shrink: 0; margin-top: 1px; }
+.update-notice > div { min-width: 0; flex: 1; }
+.update-notice p { margin: 4px 0 0; }
+.update-command { display: flex; align-items: center; gap: 4px; }
+.update-command code { overflow-wrap: anywhere; font-size: 12px; }

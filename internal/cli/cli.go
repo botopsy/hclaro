@@ -31,6 +31,7 @@ import (
 	"hclaro/internal/projects"
 	"hclaro/internal/security"
 	"hclaro/internal/ui"
+	"hclaro/internal/update"
 	"hclaro/internal/workspace"
 )
 
@@ -45,6 +46,9 @@ type Options struct {
 	// StrictLocal refuses features that send data to a third-party service; today that is
 	// cost estimation (M17) and headless AI requests (AI-01.04).
 	StrictLocal bool
+	// NoUpdateCheck turns off the release lookup that powers the update notice (M35). It is
+	// also off under StrictLocal and when HCLARO_NO_UPDATE_CHECK is set to 1.
+	NoUpdateCheck bool
 	// HubExecution turns on plans and applies in Hub workspaces (ADR M24.03, M24.04–.06). On by
 	// default since OD-11 (2026-11-16); --no-hub-execution turns it off. Qualified with real
 	// engines for the local backend only (support-matrix HUB-02 to HUB-17).
@@ -80,6 +84,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 	flags.StringVar(&o.ClaudePath, "claude-path", "", "Claude Code executable for AI requests sent from the UI (default: claude on PATH)")
 	flags.StringVar(&o.CodexPath, "codex-path", "", "OpenAI Codex executable for AI requests sent from the UI (default: codex on PATH)")
 	flags.StringVar(&o.ExportHistory, "export-history", "", "Write the redacted operation history to a new .json or .md `file` and exit")
+	flags.BoolVar(&o.NoUpdateCheck, "no-update-check", false, "Do not look up whether a newer Hclaro release exists (one request to api.github.com, no user data); also HCLARO_NO_UPDATE_CHECK=1")
 	noHubExecution := flags.Bool("no-hub-execution", false, "Keep Hub workspaces read-only: no plans, applies or imports outside the launch project")
 	flags.Var(noOp{}, "experimental-hub-execution", "Former opt-in for Hub execution; now the default (ignored)")
 	flags.Usage = func() {
@@ -100,6 +105,7 @@ func Parse(args []string, output io.Writer) (Options, error) {
 		return o, err
 	}
 	o.HubExecution = !*noHubExecution
+	o.NoUpdateCheck = o.NoUpdateCheck || os.Getenv("HCLARO_NO_UPDATE_CHECK") == "1"
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "path" {
 			o.PathSet = true
@@ -317,6 +323,9 @@ func Run(ctx context.Context, o Options, output io.Writer, version string) error
 		// memory unless the user saves a conversation. Strict local-only mode keeps handoff and never
 		// runs an assistant (OD-AI-4). History keeps request metadata only.
 		Assist: assist.NewSession(o.StrictLocal, &assist.CLI{Adapter: assist.Claude, Path: o.ClaudePath}, assist.NewCodexCLI(o.CodexPath)),
+	}
+	if !o.NoUpdateCheck && !o.StrictLocal {
+		services.Update = &update.Checker{Current: version}
 	}
 	hub.Discovery = services.Discovery
 	closers = append(closers, func() { services.Discovery.Close(5 * time.Second) })
