@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CircleCheck, CircleX, CloudCog, Copy, History, LoaderCircle, LockKeyhole, Play, ScanSearch, Search, ShieldCheck, TriangleAlert, X, type LucideIcon } from 'lucide-react';
+import { Box, CircleCheck, CircleX, CloudCog, Copy, History, LoaderCircle, LockKeyhole, Play, ScanSearch, Search, ShieldCheck, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import { api, ApiError, send } from '../api';
 import { operationActive, type DriftClassification, type DriftDetail, type DriftOptions, type DriftResource, type DriftScan, type EditorName, type Operation } from '../types';
 import { Button } from '../components/ui/button';
@@ -276,11 +276,9 @@ function DriftDrawer({ scope, scanId, changeId, engine, close, openResource, run
    <div className="inspector-header"><span><ScanSearch size={15} aria-hidden="true" />Drift details</span><Button variant="ghost" size="icon" aria-label="Close drift details" onClick={close}><X size={16} /></Button></div>
    {detail.isPending ? <div className="empty-state" role="status"><LoaderCircle className="spin" />Loading…</div> : detail.error ? <ErrorState inline message={detail.error.message} /> : d && <>
     <div className="inspector-body drift-drawer">
-     <div className="drift-drawer-title">
-      <div><h2 className="mono">{d.address}</h2><p className="mono muted">{d.type} · {d.module || 'Root module'}</p></div>
-      <Button variant="ghost" size="icon" aria-label="Copy resource address" onClick={() => void copy(d.address, 'Address')}><Copy size={13} /></Button>
-      <DriftChip value={d.classification} />
-     </div>
+     <div className="inspector-title"><span className="resource-icon" aria-hidden="true"><Box size={23} /></span><div className="inspector-name"><h2>{d.name}</h2><p className="inspector-type mono">{d.type}</p></div><DriftChip value={d.classification} /></div>
+     <div className="address-box"><div className="label-row"><span>RESOURCE ADDRESS</span><Button variant="ghost" size="icon" aria-label="Copy resource address" onClick={() => void copy(d.address, 'Address')}><Copy size={13} /></Button></div><code>{d.address}</code></div>
+     <dl className="metadata"><div><dt>Provider</dt><dd className="mono">{d.provider || 'Not recorded'}</dd></div><div><dt>Module</dt><dd className="mono">{d.module || 'Root module'}</dd></div><div><dt>Instance key</dt><dd className="mono">{d.index === undefined ? '—' : JSON.stringify(d.index)}</dd></div></dl>
      {d.classification === 'unrecognized' && <p className="plan-warning"><TriangleAlert size={14} />Unrecognized action in a refresh-only plan. Inspect it with the CLI; it is not treated as safe.</p>}
      {d.classification === 'missing' ? <section className="drift-missing">
       <h3>Not found by the provider</h3>
