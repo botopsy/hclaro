@@ -373,6 +373,15 @@ func (m *Fake) OutputsMetadata(ctx context.Context) (engine.Outputs, error) {
 	return engine.OutputsFrom(m.OutputsOut)
 }
 
+// OutputValues parses OutputsOut like the CLI adapter does, keeping values.
+func (m *Fake) OutputValues(ctx context.Context) ([]engine.OutputValue, error) {
+	m.record("output -json values")
+	if err := m.toolWait(ctx); err != nil {
+		return nil, err
+	}
+	return engine.OutputValuesFrom(m.OutputsOut)
+}
+
 func (m *Fake) toolWait(ctx context.Context) error {
 	if m.BlockTool {
 		<-ctx.Done()

@@ -61,6 +61,9 @@ var dynamicRoutes = map[string][]string{
 		"POST /api/v1/projects/{id}/operations/validate", "POST /api/v1/projects/{id}/operations/fmt-check",
 		"POST /api/v1/projects/{id}/operations/providers", "POST /api/v1/projects/{id}/operations/outputs-metadata",
 	},
+	`"POST /api/v1/projects/{id}/operations/" + name`: {
+		"POST /api/v1/projects/{id}/operations/tflint", "POST /api/v1/projects/{id}/operations/trivy", "POST /api/v1/projects/{id}/operations/checkov",
+	},
 }
 
 // registrations parses this package's sources and returns every literal route pattern and

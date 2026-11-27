@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"hclaro/internal/scanners"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -188,6 +189,8 @@ type Hub struct {
 	// Tools resolves engines for the read-only project utilities, which also run through
 	// Inits. Nil disables them.
 	Tools ToolsFactory
+	// Scanners finds and runs tflint, Trivy and Checkov (M36-06). Nil disables them.
+	Scanners *scanners.Runner
 	// Deps are shared with the launch project's operation manager and given to every
 	// execution scope's manager. Locks (one operation per root) is never nil; see Use.
 	operations.Deps

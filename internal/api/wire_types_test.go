@@ -17,6 +17,7 @@ import (
 	"hclaro/internal/preflight"
 	"hclaro/internal/profiles"
 	"hclaro/internal/projects"
+	"hclaro/internal/scanners"
 	"hclaro/internal/state"
 	"hclaro/internal/tfpolicy"
 )
@@ -34,6 +35,9 @@ var wireTypes = map[string]any{
 	"DriftDetail":              drift.Detail{},
 	"DriftScan":                operations.DriftScanView{},
 	"ToolResult":               operations.ToolResult{},
+	"OutputValue":              projects.OutputValue{},
+	"ScannerInfo":              scanners.Info{},
+	"ScanSummary":              projects.ScanSummary{},
 	"ToolFinding":              operations.Finding{},
 	"ProviderRequirement":      operations.ProviderRequirement{},
 	"OutputMeta":               engine.OutputMeta{},

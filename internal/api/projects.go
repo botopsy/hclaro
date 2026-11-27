@@ -10,6 +10,7 @@ import (
 	"hclaro/internal/ids"
 	"hclaro/internal/operations"
 	"hclaro/internal/projects"
+	"hclaro/internal/scanners"
 )
 
 // inspectTimeout bounds one explicit project inspection (version and workspace list).
@@ -218,14 +219,23 @@ func projectRoutes(mux *http.ServeMux, hub *projects.Hub) {
 	initRoutes(mux, hub)
 	workspaceRoutes(mux, hub)
 	toolRoutes(mux, hub)
+	scannerRoutes(mux, hub)
 	scopedRoutes(mux, hub)
 	revealRoutes(mux, hub)
+	outputRoutes(mux, hub)
 	scopedImportRoutes(mux, hub)
 	scopedAnalysisRoutes(mux, hub)
 	scopedDiscoveryRoutes(mux, hub)
 	mux.HandleFunc("GET /api/v1/contexts/{cid}", func(w http.ResponseWriter, r *http.Request) {
 		if c := contextOf(w, r); c != nil {
 			writeJSON(w, 200, workspaceBody(c.Snapshot(), c))
+		}
+	})
+	// Scanner results (M36-06) that still describe this context's configuration. It reads
+	// retained results and hashes files; it runs nothing.
+	mux.HandleFunc("GET /api/v1/contexts/{cid}/scans", func(w http.ResponseWriter, r *http.Request) {
+		if c := contextOf(w, r); c != nil {
+			writeJSON(w, 200, map[string]any{"scans": hub.CurrentScans(c)})
 		}
 	})
 	// Closing a view deletes its scope's saved plan, approval and results. It is refused
@@ -436,25 +446,60 @@ func toolRoutes(mux *http.ServeMux, hub *projects.Hub) {
 				return
 			}
 			op, err := hub.StartTool(r.PathValue("id"), body.ContextID, tool, body.Recursive != nil && *body.Recursive)
-			var refusal *projects.ToolRefusal
-			switch {
-			case errors.As(err, &refusal):
-				reasonJSON(w, 409, refusal.Code, refusal.Message)
-			case errors.Is(err, projects.ErrContextNotFound):
-				reasonJSON(w, 404, "context_closed", "This workspace view is no longer open, or belongs to another project. Open the workspace again.")
-			case errors.Is(err, projects.ErrContextChanged):
-				reasonJSON(w, 409, "context_changed", "The project's engine, folder or execution profile changed after this workspace was opened. Nothing was run. Open the workspace again.")
-			case errors.Is(err, operations.ErrToolRunning):
-				reasonJSON(w, 409, "tool_running", "This tool is already running for this workspace. Wait for it to finish or cancel it.")
-			case errors.Is(err, operations.ErrToolsBusy):
-				reasonJSON(w, 409, "tools_busy", "Too many project tools are running. Wait for some to finish.")
-			case errors.Is(err, operations.ErrClosed):
-				reasonJSON(w, 503, "shutting_down", "Hclaro is shutting down.")
-			case err != nil:
-				projectError(w, hub, err)
-			default:
-				writeJSON(w, 202, op)
+			toolStarted(w, hub, op, err)
+		})
+	}
+}
+
+// toolStarted answers a started (or refused) project tool or scanner run.
+func toolStarted(w http.ResponseWriter, hub *projects.Hub, op operations.Operation, err error) {
+	var refusal *projects.ToolRefusal
+	switch {
+	case errors.As(err, &refusal):
+		reasonJSON(w, 409, refusal.Code, refusal.Message)
+	case errors.Is(err, projects.ErrContextNotFound):
+		reasonJSON(w, 404, "context_closed", "This workspace view is no longer open, or belongs to another project. Open the workspace again.")
+	case errors.Is(err, projects.ErrContextChanged):
+		reasonJSON(w, 409, "context_changed", "The project's engine, folder or execution profile changed after this workspace was opened. Nothing was run. Open the workspace again.")
+	case errors.Is(err, operations.ErrToolRunning):
+		reasonJSON(w, 409, "tool_running", "This tool is already running for this workspace. Wait for it to finish or cancel it.")
+	case errors.Is(err, operations.ErrToolsBusy):
+		reasonJSON(w, 409, "tools_busy", "Too many project tools are running. Wait for some to finish.")
+	case errors.Is(err, operations.ErrClosed):
+		reasonJSON(w, 503, "shutting_down", "Hclaro is shutting down.")
+	case err != nil:
+		projectError(w, hub, err)
+	default:
+		writeJSON(w, 202, op)
+	}
+}
+
+// scannerRoutes serve the optional scanners (M36-06): detection reads only `--version`, and a
+// run starts only from a click with a server-built argv.
+func scannerRoutes(mux *http.ServeMux, hub *projects.Hub) {
+	mux.HandleFunc("GET /api/v1/projects/{id}/scanners", func(w http.ResponseWriter, r *http.Request) {
+		infos, err := hub.ScannerInfo(r.Context(), r.PathValue("id"))
+		if err != nil {
+			projectError(w, hub, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"scanners": infos, "support": scanners.SupportText})
+	})
+	for _, name := range scanners.Names {
+		mux.HandleFunc("POST /api/v1/projects/{id}/operations/"+name, func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				ContextID string `json:"contextId"`
+				Recursive *bool  `json:"recursive"`
 			}
+			if !decodeBody(w, r, &body) {
+				return
+			}
+			if body.Recursive != nil && name != scanners.TFLint || !ids.Valid(body.ContextID) {
+				reasonJSON(w, 400, "invalid_context", "Open a workspace of this project, then run the scanner from it.")
+				return
+			}
+			op, err := hub.StartScan(r.PathValue("id"), body.ContextID, name, body.Recursive != nil && *body.Recursive)
+			toolStarted(w, hub, op, err)
 		})
 	}
 }

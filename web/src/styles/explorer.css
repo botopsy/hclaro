@@ -194,6 +194,9 @@
 }
 
 .main-content {
+  /* Contains absolutely positioned screen-reader text (.sr-only), which would otherwise sit
+     below the viewport and make the page scroll as well as this area. */
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;

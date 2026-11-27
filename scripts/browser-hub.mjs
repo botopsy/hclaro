@@ -58,6 +58,8 @@ try{
   // Clicking Run scrolls the card into view; a full-page capture draws the sticky sidebar at that offset.
   await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0)})
   await page.screenshot({path:`.cache/screenshots/${shot}`,fullPage:true})
+  // Results open in a dialog, which covers the next card until it is closed.
+  await page.getByRole('dialog').getByRole('button',{name:'Close'}).click()
  }
  assert.deepEqual(errors,[])
  console.log('Hub browser check passed: no horizontal overflow at 1512, 1280 and 1100px.')
