@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+Added:
+- M35: update notice. When a newer release exists, a card in the bottom-right corner shows the new version, a What's new link and the Homebrew upgrade command; Dismiss hides that version until the next release. Hclaro looks up the latest published release (one `GET https://api.github.com/repos/botopsy/hclaro/releases/latest`, generic `hclaro/<version>` user agent, nothing else sent) at most once a day, on the first page load of a session, from the server and not from the browser. It is on by default. `--no-update-check` or `HCLARO_NO_UPDATE_CHECK=1` turns it off, `--strict-local` turns it off too, and a development build never checks. Failures are silent: no notice. Settings shows whether the check is on.
+
 ## 1.0.0 — 2026-11-25
 
 First release. Everything below the 0.1.0-beta entries is included; what has and has not been run for real is in `docs/support-matrix.md` and `docs/reference/limitations.md`. Hclaro still needs real-world testing: this release exists to collect real usage and issues.

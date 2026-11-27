@@ -8,6 +8,8 @@ export const storageKeys = {
   compareId: 'hclaro.compare.id',
   // The build version whose release notes the Help menu last showed (unseen dot).
   seenVersion: 'hclaro.seenVersion',
+  // The newer version whose update notice was dismissed (M35).
+  updateDismissed: 'hclaro.updateDismissed',
   // Per tab: another tab of the same project can use a different profile.
   profile: (projectId: string) => `hclaro.profile.${projectId}`
 };
